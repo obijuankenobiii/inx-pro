@@ -1,0 +1,99 @@
+#pragma once
+
+/**
+ * @file ScreenComponents.h
+ * @brief Public interface and types for ScreenComponents.
+ */
+
+#include <cstddef>
+#include <cstdint>
+#include <vector>
+
+class GfxRenderer;
+
+struct TabInfo {
+  const char* label;
+  bool selected;
+};
+
+class ScreenComponents {
+ public:
+  static const int BOOK_PROGRESS_BAR_HEIGHT = 4;
+
+  // --- Main tab bar + shared page-header back button -----------------------------------
+  // Moved here from the old UiTheme singleton. That class also carried a MainTabPlacement
+  // (Top/Bottom) abstraction, but mainTabPlacement() hard-returned Bottom and the settings
+  // selector for it had already been removed, so every branch on it was dead. The layout
+  // constants it held are now inlined at their use sites; only these two pieces of real
+  // behaviour needed a home, and this is already the shared screen-chrome helper.
+
+
+  /** Draws the page-header back icon and records its hit box. */
+  static void drawPageHeaderBackButton(const GfxRenderer& renderer, int startY, int headerHeight);
+  /** True if the most recently rendered frame drew that icon. */
+  static bool pageHeaderBackButtonVisible();
+  /** Clears the recorded icon; call on activity transitions so a stale box is not hit. */
+  static void resetPageHeaderBackButton();
+  /** Hit-test a tap against the recorded icon (with a small touch margin). */
+  static bool pageHeaderBackButtonHit(int x, int y);
+  static constexpr int BATTERY_ICON_WIDTH = 28;
+  static constexpr int BATTERY_ICON_HEIGHT = 14;
+  static constexpr int BATTERY_TEXT_GAP = 5;
+  static constexpr int BATTERY_ICON_TOP_OFFSET = 3;
+
+  struct PopupLayout {
+    int x;
+    int y;
+    int width;
+    int height;
+  };
+
+  static void drawBattery(const GfxRenderer& renderer, int left, int top, bool showPercentage = true);
+  static bool drawMenuClock(const GfxRenderer& renderer, int left, int top);
+  static void drawMenuClockAndBattery(const GfxRenderer& renderer, int batteryLeft, int top,
+                                      bool showBatteryPercentage = true);
+  static void drawBookProgressBar(const GfxRenderer& renderer, size_t bookProgress);
+
+  static PopupLayout drawPopup(const GfxRenderer& renderer, const char* message);
+
+  static void fillPopupProgress(const GfxRenderer& renderer, const PopupLayout& layout, int progress);
+
+  /** Geometry for {@link LoadingProgress}: label on top, full-width progress bar below. */
+  struct LoadingProgressLayout {
+    int panelX = 0;
+    int panelY = 0;
+    int panelW = 0;
+    int panelH = 0;
+    int barX = 0;
+    int barY = 0;
+    int barW = 0;
+    int barH = 0;
+  };
+
+  /**
+   * Bottom popup: text label and progress bar below.
+   */
+  struct LoadingProgress {
+    static LoadingProgressLayout show(const GfxRenderer& renderer, const char* message, int progressPercent0to100);
+    static void setProgress(const GfxRenderer& renderer, const LoadingProgressLayout& layout,
+                            int progressPercent0to100);
+  };
+
+  static int drawTabBar(const GfxRenderer& renderer, int y, const std::vector<TabInfo>& tabs);
+
+  static void drawScrollIndicator(const GfxRenderer& renderer, int currentPage, int totalPages, int contentTop,
+                                  int contentHeight);
+
+  /**
+   * Draw a progress bar with percentage text.
+   * @param renderer The graphics renderer
+   * @param x Left position of the bar
+   * @param y Top position of the bar
+   * @param width Width of the bar
+   * @param height Height of the bar
+   * @param current Current progress value
+   * @param total Total value for 100% progress
+   */
+  static void drawProgressBar(const GfxRenderer& renderer, int x, int y, int width, int height, size_t current,
+                              size_t total);
+};

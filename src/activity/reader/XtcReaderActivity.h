@@ -1,0 +1,75 @@
+/**
+ * @file XtcReaderActivity.h
+ * @brief Public interface and types for XtcReaderActivity.
+ */
+
+/**
+ * XtcReaderActivity.h
+ *
+ * XTC ebook reader activity for Inx Reader
+ * Displays pre-rendered XTC pages on e-ink display
+ */
+
+#pragma once
+
+#include <Xtc.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
+#include <freertos/task.h>
+
+#include "activity/ActivityWithSubactivity.h"
+#include "state/Statistics.h"
+
+class XtcReaderActivity final : public ActivityWithSubactivity {
+  std::shared_ptr<Xtc> xtc;
+  TaskHandle_t displayTaskHandle = nullptr;
+  SemaphoreHandle_t renderingMutex = nullptr;
+  uint32_t currentPage = 0;
+  int pagesUntilFullRefresh = 0;
+  bool updateRequired = false;
+  const std::function<void()> onGoBack;
+  const std::function<void()> onGoToHome;
+
+  BookReadingStats bookStats;
+  uint32_t pageStartTime = 0;
+  uint32_t lastSaveTime = 0;
+  bool menuDrawerVisible = false;
+  bool menuDrawerShowingChapters = false;
+  bool suppressBackUntilReleased = false;
+  int menuSelectedIndex = 0;
+  int menuScrollOffset = 0;
+  int chapterSelectedIndex = 0;
+  int chapterScrollOffset = 0;
+
+  static void taskTrampoline(void* param);
+  [[noreturn]] void displayTaskLoop();
+  void renderScreen();
+  void renderPage();
+  void renderEndOfBookStats();
+  void handleMenuDrawerInput();
+  void renderMenuDrawer();
+  void renderMenuMain();
+  void renderMenuChapters();
+  void closeMenuDrawer(bool repaintPage);
+  void openMenuDrawer();
+  void turnPage(bool forward, int skipAmount = 1);
+  int chapterIndexForCurrentPage() const;
+  void saveProgress() const;
+  void loadProgress();
+  void ensureThumbnailExists();
+  void initStats();
+  void startPageTimer();
+  void endPageTimer();
+  void saveBookStatsToFile();
+
+ public:
+  explicit XtcReaderActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, std::unique_ptr<Xtc> xtc,
+                             const std::function<void()>& onGoBack, const std::function<void()>& onGoToHome)
+      : ActivityWithSubactivity("XtcReader", renderer, mappedInput),
+        xtc(std::move(xtc)),
+        onGoBack(onGoBack),
+        onGoToHome(onGoToHome) {}
+  void onEnter() override;
+  void onExit() override;
+  void loop() override;
+};

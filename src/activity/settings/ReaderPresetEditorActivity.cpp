@@ -1,0 +1,595 @@
+/**
+ * @file ReaderPresetEditorActivity.cpp
+ * @brief Definitions for ReaderPresetEditorActivity.
+ */
+
+#include "ReaderPresetEditorActivity.h"
+
+#include <Arduino.h>
+
+#include <algorithm>
+#include <cmath>
+#include <cstring>
+#include <string>
+#include <vector>
+
+#include "../reader/Epub/SettingsDrawer.h"
+#include "../reader/Epub/StatusBar.h"
+#include "../util/KeyboardEntryActivity.h"
+#include "activity/page/components/global/PopUp.h"
+#include "GfxRenderer.h"
+#include "images/Close.h"
+#include "state/ReaderPreset.h"
+#include "state/ReaderSetting.h"
+#include "state/SystemSetting.h"
+#include "system/FontManager.h"
+#include "system/Fonts.h"
+
+namespace {
+
+const char* kLoremParagraph1 = "The quick brown fox jumps over the lazy dog while the printing press hums softly.";
+const char* kLoremParagraph2 = "Good typography is invisible.";
+constexpr int kPreviewMaxWords = 64;
+constexpr size_t kPreviewWordBufferSize = 48;
+constexpr size_t kPresetNameMaxLen = 40;
+
+struct WordSlice {
+  const char* start = nullptr;
+  size_t len = 0;
+};
+
+/** Placeholder text for a status-bar item, used purely to illustrate the layout in the preview. */
+const char* statusPlaceholder(StatusBarItem item) {
+  switch (item) {
+    case StatusBarItem::PAGE_NUMBERS:
+      return "12/340";
+    case StatusBarItem::PERCENTAGE:
+      return "45%";
+    case StatusBarItem::CHAPTER_TITLE:
+      return "Chapter Three";
+    case StatusBarItem::BATTERY_ICON:
+      return "[||||]";
+    case StatusBarItem::BATTERY_PERCENTAGE:
+      return "78%";
+    case StatusBarItem::BATTERY_ICON_WITH_PERCENT:
+      return "[||||] 78%";
+    case StatusBarItem::PROGRESS_BAR:
+      return "====------";
+    case StatusBarItem::PROGRESS_BAR_WITH_PERCENT:
+      return "====-- 45%";
+    case StatusBarItem::PAGE_BARS:
+      return "|||..";
+    case StatusBarItem::BOOK_TITLE:
+      return "The Example Book";
+    case StatusBarItem::AUTHOR_NAME:
+      return "Jane Author";
+    case StatusBarItem::PAGE_NUMBERS_WITH_PERCENT:
+      return "12/340 45%";
+    case StatusBarItem::TIME_LEFT_CHAPTER:
+      return "12m";
+    case StatusBarItem::TIME_LEFT_BOOK:
+      return "3h 45m";
+    case StatusBarItem::CLOCK:
+      return "12:34";
+    case StatusBarItem::NONE:
+    default:
+      return "";
+  }
+}
+
+int splitWords(const char* text, WordSlice* words, const int maxWords) {
+  if (!text || !words || maxWords <= 0) {
+    return 0;
+  }
+  int count = 0;
+  const char* wordStart = nullptr;
+  for (const char* p = text; *p; ++p) {
+    if (*p == ' ') {
+      if (wordStart && count < maxWords) {
+        words[count].start = wordStart;
+        words[count].len = static_cast<size_t>(p - wordStart);
+        ++count;
+      }
+      wordStart = nullptr;
+    } else {
+      if (!wordStart) {
+        wordStart = p;
+      }
+    }
+  }
+  if (wordStart && count < maxWords) {
+    words[count].start = wordStart;
+    words[count].len = std::strlen(wordStart);
+    ++count;
+  }
+  return count;
+}
+
+const char* wordToBuffer(const WordSlice& word, char* buffer, const size_t bufferSize) {
+  if (!buffer || bufferSize == 0) {
+    return "";
+  }
+  const size_t n = std::min(word.len, bufferSize - 1);
+  if (word.start && n > 0) {
+    std::memcpy(buffer, word.start, n);
+  }
+  buffer[n] = '\0';
+  return buffer;
+}
+
+std::string truncatePresetName(const std::string& name) {
+  return name.size() > kPresetNameMaxLen ? name.substr(0, kPresetNameMaxLen) : name;
+}
+
+std::string defaultPresetNameFor(const BookSettings& settings) {
+  const FontManager::FontInfo* info = FontManager::getFontInfo(settings.getReaderFontId());
+  if (info != nullptr && !info->name.empty()) {
+    return truncatePresetName(info->name);
+  }
+  return "Preset";
+}
+
+}  // namespace
+
+ReaderPresetEditorActivity::ReaderPresetEditorActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
+                                                       int presetIndex, std::function<void()> onDone)
+    : ActivityWithSubactivity("ReaderPresetEditor", renderer, mappedInput),
+      presetIndex_(presetIndex),
+      isNew_(presetIndex < 0),
+      onDone_(std::move(onDone)) {}
+
+ReaderPresetEditorActivity::~ReaderPresetEditorActivity() {}
+
+void ReaderPresetEditorActivity::onEnter() {
+  enteredAtMs_ = millis();
+
+  if (isNew_) {
+    working_ = READER_PRESETS.settingsOf(0);  // seed from Default
+    name_ = defaultPresetNameFor(working_);
+  } else {
+    working_ = READER_PRESETS.settingsOf(presetIndex_);
+    name_ = READER_PRESETS.nameOf(presetIndex_);
+  }
+  working_.useCustomSettings = true;
+
+  FontManager::ensureFontReady(working_.getReaderFontId(), renderer);
+
+  const int screenH = renderer.getScreenHeight();
+  const int screenW = renderer.getScreenWidth();
+
+  drawer_.reset(new SettingsDrawer(renderer, working_, [this]() {
+    // A value changed: make sure the (possibly new) reader font is loaded before the preview redraws.
+    FontManager::ensureFontReady(working_.getReaderFontId(), renderer);
+  }));
+
+  // Aim for ~65% drawer height, then snap it to a whole number of rows so the menu has no dead space
+  // at the bottom; the preview absorbs whatever remains.
+  const int drawerRegionHeight = drawer_->snapEmbeddedHeight(screenH * 65 / 100);
+  previewHeight_ = screenH - drawerRegionHeight;
+  drawer_->setEmbeddedRegion(0, previewHeight_, screenW, drawerRegionHeight);
+  drawer_->setEmbeddedInvalidate([this]() {
+    renderPreview();
+    renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+  });
+
+  renderer.clearScreen(0xFF);
+  drawer_->show();  // draws the embedded region, then invokes the invalidate callback (preview + push)
+}
+
+void ReaderPresetEditorActivity::onExit() {
+  exitActivity();  // tear down keyboard sub-activity if any
+  drawer_.reset();
+}
+
+void ReaderPresetEditorActivity::renderPreview() {
+  const int screenW = renderer.getScreenWidth();
+  const int margin = std::max<int>(6, working_.screenMargin);
+  const int fontId = working_.getReaderFontId();
+
+  // Clear the preview region (no header label/tag; the demo text is the focus).
+  renderer.rectangle.fill(0, 0, screenW, previewHeight_, false);
+  renderer.bitmap.icon(Close, screenW - 60, 20, 40, 40);
+
+  // Mirror EpubActivity::calculateViewport() so the preview reserves exactly the status-bar space
+  // used by this preset.
+  const bool hasStatusBar = (working_.statusBarLeft.item != StatusBarItem::NONE ||
+                             working_.statusBarMiddle.item != StatusBarItem::NONE ||
+                             working_.statusBarRight.item != StatusBarItem::NONE);
+  const int statusBarHeight = hasStatusBar ? 28 : 0;
+  const int fullBarHeight = StatusBar::reservedFullBarHeight(working_);
+  const int bodyTop = 70;
+  const int bodyBottom = previewHeight_ - statusBarHeight - fullBarHeight - 6;
+  const int maxWidth = std::max(40, screenW - 2 * margin);
+  const int spaceWidth = std::max(
+      1, static_cast<int>(std::lround(renderer.text.getSpaceWidth(fontId) * working_.getReaderWordSpacingFactor())));
+  int lineHeight = static_cast<int>(renderer.text.getLineHeight(fontId) * working_.getReaderLineCompression());
+  if (lineHeight < 8) lineHeight = renderer.text.getLineHeight(fontId);
+
+  const bool bionic = working_.bionicReadingEnabled != 0;
+  const int indentPx = working_.paragraphCssIndentEnabled ? (2 * spaceWidth + 8) : 0;
+  const uint8_t align = working_.paragraphAlignment;
+  const int guideStyle = working_.readingGuideLinesEnabled;
+  const int fontAscender = renderer.text.getFontAscenderSize(fontId);
+  constexpr int kGuideClearancePx = 6;
+
+  auto drawGuideLineUnder = [&](int lineY) {
+    if (guideStyle != 2) return;
+    const int guideY = lineY + fontAscender + kGuideClearancePx;
+    if (guideY < bodyBottom) {
+      renderer.line.render(margin, guideY, screenW - margin, guideY, true, LineRender::Style::Dotted);
+    }
+  };
+
+  auto renderWord = [&](int x, int y, const WordSlice& word, bool smallCaps) {
+    char wordBuf[kPreviewWordBufferSize];
+    const char* text = wordToBuffer(word, wordBuf, sizeof(wordBuf));
+    if (smallCaps) {
+      renderer.text.renderSmallCaps(fontId, x, y, text, true, EpdFontFamily::REGULAR);
+      return;
+    }
+    const size_t len = std::strlen(text);
+    if (!bionic || len < 2) {
+      renderer.text.render(fontId, x, y, text, true, EpdFontFamily::REGULAR);
+      return;
+    }
+    const size_t boldLen = (len + 1) / 2;
+    char head[kPreviewWordBufferSize];
+    char tail[kPreviewWordBufferSize];
+    std::memcpy(head, text, boldLen);
+    head[boldLen] = '\0';
+    std::strncpy(tail, text + boldLen, sizeof(tail) - 1);
+    tail[sizeof(tail) - 1] = '\0';
+    renderer.text.render(fontId, x, y, head, true, EpdFontFamily::BOLD);
+    const int headW = renderer.text.getWidth(fontId, head, EpdFontFamily::BOLD);
+    renderer.text.render(fontId, x + headW, y, tail, true, EpdFontFamily::REGULAR);
+  };
+
+  // Paragraph 0 opens with a drop cap ("T", split off kLoremParagraph1's first letter) followed by a
+  // small-caps run for the next few words - the classic chapter-opening treatment - so the preview shows
+  // both effects together, illustrating how they actually look in a real book.
+  constexpr int kDropCapLines = 2;
+  constexpr int kSmallCapsWordCount = 4;
+  const char dropCapLetter[2] = {kLoremParagraph1[0], '\0'};
+  const int dropCapFontId = READER_SETTINGS.getReaderFontIdForFamilyAndSize(working_.fontFamily, SystemSetting::EXTRA_LARGE);
+  // Unlike the body font (ensured in onEnter()/the drawer's change callback), this larger same-family size
+  // is only ever touched here - for an SD custom font it's a distinct, separately-loaded slot, so without
+  // this it silently has no glyph data and the drop cap (and its width, throwing off the wrap indent) is blank.
+  FontManager::ensureFontReady(dropCapFontId, renderer);
+  const int dropCapWidth = renderer.text.getWidth(dropCapFontId, dropCapLetter, EpdFontFamily::BOLD) + 6;
+
+  int y = bodyTop;
+  const char* paragraphs[2] = {kLoremParagraph1 + 1, kLoremParagraph2};
+  const int paragraphGap = working_.extraParagraphSpacing ? (lineHeight / 2 + 4) : 2;
+
+  for (int p = 0; p < 2 && y + lineHeight <= bodyBottom; ++p) {
+    WordSlice words[kPreviewMaxWords];
+    const int wordCount = splitWords(paragraphs[p], words, kPreviewMaxWords);
+    int i = 0;
+    bool firstLine = true;
+    int dropCapLinesLeft = (p == 0) ? kDropCapLines : 0;
+    const int paragraphFirstLineY = y;
+    while (i < wordCount && y + lineHeight <= bodyBottom) {
+      const int lineIndent = dropCapLinesLeft > 0 ? dropCapWidth : (firstLine ? indentPx : 0);
+      const int lineMaxWidth = maxWidth - lineIndent;
+
+      // Greedily pack words for this line.
+      const int lineStart = i;
+      int naturalWidth = 0;
+      int widths[kPreviewMaxWords] = {};
+      int widthCount = 0;
+      while (i < wordCount && widthCount < kPreviewMaxWords) {
+        char wordBuf[kPreviewWordBufferSize];
+        const char* wordText = wordToBuffer(words[i], wordBuf, sizeof(wordBuf));
+        const bool smallCaps = p == 0 && i < kSmallCapsWordCount;
+        const int ww = smallCaps ? renderer.text.getSmallCapsWidth(fontId, wordText) : renderer.text.getWidth(fontId, wordText);
+        const int withWord = naturalWidth + (i > lineStart ? spaceWidth : 0) + ww;
+        if (withWord > lineMaxWidth && i > lineStart) break;
+        widths[widthCount++] = ww;
+        naturalWidth = withWord;
+        ++i;
+      }
+      const int count = widthCount;
+      const bool lastLine = (i >= wordCount);
+
+      int x = margin + lineIndent;
+      int gap = spaceWidth;
+      if (align == SystemSetting::JUSTIFIED && !lastLine && count > 1) {
+        const int extra = lineMaxWidth - naturalWidth;
+        gap = spaceWidth + extra / (count - 1);
+      } else if (align == SystemSetting::CENTER_ALIGN) {
+        x = margin + lineIndent + (lineMaxWidth - naturalWidth) / 2;
+      } else if (align == SystemSetting::RIGHT_ALIGN) {
+        x = margin + lineIndent + (lineMaxWidth - naturalWidth);
+      }
+
+      for (int k = 0; k < count; ++k) {
+        renderWord(x, y, words[lineStart + k], p == 0 && (lineStart + k) < kSmallCapsWordCount);
+        x += widths[k] + gap;
+      }
+
+      drawGuideLineUnder(y);
+      y += lineHeight;
+      firstLine = false;
+      if (dropCapLinesLeft > 0) --dropCapLinesLeft;
+    }
+    if (p == 0) {
+      // Align the drop cap's cap-top with the first body line's cap-top, same formula as PageDropCap::render.
+      const int dropAscender = renderer.text.getFontAscenderSize(dropCapFontId);
+      const int bodyBaseline = paragraphFirstLineY + fontAscender;
+      renderer.text.render(dropCapFontId, margin, bodyBaseline - dropAscender, dropCapLetter, true, EpdFontFamily::BOLD);
+    }
+    y += paragraphGap;
+  }
+
+  // A short bulleted list, so the preview also shows list-marker size/spacing (Page::listMarker in the
+  // real reader draws the same plain filled circle rather than relying on font glyph coverage).
+  static const char* kListItems[] = {"First list item here", "Second list item too"};
+  const int bulletRadius = std::max(3, fontAscender / 4);
+  const int bulletIndent = std::max(1, renderer.text.getLineHeight(fontId));
+  for (const char* item : kListItems) {
+    if (y + lineHeight > bodyBottom) break;
+    const int bodyBaseline = y + fontAscender;
+    const int centerX = margin + bulletRadius;
+    const int centerY = bodyBaseline - fontAscender / 2;
+    for (int dy = -bulletRadius; dy <= bulletRadius; ++dy) {
+      const int span = static_cast<int>(std::sqrt(static_cast<double>(bulletRadius * bulletRadius - dy * dy)));
+      for (int dx = -span; dx <= span; ++dx) {
+        renderer.drawPixel(centerX + dx, centerY + dy, true);
+      }
+    }
+    renderer.text.render(fontId, margin + bulletIndent, y, item, true, EpdFontFamily::REGULAR);
+    drawGuideLineUnder(y);
+    y += lineHeight;
+  }
+
+  if (guideStyle == 1) {
+    const int contentWidth = screenW - 2 * margin;
+    const int x1 = margin + contentWidth / 3;
+    const int x2 = margin + (contentWidth * 2) / 3;
+    renderer.line.render(x1, bodyTop, x1, bodyBottom, true, LineRender::Style::Dotted);
+    renderer.line.render(x2, bodyTop, x2, bodyBottom, true, LineRender::Style::Dotted);
+  }
+
+  renderPreviewStatusBar(previewHeight_ - statusBarHeight - fullBarHeight, statusBarHeight);
+  if (fullBarHeight > 0) {
+    renderPreviewFullBar(previewHeight_ - fullBarHeight, fullBarHeight);
+  }
+  if (savePromptOpen_) {
+    renderSavePrompt();
+  }
+}
+
+void ReaderPresetEditorActivity::renderPreviewStatusBar(int barTop, int barHeight) {
+  const int screenW = renderer.getScreenWidth();
+  const int margin = std::max<int>(6, working_.screenMargin);
+  const int fontId = MONTSERRAT_8_FONT_ID;
+
+  const int textY = barTop + (barHeight - renderer.text.getLineHeight(fontId)) / 2 + 2;
+
+  const char* left = statusPlaceholder(working_.statusBarLeft.item);
+  const char* middle = statusPlaceholder(working_.statusBarMiddle.item);
+  const char* right = statusPlaceholder(working_.statusBarRight.item);
+
+  if (left && left[0]) {
+    renderer.text.render(fontId, margin + 2, textY, left, true);
+  }
+  if (middle && middle[0]) {
+    const int w = renderer.text.getWidth(fontId, middle);
+    renderer.text.render(fontId, (screenW - w) / 2, textY, middle, true);
+  }
+  if (right && right[0]) {
+    const int w = renderer.text.getWidth(fontId, right);
+    renderer.text.render(fontId, screenW - margin - 2 - w, textY, right, true);
+  }
+}
+
+void ReaderPresetEditorActivity::renderPreviewFullBar(int barTop, int barHeight) {
+  const StatusBarItem style = static_cast<StatusBarItem>(working_.statusBarFullStyle);
+  if (style == StatusBarItem::NONE) {
+    return;
+  }
+
+  const int screenW = renderer.getScreenWidth();
+  const int fontId = MONTSERRAT_8_FONT_ID;
+  const int textY = barTop + (barHeight - renderer.text.getLineHeight(fontId)) / 2 + 2;
+
+  if (style == StatusBarItem::PAGE_BARS) {
+    // Mock: a row of small filled/outline bars across the full width, like real page bars.
+    constexpr int kBars = 24;
+    constexpr int kFilledBars = 9;  // representative "partway through the book" look
+    const int barMarginX = 12;
+    const int totalW = screenW - 2 * barMarginX;
+    const int barW = std::max(2, totalW / kBars - 1);
+    for (int i = 0; i < kBars; ++i) {
+      const int x = barMarginX + i * (barW + 1);
+      if (i < kFilledBars) {
+        renderer.rectangle.fill(x, textY, barW, 5, true);
+      } else {
+        renderer.rectangle.render(x, textY, barW, 5, true);
+      }
+    }
+    return;
+  }
+
+  // PROGRESS_BAR / PROGRESS_BAR_WITH_PERCENT: one full-width bar, ~40% filled for a representative look.
+  const bool withPercent = style == StatusBarItem::PROGRESS_BAR_WITH_PERCENT;
+  const char* pct = "40%";
+  const int pctW = withPercent ? renderer.text.getWidth(fontId, pct) : 0;
+  const int barMarginX = 12;
+  const int barW = screenW - 2 * barMarginX - (withPercent ? pctW + 8 : 0);
+  const int barX = barMarginX;
+  const int barY = textY + 1;
+
+  renderer.rectangle.render(barX, barY, barW, 6, true);
+  const int fillW = barW * 2 / 5;
+  if (fillW > 0) {
+    renderer.rectangle.fill(barX + 1, barY + 1, fillW - 2, 4, true);
+  }
+  if (withPercent) {
+    renderer.text.render(fontId, barX + barW + 8, textY, pct, true);
+  }
+}
+
+void ReaderPresetEditorActivity::promptName() {
+  if (isNew_) {
+    name_ = defaultPresetNameFor(working_);
+  }
+  auto* keyboard = new KeyboardEntryActivity(
+      renderer, mappedInput, "Name this preset", name_, 10, 40, false,
+      [this](const std::string& entered) {
+        if (!entered.empty()) name_ = entered;
+        finishRequested_ = true;
+      },
+      [this]() { finishRequested_ = true; });
+  enterNewActivity(keyboard);
+}
+
+void ReaderPresetEditorActivity::beginExit() {
+  if (isNew_) {
+    savePromptSelection_ = -1;
+    savePromptOpen_ = true;
+    renderPreview();
+    renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+  } else {
+    doSaveAndFinish();
+  }
+}
+
+void ReaderPresetEditorActivity::doSaveAndFinish() {
+  if (isNew_) {
+    READER_PRESETS.add(name_, working_);
+  } else {
+    READER_PRESETS.update(presetIndex_, name_, working_);
+  }
+  // The parent deletes this activity inside onDone_; copy to a local and touch no members afterward.
+  auto done = onDone_;
+  if (done) done();
+}
+
+void ReaderPresetEditorActivity::discardAndFinish() {
+  // The parent removes this editor in onDone_, so do not access members after
+  // invoking the callback.
+  auto done = onDone_;
+  if (done) done();
+}
+
+void ReaderPresetEditorActivity::renderSavePrompt() {
+  static const std::vector<std::string> options = {"Save", "Discard"};
+  const PopUpBounds box = PopUp::bounds(renderer, static_cast<int>(options.size()));
+  PopUp::background(renderer, box);
+  PopUp::title(renderer, box, "Save new preset?");
+  PopUp::list(renderer, box, options, savePromptSelection_, 0);
+  PopUp::border(renderer, box);
+}
+
+void ReaderPresetEditorActivity::handleSavePrompt() {
+  static constexpr int optionCount = 2;
+  const PopUpBounds box = PopUp::bounds(renderer, optionCount);
+
+  if (mappedInput.hasTouch()) {
+    float tapNx = 0.0f;
+    float tapNy = 0.0f;
+    if (mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy)) {
+      const int tapX = static_cast<int>(tapNx * renderer.getScreenWidth());
+      const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
+      const int optionY = tapY - box.y - box.header;
+      if (tapX >= box.x && tapX < box.x + box.width && optionY >= 0 && optionY < optionCount * box.row) {
+        savePromptSelection_ = optionY / box.row;
+        savePromptOpen_ = false;
+        if (savePromptSelection_ == 0) {
+          promptName();
+        } else {
+          discardAndFinish();
+        }
+        return;
+      }
+      savePromptOpen_ = false;
+      if (drawer_) drawer_->render();
+      return;
+    }
+  }
+
+  if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+    savePromptOpen_ = false;
+    if (drawer_) drawer_->render();
+    return;
+  }
+  if (mappedInput.wasPressed(MappedInputManager::Button::Up) ||
+      mappedInput.wasPressed(MappedInputManager::Button::Down)) {
+    if (savePromptSelection_ < 0) {
+      savePromptSelection_ = mappedInput.wasPressed(MappedInputManager::Button::Up) ? 1 : 0;
+    } else {
+      savePromptSelection_ = 1 - savePromptSelection_;
+    }
+    renderPreview();
+    renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+    return;
+  }
+  if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
+    if (savePromptSelection_ < 0) return;
+    savePromptOpen_ = false;
+    if (savePromptSelection_ == 0) {
+      promptName();
+    } else {
+      discardAndFinish();
+    }
+  }
+}
+
+void ReaderPresetEditorActivity::loop() {
+  if (subActivity) {
+    ActivityWithSubactivity::loop();  // run the keyboard
+    if (finishRequested_) {
+      finishRequested_ = false;
+      exitActivity();  // tear down the keyboard now that its loop returned
+      doSaveAndFinish();
+    }
+    return;
+  }
+
+  // Debounce the entry transition so the press that opened the editor isn't read as a Back.
+  if (millis() - enteredAtMs_ < 200) {
+    return;
+  }
+
+  if (savePromptOpen_) {
+    handleSavePrompt();
+    return;
+  }
+
+  // Vertical swipes belong to the embedded SettingsDrawer (its list and dropdowns scroll). The
+  // X4 Pro can also synthesize a Back edge for a touch gesture, so consume the swipe before the
+  // editor's Back/exit path gets a chance to run.
+  const bool verticalSwipe = mappedInput.wasTouchSwipeUp() || mappedInput.wasTouchSwipeDown() ||
+                             mappedInput.wasTouchSwipeUpForRenderer(renderer) ||
+                             mappedInput.wasTouchSwipeDownForRenderer(renderer);
+  if (verticalSwipe) {
+    if (drawer_) {
+      drawer_->handleInput(mappedInput);
+    }
+    return;
+  }
+
+  if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+    beginExit();
+    return;
+  }
+
+  if (mappedInput.hasTouch()) {
+    float tapX = 0.0f;
+    float tapY = 0.0f;
+    if (mappedInput.wasTouchTapInScreen(renderer, tapX, tapY)) {
+      const int x = static_cast<int>(tapX * renderer.getScreenWidth());
+      const int y = static_cast<int>(tapY * renderer.getScreenHeight());
+      if (x >= renderer.getScreenWidth() - 60 && x < renderer.getScreenWidth() - 20 && y >= 20 && y < 60) {
+        beginExit();
+        return;
+      }
+      mappedInput.restoreTouchTapInScreen(renderer, tapX, tapY);
+    }
+  }
+
+  if (drawer_) {
+    drawer_->handleInput(mappedInput);
+  }
+}

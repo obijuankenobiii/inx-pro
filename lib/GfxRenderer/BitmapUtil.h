@@ -1,0 +1,137 @@
+#pragma once
+
+/**
+ * @file BitmapUtil.h
+ * @brief Public interface and types for BitmapUtil.
+ */
+
+#include <cstdint>
+#include <cstring>
+
+#include "ImageToneDither.h"
+
+class Print;
+
+struct BmpHeader;
+
+uint8_t quantize(int gray, int x, int y);
+uint8_t quantizeSimple(int gray);
+ImageToneSample quantizeTwoBitImage(int gray);
+uint8_t adjustTwoBitImageLevelForDisplay(uint8_t level);
+uint8_t mapQualityGray2Level(uint8_t level);
+
+/**
+ * Image tone -> 2-bit plane code for the MEDIUM (GRAYSCALE_LSB/MSB) path, indexed by
+ * dither level 0..3 (white -> black). The on-panel brightness order of the four codes is
+ * a property of the panel + its waveform, so both this table and mapQualityGray2Level()
+ * are defined PER DEVICE in lib/hal_<device>/ImageToneMap.cpp, selected by lib_ignore.
+ * Editing one board's tone order cannot disturb the other's.
+ */
+const uint8_t* grayscaleCodeTable();
+
+// Medium/text-AA plane codes. Separate from grayscaleCodeTable() because text AA is an
+// overlay whose extremes may need to be held by the B/W base rather than driven, and on some
+// controllers that differs from the image table. Defined per device in lib/hal_<device>/.
+const uint8_t* mediumTextCodeTable();
+
+/**
+ * Per-device tone curve applied to an 8-bit grey value BEFORE 2-bit quantization.
+ * Identity on panels that need no correction. Defined per device in
+ * lib/hal_<device>/ImageToneMap.cpp so one board's tuning cannot affect the other.
+ */
+int applyDeviceToneCurve(int gray);
+uint8_t quantize1bit(int gray, int x, int y);
+int adjustOneBitPixel(int gray);
+int adjustPixel(int gray);
+
+uint8_t rgbToGray(uint8_t r, uint8_t g, uint8_t b);
+
+bool bmpTo1BitBmpScaled(const char* srcPath, const char* dstPath, int targetMaxWidth, int targetMaxHeight);
+
+enum class BmpRowOrder { BottomUp, TopDown };
+
+void createBmpHeader(BmpHeader* bmpHeader, int width, int height, BmpRowOrder rowOrder);
+
+class Atkinson1BitDitherer {
+ public:
+  explicit Atkinson1BitDitherer(int width) : width(width) {
+    errorRow0 = new int16_t[width + 4]();
+    errorRow1 = new int16_t[width + 4]();
+    errorRow2 = new int16_t[width + 4]();
+  }
+
+  ~Atkinson1BitDitherer() {
+    delete[] errorRow0;
+    delete[] errorRow1;
+    delete[] errorRow2;
+  }
+
+  Atkinson1BitDitherer(const Atkinson1BitDitherer& other) = delete;
+
+  Atkinson1BitDitherer& operator=(const Atkinson1BitDitherer& other) = delete;
+
+  uint8_t processPixel(int gray, int x) {
+    gray = adjustOneBitPixel(gray);
+
+    int adjusted = gray + errorRow0[x + 2];
+    if (adjusted < 0) adjusted = 0;
+    if (adjusted > 255) adjusted = 255;
+
+    uint8_t quantized;
+    int quantizedValue;
+    if (adjusted < 128) {
+      quantized = 0;
+      quantizedValue = 0;
+    } else {
+      quantized = 1;
+      quantizedValue = 255;
+    }
+
+    int error = (adjusted - quantizedValue) >> 3;
+
+    errorRow0[x + 3] += error;
+    errorRow0[x + 4] += error;
+    errorRow1[x + 1] += error;
+    errorRow1[x + 2] += error;
+    errorRow1[x + 3] += error;
+    errorRow2[x + 2] += error;
+
+    return quantized;
+  }
+
+  void nextRow() {
+    int16_t* temp = errorRow0;
+    errorRow0 = errorRow1;
+    errorRow1 = errorRow2;
+    errorRow2 = temp;
+    memset(errorRow2, 0, (width + 4) * sizeof(int16_t));
+  }
+
+  void reset() {
+    memset(errorRow0, 0, (width + 4) * sizeof(int16_t));
+    memset(errorRow1, 0, (width + 4) * sizeof(int16_t));
+    memset(errorRow2, 0, (width + 4) * sizeof(int16_t));
+  }
+
+ private:
+  int width;
+  int16_t* errorRow0;
+  int16_t* errorRow1;
+  int16_t* errorRow2;
+};
+
+uint8_t epubWebRgb565ToGray8Rounded(uint16_t rgb565LittleEndian);
+void epubWebContainDimensionsFloor(int srcW, int srcH, int maxW, int maxH, int* outW, int* outH);
+void epubWebWrite2BitBmpHeader(Print& bmpOut, int width, int height);
+
+struct EpubWeb2BitRowPacker {
+  int dw = 0;
+  int bytesPerRow = 0;
+  uint8_t* rowBuffer = nullptr;
+  FourToneImageDitherer* ditherer = nullptr;
+  int rowIndex = 0;
+
+  bool init(int width);
+  void freeBuffers();
+  bool writeGrayRow(Print& bmpOut, const uint8_t* grayRow);
+};

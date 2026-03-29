@@ -1,0 +1,14 @@
+# Name,   Type, SubType, Offset,  Size, Flags
+# Xteink X4 Pro (16MB flash), dual-OTA layout. Offsets and sizes match the
+# stock OEM table recovered from the device's flash dump (see
+# freeink-sdk/docs/xteink-x4pro-support.md#partitions-16-mb-dual-ota) so an
+# image written here stays compatible with the factory otadata/recovery slots.
+# NOTE the app slots are 0x7E0000 (7.87 MB) each — noticeably tighter than
+# Sticky's 0xC80000. The current firmware is ~6.9 MiB, so headroom is ~1 MB;
+# `pio run -e x4pro` will fail the size check rather than silently overflow.
+nvs,      data, nvs,     0x9000,  0x5000,
+otadata,  data, ota,     0xe000,  0x2000,
+app0,     app,  ota_0,   0x10000, 0x7E0000,
+app1,     app,  ota_1,   0x7F0000,0x7E0000,
+spiffs,   data, spiffs,  0xFD0000,0x14000,
+coredump, data, coredump,0xFE4000,0x1C000,

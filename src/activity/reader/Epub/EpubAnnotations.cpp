@@ -1,0 +1,774 @@
+/**
+ * @file EpubAnnotations.cpp
+ */
+
+#include "EpubAnnotations.h"
+#include "EpubAnnotationStorage.h"
+
+#include <Arduino.h>
+#include <Epub/Section.h>
+#include <SDCardManager.h>
+#include <Serialization.h>
+
+#include <algorithm>
+#include <cstdio>
+#include <map>
+#include <sstream>
+
+#include "state/EpubNotesIndex.h"
+
+namespace {
+
+constexpr uint32_t kAnnMagicV3 = 0x334E4E41;  // "ANN3"
+constexpr uint32_t kAnnMagicV4 = 0x344E4E41;  // "ANN4" (adds note text)
+constexpr uint32_t kAnnMagicV5 = 0x354E4E41;  // "ANN5" (adds recorded note audio path)
+
+std::vector<std::string> splitAnnotationWords(const std::string& text) {
+  std::vector<std::string> words;
+  std::istringstream iss(text);
+  std::string w;
+  while (iss >> w) {
+    words.push_back(std::move(w));
+  }
+  return words;
+}
+
+/** Checks whether `target` starts at pageWords[pos], joining subsequent hyphen-broken tokens if needed (a
+ *  line wrap at a hyphenation point splits one word into multiple tokens, e.g. "Labora-" + "tory" for
+ *  "Laboratory" - a font/margin change can introduce or remove such a split for a word that used to be
+ *  captured whole). Returns how many tokens the match consumed (>=1), or 0 if `target` isn't found here. */
+size_t matchWordAllowingHyphenation(const std::vector<PageWordHit>& pageWords, const size_t pos,
+                                    const std::string& target) {
+  if (pos >= pageWords.size()) {
+    return 0;
+  }
+  std::string joined = pageWords[pos].text;
+  size_t consumed = 1;
+  if (joined == target) {
+    return consumed;
+  }
+  while (!joined.empty() && joined.back() == '-' && pos + consumed < pageWords.size() &&
+        joined.size() <= target.size()) {
+    joined.pop_back();
+    joined += pageWords[pos + consumed].text;
+    ++consumed;
+    if (joined == target) {
+      return consumed;
+    }
+  }
+  return 0;
+}
+
+/** True if a contiguous run starting at pageWords[startPos] spells out `phrase` word for word (allowing
+ *  hyphen-rejoining per matchWordAllowingHyphenation). Returns the number of pageWords tokens the whole
+ *  phrase consumed (>=phrase.size()), or 0 if it doesn't match here. */
+size_t matchPhraseAt(const std::vector<PageWordHit>& pageWords, const size_t startPos,
+                     const std::vector<std::string>& phrase) {
+  size_t pos = startPos;
+  for (const std::string& word : phrase) {
+    const size_t consumed = matchWordAllowingHyphenation(pageWords, pos, word);
+    if (consumed == 0) {
+      return 0;
+    }
+    pos += consumed;
+  }
+  return pos - startPos;
+}
+
+/** True if annWords[wordLo..wordHi] is exactly the stored highlight text, word for word (mirroring the
+ *  original capture - not necessarily one raw token per word, if hyphenation now splits one of them). A
+ *  font/layout change repaginates the book, so a stored word-index range can end up pointing at completely
+ *  different words on the new layout - this catches that instead of silently highlighting the wrong phrase.
+ *  Older records with no stored text can't be verified this way, so they're left trusted as before. */
+bool wordRangeMatchesStoredText(const std::vector<PageWordHit>& annWords, const size_t wordLo, const size_t wordHi,
+                                const std::string& storedText) {
+  if (storedText.empty()) {
+    return true;
+  }
+  if (wordLo > wordHi || wordHi >= annWords.size()) {
+    return false;
+  }
+  const std::vector<std::string> expected = splitAnnotationWords(storedText);
+  if (expected.empty()) {
+    return false;
+  }
+  const size_t consumed = matchPhraseAt(annWords, wordLo, expected);
+  return consumed > 0 && wordLo + consumed - 1 == wordHi;
+}
+
+std::string pageShardPath(const std::string& cachePath, int spine, int page) {
+  char buf[48];
+  snprintf(buf, sizeof(buf), "/ann/s_%05d_p_%05d.bin", spine, page);
+  return cachePath + buf;
+}
+
+bool readSectionPageCount(const std::string& cachePath, int spineIndex, uint16_t* outCount) {
+  if (!outCount) {
+    return false;
+  }
+  const std::string path = cachePath + "/sections/" + std::to_string(spineIndex) + ".bin";
+  FsFile file;
+  if (!SdMan.openFileForRead("SCT", path, file)) {
+    return false;
+  }
+  uint8_t version = 0;
+  serialization::readPod(file, version);
+  if (version != 11 && version != 10) {
+    file.close();
+    return false;
+  }
+  int storedFontId = 0;
+  float storedLineCompression = 0;
+  bool storedExtraParagraphSpacing = false;
+  uint8_t storedParagraphAlignment = 0;
+  uint16_t storedViewportWidth = 0;
+  uint16_t storedViewportHeight = 0;
+  bool storedHyphenationEnabled = false;
+  uint16_t storedPageCount = 0;
+  uint32_t storedLutOffset = 0;
+  serialization::readPod(file, storedFontId);
+  serialization::readPod(file, storedLineCompression);
+  serialization::readPod(file, storedExtraParagraphSpacing);
+  serialization::readPod(file, storedParagraphAlignment);
+  serialization::readPod(file, storedViewportWidth);
+  serialization::readPod(file, storedViewportHeight);
+  serialization::readPod(file, storedHyphenationEnabled);
+  if (version >= 11) {
+    bool storedRespectCssIndent = false;
+    serialization::readPod(file, storedRespectCssIndent);
+  }
+  serialization::readPod(file, storedPageCount);
+  serialization::readPod(file, storedLutOffset);
+  file.close();
+  *outCount = storedPageCount;
+  return true;
+}
+
+bool appendPagesForSpine(const std::string& cachePath, int spine, int pLo, int pHi,
+                         std::vector<std::pair<int, int>>& out) {
+  uint16_t pc = 0;
+  if (!readSectionPageCount(cachePath, spine, &pc) || pc == 0) {
+    return false;
+  }
+  const int last = static_cast<int>(pc) - 1;
+  const int lo = std::max(0, pLo);
+  const int hi = std::min(last, pHi);
+  if (lo > hi) {
+    return false;
+  }
+  for (int p = lo; p <= hi; ++p) {
+    out.emplace_back(spine, p);
+  }
+  return true;
+}
+
+bool enumeratePagesForRecord(const EpubAnnotationRecord& rec, const std::string& cachePath, int spineItemsCount,
+                             std::vector<std::pair<int, int>>& out) {
+  out.clear();
+  constexpr uint16_t w = EpubAnnotations::kWildcard;
+  if (rec.startSpine == w || rec.endSpine == w) {
+    return false;
+  }
+  const int ss = static_cast<int>(rec.startSpine);
+  const int es = static_cast<int>(rec.endSpine);
+  const int sp = static_cast<int>(rec.startPage);
+  const int ep = static_cast<int>(rec.endPage);
+  if (es < ss || es >= spineItemsCount) {
+    return false;
+  }
+  if (ss == es) {
+    return appendPagesForSpine(cachePath, ss, sp, ep, out) && !out.empty();
+  }
+  constexpr int kHuge = 0x7fffffff;
+  if (!appendPagesForSpine(cachePath, ss, sp, kHuge, out)) {
+    return false;
+  }
+  for (int s = ss + 1; s <= es - 1; ++s) {
+    (void)appendPagesForSpine(cachePath, s, 0, kHuge, out);
+  }
+  if (!appendPagesForSpine(cachePath, es, 0, ep, out)) {
+    return false;
+  }
+  return !out.empty();
+}
+
+void trimOldest(std::vector<EpubAnnotationRecord>& records, size_t maxN) {
+  while (records.size() > maxN) {
+    records.erase(records.begin());
+  }
+}
+
+bool loadAnn3(const std::string& path, std::vector<EpubAnnotationRecord>& out) {
+  out.clear();
+  FsFile rf;
+  if (!SdMan.openFileForRead("ANN", path, rf)) {
+    return false;
+  }
+  uint32_t magic = 0;
+  if (rf.read(&magic, sizeof(magic)) != sizeof(magic)) {
+    rf.close();
+    return false;
+  }
+  const bool hasNotes = magic == kAnnMagicV4 || magic == kAnnMagicV5;
+  const bool hasAudioPath = magic == kAnnMagicV5;
+  if (magic != kAnnMagicV3 && !hasNotes) {
+    rf.close();
+    return false;
+  }
+  uint16_t count = 0;
+  if (rf.read(&count, sizeof(count)) != sizeof(count)) {
+    rf.close();
+    return false;
+  }
+  constexpr uint16_t kMaxLoad = 250;
+  for (uint16_t i = 0; i < count && i < kMaxLoad; ++i) {
+    uint32_t ts = 0;
+    uint16_t len = 0;
+    if (rf.read(&ts, sizeof(ts)) != sizeof(ts)) {
+      break;
+    }
+    if (rf.read(&len, sizeof(len)) != sizeof(len)) {
+      break;
+    }
+    std::string s;
+    if (len > 0) {
+      std::vector<char> buf(static_cast<size_t>(len));
+      if (rf.read(buf.data(), len) != len) {
+        break;
+      }
+      s.assign(buf.begin(), buf.end());
+    }
+    EpubAnnotationRecord rec{};
+    rec.timestamp = ts;
+    rec.text = std::move(s);
+    uint16_t ss = EpubAnnotations::kWildcard;
+    uint16_t sp = 0;
+    uint16_t es = EpubAnnotations::kWildcard;
+    uint16_t ep = 0;
+    if (rf.read(&ss, sizeof(ss)) != sizeof(ss)) {
+      break;
+    }
+    if (rf.read(&sp, sizeof(sp)) != sizeof(sp)) {
+      break;
+    }
+    if (rf.read(&es, sizeof(es)) != sizeof(es)) {
+      break;
+    }
+    if (rf.read(&ep, sizeof(ep)) != sizeof(ep)) {
+      break;
+    }
+    rec.startSpine = ss;
+    rec.startPage = sp;
+    rec.endSpine = es;
+    rec.endPage = ep;
+    uint16_t wl = EpubAnnotations::kWildcard;
+    uint16_t wh = EpubAnnotations::kWildcard;
+    uint16_t swl = EpubAnnotations::kWildcard;
+    uint16_t swh = EpubAnnotations::kWildcard;
+    if (rf.read(&wl, sizeof(wl)) != sizeof(wl)) {
+      break;
+    }
+    if (rf.read(&wh, sizeof(wh)) != sizeof(wh)) {
+      break;
+    }
+    if (rf.read(&swl, sizeof(swl)) != sizeof(swl)) {
+      break;
+    }
+    if (rf.read(&swh, sizeof(swh)) != sizeof(swh)) {
+      break;
+    }
+    rec.pageWordLo = wl;
+    rec.pageWordHi = wh;
+    rec.startPageWordLo = swl;
+    rec.startPageWordHi = swh;
+    if (hasNotes) {
+      uint16_t noteLen = 0;
+      if (rf.read(&noteLen, sizeof(noteLen)) != sizeof(noteLen)) {
+        break;
+      }
+      if (noteLen > 0) {
+        std::vector<char> noteBuf(static_cast<size_t>(noteLen));
+        if (rf.read(noteBuf.data(), noteLen) != noteLen) {
+          break;
+        }
+        rec.note.assign(noteBuf.begin(), noteBuf.end());
+      }
+      if (hasAudioPath) {
+        uint16_t audioLen = 0;
+        if (rf.read(&audioLen, sizeof(audioLen)) != sizeof(audioLen)) {
+          break;
+        }
+        if (audioLen > 0) {
+          std::vector<char> audioBuf(static_cast<size_t>(audioLen));
+          if (rf.read(audioBuf.data(), audioLen) != audioLen) {
+            break;
+          }
+          rec.noteAudioPath.assign(audioBuf.begin(), audioBuf.end());
+        }
+      }
+    }
+    out.push_back(std::move(rec));
+  }
+  rf.close();
+  return true;
+}
+
+bool writeAnn5(const std::string& path, const std::vector<EpubAnnotationRecord>& records) {
+  FsFile wf;
+  if (!SdMan.openFileForWrite("ANN", path.c_str(), wf)) {
+    return false;
+  }
+  const uint32_t mag = kAnnMagicV5;
+  wf.write(&mag, sizeof(mag));
+  uint16_t count = static_cast<uint16_t>(records.size());
+  wf.write(&count, sizeof(count));
+  for (const auto& rec : records) {
+    wf.write(&rec.timestamp, sizeof(rec.timestamp));
+    uint16_t len = static_cast<uint16_t>(rec.text.size());
+    wf.write(&len, sizeof(len));
+    if (len > 0) {
+      wf.write(rec.text.data(), len);
+    }
+    wf.write(&rec.startSpine, sizeof(rec.startSpine));
+    wf.write(&rec.startPage, sizeof(rec.startPage));
+    wf.write(&rec.endSpine, sizeof(rec.endSpine));
+    wf.write(&rec.endPage, sizeof(rec.endPage));
+    wf.write(&rec.pageWordLo, sizeof(rec.pageWordLo));
+    wf.write(&rec.pageWordHi, sizeof(rec.pageWordHi));
+    wf.write(&rec.startPageWordLo, sizeof(rec.startPageWordLo));
+    wf.write(&rec.startPageWordHi, sizeof(rec.startPageWordHi));
+    uint16_t noteLen = static_cast<uint16_t>(std::min<size_t>(rec.note.size(), 0xFFFFu));
+    wf.write(&noteLen, sizeof(noteLen));
+    if (noteLen > 0) {
+      wf.write(rec.note.data(), noteLen);
+    }
+    uint16_t audioLen = static_cast<uint16_t>(std::min<size_t>(rec.noteAudioPath.size(), 0xFFFFu));
+    wf.write(&audioLen, sizeof(audioLen));
+    if (audioLen > 0) {
+      wf.write(rec.noteAudioPath.data(), audioLen);
+    }
+  }
+  wf.close();
+  return true;
+}
+
+bool sameRecord(const EpubAnnotationRecord& left, const EpubAnnotationRecord& right) {
+  return left.timestamp == right.timestamp && left.text == right.text && left.startSpine == right.startSpine &&
+         left.startPage == right.startPage && left.endSpine == right.endSpine && left.endPage == right.endPage &&
+         left.pageWordLo == right.pageWordLo && left.pageWordHi == right.pageWordHi &&
+         left.startPageWordLo == right.startPageWordLo && left.startPageWordHi == right.startPageWordHi &&
+         left.noteAudioPath == right.noteAudioPath && left.note == right.note;
+}
+
+}  // namespace
+
+void EpubAnnotations::clearSession() {
+  records_.clear();
+  cacheSpine_ = -1;
+  cachePage_ = -1;
+}
+
+void EpubAnnotations::ensurePageLoaded(const std::string& cachePath, const int spine, const int page) {
+  if (cacheSpine_ == spine && cachePage_ == page) {
+    return;
+  }
+  records_.clear();
+  const std::string path = pageShardPath(cachePath, spine, page);
+  if (SdMan.exists(path.c_str())) {
+    loadAnn3(path, records_);
+  }
+  cacheSpine_ = spine;
+  cachePage_ = page;
+}
+
+void EpubAnnotations::clearPageShard(const std::string& cachePath, const int spine, const int page) {
+  const std::string path = pageShardPath(cachePath, spine, page);
+  if (SdMan.exists(path.c_str())) {
+    SdMan.remove(path.c_str());
+    EpubNotesIndex::invalidate();
+  }
+  records_.clear();
+  cacheSpine_ = -1;
+  cachePage_ = -1;
+}
+
+bool EpubAnnotations::pageShardExists(const std::string& cachePath, const int spine, const int page) const {
+  return SdMan.exists(pageShardPath(cachePath, spine, page).c_str());
+}
+
+bool EpubAnnotationStorage::load(const std::string& cachePath, const int spine, const int page,
+                                 std::vector<EpubAnnotationRecord>& records) {
+  return loadAnn3(pageShardPath(cachePath, spine, page), records);
+}
+
+bool EpubAnnotationStorage::remove(const std::string& cachePath, const EpubAnnotationRecord& record) {
+  const std::string directory = cachePath + "/ann";
+  bool removed = false;
+  size_t scanned = 0;
+  for (const String& file : SdMan.listFiles(directory.c_str())) {
+    if ((++scanned & 15u) == 0u) {
+      yield();
+    }
+    int spine = 0;
+    int page = 0;
+    if (std::sscanf(file.c_str(), "s_%d_p_%d.bin", &spine, &page) != 2) {
+      continue;
+    }
+
+    const std::string path = pageShardPath(cachePath, spine, page);
+    std::vector<EpubAnnotationRecord> records;
+    if (!loadAnn3(path, records)) {
+      continue;
+    }
+
+    const size_t before = records.size();
+    records.erase(std::remove_if(records.begin(), records.end(), [&](const EpubAnnotationRecord& candidate) {
+                    return sameRecord(candidate, record);
+                  }),
+                  records.end());
+    if (records.size() == before) {
+      continue;
+    }
+
+    if (records.empty()) {
+      SdMan.remove(path.c_str());
+    } else {
+      writeAnn5(path, records);
+    }
+    removed = true;
+  }
+  if (removed) {
+    EpubNotesIndex::invalidate();
+  }
+  return removed;
+}
+
+bool EpubAnnotationStorage::update(const std::string& cachePath, const EpubAnnotationRecord& oldRecord,
+                                   const EpubAnnotationRecord& updatedRecord) {
+  const std::string directory = cachePath + "/ann";
+  bool updated = false;
+  for (const String& file : SdMan.listFiles(directory.c_str())) {
+    int spine = 0;
+    int page = 0;
+    if (std::sscanf(file.c_str(), "s_%d_p_%d.bin", &spine, &page) != 2) {
+      continue;
+    }
+    const std::string path = pageShardPath(cachePath, spine, page);
+    std::vector<EpubAnnotationRecord> records;
+    if (!loadAnn3(path, records)) {
+      continue;
+    }
+    bool shardChanged = false;
+    for (EpubAnnotationRecord& record : records) {
+      if (sameRecord(record, oldRecord)) {
+        record = updatedRecord;
+        shardChanged = true;
+        updated = true;
+      }
+    }
+    if (shardChanged) {
+      writeAnn5(path, records);
+    }
+  }
+  if (updated) {
+    EpubNotesIndex::invalidate();
+  }
+  return updated;
+}
+
+bool EpubAnnotations::appendHighlight(const std::string& cachePath, const int spineItemsCount,
+                                      const EpubAnnotationRecord& rec, const int fallbackSpine,
+                                      const int fallbackPage) {
+  std::vector<std::pair<int, int>> pages;
+  if (!enumeratePagesForRecord(rec, cachePath, spineItemsCount, pages) || pages.empty()) {
+    pages.clear();
+    pages.emplace_back(fallbackSpine, fallbackPage);
+  }
+  SdMan.mkdir((cachePath + "/" + std::string(kSubdir)).c_str());
+  bool ok = false;
+  for (const auto& pr : pages) {
+    std::vector<EpubAnnotationRecord> pageRecs;
+    loadAnn3(pageShardPath(cachePath, pr.first, pr.second), pageRecs);
+    pageRecs.push_back(rec);
+    trimOldest(pageRecs, static_cast<size_t>(kMaxPerPage));
+    ok = writeAnn5(pageShardPath(cachePath, pr.first, pr.second), pageRecs) || ok;
+  }
+  cacheSpine_ = -1;
+  if (ok) {
+    EpubNotesIndex::invalidate();
+  }
+  return ok;
+}
+
+bool EpubAnnotations::recordTouchesPage(const EpubAnnotationRecord& r, const int currentSpine, const int currentPage) {
+  if (r.startSpine == EpubAnnotations::kWildcard) {
+    return true;
+  }
+  const int cs = currentSpine;
+  const int cp = currentPage;
+  const int ss = static_cast<int>(r.startSpine);
+  const int es = static_cast<int>(r.endSpine);
+  const int sp = static_cast<int>(r.startPage);
+  const int ep = static_cast<int>(r.endPage);
+  if (cs < ss || cs > es) {
+    return false;
+  }
+  if (ss == es) {
+    return cp >= sp && cp <= ep;
+  }
+  if (cs == ss) {
+    return cp >= sp;
+  }
+  if (cs == es) {
+    return cp <= ep;
+  }
+  return cs > ss && cs < es;
+}
+
+bool EpubAnnotations::tryAppendPreciseHighlightRanges(const EpubAnnotationRecord& r, const int cs, const int cp,
+                                                      const std::vector<PageWordHit>& annWords,
+                                                      std::vector<std::pair<size_t, size_t>>& raw) {
+  if (r.pageWordLo == EpubAnnotations::kWildcard) {
+    return false;
+  }
+  const int ss = static_cast<int>(r.startSpine);
+  const int es = static_cast<int>(r.endSpine);
+  const int sp = static_cast<int>(r.startPage);
+  const int ep = static_cast<int>(r.endPage);
+  const size_t n = annWords.size();
+
+  auto appendRange = [&](const size_t wordLo, const size_t wordHi) {
+    if (n == 0 || wordLo >= n || wordHi >= n || wordLo > wordHi) {
+      return;
+    }
+    raw.emplace_back(wordLo, wordHi);
+  };
+
+  if (ss == es && sp == ep) {
+    if (cs == ss && cp == ep) {
+      const size_t lo = static_cast<size_t>(r.pageWordLo);
+      const size_t hi = static_cast<size_t>(r.pageWordHi);
+      if (!wordRangeMatchesStoredText(annWords, lo, hi, r.text)) {
+        // Stale index from a repagination (e.g. a font change) - let the caller fall back to searching
+        // for the stored phrase text instead of highlighting whatever now sits at that old position.
+        return false;
+      }
+      appendRange(lo, hi);
+    }
+    return true;
+  }
+
+  if (ss != es || cs != ss) {
+    return false;
+  }
+
+  if (cp == sp && cp < ep) {
+    if (r.startPageWordLo != EpubAnnotations::kWildcard) {
+      appendRange(static_cast<size_t>(r.startPageWordLo), static_cast<size_t>(r.startPageWordHi));
+      return true;
+    }
+    return false;
+  }
+  if (cp == ep && cp > sp) {
+    appendRange(static_cast<size_t>(r.pageWordLo), static_cast<size_t>(r.pageWordHi));
+    return true;
+  }
+  if (cp > sp && cp < ep && n > 0) {
+    appendRange(0, n - 1);
+    return true;
+  }
+  return true;
+}
+
+void EpubAnnotations::mergeStoredRangesForPage(const std::vector<EpubAnnotationRecord>& diskRecs,
+                                               const int currentSpine, const int currentPage,
+                                               const std::vector<PageWordHit>& annWords,
+                                               std::vector<std::pair<size_t, size_t>>& outMerged) {
+  outMerged.clear();
+  if (annWords.empty() || diskRecs.empty()) {
+    return;
+  }
+  std::vector<std::pair<size_t, size_t>> raw;
+  for (const EpubAnnotationRecord& diskRec : diskRecs) {
+    if (!recordTouchesPage(diskRec, currentSpine, currentPage)) {
+      continue;
+    }
+    if (tryAppendPreciseHighlightRanges(diskRec, currentSpine, currentPage, annWords, raw)) {
+      continue;
+    }
+    const std::vector<std::string> aw = splitAnnotationWords(diskRec.text);
+    if (aw.empty()) {
+      continue;
+    }
+    const size_t n = annWords.size();
+    for (size_t a = 0; a < aw.size(); ++a) {
+      for (size_t i = 0; i < n; ++i) {
+        const size_t firstConsumed = matchWordAllowingHyphenation(annWords, i, aw[a]);
+        if (firstConsumed == 0) {
+          continue;
+        }
+        size_t pos = i + firstConsumed;
+        size_t k = 1;
+        while (a + k < aw.size() && pos < n) {
+          const size_t consumed = matchWordAllowingHyphenation(annWords, pos, aw[a + k]);
+          if (consumed == 0) {
+            break;
+          }
+          pos += consumed;
+          ++k;
+        }
+        // Only trust a run that reaches the end of the stored phrase (a full or tail match) or the end of
+        // this page's words (a match that continues onto the next page, for a highlight spanning pages) -
+        // a run that stops partway through both is coincidental (e.g. a common short word like "a"
+        // recurring elsewhere on the page), not the highlighted phrase.
+        if (a + k == aw.size() || pos == n) {
+          raw.emplace_back(i, pos - 1);
+        }
+      }
+    }
+  }
+  if (raw.empty()) {
+    return;
+  }
+  std::sort(raw.begin(), raw.end());
+  std::vector<std::pair<size_t, size_t>> merged;
+  auto cur = raw[0];
+  for (size_t j = 1; j < raw.size(); ++j) {
+    if (raw[j].first <= cur.second + 1) {
+      cur.second = std::max(cur.second, raw[j].second);
+    } else {
+      merged.push_back(cur);
+      cur = raw[j];
+    }
+  }
+  merged.push_back(cur);
+  outMerged = std::move(merged);
+}
+
+void EpubAnnotations::migrateSpineAnnotations(const std::string& cachePath, const int spineIndex,
+                                              const int newPageCount, GfxRenderer& renderer, const int bodyFontId,
+                                              const int headerFontId, const int marginLeft, const int marginTop) {
+  const std::string annDir = cachePath + "/" + std::string(kSubdir);
+  if (!SdMan.exists(annDir.c_str())) {
+    return;
+  }
+  std::vector<String> files = SdMan.listFiles(annDir.c_str());
+  std::vector<std::string> shardPaths;
+  for (const String& f : files) {
+    int s = 0;
+    int p = 0;
+    if (std::sscanf(f.c_str(), "s_%d_p_%d.bin", &s, &p) != 2 || s != spineIndex) {
+      continue;
+    }
+    shardPaths.push_back(annDir + "/" + f.c_str());
+  }
+  if (shardPaths.empty()) {
+    return;
+  }
+
+  // A multi-page record was written into every shard it touches, so gathering from all of this spine's
+  // shards can yield duplicates of the same logical record - collapse those before relocating anything.
+  std::vector<EpubAnnotationRecord> allRecords;
+  {
+    std::vector<std::string> seenKeys;
+    for (const std::string& path : shardPaths) {
+      std::vector<EpubAnnotationRecord> recs;
+      loadAnn3(path, recs);
+      for (auto& r : recs) {
+        char keyBuf[64];
+        std::snprintf(keyBuf, sizeof(keyBuf), "%u|%u|%u|%u|%u", r.timestamp, r.startSpine, r.startPage, r.endSpine,
+                     r.endPage);
+        std::string key(keyBuf);
+        key += "|";
+        key += r.text;
+        if (std::find(seenKeys.begin(), seenKeys.end(), key) != seenKeys.end()) {
+          continue;
+        }
+        seenKeys.push_back(std::move(key));
+        allRecords.push_back(std::move(r));
+      }
+    }
+  }
+  for (const std::string& path : shardPaths) {
+    SdMan.remove(path.c_str());
+  }
+  if (allRecords.empty()) {
+    return;
+  }
+
+  std::vector<bool> resolved(allRecords.size(), false);
+
+  for (int page = 0; page < newPageCount; ++page) {
+    if (std::all_of(resolved.begin(), resolved.end(), [](const bool b) { return b; })) {
+      break;
+    }
+    std::unique_ptr<Page> pageObj = Section::loadCachedPage(cachePath, spineIndex, page);
+    if (!pageObj) {
+      continue;
+    }
+    std::vector<PageWordHit> pageWords;
+    buildPageWordIndex(*pageObj, renderer, bodyFontId, headerFontId, marginLeft, marginTop, pageWords, nullptr,
+                       /*omitStoredWordStrings=*/false);
+    if (pageWords.empty()) {
+      continue;
+    }
+
+    for (size_t idx = 0; idx < allRecords.size(); ++idx) {
+      if (resolved[idx]) {
+        continue;
+      }
+      EpubAnnotationRecord& r = allRecords[idx];
+      // Only single-page-within-this-spine records get relocated by phrase search; a multi-page span keeps
+      // its stored position below rather than risk mis-splitting it across the new pagination.
+      if (r.startSpine != spineIndex || r.endSpine != spineIndex || r.startPage != r.endPage) {
+        continue;
+      }
+      const std::vector<std::string> phrase = splitAnnotationWords(r.text);
+      if (phrase.empty()) {
+        continue;
+      }
+      for (size_t i = 0; i < pageWords.size(); ++i) {
+        const size_t consumed = matchPhraseAt(pageWords, i, phrase);
+        if (consumed > 0) {
+          r.startPage = static_cast<uint16_t>(page);
+          r.endPage = static_cast<uint16_t>(page);
+          r.pageWordLo = static_cast<uint16_t>(i);
+          r.pageWordHi = static_cast<uint16_t>(i + consumed - 1);
+          r.startPageWordLo = EpubAnnotations::kWildcard;
+          r.startPageWordHi = EpubAnnotations::kWildcard;
+          resolved[idx] = true;
+          break;
+        }
+      }
+    }
+  }
+
+  // Anything not relocated (phrase not found anywhere, or a multi-page span) keeps its stored position so
+  // the highlight isn't lost outright, clamped into range and with its index marked unknown so a future
+  // render falls back to a same-page phrase search rather than trusting a now-unverifiable range.
+  std::map<int, std::vector<EpubAnnotationRecord>> byNewPage;
+  for (size_t idx = 0; idx < allRecords.size(); ++idx) {
+    EpubAnnotationRecord& r = allRecords[idx];
+    if (!resolved[idx]) {
+      r.pageWordLo = EpubAnnotations::kWildcard;
+      r.pageWordHi = EpubAnnotations::kWildcard;
+      r.startPageWordLo = EpubAnnotations::kWildcard;
+      r.startPageWordHi = EpubAnnotations::kWildcard;
+      if (newPageCount > 0) {
+        if (r.startPage >= newPageCount) r.startPage = static_cast<uint16_t>(newPageCount - 1);
+        if (r.endPage >= newPageCount) r.endPage = static_cast<uint16_t>(newPageCount - 1);
+      }
+    }
+    byNewPage[static_cast<int>(r.startPage)].push_back(r);
+    if (r.endPage != r.startPage) {
+      byNewPage[static_cast<int>(r.endPage)].push_back(r);
+    }
+  }
+
+  SdMan.mkdir(annDir.c_str());
+  for (auto& kv : byNewPage) {
+    trimOldest(kv.second, static_cast<size_t>(kMaxPerPage));
+    writeAnn5(pageShardPath(cachePath, spineIndex, kv.first), kv.second);
+  }
+  EpubNotesIndex::invalidate();
+}

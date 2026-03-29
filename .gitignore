@@ -1,0 +1,12 @@
+.pio
+.idea
+.DS_Store
+.vscode
+lib/EpdFont/fontsrc
+*.generated.h
+.vs
+build
+**/__pycache__/
+/compile_commands.json
+/.cache
+/fs_

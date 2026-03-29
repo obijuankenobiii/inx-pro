@@ -1,0 +1,473 @@
+#pragma once
+
+/**
+ * @file Page.h
+ * @brief Public interface and types for Page.
+ */
+
+#include <ImageRenderMode.h>
+#include <SdFat.h>
+
+#include <algorithm>
+#include <cstddef>
+#include <memory>
+#include <new>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "blocks/TextBlock.h"
+
+class GfxRenderer;
+class Epub;
+
+struct PagePsramDeleter {
+  void operator()(uint8_t* pointer) const;
+};
+
+using PagePsramBuffer = std::unique_ptr<uint8_t, PagePsramDeleter>;
+
+enum PageElementTag : uint8_t {
+  TAG_PageLine = 1,
+  TAG_PageHeader = 2,
+  TAG_PageImage = 3,
+  TAG_PageDropCap = 4,
+  TAG_PageTable = 5,
+  TAG_PageHorizontalRule = 6,
+  TAG_PageSmallCaps = 7,
+  TAG_PageCssBorderLine = 8,
+  TAG_PageCssBorderBox = 9,
+  TAG_PageListMarker = 10,
+};
+
+/**
+ * Base class for all elements that can appear on a page.
+ * Provides common position data and virtual interface for rendering and serialization.
+ */
+class PageElement {
+ public:
+  int16_t xPos;
+  int16_t yPos;
+
+  /**
+   * Constructs a page element at the specified position.
+   * * @param xPos X coordinate on the page
+   * @param yPos Y coordinate on the page
+   */
+  explicit PageElement(const int16_t xPos, const int16_t yPos) : xPos(xPos), yPos(yPos) {}
+  virtual ~PageElement() = default;
+
+  // Page objects are the bounded previous/current/next reader cache. Their
+  // element instances belong in PSRAM so keeping those pages resident does not
+  // crowd the internal heap used by display, Wi-Fi, and SD drivers.
+  static void* operator new(std::size_t size);
+  static void operator delete(void* pointer) noexcept;
+
+  /**
+   * Returns the element type tag for identification.
+   * * @return The element type tag
+   */
+  virtual PageElementTag getTag() const = 0;
+
+  /**
+   * Renders the element on the screen.
+   * * @param renderer The graphics renderer
+   * @param fontId Font ID for text rendering
+   * @param xOffset Horizontal offset for page margins
+   * @param yOffset Vertical offset for page margins
+   * @param imageMode Image output depth for image elements.
+   */
+  virtual void render(GfxRenderer& renderer, int fontId, int xOffset, int yOffset,
+                      ImageRenderMode imageMode = ImageRenderMode::OneBit) = 0;
+
+  /**
+   * Serializes the element to a file.
+   * * @param file The file to write to
+   * @return true if serialization was successful
+   */
+  virtual bool serialize(FsFile& file) = 0;
+};
+
+/**
+ * Represents a line of normal text on a page.
+ * Contains a TextBlock for regular paragraph text.
+ */
+class PageLine final : public PageElement {
+  TextBlock block;
+
+ public:
+  PageLine(TextBlock&& block, const int16_t xPos, const int16_t yPos)
+      : PageElement(xPos, yPos), block(std::move(block)) {}
+
+  const TextBlock& getTextBlock() const { return block; }
+
+  PageElementTag getTag() const override { return TAG_PageLine; }
+  void render(GfxRenderer& renderer, int fontId, int xOffset, int yOffset,
+              ImageRenderMode imageMode = ImageRenderMode::OneBit) override;
+  bool serialize(FsFile& file) override;
+  static std::unique_ptr<PageLine> deserialize(FsFile& file);
+};
+
+/**
+ * Represents a header line on a page.
+ * Uses the specified headerFontId for rendering.
+ */
+class PageHeader final : public PageElement {
+  TextBlock block;
+  int headerFontId;
+
+ public:
+  PageHeader(TextBlock&& block, const int16_t xPos, const int16_t yPos, int fontId)
+      : PageElement(xPos, yPos), block(std::move(block)), headerFontId(fontId) {}
+
+  const TextBlock& getTextBlock() const { return block; }
+  int getHeaderFontId() const { return headerFontId; }
+
+  PageElementTag getTag() const override { return TAG_PageHeader; }
+  void render(GfxRenderer& renderer, int fontId, int xOffset, int yOffset,
+              ImageRenderMode imageMode = ImageRenderMode::OneBit) override;
+  bool serialize(FsFile& file) override;
+  static std::unique_ptr<PageHeader> deserialize(FsFile& file);
+};
+
+/**
+ * Represents a line of text containing small-caps words.
+ * Small-caps now render from the active body font, but we keep the stored int for
+ * serialized page compatibility with older cache files.
+ */
+class PageSmallCaps final : public PageElement {
+  TextBlock block;
+  int compatFontId;
+
+ public:
+  PageSmallCaps(TextBlock&& block, const int16_t xPos, const int16_t yPos, int fontId)
+      : PageElement(xPos, yPos), block(std::move(block)), compatFontId(fontId) {}
+
+  const TextBlock& getTextBlock() const { return block; }
+  int getCompatFontId() const { return compatFontId; }
+
+  PageElementTag getTag() const override { return TAG_PageSmallCaps; }
+  void render(GfxRenderer& renderer, int fontId, int xOffset, int yOffset,
+              ImageRenderMode imageMode = ImageRenderMode::OneBit) override;
+  bool serialize(FsFile& file) override;
+  static std::unique_ptr<PageSmallCaps> deserialize(FsFile& file);
+};
+
+/**
+ * Represents a large first letter (drop cap) at the start of a chapter or paragraph.
+ */
+class PageDropCap final : public PageElement {
+  std::string text;
+  int dropCapFontId;
+  bool inlineFirstLine;
+  EpdFontFamily::Style style;
+
+ public:
+  /**
+   * @param text The character(s) to render as a drop cap
+   * @param xPos X coordinate
+   * @param yPos Y coordinate
+   * @param fontId The specific large font ID to use
+   */
+  PageDropCap(std::string text, const int16_t xPos, const int16_t yPos, int fontId, bool inlineFirstLine = false,
+              EpdFontFamily::Style style = EpdFontFamily::BOLD)
+      : PageElement(xPos, yPos),
+        text(std::move(text)),
+        dropCapFontId(fontId),
+        inlineFirstLine(inlineFirstLine),
+        style(style) {}
+
+  const std::string& getDropCapText() const { return text; }
+  int getDropCapFontId() const { return dropCapFontId; }
+  EpdFontFamily::Style getStyle() const { return style; }
+  void setStyle(const EpdFontFamily::Style value) { style = value; }
+  bool isInlineFirstLine() const { return inlineFirstLine; }
+  static constexpr int16_t VERTICAL_ADJUSTMENT = 0;
+
+  PageElementTag getTag() const override { return TAG_PageDropCap; }
+  void render(GfxRenderer& renderer, int fontId, int xOffset, int yOffset,
+              ImageRenderMode imageMode = ImageRenderMode::OneBit) override;
+  bool serialize(FsFile& file) override;
+  static std::unique_ptr<PageDropCap> deserialize(FsFile& file);
+};
+
+/**
+ * A <ul>/<ol> list item's bullet/number marker, drawn as its own element at the item's un-indented
+ * margin - independent of the text word flow, so it never reserves layout width that would push the
+ * item's real text (or wrapped continuation lines) out of alignment with each other.
+ */
+class PageListMarker final : public PageElement {
+  std::string text;
+  int markerFontId;
+
+ public:
+  /**
+   * @param text The marker glyph(s) to render (e.g. a bullet dot or "1.")
+   * @param xPos X coordinate (the list item's margin, before its hanging indent)
+   * @param yPos Y coordinate (top of the item's first line)
+   * @param fontId Font to render the marker in, sized to match the item's own body text
+   */
+  PageListMarker(std::string text, const int16_t xPos, const int16_t yPos, int fontId)
+      : PageElement(xPos, yPos), text(std::move(text)), markerFontId(fontId) {}
+
+  const std::string& getMarkerText() const { return text; }
+  int getMarkerFontId() const { return markerFontId; }
+
+  PageElementTag getTag() const override { return TAG_PageListMarker; }
+  void render(GfxRenderer& renderer, int fontId, int xOffset, int yOffset,
+              ImageRenderMode imageMode = ImageRenderMode::OneBit) override;
+  bool serialize(FsFile& file) override;
+  static std::unique_ptr<PageListMarker> deserialize(FsFile& file);
+};
+
+/**
+ * Represents an image on a page.
+ * Stores the path to the cached BMP file and its dimensions.
+ */
+class PageImage final : public PageElement {
+  std::string cachePath;
+  // Original EPUB entry. Kept in the section cache so a cold image is
+  // extracted only when this page becomes visible, never while paginating the
+  // chapter.
+  std::string sourcePath;
+  std::weak_ptr<Epub> epub;
+  int16_t width;
+  int16_t height;
+  bool grayscale;  // true = image has continuous-tone content worth grayscale; false = ~1-bit (comic/line art)
+
+  // Two-pass grayscale rendering (LSB plane then MSB plane) would otherwise decode this image's JPEG
+  // twice. renderImage() captures the LSB pass's per-pixel dither level here (packed 2 bits/pixel) and
+  // replays it for MSB instead of re-decoding. Scoped to this PageImage's lifetime (one page's worth),
+  // bounded by pixel count in renderImage() - see kMaxGrayscaleCapturePixels there.
+  PagePsramBuffer grayscaleCaptureBuffer_;
+  size_t grayscaleCaptureCapacity_ = 0;
+  int grayscaleCaptureWidth_ = 0;
+  int grayscaleCaptureHeight_ = 0;
+  int grayscaleCaptureOffsetX_ = 0;
+  int grayscaleCaptureOffsetY_ = 0;
+  bool grayscaleCaptureValid_ = false;
+  bool ensureSourceCached() const;
+
+ public:
+  PageImage(std::string path, std::string source, const int16_t w, const int16_t h, const int16_t xPos,
+            const int16_t yPos, const bool grayscale = true)
+      : PageElement(xPos, yPos),
+        cachePath(std::move(path)),
+        sourcePath(std::move(source)),
+        width(w),
+        height(h),
+        grayscale(grayscale) {}
+
+  PageElementTag getTag() const override { return TAG_PageImage; }
+  void render(GfxRenderer& renderer, int fontId, int xOffset, int yOffset,
+              ImageRenderMode imageMode = ImageRenderMode::OneBit) override;
+  // Same as render() but lets the caller select the quality render path (options.quality).
+  void renderImage(GfxRenderer& renderer, int fontId, int xOffset, int yOffset, ImageRenderMode imageMode,
+                   bool quality);
+  bool warmDisplayCache(GfxRenderer& renderer, int xOffset, int yOffset, ImageRenderMode imageMode, bool quality) const;
+  bool hasCachedTwoBitImage(GfxRenderer& renderer, int xOffset, int yOffset, bool quality) const;
+  bool serialize(FsFile& file) override;
+  static std::unique_ptr<PageImage> deserialize(FsFile& file);
+  void bindEpub(const std::shared_ptr<Epub>& book) { epub = book; }
+
+  const std::string& getPath() const { return cachePath; }
+  int16_t getWidth() const { return width; }
+  int16_t getHeight() const { return height; }
+  bool needsGrayscale() const { return grayscale; }
+};
+
+class PageTable final : public PageElement {
+ public:
+  struct Cell {
+    bool header = false;
+    uint16_t colspan = 1;
+    std::vector<std::string> lines;
+  };
+
+ private:
+  int16_t tableWidth;
+  int16_t tableHeight;
+  int16_t lineHeight;  ///< Effective per-text-line height (font line height * line spacing setting)
+  bool showBorders;
+  std::vector<uint16_t> columnWidths;
+  std::vector<uint16_t> rowHeights;
+  std::vector<std::vector<Cell>> rows;
+
+ public:
+  PageTable(std::vector<std::vector<Cell>> rows, std::vector<uint16_t> columnWidths, std::vector<uint16_t> rowHeights,
+            const bool showBorders, const int16_t tableWidth, const int16_t tableHeight, const int16_t lineHeight,
+            const int16_t xPos, const int16_t yPos)
+      : PageElement(xPos, yPos),
+        tableWidth(tableWidth),
+        tableHeight(tableHeight),
+        lineHeight(lineHeight),
+        showBorders(showBorders),
+        columnWidths(std::move(columnWidths)),
+        rowHeights(std::move(rowHeights)),
+        rows(std::move(rows)) {}
+
+  PageElementTag getTag() const override { return TAG_PageTable; }
+  void render(GfxRenderer& renderer, int fontId, int xOffset, int yOffset,
+              ImageRenderMode imageMode = ImageRenderMode::OneBit) override;
+  bool serialize(FsFile& file) override;
+  static std::unique_ptr<PageTable> deserialize(FsFile& file);
+
+  int16_t getHeight() const { return tableHeight; }
+};
+
+class PageHorizontalRule final : public PageElement {
+ public:
+  static constexpr int16_t WIDTH = 180;
+  static constexpr int16_t HEIGHT = 15;
+
+  PageHorizontalRule(const int16_t xPos, const int16_t yPos) : PageElement(xPos, yPos) {}
+
+  PageElementTag getTag() const override { return TAG_PageHorizontalRule; }
+  void render(GfxRenderer& renderer, int fontId, int xOffset, int yOffset,
+              ImageRenderMode imageMode = ImageRenderMode::OneBit) override;
+  bool serialize(FsFile& file) override;
+  static std::unique_ptr<PageHorizontalRule> deserialize(FsFile& file);
+};
+
+class PageCssBorderLine final : public PageElement {
+ public:
+  /** CSS border-style rendering for the horizontal rule (maps to the CSS keywords). */
+  enum Style : uint8_t { SOLID = 0, DOUBLE = 1, DOTTED = 2, DASHED = 3 };
+
+ private:
+  int16_t width;
+  int16_t thickness;
+  uint8_t style;
+
+ public:
+  PageCssBorderLine(const int16_t xPos, const int16_t yPos, const int16_t width, const int16_t thickness,
+                    const uint8_t style = SOLID)
+      : PageElement(xPos, yPos), width(width), thickness(thickness), style(style) {}
+
+  PageElementTag getTag() const override { return TAG_PageCssBorderLine; }
+  /** Sets the horizontal position/width after layout (used to size a deferred rule to the text width). */
+  void setGeometry(const int16_t x, const int16_t w) {
+    xPos = x;
+    width = w;
+  }
+  void render(GfxRenderer& renderer, int fontId, int xOffset, int yOffset,
+              ImageRenderMode imageMode = ImageRenderMode::OneBit) override;
+  bool serialize(FsFile& file) override;
+  static std::unique_ptr<PageCssBorderLine> deserialize(FsFile& file);
+};
+
+class PageCssBorderBox final : public PageElement {
+ private:
+  int16_t width;
+  int16_t height;
+  int16_t borderTop;
+  int16_t borderRight;
+  int16_t borderBottom;
+  int16_t borderLeft;
+  uint8_t styleTop;
+  uint8_t styleRight;
+  uint8_t styleBottom;
+  uint8_t styleLeft;
+  int16_t radius;
+  uint8_t borderTone;
+  uint8_t backgroundTone;
+
+ public:
+  PageCssBorderBox(const int16_t xPos, const int16_t yPos, const int16_t width, const int16_t height,
+                   const int16_t borderTop, const int16_t borderRight, const int16_t borderBottom,
+                   const int16_t borderLeft, const uint8_t styleTop = PageCssBorderLine::SOLID,
+                   const uint8_t styleRight = PageCssBorderLine::SOLID,
+                   const uint8_t styleBottom = PageCssBorderLine::SOLID,
+                   const uint8_t styleLeft = PageCssBorderLine::SOLID, const int16_t radius = 0,
+                   const uint8_t borderTone = 1, const uint8_t backgroundTone = 0)
+      : PageElement(xPos, yPos),
+        width(width),
+        height(height),
+        borderTop(borderTop),
+        borderRight(borderRight),
+        borderBottom(borderBottom),
+        borderLeft(borderLeft),
+        styleTop(styleTop),
+        styleRight(styleRight),
+        styleBottom(styleBottom),
+        styleLeft(styleLeft),
+        radius(radius),
+        borderTone(borderTone),
+        backgroundTone(backgroundTone) {}
+
+  PageElementTag getTag() const override { return TAG_PageCssBorderBox; }
+  bool hasBackground() const { return backgroundTone != 0; }
+  int16_t getWidth() const { return width; }
+  int16_t getHeight() const { return height; }
+  void setGeometry(const int16_t x, const int16_t y, const int16_t w, const int16_t h) {
+    xPos = x;
+    yPos = y;
+    width = w;
+    height = h;
+  }
+  void render(GfxRenderer& renderer, int fontId, int xOffset, int yOffset,
+              ImageRenderMode imageMode = ImageRenderMode::OneBit) override;
+  bool serialize(FsFile& file) override;
+  static std::unique_ptr<PageCssBorderBox> deserialize(FsFile& file);
+};
+
+/**
+ * Represents a complete page containing multiple elements.
+ */
+class Page {
+ public:
+  std::vector<std::unique_ptr<PageElement>> elements;
+
+  static void* operator new(std::size_t size);
+  static void operator delete(void* pointer) noexcept;
+
+  void trimElementStorage() {
+    if (elements.capacity() > elements.size()) {
+      elements.shrink_to_fit();
+    }
+  }
+
+  bool hasImages() const {
+    return std::any_of(elements.begin(), elements.end(),
+                       [](const std::unique_ptr<PageElement>& element) { return element->getTag() == TAG_PageImage; });
+  }
+
+  // True if at least one image on the page has continuous-tone content worth rendering in grayscale. Pages whose
+  // images are all essentially 1-bit (comics / line art / mostly black-and-white) return false, so they can be
+  // rendered as fast 1-bit instead of paying for the grayscale passes.
+  bool anyImageNeedsGrayscale() const;
+  bool hasNonPngImages() const;
+
+  /**
+   * Union of all image paint rectangles in screen coordinates (tight fit from BMP dimensions and drawBitmap
+   * scaling, matching PageImage::render). Used for partial clears (e.g. text AA prep on image pages).
+   * @return false if there are no images.
+   */
+  bool getImageBoundingBox(const GfxRenderer& renderer, int xOffset, int yOffset, int16_t& outX, int16_t& outY,
+                           int16_t& outW, int16_t& outH) const;
+
+  /** Returns the image path and its already-rendered screen rectangle at a screen point. */
+  bool imageAt(const GfxRenderer& renderer, int x, int y, int xOffset, int yOffset, std::string& path,
+               int* imageX = nullptr, int* imageY = nullptr, int* imageWidth = nullptr,
+               int* imageHeight = nullptr) const;
+
+  // Fills EACH image's own paint rectangle (centered, at its stored size) with `value` — NOT the union bounding
+  // box. Use this for per-image baseline marks / GRAY2 white bases so text between images on the same page is
+  // never covered. Matches PageImage::render geometry.
+  void fillImageRects(GfxRenderer& renderer, int xOffset, int yOffset, bool value, bool onlyGrayscale = false) const;
+
+  void render(GfxRenderer& renderer, int fontId, int headerFontId, int xOffset, int yOffset, bool skipImages = false,
+              ImageRenderMode imageMode = ImageRenderMode::OneBit, bool skipOnlyGrayscaleImages = false) const;
+  // `quality` routes images through the quality render path (options.quality=true) — the same path the sleep
+  // screen uses — instead of the default 1-bit/medium path.
+  void renderImages(GfxRenderer& renderer, int fontId, int xOffset, int yOffset,
+                    ImageRenderMode imageMode = ImageRenderMode::OneBit, bool quality = false,
+                    bool onlyGrayscale = false) const;
+  int warmImageDisplayCache(GfxRenderer& renderer, int xOffset, int yOffset,
+                            ImageRenderMode imageMode = ImageRenderMode::OneBit, bool quality = false) const;
+  bool allGrayscaleImagesCachedTwoBit(GfxRenderer& renderer, int xOffset, int yOffset, bool quality) const;
+  void bindEpub(const std::shared_ptr<Epub>& book);
+  std::string extractPlainText(size_t maxChars = 320) const;
+  bool serialize(FsFile& file) const;
+  static std::unique_ptr<Page> deserialize(FsFile& file);
+};

@@ -1,0 +1,614 @@
+#pragma once
+
+/**
+ * @file BookSetting.h
+ * @brief Public interface and types for BookSetting.
+ */
+
+#include <SDCardManager.h>
+
+#include <cstdint>
+#include <string>
+
+#include "state/ReaderSetting.h"
+#include "state/SystemSetting.h"
+#include "system/FontManager.h"
+
+/**
+ * @brief Status bar item types for display sections
+ */
+enum class StatusBarItem {
+  NONE,                       ///< Nothing displayed
+  PAGE_NUMBERS,               ///< Current page / total pages (e.g., "5/120")
+  PERCENTAGE,                 ///< Reading percentage (e.g., "42%")
+  CHAPTER_TITLE,              ///< Current chapter title
+  BATTERY_ICON,               ///< Battery icon only
+  BATTERY_PERCENTAGE,         ///< Battery percentage text only
+  BATTERY_ICON_WITH_PERCENT,  ///< Battery icon with percentage
+  PROGRESS_BAR,               ///< Horizontal progress bar
+  PROGRESS_BAR_WITH_PERCENT,  ///< Progress bar with percentage
+  PAGE_BARS,                  ///< Vertical bars representing pages
+  BOOK_TITLE,                 ///< Book title
+  AUTHOR_NAME,                ///< Author name
+  PAGE_NUMBERS_WITH_PERCENT,  ///< Page numbers and percentage combined (e.g., "12/340 45%")
+  TIME_LEFT_CHAPTER,          ///< Estimated time left in the current chapter (ETA feature)
+  TIME_LEFT_BOOK,             ///< Estimated time left in the complete book (ETA feature)
+  CLOCK,                      ///< Current local time from the device RTC
+  STATUS_BAR_ITEM_COUNT
+};
+
+/**
+ * @brief Configuration for a single status bar section
+ */
+struct StatusBarSectionConfig {
+  StatusBarItem item = StatusBarItem::NONE;
+
+  /**
+   * @brief Serializes the config to bytes
+   * @param data Output buffer
+   * @param offset Current offset in buffer
+   */
+  void toBytes(uint8_t* data, size_t& offset) const { data[offset++] = static_cast<uint8_t>(item); }
+
+  /**
+   * @brief Deserializes the config from bytes
+   * @param data Input buffer
+   * @param offset Current offset in buffer
+   */
+  void fromBytes(const uint8_t* data, size_t& offset) {
+    item = static_cast<StatusBarItem>(data[offset++]);
+    if (static_cast<uint8_t>(item) >= static_cast<uint8_t>(StatusBarItem::STATUS_BAR_ITEM_COUNT)) {
+      item = StatusBarItem::NONE;
+    }
+  }
+
+  /**
+   * @brief Equality operator
+   * @param other Config to compare with
+   * @return true if equal
+   */
+  bool operator==(const StatusBarSectionConfig& other) const { return item == other.item; }
+
+  /**
+   * @brief Inequality operator
+   * @param other Config to compare with
+   * @return true if not equal
+   */
+  bool operator!=(const StatusBarSectionConfig& other) const { return !(*this == other); }
+};
+
+/**
+ * @brief Complete status bar layout with left, middle, and right sections
+ */
+struct StatusBarLayout {
+  StatusBarSectionConfig left;    ///< Left status bar section
+  StatusBarSectionConfig middle;  ///< Middle status bar section
+  StatusBarSectionConfig right;   ///< Right status bar section
+};
+
+/**
+ * @brief Per-book reading settings
+ */
+struct BookSettings {
+  uint8_t fontFamily = SystemSetting::CHAREINK;            ///< Font family
+  uint8_t fontSize = SystemSetting::SMALL;                 ///< Font size
+  uint8_t lineHeight = 100;                                ///< Line height, % of natural (10-200)
+  uint8_t textSpace = 100;                                 ///< Word spacing, % of natural (10-200)
+  uint8_t paragraphAlignment = SystemSetting::FOLLOW_CSS;  ///< Paragraph alignment
+  /** Honor CSS `text-indent` when on (mirrors global "Indent" when unset in per-book file). */
+  uint8_t paragraphCssIndentEnabled = 0;
+
+  uint8_t extraParagraphSpacing = 1;  ///< Extra paragraph spacing enabled
+  uint8_t textAntiAliasing = 0;       ///< Text anti-aliasing enabled
+  uint8_t hyphenationEnabled = 1;     ///< Hyphenation enabled
+  uint8_t bionicReadingEnabled = 0;   ///< Bionic Reading enabled
+
+  uint8_t screenMargin = 0;  ///< Screen margin in pixels
+
+  uint8_t orientation = SystemSetting::PORTRAIT;  ///< Screen orientation
+
+  /** Same values as SystemSetting::LONG_PRESS_* (0=off, 1=chapter skip, 2=skip 5 pages). */
+  uint8_t longPressChapterSkip = SystemSetting::LONG_PRESS_CHAPTER_SKIP;
+
+  uint8_t refreshFrequency = 0;  ///< Screen refresh frequency in pages
+
+  StatusBarSectionConfig statusBarLeft;    ///< Left status bar section
+  StatusBarSectionConfig statusBarMiddle;  ///< Middle status bar section
+  StatusBarSectionConfig statusBarRight;   ///< Right status bar section
+  uint8_t statusBarFullStyle = static_cast<uint8_t>(StatusBarItem::NONE);
+
+  /**
+   * @brief Page auto-turn interval in seconds
+   * @details Values: 0 = off, increments of 10 (10, 20, 30, 40, 50, 60)
+   */
+  uint8_t pageAutoTurnSeconds = 0;
+  uint8_t readerImageGrayscale = SystemSetting::READER_IMAGE_LOW;
+  uint8_t readerSmartRefreshOnImages = 0;
+
+  /** Reading-guide overlay style: 0 = off, 1 = Grid, 2 = Notebook. Pure visual overlay - never affects
+   *  layout/pagination. */
+  uint8_t readingGuideLinesEnabled = 0;
+  /** Per-book dark mode. New books inherit the global UI mode until customized. */
+  uint8_t darkMode = 0;
+
+  static constexpr uint8_t kNoReaderPreset = 0xFF;
+
+  bool useCustomSettings = false;  ///< Whether custom settings are active
+  uint8_t readerPresetIndex = kNoReaderPreset;
+
+  /**
+   * @brief Complete layout structure
+   */
+  struct Layout {
+    StatusBarSectionConfig left;    ///< Left section config
+    StatusBarSectionConfig middle;  ///< Middle section config
+    StatusBarSectionConfig right;   ///< Right section config
+  };
+
+  /**
+   * @brief Gets the complete status bar layout
+   * @return Layout containing all three sections
+   */
+  Layout getStatusBarLayout() const { return {statusBarLeft, statusBarMiddle, statusBarRight}; }
+
+  /**
+   * @brief Sets the complete status bar layout
+   * @param layout Layout to apply
+   */
+  void setStatusBarLayout(const Layout& layout) {
+    statusBarLeft = layout.left;
+    statusBarMiddle = layout.middle;
+    statusBarRight = layout.right;
+  }
+
+  /**
+   * @brief Number of bytes a serialized BookSettings record occupies.
+   */
+  static constexpr size_t kLegacySerializedSize = 18;
+  static constexpr size_t kSerializedSizeV2 = 20;
+  static constexpr size_t kSerializedSizeV3 = 21;
+  static constexpr size_t kSerializedSizeV4 = 22;
+  static constexpr size_t kSerializedSizeV5 = 23;
+  static constexpr size_t kSerializedSize = 24;
+
+  void markCustomSettings() {
+    useCustomSettings = true;
+    readerPresetIndex = kNoReaderPreset;
+  }
+
+  void normalize() {
+    FontManager::clampReaderFontFamilySlot(fontFamily);
+    if (fontSize >= SystemSetting::FONT_SIZE_COUNT) {
+      fontSize = SystemSetting::SMALL;
+    }
+    if (lineHeight < 10 || lineHeight > 200) {
+      lineHeight = 100;
+    }
+    if (textSpace < 10 || textSpace > 200) {
+      textSpace = 100;
+    }
+    if (paragraphAlignment >= SystemSetting::PARAGRAPH_ALIGNMENT_COUNT) {
+      paragraphAlignment = SystemSetting::FOLLOW_CSS;
+    }
+    paragraphCssIndentEnabled = paragraphCssIndentEnabled ? 1 : 0;
+    extraParagraphSpacing = extraParagraphSpacing ? 1 : 0;
+    textAntiAliasing = textAntiAliasing ? 1 : 0;
+    hyphenationEnabled = hyphenationEnabled ? 1 : 0;
+    bionicReadingEnabled = bionicReadingEnabled ? 1 : 0;
+    if (orientation >= SystemSetting::ORIENTATION_COUNT) {
+      orientation = SystemSetting::PORTRAIT;
+    }
+    if (longPressChapterSkip > SystemSetting::LONG_PRESS_PAGE_SKIP_5) {
+      longPressChapterSkip = SystemSetting::LONG_PRESS_CHAPTER_SKIP;
+    }
+    if (refreshFrequency != 0 && refreshFrequency != 1 && refreshFrequency != 5 && refreshFrequency != 10 &&
+        refreshFrequency != 15 && refreshFrequency != 30) {
+      refreshFrequency = 0;
+    }
+    if (pageAutoTurnSeconds > 60 || pageAutoTurnSeconds % 10 != 0) {
+      pageAutoTurnSeconds = 0;
+    }
+    if (readerImageGrayscale >= SystemSetting::READER_IMAGE_QUALITY_COUNT) {
+      readerImageGrayscale = SystemSetting::READER_IMAGE_LOW;
+    }
+    readerSmartRefreshOnImages = readerSmartRefreshOnImages ? 1 : 0;
+    if (readingGuideLinesEnabled > 2) {
+      readingGuideLinesEnabled = 0;
+    }
+    darkMode = darkMode ? 1 : 0;
+
+    auto normalizeStatus = [](StatusBarSectionConfig& section) {
+      if (static_cast<uint8_t>(section.item) >= static_cast<uint8_t>(StatusBarItem::STATUS_BAR_ITEM_COUNT)) {
+        section.item = StatusBarItem::NONE;
+      }
+    };
+    normalizeStatus(statusBarLeft);
+    normalizeStatus(statusBarMiddle);
+    normalizeStatus(statusBarRight);
+    switch (static_cast<StatusBarItem>(statusBarFullStyle)) {
+      case StatusBarItem::NONE:
+      case StatusBarItem::PROGRESS_BAR:
+      case StatusBarItem::PROGRESS_BAR_WITH_PERCENT:
+      case StatusBarItem::PAGE_BARS:
+        break;
+      default:
+        statusBarFullStyle = static_cast<uint8_t>(StatusBarItem::NONE);
+        break;
+    }
+  }
+
+  /**
+   * @brief Writes the settings fields into a byte buffer (shared by settings.bin and the preset store).
+   * @param data Output buffer (needs at least kSerializedSize bytes free at offset)
+   * @param offset Current offset, advanced past the written bytes
+   */
+  void serialize(uint8_t* data, size_t& offset) const {
+    data[offset++] = fontFamily;
+    data[offset++] = fontSize;
+    data[offset++] = lineHeight;
+    data[offset++] = extraParagraphSpacing;
+    data[offset++] = paragraphAlignment;
+    data[offset++] = hyphenationEnabled;
+    data[offset++] = screenMargin;
+    data[offset++] = refreshFrequency;
+    data[offset++] = longPressChapterSkip;
+    data[offset++] = textAntiAliasing;
+    data[offset++] = orientation;
+
+    statusBarLeft.toBytes(data, offset);
+    statusBarMiddle.toBytes(data, offset);
+    statusBarRight.toBytes(data, offset);
+
+    data[offset++] = pageAutoTurnSeconds;
+    data[offset++] = paragraphCssIndentEnabled;
+    data[offset++] = bionicReadingEnabled;
+    data[offset++] = textSpace;
+    data[offset++] = readerImageGrayscale;
+    data[offset++] = readerSmartRefreshOnImages;
+    data[offset++] = readerPresetIndex;
+    data[offset++] = readingGuideLinesEnabled;
+    data[offset++] = statusBarFullStyle;
+    data[offset++] = darkMode;
+  }
+
+  /**
+   * @brief Reads settings fields from a byte buffer, clamping/back-filling like the legacy file loader.
+   * @param data Input buffer
+   * @param bytesAvailable Number of valid bytes in the buffer
+   * @param offset Current offset, advanced past the consumed bytes
+   * @return true if at least the 11-byte baseline was parsed
+   */
+  bool deserialize(const uint8_t* data, size_t bytesAvailable, size_t& offset) {
+    if (bytesAvailable < offset + 11) {
+      return false;
+    }
+
+    darkMode = SETTINGS.darkMode ? 1 : 0;
+    fontFamily = data[offset++];
+    FontManager::clampReaderFontFamilySlot(fontFamily);
+    fontSize = data[offset++];
+    // Legacy files stored the lineSpacing enum (0-4) in this slot; migrate those to default 100.
+    lineHeight = data[offset++];
+    if (lineHeight < 10 || lineHeight > 200) {
+      lineHeight = 100;
+    }
+    extraParagraphSpacing = data[offset++];
+    paragraphAlignment = data[offset++];
+    hyphenationEnabled = data[offset++];
+    screenMargin = data[offset++];
+    refreshFrequency = data[offset++];
+    longPressChapterSkip = data[offset++];
+    if (longPressChapterSkip > SystemSetting::LONG_PRESS_PAGE_SKIP_5) {
+      longPressChapterSkip = SystemSetting::LONG_PRESS_CHAPTER_SKIP;
+    }
+    textAntiAliasing = data[offset++];
+    orientation = data[offset++];
+
+    if (bytesAvailable >= offset + 3) {
+      statusBarLeft.fromBytes(data, offset);
+      statusBarMiddle.fromBytes(data, offset);
+      statusBarRight.fromBytes(data, offset);
+    }
+
+    if (bytesAvailable >= offset + 1) {
+      pageAutoTurnSeconds = data[offset++];
+      if (pageAutoTurnSeconds > 60 || pageAutoTurnSeconds % 10 != 0) {
+        pageAutoTurnSeconds = 0;
+      }
+    } else {
+      pageAutoTurnSeconds = 0;
+    }
+
+    if (bytesAvailable >= offset + 1) {
+      paragraphCssIndentEnabled = data[offset++];
+      if (paragraphCssIndentEnabled > 1) {
+        paragraphCssIndentEnabled = 1;
+      }
+    } else {
+      paragraphCssIndentEnabled = ReaderSetting::getInstance().paragraphCssIndentEnabled;
+    }
+
+    if (bytesAvailable >= offset + 1) {
+      bionicReadingEnabled = data[offset++] ? 1 : 0;
+    } else {
+      bionicReadingEnabled = 0;
+    }
+
+    if (bytesAvailable >= offset + 1) {
+      textSpace = data[offset++];
+      if (textSpace < 10 || textSpace > 200) {
+        textSpace = 100;
+      }
+    } else {
+      textSpace = 100;
+    }
+
+    if (bytesAvailable >= offset + 1) {
+      readerImageGrayscale = data[offset++];
+      if (readerImageGrayscale >= SystemSetting::READER_IMAGE_QUALITY_COUNT) {
+        readerImageGrayscale = SystemSetting::READER_IMAGE_LOW;
+      }
+    } else {
+      readerImageGrayscale = ReaderSetting::getInstance().readerImageGrayscale;
+    }
+
+    if (bytesAvailable >= offset + 1) {
+      readerSmartRefreshOnImages = data[offset++] ? 1 : 0;
+    } else {
+      readerSmartRefreshOnImages = ReaderSetting::getInstance().readerSmartRefreshOnImages ? 1 : 0;
+    }
+
+    if (bytesAvailable >= offset + 1) {
+      readerPresetIndex = data[offset++];
+    } else {
+      readerPresetIndex = kNoReaderPreset;
+    }
+
+    if (bytesAvailable >= offset + 1) {
+      readingGuideLinesEnabled = data[offset++];
+      if (readingGuideLinesEnabled > 2) {
+        readingGuideLinesEnabled = 0;
+      }
+    } else {
+      readingGuideLinesEnabled = ReaderSetting::getInstance().readingGuideLinesEnabled;
+    }
+
+    if (bytesAvailable >= offset + 1) {
+      statusBarFullStyle = data[offset++];
+    } else {
+      statusBarFullStyle = ReaderSetting::getInstance().statusBarFullStyle;
+    }
+    if (bytesAvailable >= offset + 1) {
+      darkMode = data[offset++] ? 1 : 0;
+    }
+    normalize();
+
+    return true;
+  }
+
+  /**
+   * @brief Loads book settings from file
+   * @param bookCachePath Path to book cache directory
+   * @return true if load successful
+   */
+  bool loadFromFile(const std::string& bookCachePath) {
+    std::string settingsPath = bookCachePath + "/settings.bin";
+    FsFile f;
+    if (SdMan.openFileForRead("BST", settingsPath.c_str(), f)) {
+      size_t fileSize = f.size();
+
+      if (fileSize >= 11) {
+        uint8_t data[64];
+        size_t bytesRead = f.read(data, std::min(fileSize, sizeof(data)));
+        size_t offset = 0;
+        if (deserialize(data, bytesRead, offset)) {
+          useCustomSettings = true;
+          f.close();
+          return true;
+        }
+      }
+      f.close();
+    }
+
+    loadFromGlobalSettings();
+    useCustomSettings = false;
+    return false;
+  }
+
+  /**
+   * @brief Saves book settings to file
+   * @param bookCachePath Path to book cache directory
+   * @return true if save successful
+   */
+  bool saveToFile(const std::string& bookCachePath) {
+    FontManager::clampReaderFontFamilySlot(fontFamily);
+    if (lineHeight < 10 || lineHeight > 200) lineHeight = 100;
+    if (textSpace < 10 || textSpace > 200) textSpace = 100;
+    std::string settingsPath = bookCachePath + "/settings.bin";
+    FsFile f;
+    if (SdMan.openFileForWrite("BST", settingsPath.c_str(), f)) {
+      uint8_t data[32];
+      size_t offset = 0;
+      serialize(data, offset);
+
+      bool success = (f.write(data, offset) == offset);
+      f.close();
+
+      if (success) {
+        useCustomSettings = true;
+      }
+      return success;
+    }
+    return false;
+  }
+
+  /**
+   * @brief Loads settings from global ReaderSetting
+   */
+  void loadFromGlobalSettings() {
+    ReaderSetting& global = ReaderSetting::getInstance();
+    fontFamily = global.fontFamily;
+    fontSize = global.fontSize;
+    lineHeight = global.lineHeight;
+    textSpace = global.textSpace;
+    extraParagraphSpacing = global.extraParagraphSpacing;
+    paragraphAlignment = global.paragraphAlignment;
+    paragraphCssIndentEnabled = global.paragraphCssIndentEnabled;
+    hyphenationEnabled = global.hyphenationEnabled;
+    bionicReadingEnabled = global.bionicReadingEnabled;
+    readingGuideLinesEnabled = global.readingGuideLinesEnabled;
+    screenMargin = global.screenMargin;
+
+    switch (global.refreshFrequency) {
+      case SystemSetting::REFRESH_1:
+        refreshFrequency = 1;
+        break;
+      case SystemSetting::REFRESH_5:
+        refreshFrequency = 5;
+        break;
+      case SystemSetting::REFRESH_10:
+        refreshFrequency = 10;
+        break;
+      case SystemSetting::REFRESH_15:
+        refreshFrequency = 15;
+        break;
+      case SystemSetting::REFRESH_30:
+        refreshFrequency = 30;
+        break;
+      case SystemSetting::REFRESH_OFF:
+        refreshFrequency = 0;
+        break;
+      default:
+        refreshFrequency = 0;
+        break;
+    }
+
+    longPressChapterSkip = global.longPressChapterSkip;
+    textAntiAliasing = global.textAntiAliasing;
+    orientation = global.orientation;
+    pageAutoTurnSeconds = global.pageAutoTurnSeconds;
+    readerImageGrayscale = global.readerImageGrayscale;
+    readerSmartRefreshOnImages = global.readerSmartRefreshOnImages ? 1 : 0;
+
+    statusBarLeft.item = static_cast<StatusBarItem>(global.statusBarLeft);
+    statusBarMiddle.item = static_cast<StatusBarItem>(global.statusBarMiddle);
+    statusBarRight.item = static_cast<StatusBarItem>(global.statusBarRight);
+    statusBarFullStyle = global.statusBarFullStyle;
+    darkMode = SETTINGS.darkMode ? 1 : 0;
+    readerPresetIndex = kNoReaderPreset;
+  }
+
+  /**
+   * @brief Writes these settings back into the global ReaderSetting reader fields (inverse of
+   *        loadFromGlobalSettings). Does NOT persist — caller should READER_SETTINGS.saveToFile().
+   */
+  void applyToGlobalSettings() const {
+    ReaderSetting& global = ReaderSetting::getInstance();
+    global.fontFamily = fontFamily;
+    global.fontSize = fontSize;
+    global.lineHeight = lineHeight;
+    global.textSpace = textSpace;
+    global.extraParagraphSpacing = extraParagraphSpacing;
+    global.paragraphAlignment = paragraphAlignment;
+    global.paragraphCssIndentEnabled = paragraphCssIndentEnabled;
+    global.hyphenationEnabled = hyphenationEnabled;
+    global.bionicReadingEnabled = bionicReadingEnabled;
+    global.screenMargin = screenMargin;
+
+    switch (refreshFrequency) {
+      case 1:
+        global.refreshFrequency = SystemSetting::REFRESH_1;
+        break;
+      case 5:
+        global.refreshFrequency = SystemSetting::REFRESH_5;
+        break;
+      case 10:
+        global.refreshFrequency = SystemSetting::REFRESH_10;
+        break;
+      case 30:
+        global.refreshFrequency = SystemSetting::REFRESH_30;
+        break;
+      case 0:
+        global.refreshFrequency = SystemSetting::REFRESH_OFF;
+        break;
+      case 15:
+        global.refreshFrequency = SystemSetting::REFRESH_15;
+        break;
+      default:
+        global.refreshFrequency = SystemSetting::REFRESH_OFF;
+        break;
+    }
+
+    global.longPressChapterSkip = longPressChapterSkip;
+    global.textAntiAliasing = textAntiAliasing;
+    global.orientation = orientation;
+    global.pageAutoTurnSeconds = pageAutoTurnSeconds;
+    // Image quality is a global Reader setting and is intentionally not copied
+    // from per-book or preset settings.
+    global.readerSmartRefreshOnImages = readerSmartRefreshOnImages ? 1 : 0;
+
+    global.statusBarLeft = static_cast<uint8_t>(statusBarLeft.item);
+    global.statusBarMiddle = static_cast<uint8_t>(statusBarMiddle.item);
+    global.statusBarRight = static_cast<uint8_t>(statusBarRight.item);
+    global.statusBarFullStyle = statusBarFullStyle;
+  }
+
+  /**
+   * @brief Gets reader font ID based on current settings
+   * @return Font identifier for rendering
+   */
+  int getReaderFontId() const {
+    ReaderSetting& global = ReaderSetting::getInstance();
+    uint8_t oldFam = global.fontFamily;
+    uint8_t oldSize = global.fontSize;
+    global.fontFamily = this->fontFamily;
+    global.fontSize = this->fontSize;
+    int id = global.getReaderFontId();
+    global.fontFamily = oldFam;
+    global.fontSize = oldSize;
+    return id;
+  }
+
+  /**
+   * @brief Line compression factor (lineHeight/100, 100 = the font's natural line height).
+   */
+  float getReaderLineCompression() const {
+    uint8_t lh = lineHeight;
+    if (lh < 10 || lh > 200) lh = 100;
+    return static_cast<float>(lh) / 100.0f;
+  }
+
+  /**
+   * @brief Word-spacing factor (textSpace/100, 100 = the natural inter-word space).
+   */
+  float getReaderWordSpacingFactor() const {
+    uint8_t ts = textSpace;
+    if (ts < 10 || ts > 200) ts = 100;
+    return static_cast<float>(ts) / 100.0f;
+  }
+
+  /**
+   * @brief Equality operator for comparison
+   * @param other Settings to compare with
+   * @return true if all settings match
+   */
+  bool operator==(const BookSettings& other) const {
+    return fontFamily == other.fontFamily && fontSize == other.fontSize && lineHeight == other.lineHeight &&
+           textSpace == other.textSpace && paragraphAlignment == other.paragraphAlignment &&
+           paragraphCssIndentEnabled == other.paragraphCssIndentEnabled &&
+           extraParagraphSpacing == other.extraParagraphSpacing && textAntiAliasing == other.textAntiAliasing &&
+           hyphenationEnabled == other.hyphenationEnabled && bionicReadingEnabled == other.bionicReadingEnabled &&
+           screenMargin == other.screenMargin && orientation == other.orientation &&
+           longPressChapterSkip == other.longPressChapterSkip && refreshFrequency == other.refreshFrequency &&
+           pageAutoTurnSeconds == other.pageAutoTurnSeconds && statusBarLeft == other.statusBarLeft &&
+           statusBarMiddle == other.statusBarMiddle && statusBarRight == other.statusBarRight &&
+           statusBarFullStyle == other.statusBarFullStyle && darkMode == other.darkMode;
+  }
+
+  /**
+   * @brief Inequality operator for comparison
+   * @param other Settings to compare with
+   * @return true if any setting differs
+   */
+  bool operator!=(const BookSettings& other) const { return !(*this == other); }
+};

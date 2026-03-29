@@ -1,0 +1,588 @@
+/**
+ * @file GfxRenderer.cpp
+ * @brief Definitions for GfxRenderer.
+ */
+
+#include "GfxRenderer.h"
+
+#include <Utf8.h>
+
+#include <algorithm>
+#include <cmath>
+#include <cstdlib>
+#include <memory>
+#include <vector>
+
+#if defined(ARDUINO_ARCH_ESP32)
+#include <esp_heap_caps.h>
+#endif
+
+#include "../../src/system/ScreenComponents.h"
+
+namespace {
+
+// This is a temporary full-frame copy used only while rendering a grayscale
+// image. It is copied once before and once after the render, so PSRAM avoids a
+// 48 KB internal-heap spike without sitting on a display hot path.
+uint8_t* allocateBwSnapshotChunk(const size_t bytes) {
+#if defined(ARDUINO_ARCH_ESP32)
+  if (void* memory = heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)) {
+    return static_cast<uint8_t*>(memory);
+  }
+  return static_cast<uint8_t*>(heap_caps_malloc(bytes, MALLOC_CAP_8BIT));
+#else
+  return static_cast<uint8_t*>(std::malloc(bytes));
+#endif
+}
+
+void freeBwSnapshotChunk(void* memory) {
+  if (!memory) return;
+#if defined(ARDUINO_ARCH_ESP32)
+  heap_caps_free(memory);
+#else
+  std::free(memory);
+#endif
+}
+
+}  // namespace
+
+GfxRenderer::GfxRenderer(HalDisplay& halDisplay)
+    : display(halDisplay),
+      renderMode(BW),
+      orientation(Portrait),
+      rectangle(*this),
+      line(*this),
+      circle(*this),
+      icon(*this),
+      polygon(*this),
+      bitmap(*this),
+      text(*this),
+      ui(*this) {}
+
+GfxRenderer::~GfxRenderer() { freeBwBufferChunks(); }
+
+void GfxRenderer::begin() {
+  panelWidth = display.getDisplayWidth();
+  panelHeight = display.getDisplayHeight();
+  panelWidthBytes = display.getDisplayWidthBytes();
+  frameBufferSize = display.getBufferSize();
+  bwBufferChunks.assign((frameBufferSize + BW_BUFFER_CHUNK_SIZE - 1) / BW_BUFFER_CHUNK_SIZE, nullptr);
+}
+
+void GfxRenderer::insertFont(const int fontId, EpdFontFamily font) {
+  auto it =
+      std::find_if(fontSlots.begin(), fontSlots.end(), [fontId](const FontSlot& slot) { return slot.id == fontId; });
+  if (it != fontSlots.end()) {
+    it->family = std::move(font);
+    return;
+  }
+  fontSlots.emplace_back(fontId, std::move(font));
+}
+
+const EpdFontFamily* GfxRenderer::findFontFamily(const int fontId) const {
+  const auto it =
+      std::find_if(fontSlots.begin(), fontSlots.end(), [fontId](const FontSlot& slot) { return slot.id == fontId; });
+  return it == fontSlots.end() ? nullptr : &it->family;
+}
+
+ExternalFont* GfxRenderer::findStreamingFont(const EpdFontData* data) const {
+  if (!data) {
+    return nullptr;
+  }
+  const auto it = std::find_if(streamingFontSlots.begin(), streamingFontSlots.end(),
+                               [data](const StreamingFontSlot& slot) { return slot.data == data; });
+  return it == streamingFontSlots.end() ? nullptr : it->stream.get();
+}
+
+// Called once per pixel from every image/text/shape draw; opted into -O2 (the firmware otherwise builds
+// with -Os for flash size - see JpegRender.cpp for the fuller rationale). Function-scoped rather than a
+// whole-file pragma since most of this file isn't in a per-pixel hot path.
+__attribute__((optimize("O2"))) void GfxRenderer::rotateCoordinates(const int x, const int y, int* rotatedX,
+                                                                    int* rotatedY) const {
+  switch (orientation) {
+    case Portrait: {
+      *rotatedX = y;
+      *rotatedY = panelHeight - 1 - x;
+      break;
+    }
+    case LandscapeClockwise: {
+      *rotatedX = panelWidth - 1 - x;
+      *rotatedY = panelHeight - 1 - y;
+      break;
+    }
+    case PortraitInverted: {
+      *rotatedX = panelWidth - 1 - y;
+      *rotatedY = x;
+      break;
+    }
+    case LandscapeCounterClockwise: {
+      *rotatedX = x;
+      *rotatedY = y;
+      break;
+    }
+  }
+}
+
+__attribute__((optimize("O2"))) void GfxRenderer::drawPixel(const int x, const int y, const bool state) const {
+  uint8_t* frameBuffer = display.getFrameBuffer();
+
+  if (!frameBuffer) {
+    INX_SERIAL.printf("[%lu] [GFX] !! No framebuffer\n", millis());
+    return;
+  }
+
+  // Image zooming and panning commonly render a rectangle that extends beyond
+  // the logical viewport. Clipping here avoids rotating invalid coordinates and,
+  // more importantly, avoids emitting one serial log line per clipped pixel.
+  if (x < 0 || x >= getScreenWidth() || y < 0 || y >= getScreenHeight()) {
+    return;
+  }
+
+  int rotatedX = 0;
+  int rotatedY = 0;
+  rotateCoordinates(x, y, &rotatedX, &rotatedY);
+
+  if (rotatedX < 0 || rotatedX >= panelWidth || rotatedY < 0 || rotatedY >= panelHeight) {
+    return;
+  }
+
+  const uint32_t byteIndex = rotatedY * panelWidthBytes + (rotatedX / 8);
+  const uint8_t bitPosition = 7 - (rotatedX % 8);
+
+  const bool outputState = darkMode && !imageRendering ? !state : state;
+  if (outputState) {
+    frameBuffer[byteIndex] &= ~(1 << bitPosition);
+  } else {
+    frameBuffer[byteIndex] |= 1 << bitPosition;
+  }
+}
+
+bool GfxRenderer::readPixel(const int x, const int y) const {
+  const uint8_t* frameBuffer = display.getFrameBuffer();
+  if (!frameBuffer) {
+    return false;
+  }
+
+  int rotatedX = 0;
+  int rotatedY = 0;
+  rotateCoordinates(x, y, &rotatedX, &rotatedY);
+  if (rotatedX < 0 || rotatedX >= panelWidth || rotatedY < 0 || rotatedY >= panelHeight) {
+    return false;
+  }
+
+  const uint32_t byteIndex = rotatedY * panelWidthBytes + (rotatedX / 8);
+  const uint8_t bitPosition = 7 - (rotatedX % 8);
+  return (frameBuffer[byteIndex] & (1 << bitPosition)) == 0;
+}
+
+bool GfxRenderer::readPackedRow1bpp(const int x, const int y, const int width, uint8_t* outRow) const {
+  if (!outRow || width <= 0) {
+    return false;
+  }
+  const int rowBytes = (width + 7) / 8;
+  memset(outRow, 0, static_cast<size_t>(rowBytes));
+
+  const uint8_t* frameBuffer = display.getFrameBuffer();
+  if (!frameBuffer) {
+    return false;
+  }
+
+  for (int col = 0; col < width; col++) {
+    int rotatedX = 0;
+    int rotatedY = 0;
+    rotateCoordinates(x + col, y, &rotatedX, &rotatedY);
+    if (rotatedX < 0 || rotatedX >= panelWidth || rotatedY < 0 || rotatedY >= panelHeight) {
+      continue;
+    }
+    const uint32_t byteIndex = rotatedY * panelWidthBytes + (rotatedX / 8);
+    const uint8_t bitPosition = 7 - (rotatedX % 8);
+    if ((frameBuffer[byteIndex] & (1 << bitPosition)) == 0) {
+      outRow[col / 8] |= static_cast<uint8_t>(0x80 >> (col % 8));
+    }
+  }
+  return true;
+}
+
+void GfxRenderer::drawPackedRow1bpp(const int x, const int y, const int width, const uint8_t* row) const {
+  if (!row || width <= 0) {
+    return;
+  }
+  uint8_t* frameBuffer = display.getFrameBuffer();
+  if (!frameBuffer) {
+    return;
+  }
+
+  for (int col = 0; col < width; col++) {
+    int rotatedX = 0;
+    int rotatedY = 0;
+    rotateCoordinates(x + col, y, &rotatedX, &rotatedY);
+    if (rotatedX < 0 || rotatedX >= panelWidth || rotatedY < 0 || rotatedY >= panelHeight) {
+      continue;
+    }
+    const bool ink = (row[col / 8] & (0x80 >> (col % 8))) != 0;
+    const uint32_t byteIndex = rotatedY * panelWidthBytes + (rotatedX / 8);
+    const uint8_t bitPosition = 7 - (rotatedX % 8);
+    const bool outputInk = darkMode && !imageRendering ? !ink : ink;
+    if (outputInk) {
+      frameBuffer[byteIndex] &= static_cast<uint8_t>(~(1 << bitPosition));
+    } else {
+      frameBuffer[byteIndex] |= static_cast<uint8_t>(1 << bitPosition);
+    }
+  }
+}
+
+void GfxRenderer::clearScreen(const uint8_t color) const {
+  ScreenComponents::resetPageHeaderBackButton();
+  const uint8_t outputColor = darkMode && !imageRendering && renderMode == BW ? static_cast<uint8_t>(~color) : color;
+  display.clearScreen(outputColor);
+}
+
+void GfxRenderer::invertScreen() const {
+  uint8_t* buffer = display.getFrameBuffer();
+  if (!buffer) {
+    INX_SERIAL.printf("[%lu] [GFX] !! No framebuffer in invertScreen\n", millis());
+    return;
+  }
+  for (uint32_t i = 0; i < frameBufferSize; i++) {
+    buffer[i] = ~buffer[i];
+  }
+}
+
+void GfxRenderer::displayBuffer(const HalDisplay::RefreshMode refreshMode) const { display.displayBuffer(refreshMode); }
+
+void GfxRenderer::displayBufferAsync(const HalDisplay::RefreshMode refreshMode) const {
+  display.displayBufferAsync(refreshMode);
+}
+
+void GfxRenderer::syncWriteBufferFromActive() const { display.syncWriteBufferFromActive(); }
+
+int GfxRenderer::getScreenWidth() const {
+  switch (orientation) {
+    case Portrait:
+    case PortraitInverted:
+
+      return panelHeight;
+    case LandscapeClockwise:
+    case LandscapeCounterClockwise:
+
+      return panelWidth;
+  }
+  return panelHeight;
+}
+
+int GfxRenderer::getScreenHeight() const {
+  switch (orientation) {
+    case Portrait:
+    case PortraitInverted:
+
+      return panelWidth;
+    case LandscapeClockwise:
+    case LandscapeCounterClockwise:
+
+      return panelHeight;
+  }
+  return panelWidth;
+}
+
+uint8_t* GfxRenderer::getFrameBuffer() const { return display.getFrameBuffer(); }
+
+size_t GfxRenderer::getBufferSize() const { return frameBufferSize; }
+
+void GfxRenderer::copyGrayscaleLsbBuffers() const { display.copyGrayscaleLsbBuffers(display.getFrameBuffer()); }
+
+void GfxRenderer::copyGrayscaleMsbBuffers() const { display.copyGrayscaleMsbBuffers(display.getFrameBuffer()); }
+
+void GfxRenderer::displayGrayBuffer(const bool quality, const bool trackForRevert) const {
+#ifdef SIMULATOR
+  (void)trackForRevert;
+  display.displayGrayBuffer(quality);
+#else
+  display.displayGrayBuffer(quality, trackForRevert);
+#endif
+}
+
+void GfxRenderer::displayGrayBufferFastQuality() const {
+#ifdef SIMULATOR
+  display.displayGrayBuffer(false);
+#else
+  display.displayGrayBufferFastQuality();
+#endif
+}
+
+void GfxRenderer::prepareQualityGrayscale() const {
+#ifdef SIMULATOR
+  display.preconditionGrayscale();
+#else
+  display.prepareQualityGrayscale();
+#endif
+}
+
+bool GfxRenderer::copyStoredBwToFramebuffer() const {
+  for (const auto& chunk : bwBufferChunks) {
+    if (!chunk) return false;
+  }
+  if (bwBufferChunks.empty()) return false;
+  uint8_t* frameBuffer = display.getFrameBuffer();
+  if (!frameBuffer) return false;
+  for (size_t i = 0; i < bwBufferChunks.size(); i++) {
+    const size_t offset = i * BW_BUFFER_CHUNK_SIZE;
+    const size_t chunkSize = std::min(BW_BUFFER_CHUNK_SIZE, static_cast<size_t>(frameBufferSize) - offset);
+    memcpy(frameBuffer + offset, bwBufferChunks[i], chunkSize);
+  }
+  return true;
+}
+
+void GfxRenderer::freeBwBufferChunks() {
+  for (auto& bwBufferChunk : bwBufferChunks) {
+    if (bwBufferChunk) {
+      freeBwSnapshotChunk(bwBufferChunk);
+      bwBufferChunk = nullptr;
+    }
+  }
+}
+
+/**
+ * This should be called before grayscale buffers are populated.
+ * A `restoreBwBuffer` call should always follow the grayscale render if this method was called.
+ * Uses chunked allocation to avoid needing 48KB of contiguous memory.
+ * Returns true if buffer was stored successfully, false if allocation failed.
+ */
+bool GfxRenderer::storeBwBuffer() {
+  const uint8_t* frameBuffer = display.getFrameBuffer();
+  if (!frameBuffer) {
+    INX_SERIAL.printf("[%lu] [GFX] !! No framebuffer in storeBwBuffer\n", millis());
+    return false;
+  }
+
+  if (bwBufferChunks.empty()) {
+    bwBufferChunks.assign((frameBufferSize + BW_BUFFER_CHUNK_SIZE - 1) / BW_BUFFER_CHUNK_SIZE, nullptr);
+  }
+
+  for (size_t i = 0; i < bwBufferChunks.size(); i++) {
+    if (bwBufferChunks[i]) {
+      INX_SERIAL.printf("[%lu] [GFX] !! BW buffer chunk %zu already stored - this is likely a bug, freeing chunk\n",
+                    millis(), i);
+      freeBwSnapshotChunk(bwBufferChunks[i]);
+      bwBufferChunks[i] = nullptr;
+    }
+
+    const size_t offset = i * BW_BUFFER_CHUNK_SIZE;
+    const size_t chunkSize = std::min(BW_BUFFER_CHUNK_SIZE, static_cast<size_t>(frameBufferSize) - offset);
+    bwBufferChunks[i] = allocateBwSnapshotChunk(chunkSize);
+
+    if (!bwBufferChunks[i]) {
+      INX_SERIAL.printf("[%lu] [GFX] !! Failed to allocate BW buffer chunk %zu (%zu bytes)\n", millis(), i, chunkSize);
+
+      freeBwBufferChunks();
+      return false;
+    }
+
+    memcpy(bwBufferChunks[i], frameBuffer + offset, chunkSize);
+  }
+
+  return true;
+}
+
+/**
+ * This can only be called if `storeBwBuffer` was called prior to the grayscale render.
+ * It should be called to restore the BW buffer state after grayscale rendering is complete.
+ * Uses chunked restoration to match chunked storage.
+ */
+void GfxRenderer::restoreBwBuffer() {
+  bool missingChunks = false;
+  for (const auto& bwBufferChunk : bwBufferChunks) {
+    if (!bwBufferChunk) {
+      missingChunks = true;
+      break;
+    }
+  }
+
+  if (missingChunks) {
+    freeBwBufferChunks();
+    return;
+  }
+
+  uint8_t* frameBuffer = display.getFrameBuffer();
+  if (!frameBuffer) {
+    INX_SERIAL.printf("[%lu] [GFX] !! No framebuffer in restoreBwBuffer\n", millis());
+    freeBwBufferChunks();
+    return;
+  }
+
+  for (size_t i = 0; i < bwBufferChunks.size(); i++) {
+    if (!bwBufferChunks[i]) {
+      INX_SERIAL.printf("[%lu] [GFX] !! BW buffer chunks not stored - this is likely a bug\n", millis());
+      freeBwBufferChunks();
+      return;
+    }
+
+    const size_t offset = i * BW_BUFFER_CHUNK_SIZE;
+    const size_t chunkSize = std::min(BW_BUFFER_CHUNK_SIZE, static_cast<size_t>(frameBufferSize) - offset);
+    memcpy(frameBuffer + offset, bwBufferChunks[i], chunkSize);
+  }
+
+  display.cleanupGrayscaleBuffers(frameBuffer);
+
+  freeBwBufferChunks();
+}
+
+/**
+ * Cleanup grayscale buffers using the current frame buffer.
+ * Use this when BW buffer was re-rendered instead of stored/restored.
+ */
+void GfxRenderer::cleanupGrayscaleWithFrameBuffer() const {
+  uint8_t* frameBuffer = display.getFrameBuffer();
+  if (frameBuffer) {
+    display.cleanupGrayscaleBuffers(frameBuffer);
+  }
+}
+
+void GfxRenderer::renderGrayscalePasses(const bool quality, const bool preserveText,
+                                        const std::function<void()>& drawPlane, const bool fastQuality) {
+  const bool useFastQuality = quality && fastQuality;
+
+  if (quality) {
+    prepareQualityGrayscale();
+  }
+
+  setRenderMode(quality ? GRAY2_LSB : GRAYSCALE_LSB);
+  drawPlane();
+  copyGrayscaleLsbBuffers();
+
+  setRenderMode(quality ? GRAY2_MSB : GRAYSCALE_MSB);
+  drawPlane();
+  copyGrayscaleMsbBuffers();
+
+  if (useFastQuality) {
+    displayGrayBufferFastQuality();
+  } else {
+    displayGrayBuffer(quality, !preserveText);
+  }
+  setRenderMode(BW);
+
+  if (preserveText) {
+    restoreBwBuffer();  // rebase the BW baseline from the stored text frame (text-preserving reader)
+  } else {
+    clearScreen(0xFF);  // clean baseline so the next BW refresh isn't rebased from the leftover MSB plane
+    cleanupGrayscaleWithFrameBuffer();
+  }
+}
+
+void GfxRenderer::resetTransientReaderState() {
+  freeBwBufferChunks();
+  renderMode = BW;
+  cleanupGrayscaleWithFrameBuffer();
+}
+
+void GfxRenderer::getOrientedViewableTRBL(int* outTop, int* outRight, int* outBottom, int* outLeft) const {
+  switch (orientation) {
+    case Portrait:
+      *outTop = VIEWABLE_MARGIN_TOP;
+      *outRight = VIEWABLE_MARGIN_RIGHT;
+      *outBottom = VIEWABLE_MARGIN_BOTTOM;
+      *outLeft = VIEWABLE_MARGIN_LEFT;
+      break;
+    case LandscapeClockwise:
+      *outTop = VIEWABLE_MARGIN_LEFT;
+      *outRight = VIEWABLE_MARGIN_TOP;
+      *outBottom = VIEWABLE_MARGIN_RIGHT;
+      *outLeft = VIEWABLE_MARGIN_BOTTOM;
+      break;
+    case PortraitInverted:
+      *outTop = VIEWABLE_MARGIN_BOTTOM;
+      *outRight = VIEWABLE_MARGIN_LEFT;
+      *outBottom = VIEWABLE_MARGIN_TOP;
+      *outLeft = VIEWABLE_MARGIN_RIGHT;
+      break;
+    case LandscapeCounterClockwise:
+      *outTop = VIEWABLE_MARGIN_RIGHT;
+      *outRight = VIEWABLE_MARGIN_BOTTOM;
+      *outBottom = VIEWABLE_MARGIN_LEFT;
+      *outLeft = VIEWABLE_MARGIN_TOP;
+      break;
+  }
+}
+
+void GfxRenderer::insertStreamingFont(int fontId, std::unique_ptr<ExternalFont> streamingFont,
+                                      const EpdFontFamily& font) {
+  const EpdFontData* dataPtr = streamingFont->getData();
+  EpdFontFamily streamingFamily = font;
+  streamingFamily.setData(EpdFontFamily::REGULAR, dataPtr);
+  auto streamIt = std::find_if(streamingFontSlots.begin(), streamingFontSlots.end(),
+                               [dataPtr](const StreamingFontSlot& slot) { return slot.data == dataPtr; });
+  if (streamIt != streamingFontSlots.end()) {
+    streamIt->stream = std::move(streamingFont);
+  } else {
+    streamingFontSlots.emplace_back(dataPtr, std::move(streamingFont));
+  }
+  insertFont(fontId, streamingFamily);
+}
+
+void GfxRenderer::removeFont(int fontId) {
+  auto it =
+      std::find_if(fontSlots.begin(), fontSlots.end(), [fontId](const FontSlot& slot) { return slot.id == fontId; });
+  if (it == fontSlots.end()) {
+    return;
+  }
+  for (const auto style :
+       {EpdFontFamily::REGULAR, EpdFontFamily::BOLD, EpdFontFamily::ITALIC, EpdFontFamily::BOLD_ITALIC}) {
+    const EpdFontData* d = it->family.getData(style);
+    if (d != nullptr) {
+      streamingFontSlots.erase(std::remove_if(streamingFontSlots.begin(), streamingFontSlots.end(),
+                                              [d](const StreamingFontSlot& slot) { return slot.data == d; }),
+                               streamingFontSlots.end());
+    }
+  }
+  fontSlots.erase(it);
+}
+
+void GfxRenderer::removeAllStreamingFonts() {
+  if (streamingFontSlots.empty()) {
+    return;
+  }
+
+  for (auto it = fontSlots.begin(); it != fontSlots.end();) {
+    bool usesStreamingData = false;
+    for (const auto style :
+         {EpdFontFamily::REGULAR, EpdFontFamily::BOLD, EpdFontFamily::ITALIC, EpdFontFamily::BOLD_ITALIC}) {
+      const EpdFontData* data = it->family.getData(style);
+      const auto streamIt = std::find_if(streamingFontSlots.begin(), streamingFontSlots.end(),
+                                         [data](const StreamingFontSlot& slot) { return slot.data == data; });
+      if (data != nullptr && streamIt != streamingFontSlots.end()) {
+        usesStreamingData = true;
+        break;
+      }
+    }
+
+    if (usesStreamingData) {
+      it = fontSlots.erase(it);
+    } else {
+      ++it;
+    }
+  }
+
+  streamingFontSlots.clear();
+}
+
+void GfxRenderer::addStreamingFontStyle(int fontId, EpdFontFamily::Style style,
+                                        std::unique_ptr<ExternalFont> streamingFont) {
+  auto it =
+      std::find_if(fontSlots.begin(), fontSlots.end(), [fontId](const FontSlot& slot) { return slot.id == fontId; });
+  if (it == fontSlots.end()) {
+    INX_SERIAL.printf("[GFX] Can't add style to unknown font ID %d\n", fontId);
+    return;
+  }
+
+  const EpdFontData* dataPtr = streamingFont->getData();
+  auto streamIt = std::find_if(streamingFontSlots.begin(), streamingFontSlots.end(),
+                               [dataPtr](const StreamingFontSlot& slot) { return slot.data == dataPtr; });
+  if (streamIt != streamingFontSlots.end()) {
+    streamIt->stream = std::move(streamingFont);
+  } else {
+    streamingFontSlots.emplace_back(dataPtr, std::move(streamingFont));
+  }
+
+  EpdFontFamily updatedFamily = it->family;
+  updatedFamily.setData(style, dataPtr);
+  it->family = updatedFamily;
+}

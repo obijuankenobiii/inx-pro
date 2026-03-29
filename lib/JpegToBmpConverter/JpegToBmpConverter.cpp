@@ -1,0 +1,1848 @@
+/**
+ * @file JpegToBmpConverter.cpp
+ * @brief Definitions for JpegToBmpConverter.
+ */
+
+#include "JpegToBmpConverter.h"
+
+#include <HardwareSerial.h>
+#include <SdFat.h>
+#include <miniz.h>
+#include <picojpeg.h>
+#include <toojpeg.h>
+
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <cstring>
+
+#include <esp_heap_caps.h>
+#include <esp_task_wdt.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+
+#define STBI_ONLY_JPEG
+#define STBI_NO_STDIO
+#include <stb_image.h>
+#undef STBI_NO_STDIO
+#undef STBI_ONLY_JPEG
+
+#include "Bitmap.h"
+#include "BitmapUtil.h"
+#include "JpegRender.h"
+
+namespace {
+
+// Cover/thumbnail conversion runs off the visible render path. Put its
+// variable-size row scratch in PSRAM so a large cover cannot fragment the
+// internal heap needed by the display and live image decoder.
+void* allocateConversionScratch(const size_t bytes) {
+  if (void* memory = heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)) {
+    return memory;
+  }
+  return heap_caps_malloc(bytes, MALLOC_CAP_8BIT);
+}
+
+}  // namespace
+
+// PSRAM-backed read buffer, RAII-owned so every early-return path in the functions below still frees
+// it. 4096 bytes (vs. the previous 512-byte on-stack array) cuts SD transactions ~8x for the same
+// file; kept off the stack since this struct is constructed at 7 call sites on the 8KB main-task stack.
+struct JpegReadBuffer {
+  static constexpr size_t kSize = 4096;
+  uint8_t* data;
+
+  JpegReadBuffer() : data(static_cast<uint8_t*>(heap_caps_malloc(kSize, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT))) {
+    if (!data) data = static_cast<uint8_t*>(heap_caps_malloc(kSize, MALLOC_CAP_8BIT));
+  }
+  ~JpegReadBuffer() { heap_caps_free(data); }
+  JpegReadBuffer(const JpegReadBuffer&) = delete;
+  JpegReadBuffer& operator=(const JpegReadBuffer&) = delete;
+};
+
+struct JpegReadContext {
+  FsFile* file = nullptr;
+  const uint8_t* bytes = nullptr;
+  size_t bytesSize = 0;
+  size_t bytesPosition = 0;
+  uint8_t* buffer = nullptr;
+  size_t bufferCapacity = 0;
+  size_t bufferPos = 0;
+  size_t bufferFilled = 0;
+
+  JpegReadContext(FsFile& source, uint8_t* readBuffer, const size_t capacity)
+      : file(&source), buffer(readBuffer), bufferCapacity(capacity) {}
+  JpegReadContext(const uint8_t* source, const size_t sourceSize, uint8_t* readBuffer, const size_t capacity)
+      : bytes(source), bytesSize(sourceSize), buffer(readBuffer), bufferCapacity(capacity) {}
+};
+
+struct PicoJpegDecodeGuard {
+  ~PicoJpegDecodeGuard() { pjpeg_decode_deinit(); }
+};
+
+constexpr bool USE_8BIT_OUTPUT = false;
+constexpr bool USE_FLOYD_STEINBERG = true;
+constexpr bool USE_PRESCALE = true;
+constexpr int TARGET_MAX_WIDTH = 480;
+constexpr int TARGET_MAX_HEIGHT = 800;
+
+static Print* gJpegThumbnailOut = nullptr;
+static size_t gJpegThumbnailBytesWritten = 0;
+
+static void jpegThumbnailWriteByte(unsigned char byte);
+
+struct StbiFileContext {
+  FsFile& file;
+};
+
+static int stbiFileRead(void* user, char* data, const int size) {
+  auto* context = static_cast<StbiFileContext*>(user);
+  if (!context || size <= 0) return 0;
+  const int bytesRead = static_cast<int>(context->file.read(reinterpret_cast<uint8_t*>(data), static_cast<size_t>(size)));
+  // Progressive covers can contain a large number of scan segments. Keep the
+  // thumbnail worker cooperative while STB consumes the source file.
+  esp_task_wdt_reset();
+  yield();
+  return bytesRead;
+}
+
+static void stbiFileSkip(void* user, const int count) {
+  auto* context = static_cast<StbiFileContext*>(user);
+  if (!context || count == 0) return;
+  const int64_t current = static_cast<int64_t>(context->file.position());
+  const int64_t target = std::max<int64_t>(0, current + count);
+  context->file.seek(static_cast<uint32_t>(target));
+}
+
+static int stbiFileEof(void* user) {
+  auto* context = static_cast<StbiFileContext*>(user);
+  return !context || context->file.position() >= context->file.size();
+}
+
+static uint8_t* allocThumbnailPixels(const size_t bytes) {
+  if (auto* psram = static_cast<uint8_t*>(heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT))) {
+    return psram;
+  }
+  return static_cast<uint8_t*>(heap_caps_malloc(bytes, MALLOC_CAP_8BIT));
+}
+
+static void freeThumbnailPixels(uint8_t* pixels) {
+  heap_caps_free(pixels);
+}
+
+static bool progressiveJpegToThumbnailJpeg(FsFile& jpegFile, Print& jpegOut, const int targetMaxWidth,
+                                            const int targetMaxHeight, uint8_t quality) {
+  // Decode the complete progressive JPEG first. This preserves the AC detail from every scan and
+  // produces a sharper thumbnail than the bounded DC-only fallback. STB allocations are directed
+  // to Sticky's PSRAM and are released by stbi_image_free() before returning.
+  jpegFile.seek(0);
+  StbiFileContext fileContext{jpegFile};
+  stbi_io_callbacks callbacks = {stbiFileRead, stbiFileSkip, stbiFileEof};
+  int sourceWidth = 0;
+  int sourceHeight = 0;
+  int sourceComponents = 0;
+  stbi_uc* decoded = stbi_load_from_callbacks(&callbacks, &fileContext, &sourceWidth, &sourceHeight,
+                                              &sourceComponents, 1);
+  (void)sourceComponents;
+  if (!decoded || sourceWidth <= 0 || sourceHeight <= 0 || targetMaxWidth <= 0 || targetMaxHeight <= 0) {
+    INX_SERIAL.printf("[JPEG-THUMB] progressive full decode failed: %s\n", stbi_failure_reason());
+    if (decoded) stbi_image_free(decoded);
+    jpegFile.seek(0);
+    return JpegRender::writeProgressiveThumbnailJpeg(jpegFile, jpegOut, targetMaxWidth, targetMaxHeight, quality);
+  }
+
+  const float scaleX = static_cast<float>(targetMaxWidth) / static_cast<float>(sourceWidth);
+  const float scaleY = static_cast<float>(targetMaxHeight) / static_cast<float>(sourceHeight);
+  const float scale = std::min(1.0f, std::min(scaleX, scaleY));
+  const int outputWidth = std::max(1, static_cast<int>(std::lround(sourceWidth * scale)));
+  const int outputHeight = std::max(1, static_cast<int>(std::lround(sourceHeight * scale)));
+  const size_t outputBytes = static_cast<size_t>(outputWidth) * static_cast<size_t>(outputHeight) * 3u;
+  uint8_t* thumbnail = allocThumbnailPixels(outputBytes);
+  if (!thumbnail) {
+    stbi_image_free(decoded);
+    jpegFile.seek(0);
+    return JpegRender::writeProgressiveThumbnailJpeg(jpegFile, jpegOut, targetMaxWidth, targetMaxHeight, quality);
+  }
+
+  const bool sameWidth = outputWidth == sourceWidth;
+  const bool sameHeight = outputHeight == sourceHeight;
+  for (int y = 0; y < outputHeight; ++y) {
+    const float sourceY = sameHeight ? static_cast<float>(y)
+                                    : static_cast<float>(y) * static_cast<float>(sourceHeight - 1) /
+                                          static_cast<float>(std::max(1, outputHeight - 1));
+    const int y0 = std::min(sourceHeight - 1, static_cast<int>(sourceY));
+    const int y1 = std::min(sourceHeight - 1, y0 + 1);
+    const float fy = sourceY - static_cast<float>(y0);
+    for (int x = 0; x < outputWidth; ++x) {
+      const float sourceX = sameWidth ? static_cast<float>(x)
+                                      : static_cast<float>(x) * static_cast<float>(sourceWidth - 1) /
+                                            static_cast<float>(std::max(1, outputWidth - 1));
+      const int x0 = std::min(sourceWidth - 1, static_cast<int>(sourceX));
+      const int x1 = std::min(sourceWidth - 1, x0 + 1);
+      const float fx = sourceX - static_cast<float>(x0);
+      const uint8_t p00 = decoded[static_cast<size_t>(y0) * static_cast<size_t>(sourceWidth) + x0];
+      const uint8_t p01 = decoded[static_cast<size_t>(y0) * static_cast<size_t>(sourceWidth) + x1];
+      const uint8_t p10 = decoded[static_cast<size_t>(y1) * static_cast<size_t>(sourceWidth) + x0];
+      const uint8_t p11 = decoded[static_cast<size_t>(y1) * static_cast<size_t>(sourceWidth) + x1];
+      const float top = static_cast<float>(p00) + (static_cast<float>(p01) - p00) * fx;
+      const float bottom = static_cast<float>(p10) + (static_cast<float>(p11) - p10) * fx;
+      const uint8_t gray = static_cast<uint8_t>(std::lround(top + (bottom - top) * fy));
+      uint8_t* outputPixel = thumbnail +
+                             (static_cast<size_t>(y) * static_cast<size_t>(outputWidth) + x) * 3u;
+      outputPixel[0] = gray;
+      outputPixel[1] = gray;
+      outputPixel[2] = gray;
+    }
+    if ((y & 7) == 0) {
+      esp_task_wdt_reset();
+      yield();
+    }
+  }
+
+  quality = std::max<uint8_t>(1, std::min<uint8_t>(100, quality));
+  gJpegThumbnailOut = &jpegOut;
+  gJpegThumbnailBytesWritten = 0;
+  const bool encoded = TooJpeg::writeJpeg(jpegThumbnailWriteByte, thumbnail,
+                                          static_cast<unsigned short>(outputWidth),
+                                          static_cast<unsigned short>(outputHeight), true, quality, true);
+  gJpegThumbnailOut = nullptr;
+  freeThumbnailPixels(thumbnail);
+  stbi_image_free(decoded);
+  return encoded;
+}
+
+static inline uint8_t darkenOneBitJpegGray(const uint8_t gray) {
+  return gray > 22 ? static_cast<uint8_t>(gray - 22) : 0;
+}
+
+static void jpegThumbnailWriteByte(unsigned char byte) {
+  if (gJpegThumbnailOut) {
+    gJpegThumbnailOut->write(static_cast<uint8_t>(byte));
+    if ((++gJpegThumbnailBytesWritten & 1023u) == 0u) {
+      yield();
+    }
+  }
+}
+
+inline void write16(Print& out, const uint16_t value) {
+  out.write(value & 0xFF);
+  out.write((value >> 8) & 0xFF);
+}
+
+inline void write32(Print& out, const uint32_t value) {
+  out.write(value & 0xFF);
+  out.write((value >> 8) & 0xFF);
+  out.write((value >> 16) & 0xFF);
+  out.write((value >> 24) & 0xFF);
+}
+
+inline void write32Signed(Print& out, const int32_t value) {
+  out.write(value & 0xFF);
+  out.write((value >> 8) & 0xFF);
+  out.write((value >> 16) & 0xFF);
+  out.write((value >> 24) & 0xFF);
+}
+
+static void writeBmpHeader1bit(Print& bmpOut, const int width, const int height) {
+  const int bytesPerRow = (width + 31) / 32 * 4;
+  const int imageSize = bytesPerRow * height;
+  const uint32_t fileSize = 62 + imageSize;
+
+  bmpOut.write('B');
+  bmpOut.write('M');
+  write32(bmpOut, fileSize);
+  write32(bmpOut, 0);
+  write32(bmpOut, 62);
+  write32(bmpOut, 40);
+  write32Signed(bmpOut, width);
+  write32Signed(bmpOut, -height);
+  write16(bmpOut, 1);
+  write16(bmpOut, 1);
+  write32(bmpOut, 0);
+  write32(bmpOut, imageSize);
+  write32(bmpOut, 2835);
+  write32(bmpOut, 2835);
+  write32(bmpOut, 2);
+  write32(bmpOut, 2);
+
+  uint8_t palette[8] = {0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0x00};
+  for (const uint8_t i : palette) bmpOut.write(i);
+}
+
+static void writeBmpHeader2bit(Print& bmpOut, const int width, const int height) {
+  const int bytesPerRow = (width * 2 + 31) / 32 * 4;
+  const int imageSize = bytesPerRow * height;
+
+  bmpOut.write('B');
+  bmpOut.write('M');
+  write32(bmpOut, 70 + imageSize);
+  write32(bmpOut, 0);
+  write32(bmpOut, 70);
+  write32(bmpOut, 40);
+  write32Signed(bmpOut, width);
+  write32Signed(bmpOut, -height);
+  write16(bmpOut, 1);
+  write16(bmpOut, 2);
+  write32(bmpOut, 0);
+  write32(bmpOut, imageSize);
+  write32(bmpOut, 2835);
+  write32(bmpOut, 2835);
+  write32(bmpOut, 4);
+  write32(bmpOut, 4);
+
+  uint8_t palette[16] = {0, 0, 0, 0, 85, 85, 85, 0, 170, 170, 170, 0, 255, 255, 255, 0};
+  for (const uint8_t i : palette) bmpOut.write(i);
+}
+
+static bool isUnsupportedJpeg(FsFile& file) {
+  const uint64_t originalPos = file.position();
+  file.seek(0);
+  uint8_t buf[2];
+  bool isProgressive = false;
+
+  while (file.read(buf, 1) == 1) {
+    if (buf[0] != 0xFF) continue;
+    if (file.read(buf, 1) != 1) break;
+
+    while (buf[0] == 0xFF) {
+      if (file.read(buf, 1) != 1) break;
+    }
+
+    const uint8_t marker = buf[0];
+    if (marker == 0xC2 || marker == 0xC9 || marker == 0xCA) {
+      isProgressive = true;
+      break;
+    }
+
+    if (marker == 0xC0 || marker == 0xC1) {
+      isProgressive = false;
+      break;
+    }
+
+    if (marker != 0xD8 && marker != 0xD9 && marker != 0x01 && !(marker >= 0xD0 && marker <= 0xD7)) {
+      if (file.read(buf, 2) != 2) break;
+      const uint16_t len = (buf[0] << 8) | buf[1];
+      if (len < 2) break;
+      file.seek(file.position() + len - 2);
+    }
+  }
+
+  file.seek(originalPos);
+  return isProgressive;
+}
+
+unsigned char JpegToBmpConverter::jpegReadCallback(unsigned char* pBuf, const unsigned char buf_size,
+                                                   unsigned char* pBytes_actually_read, void* pCallback_data) {
+  auto* context = static_cast<JpegReadContext*>(pCallback_data);
+
+  if (!context || !context->buffer || context->bufferCapacity == 0) return PJPG_STREAM_READ_ERROR;
+
+  if (context->bytes) {
+    const size_t available = context->bytesPosition < context->bytesSize ? context->bytesSize - context->bytesPosition : 0;
+    const size_t toRead = std::min(static_cast<size_t>(buf_size), available);
+    if (toRead > 0) {
+      memcpy(pBuf, context->bytes + context->bytesPosition, toRead);
+      context->bytesPosition += toRead;
+    }
+    *pBytes_actually_read = static_cast<unsigned char>(toRead);
+    return 0;
+  }
+
+  if (!context->file || !*context->file) return PJPG_STREAM_READ_ERROR;
+
+  if (context->bufferPos >= context->bufferFilled) {
+    context->bufferFilled = context->file->read(context->buffer, context->bufferCapacity);
+    context->bufferPos = 0;
+
+    if (context->bufferFilled == 0) {
+      *pBytes_actually_read = 0;
+      return 0;
+    }
+  }
+
+  const size_t available = context->bufferFilled - context->bufferPos;
+  const size_t toRead = std::min((size_t)buf_size, available);
+
+  memcpy(pBuf, context->buffer + context->bufferPos, toRead);
+  context->bufferPos += toRead;
+  *pBytes_actually_read = (unsigned char)toRead;
+
+  return 0;
+}
+
+bool JpegToBmpConverter::jpegFileToBmpStreamInternal(FsFile& jpegFile, Print& bmpOut, int targetWidth, int targetHeight,
+                                                     bool oneBit, bool quickMode) {
+  if (isUnsupportedJpeg(jpegFile)) return false;
+
+  JpegReadBuffer readBuf;
+  if (!readBuf.data) return false;
+  JpegReadContext context(jpegFile, readBuf.data, JpegReadBuffer::kSize);
+  pjpeg_image_info_t imageInfo;
+  PicoJpegDecodeGuard picoJpegGuard;
+
+  if (pjpeg_decode_init(&imageInfo, JpegToBmpConverter::jpegReadCallback, &context, 0) != 0) return false;
+
+  int outWidth = imageInfo.m_width;
+  int outHeight = imageInfo.m_height;
+  uint32_t scaleX_fp = 65536;
+  uint32_t scaleY_fp = 65536;
+
+  if (targetWidth > 0 && (imageInfo.m_width > targetWidth || imageInfo.m_height > targetHeight)) {
+    float scale = std::min((float)targetWidth / imageInfo.m_width, (float)targetHeight / imageInfo.m_height);
+
+    outWidth = (int)(imageInfo.m_width * scale);
+    outHeight = (int)(imageInfo.m_height * scale);
+    scaleX_fp = (uint32_t)(((uint64_t)imageInfo.m_width << 16) / outWidth);
+    scaleY_fp = (uint32_t)(((uint64_t)imageInfo.m_height << 16) / outHeight);
+  }
+
+  int bytesPerRow;
+  if (oneBit) {
+    writeBmpHeader1bit(bmpOut, outWidth, outHeight);
+    bytesPerRow = (outWidth + 31) / 32 * 4;
+  } else {
+    writeBmpHeader2bit(bmpOut, outWidth, outHeight);
+    bytesPerRow = (outWidth * 2 + 31) / 32 * 4;
+  }
+
+  uint8_t* rowBuffer = static_cast<uint8_t*>(allocateConversionScratch(bytesPerRow));
+  uint8_t* mcuRowBuffer =
+      static_cast<uint8_t*>(allocateConversionScratch(static_cast<size_t>(imageInfo.m_width) *
+                                                      static_cast<size_t>(imageInfo.m_MCUHeight)));
+
+  struct PixelAccumulator {
+    uint32_t sum;
+    uint16_t count;
+  };
+
+  PixelAccumulator* accum = new PixelAccumulator[outWidth]();
+
+  struct ScaleMapEntry {
+    uint16_t startX;
+    uint16_t endX;
+    uint16_t count;
+  };
+
+  ScaleMapEntry* scaleMap = new ScaleMapEntry[outWidth];
+
+  for (int ox = 0; ox < outWidth; ox++) {
+    int sxS = (ox * scaleX_fp) >> 16;
+    int sxE = ((ox + 1) * scaleX_fp) >> 16;
+    if (sxE > imageInfo.m_width) sxE = imageInfo.m_width;
+    scaleMap[ox].startX = sxS;
+    scaleMap[ox].endX = sxE;
+    scaleMap[ox].count = sxE - sxS;
+  }
+
+  uint32_t* outYThresholds = new uint32_t[outHeight + 1];
+  for (int oy = 0; oy <= outHeight; oy++) {
+    outYThresholds[oy] = (uint32_t)oy * scaleY_fp;
+  }
+
+  FourToneImageDitherer* ditherer = nullptr;
+  Atkinson1BitDitherer* ditherer1bit = nullptr;
+
+  if (!oneBit && !quickMode) {
+    ditherer = new FourToneImageDitherer(outWidth);
+  }
+
+  if (oneBit) {
+    ditherer1bit = new Atkinson1BitDitherer(outWidth);
+  }
+
+  int currentOutY = 0;
+  int nextOutYIndex = 1;
+
+  uint8_t* bitMasks = nullptr;
+  uint8_t* shiftAmounts = nullptr;
+
+  if (oneBit) {
+    bitMasks = new uint8_t[outWidth];
+    for (int x = 0; x < outWidth; x++) {
+      bitMasks[x] = 1 << (7 - (x % 8));
+    }
+  } else {
+    shiftAmounts = new uint8_t[outWidth];
+    for (int x = 0; x < outWidth; x++) {
+      shiftAmounts[x] = 6 - ((x * 2) % 8);
+    }
+  }
+
+  const int mcuWidth = imageInfo.m_MCUWidth;
+  const int mcuHeight = imageInfo.m_MCUHeight;
+  const int imgWidth = imageInfo.m_width;
+  const int imgHeight = imageInfo.m_height;
+  const bool isGrayscale = (imageInfo.m_comps == 1);
+
+  for (int mcuY = 0; mcuY < imageInfo.m_MCUSPerCol; mcuY++) {
+    for (int mcuX = 0; mcuX < imageInfo.m_MCUSPerRow; mcuX++) {
+      if (pjpeg_decode_mcu() != 0) break;
+
+      if (isGrayscale) {
+        for (int bY = 0; bY < mcuHeight; bY++) {
+          uint8_t* destRow = mcuRowBuffer + bY * imgWidth;
+          for (int bX = 0; bX < mcuWidth; bX++) {
+            int pX = mcuX * mcuWidth + bX;
+            if (pX >= imgWidth) continue;
+
+            int off = (bY / 8 * (mcuWidth / 8) + bX / 8) * 64 + (bY % 8) * 8 + (bX % 8);
+            destRow[pX] = imageInfo.m_pMCUBufR[off];
+          }
+        }
+      } else {
+        const uint8_t* rBuf = imageInfo.m_pMCUBufR;
+        const uint8_t* gBuf = imageInfo.m_pMCUBufG;
+        const uint8_t* bBuf = imageInfo.m_pMCUBufB;
+
+        for (int bY = 0; bY < mcuHeight; bY++) {
+          uint8_t* destRow = mcuRowBuffer + bY * imgWidth;
+          for (int bX = 0; bX < mcuWidth; bX++) {
+            int pX = mcuX * mcuWidth + bX;
+            if (pX >= imgWidth) continue;
+
+            int off = (bY / 8 * (mcuWidth / 8) + bX / 8) * 64 + (bY % 8) * 8 + (bX % 8);
+
+            destRow[pX] = (rBuf[off] * 77 + gBuf[off] * 150 + bBuf[off] * 29) >> 8;
+          }
+        }
+      }
+    }
+
+    for (int y = 0; y < mcuHeight && (mcuY * mcuHeight + y) < imgHeight; y++) {
+      uint8_t* srcRow = mcuRowBuffer + y * imgWidth;
+
+      for (int ox = 0; ox < outWidth; ox++) {
+        const ScaleMapEntry& map = scaleMap[ox];
+        uint32_t sum = 0;
+        uint8_t* srcPtr = srcRow + map.startX;
+
+        int count = map.count;
+        int i = 0;
+        for (; i + 3 < count; i += 4) {
+          sum += srcPtr[i] + srcPtr[i + 1] + srcPtr[i + 2] + srcPtr[i + 3];
+        }
+        for (; i < count; i++) {
+          sum += srcPtr[i];
+        }
+
+        accum[ox].sum += sum;
+        accum[ox].count += count;
+      }
+
+      int currentSrcY = mcuY * mcuHeight + y;
+      while (nextOutYIndex <= outHeight && currentSrcY >= (outYThresholds[nextOutYIndex] >> 16)) {
+        memset(rowBuffer, 0, bytesPerRow);
+
+        if (oneBit) {
+          for (int x = 0; x < outWidth; x++) {
+            uint8_t gray = (accum[x].count > 0) ? (uint8_t)(accum[x].sum / accum[x].count) : 0;
+            uint8_t bit;
+
+            if (ditherer1bit) {
+              bit = ditherer1bit->processPixel(darkenOneBitJpegGray(gray), x);
+            } else {
+              bit = (darkenOneBitJpegGray(gray) > 127);
+            }
+
+            if (bit) {
+              rowBuffer[x >> 3] |= bitMasks[x];
+            }
+          }
+        } else {
+          if (quickMode) {
+            for (int x = 0; x < outWidth; x++) {
+              uint8_t gray = (accum[x].count > 0) ? (uint8_t)(accum[x].sum / accum[x].count) : 0;
+              uint8_t twoBit = gray >> 6;
+              int byteIdx = (x * 2) >> 3;
+              rowBuffer[byteIdx] |= (twoBit << shiftAmounts[x]);
+            }
+          } else if (ditherer) {
+            for (int x = 0; x < outWidth; x++) {
+              uint8_t gray = (accum[x].count > 0) ? (uint8_t)(accum[x].sum / accum[x].count) : 0;
+              uint8_t twoBit = ditherer->process(gray, x).level;
+              int byteIdx = (x * 2) >> 3;
+              rowBuffer[byteIdx] |= (twoBit << shiftAmounts[x]);
+            }
+          }
+        }
+
+        bmpOut.write(rowBuffer, bytesPerRow);
+
+        if (ditherer) ditherer->nextRow();
+        if (ditherer1bit) ditherer1bit->nextRow();
+
+        currentOutY++;
+        nextOutYIndex++;
+
+        memset(accum, 0, outWidth * sizeof(PixelAccumulator));
+      }
+    }
+  }
+
+  free(rowBuffer);
+  free(mcuRowBuffer);
+  delete[] accum;
+  delete[] scaleMap;
+  delete[] outYThresholds;
+
+  if (bitMasks) delete[] bitMasks;
+  if (shiftAmounts) delete[] shiftAmounts;
+
+  if (ditherer) delete ditherer;
+  if (ditherer1bit) delete ditherer1bit;
+
+  return true;
+}
+
+bool JpegToBmpConverter::jpegFileTo1BitBmpStreamCentered(FsFile& jpegFile, Print& bmpOut, int targetWidth,
+                                                         int targetHeight, bool cropToFill) {
+  return jpegFileToBmpStreamInternalCentered(jpegFile, bmpOut, targetWidth, targetHeight, true, false, cropToFill);
+}
+
+bool JpegToBmpConverter::jpegFileToBmpStreamCentered(FsFile& jpegFile, Print& bmpOut, int targetWidth, int targetHeight,
+                                                     bool cropToFill) {
+  return jpegFileToBmpStreamInternalCentered(jpegFile, bmpOut, targetWidth, targetHeight, false, false, cropToFill);
+}
+
+bool JpegToBmpConverter::jpegFileToBmpStreamInternalCentered(FsFile& jpegFile, Print& bmpOut, int targetWidth,
+                                                             int targetHeight, bool oneBit, bool quickMode,
+                                                             bool cropToFill) {
+  if (isUnsupportedJpeg(jpegFile)) return false;
+
+  JpegReadBuffer readBuf;
+  if (!readBuf.data) return false;
+  JpegReadContext context(jpegFile, readBuf.data, JpegReadBuffer::kSize);
+  pjpeg_image_info_t imageInfo;
+  PicoJpegDecodeGuard picoJpegGuard;
+
+  if (pjpeg_decode_init(&imageInfo, jpegReadCallback, &context, 0) != 0) return false;
+
+  int outWidth = imageInfo.m_width;
+  int outHeight = imageInfo.m_height;
+  uint32_t scaleX_fp = 65536;
+  uint32_t scaleY_fp = 65536;
+  int srcOffsetX = 0;
+  int srcOffsetY = 0;
+  int cropSrcWidth = imageInfo.m_width;
+  int cropSrcHeight = imageInfo.m_height;
+
+  if (targetWidth > 0 && targetHeight > 0) {
+    float scaleX = (float)targetWidth / imageInfo.m_width;
+    float scaleY = (float)targetHeight / imageInfo.m_height;
+    if (cropToFill) {
+      float scale = std::max(scaleX, scaleY);
+      cropSrcWidth = (int)(targetWidth / scale);
+      cropSrcHeight = (int)(targetHeight / scale);
+      srcOffsetX = (imageInfo.m_width - cropSrcWidth) / 2;
+      srcOffsetY = (imageInfo.m_height - cropSrcHeight) / 2;
+      outWidth = targetWidth;
+      outHeight = targetHeight;
+    } else {
+      float scale = std::min(scaleX, scaleY);
+      if (scale > 1.0f) {
+        scale = 1.0f;
+      }
+      cropSrcWidth = imageInfo.m_width;
+      cropSrcHeight = imageInfo.m_height;
+      srcOffsetX = 0;
+      srcOffsetY = 0;
+      outWidth = std::max(1, static_cast<int>(std::lround(imageInfo.m_width * scale)));
+      outHeight = std::max(1, static_cast<int>(std::lround(imageInfo.m_height * scale)));
+    }
+    scaleX_fp = (uint32_t)(cropSrcWidth << 16) / outWidth;
+    scaleY_fp = (uint32_t)(cropSrcHeight << 16) / outHeight;
+  }
+
+  int bytesPerRow;
+  if (oneBit) {
+    writeBmpHeader1bit(bmpOut, outWidth, outHeight);
+    bytesPerRow = (outWidth + 31) / 32 * 4;
+  } else {
+    writeBmpHeader2bit(bmpOut, outWidth, outHeight);
+    bytesPerRow = (outWidth * 2 + 31) / 32 * 4;
+  }
+
+  uint8_t* rowBuffer = static_cast<uint8_t*>(allocateConversionScratch(bytesPerRow));
+  uint8_t* mcuRowBuffer =
+      static_cast<uint8_t*>(allocateConversionScratch(static_cast<size_t>(imageInfo.m_width) *
+                                                      static_cast<size_t>(imageInfo.m_MCUHeight)));
+  uint32_t* rowAccum = new uint32_t[outWidth]();
+  uint16_t* rowCount = new uint16_t[outWidth]();
+
+  FourToneImageDitherer* ditherer = nullptr;
+  Atkinson1BitDitherer* ditherer1bit = nullptr;
+
+  if (!oneBit && !quickMode) {
+    ditherer = new FourToneImageDitherer(outWidth);
+  }
+
+  if (oneBit) {
+    ditherer1bit = new Atkinson1BitDitherer(outWidth);
+  }
+
+  int currentOutY = 0;
+  uint32_t nextOutY_srcStart = scaleY_fp;
+  int srcYEnd = srcOffsetY + cropSrcHeight;
+
+  for (int mcuY = 0; mcuY < imageInfo.m_MCUSPerCol; mcuY++) {
+    for (int mcuX = 0; mcuX < imageInfo.m_MCUSPerRow; mcuX++) {
+      if (pjpeg_decode_mcu() != 0) break;
+
+      for (int bY = 0; bY < imageInfo.m_MCUHeight; bY++) {
+        for (int bX = 0; bX < imageInfo.m_MCUWidth; bX++) {
+          int pX = mcuX * imageInfo.m_MCUWidth + bX;
+          if (pX >= imageInfo.m_width) continue;
+
+          int off = (bY / 8 * (imageInfo.m_MCUWidth / 8) + bX / 8) * 64 + (bY % 8) * 8 + (bX % 8);
+          uint8_t g;
+
+          if (imageInfo.m_comps == 1) {
+            g = imageInfo.m_pMCUBufR[off];
+          } else {
+            g = rgbToGray(imageInfo.m_pMCUBufR[off], imageInfo.m_pMCUBufG[off], imageInfo.m_pMCUBufB[off]);
+          }
+
+          mcuRowBuffer[bY * imageInfo.m_width + pX] = g;
+        }
+      }
+    }
+
+    for (int y = 0; y < imageInfo.m_MCUHeight && (mcuY * imageInfo.m_MCUHeight + y) < imageInfo.m_height; y++) {
+      int currentSrcY = mcuY * imageInfo.m_MCUHeight + y;
+
+      if (currentSrcY < srcOffsetY || currentSrcY >= srcYEnd) continue;
+
+      uint8_t* srcRow = mcuRowBuffer + y * imageInfo.m_width;
+
+      for (int ox = 0; ox < outWidth; ox++) {
+        int sx = srcOffsetX + ((ox * scaleX_fp) >> 16);
+        int sxEnd = srcOffsetX + cropSrcWidth;
+
+        if (sx < imageInfo.m_width && sx >= srcOffsetX && sx < sxEnd) {
+          rowAccum[ox] += srcRow[sx];
+          rowCount[ox]++;
+        }
+      }
+
+      if (((uint32_t)((mcuY * imageInfo.m_MCUHeight + y) + 1) << 16) >= nextOutY_srcStart && currentOutY < outHeight) {
+        memset(rowBuffer, 0, bytesPerRow);
+
+        for (int x = 0; x < outWidth; x++) {
+          uint8_t gray = 0;
+          if (rowCount[x] > 0) {
+            gray = (uint8_t)(rowAccum[x] / rowCount[x]);
+          }
+
+          if (oneBit) {
+            uint8_t bit;
+            if (ditherer1bit) {
+              bit = ditherer1bit->processPixel(darkenOneBitJpegGray(gray), x);
+            } else {
+              bit = (darkenOneBitJpegGray(gray) > 127);
+            }
+            rowBuffer[x / 8] |= (bit << (7 - (x % 8)));
+          } else {
+            uint8_t twoBit;
+            if (quickMode) {
+              twoBit = (gray >> 6);
+            } else if (ditherer) {
+              twoBit = ditherer->process(gray, x).level;
+            } else {
+              twoBit = (gray >> 6);
+            }
+            rowBuffer[(x * 2) / 8] |= (twoBit << (6 - ((x * 2) % 8)));
+          }
+        }
+
+        bmpOut.write(rowBuffer, bytesPerRow);
+
+        if (ditherer) ditherer->nextRow();
+        if (ditherer1bit) ditherer1bit->nextRow();
+
+        currentOutY++;
+        memset(rowAccum, 0, outWidth * 4);
+        memset(rowCount, 0, outWidth * 2);
+        nextOutY_srcStart = (uint32_t)(currentOutY + 1) * scaleY_fp;
+      }
+    }
+  }
+
+  free(rowBuffer);
+  free(mcuRowBuffer);
+  delete[] rowAccum;
+  delete[] rowCount;
+
+  if (ditherer) delete ditherer;
+  if (ditherer1bit) delete ditherer1bit;
+
+  return true;
+}
+
+bool JpegToBmpConverter::jpegFileToBmpStream(FsFile& jpegFile, Print& bmpOut) {
+  return jpegFileToBmpStreamInternal(jpegFile, bmpOut, TARGET_MAX_WIDTH, TARGET_MAX_HEIGHT, false);
+}
+
+bool JpegToBmpConverter::jpegFileToBmpStreamWithSize(FsFile& jpegFile, Print& bmpOut, int targetMaxWidth,
+                                                     int targetMaxHeight) {
+  return jpegFileToBmpStreamInternal(jpegFile, bmpOut, targetMaxWidth, targetMaxHeight, false);
+}
+
+bool JpegToBmpConverter::jpegFileTo1BitBmpStream(FsFile& jpegFile, Print& bmpOut) {
+  return jpegFileToBmpStreamInternal(jpegFile, bmpOut, TARGET_MAX_WIDTH, TARGET_MAX_HEIGHT, true);
+}
+
+bool JpegToBmpConverter::jpegFileTo1BitBmpStreamWithSize(FsFile& jpegFile, Print& bmpOut, int targetMaxWidth,
+                                                         int targetMaxHeight) {
+  return jpegFileToBmpStreamInternal(jpegFile, bmpOut, targetMaxWidth, targetMaxHeight, true);
+}
+
+bool JpegToBmpConverter::jpegFileToBmpStreamQuick(FsFile& jpegFile, Print& bmpOut, int targetMaxWidth,
+                                                  int targetMaxHeight) {
+  return jpegFileToBmpStreamInternal(jpegFile, bmpOut, targetMaxWidth, targetMaxHeight, false, true);
+}
+
+bool JpegToBmpConverter::jpegFileToThumbnailBmp(FsFile& jpegFile, Print& bmpOut, int targetMaxWidth,
+                                                int targetMaxHeight) {
+  if (isUnsupportedJpeg(jpegFile)) return false;
+
+  JpegReadBuffer readBuf;
+  if (!readBuf.data) return false;
+  JpegReadContext context(jpegFile, readBuf.data, JpegReadBuffer::kSize);
+  pjpeg_image_info_t imageInfo;
+  PicoJpegDecodeGuard picoJpegGuard;
+
+  if (pjpeg_decode_init(&imageInfo, jpegReadCallback, &context, 0) != 0) return false;
+
+  int outWidth = targetMaxWidth;
+  int outHeight = targetMaxHeight;
+  uint32_t scaleX_fp = 65536;
+  uint32_t scaleY_fp = 65536;
+  int srcOffsetX = 0;
+  int srcOffsetY = 0;
+  int cropSrcWidth = imageInfo.m_width;
+  int cropSrcHeight = imageInfo.m_height;
+
+  if (targetMaxWidth > 0 && targetMaxHeight > 0) {
+    const float scaleX = static_cast<float>(targetMaxWidth) / static_cast<float>(imageInfo.m_width);
+    const float scaleY = static_cast<float>(targetMaxHeight) / static_cast<float>(imageInfo.m_height);
+    float scale = std::min(scaleX, scaleY);
+    if (scale > 1.0f) {
+      scale = 1.0f;
+    }
+    outWidth = std::max(1, static_cast<int>(std::lround(static_cast<float>(imageInfo.m_width) * scale)));
+    outHeight = std::max(1, static_cast<int>(std::lround(static_cast<float>(imageInfo.m_height) * scale)));
+    cropSrcWidth = imageInfo.m_width;
+    cropSrcHeight = imageInfo.m_height;
+    srcOffsetX = 0;
+    srcOffsetY = 0;
+    scaleX_fp = (uint32_t)(cropSrcWidth << 16) / static_cast<uint32_t>(outWidth);
+    scaleY_fp = (uint32_t)(cropSrcHeight << 16) / static_cast<uint32_t>(outHeight);
+  }
+
+  const int bytesPerRow = (outWidth * 2 + 31) / 32 * 4;
+  const int imageSize = bytesPerRow * outHeight;
+
+  bmpOut.write('B');
+  bmpOut.write('M');
+  write32(bmpOut, 70 + imageSize);
+  write32(bmpOut, 0);
+  write32(bmpOut, 70);
+  write32(bmpOut, 40);
+  write32Signed(bmpOut, outWidth);
+  write32Signed(bmpOut, -outHeight);
+  write16(bmpOut, 1);
+  write16(bmpOut, 2);
+  write32(bmpOut, 0);
+  write32(bmpOut, imageSize);
+  write32(bmpOut, 2835);
+  write32(bmpOut, 2835);
+  write32(bmpOut, 4);
+  write32(bmpOut, 4);
+
+  uint8_t palette[16] = {50, 50, 50, 0, 96, 96, 96, 0, 160, 160, 160, 0, 224, 224, 224, 0};
+  for (const uint8_t i : palette) bmpOut.write(i);
+
+  uint8_t* rowBuffer = static_cast<uint8_t*>(allocateConversionScratch(bytesPerRow));
+  uint8_t* mcuRowBuffer =
+      static_cast<uint8_t*>(allocateConversionScratch(static_cast<size_t>(imageInfo.m_width) *
+                                                      static_cast<size_t>(imageInfo.m_MCUHeight)));
+  uint32_t* rowAccum = new uint32_t[outWidth]();
+  uint16_t* rowCount = new uint16_t[outWidth]();
+
+  int16_t* errorBuffer = new int16_t[outWidth * 2]();
+
+  int currentOutY = 0;
+  uint32_t nextOutY_srcStart = scaleY_fp;
+  int srcYEnd = srcOffsetY + cropSrcHeight;
+
+  for (int mcuY = 0; mcuY < imageInfo.m_MCUSPerCol; mcuY++) {
+    for (int mcuX = 0; mcuX < imageInfo.m_MCUSPerRow; mcuX++) {
+      if (pjpeg_decode_mcu() != 0) break;
+
+      for (int bY = 0; bY < imageInfo.m_MCUHeight; bY++) {
+        for (int bX = 0; bX < imageInfo.m_MCUWidth; bX++) {
+          int pX = mcuX * imageInfo.m_MCUWidth + bX;
+          if (pX >= imageInfo.m_width) continue;
+
+          int off = (bY / 8 * (imageInfo.m_MCUWidth / 8) + bX / 8) * 64 + (bY % 8) * 8 + (bX % 8);
+          uint8_t g;
+
+          if (imageInfo.m_comps == 1) {
+            g = imageInfo.m_pMCUBufR[off];
+          } else {
+            g = rgbToGray(imageInfo.m_pMCUBufR[off], imageInfo.m_pMCUBufG[off], imageInfo.m_pMCUBufB[off]);
+          }
+
+          mcuRowBuffer[bY * imageInfo.m_width + pX] = g;
+        }
+      }
+    }
+
+    for (int y = 0; y < imageInfo.m_MCUHeight && (mcuY * imageInfo.m_MCUHeight + y) < imageInfo.m_height; y++) {
+      int currentSrcY = mcuY * imageInfo.m_MCUHeight + y;
+
+      if (currentSrcY < srcOffsetY || currentSrcY >= srcYEnd) continue;
+
+      uint8_t* srcRow = mcuRowBuffer + y * imageInfo.m_width;
+
+      for (int ox = 0; ox < outWidth; ox++) {
+        int sx = srcOffsetX + ((ox * scaleX_fp) >> 16);
+
+        if (sx >= srcOffsetX && sx < srcOffsetX + cropSrcWidth && sx < imageInfo.m_width) {
+          rowAccum[ox] += srcRow[sx];
+          rowCount[ox]++;
+        }
+      }
+
+      if (((uint32_t)((mcuY * imageInfo.m_MCUHeight + y) + 1) << 16) >= nextOutY_srcStart && currentOutY < outHeight) {
+        memset(rowBuffer, 0, bytesPerRow);
+
+        int16_t* currentError = &errorBuffer[(currentOutY & 1) * outWidth];
+        int16_t* nextError = &errorBuffer[((currentOutY + 1) & 1) * outWidth];
+
+        for (int x = 0; x < outWidth; x++) {
+          uint8_t gray = 0;
+          if (rowCount[x] > 0) {
+            gray = (uint8_t)(rowAccum[x] / rowCount[x]);
+          }
+
+          int16_t corrected = gray + currentError[x];
+          if (corrected < 0) corrected = 0;
+          if (corrected > 255) corrected = 255;
+
+          const ImageToneSample tone = quantizeTwoBitImage(corrected);
+          const uint8_t twoBit = tone.level;
+          const int quantized = tone.value;
+
+          int16_t error = corrected - quantized;
+
+          if (x < outWidth - 1) {
+            currentError[x + 1] += (error * 6) / 16;
+          }
+          nextError[x] += (error * 4) / 16;
+          if (x > 0) {
+            nextError[x - 1] += (error * 2) / 16;
+          }
+          if (x < outWidth - 1) {
+            nextError[x + 1] += (error * 1) / 16;
+          }
+
+          rowBuffer[(x * 2) / 8] |= (twoBit << (6 - ((x * 2) % 8)));
+        }
+
+        bmpOut.write(rowBuffer, bytesPerRow);
+
+        currentOutY++;
+        memset(rowAccum, 0, outWidth * sizeof(uint32_t));
+        memset(rowCount, 0, outWidth * sizeof(uint16_t));
+        nextOutY_srcStart = (uint32_t)(currentOutY + 1) * scaleY_fp;
+
+        if (currentOutY < outHeight) {
+          memset(nextError, 0, outWidth * sizeof(int16_t));
+        }
+      }
+    }
+  }
+
+  free(rowBuffer);
+  free(mcuRowBuffer);
+  delete[] rowAccum;
+  delete[] rowCount;
+  delete[] errorBuffer;
+
+  return true;
+}
+
+bool JpegToBmpConverter::jpegFileToThumbnailJpeg(FsFile& jpegFile, Print& jpegOut, int targetMaxWidth,
+                                                 int targetMaxHeight, uint8_t quality) {
+  // PicoJPEG intentionally supports only baseline JPEGs. The reader already uses STB for
+  // progressive covers; use the same transient decoder here so progressive cover thumbnails are
+  // generated instead of being rejected before the thumbnail pipeline starts.
+  if (isUnsupportedJpeg(jpegFile)) {
+    return progressiveJpegToThumbnailJpeg(jpegFile, jpegOut, targetMaxWidth, targetMaxHeight, quality);
+  }
+
+  // Keep the full-size thumbnail buffer in PSRAM. If that allocation is not
+  // available, retry at progressively smaller budgets instead of failing.
+  static const size_t kColorBudgets[] = {0u /* default, best quality */, 65536u /* mild fragmentation */,
+                                         49152u /* heavy fragmentation fallback */};
+  for (size_t i = 0; i < sizeof(kColorBudgets) / sizeof(kColorBudgets[0]); ++i) {
+    jpegFile.seek(0);
+    if (jpegFileToThumbnailJpegPass(jpegFile, jpegOut, targetMaxWidth, targetMaxHeight, quality, kColorBudgets[i])) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool jpegReadContextToThumbnailJpegPass(JpegReadContext& context, Print& jpegOut, int targetMaxWidth,
+                                        int targetMaxHeight, uint8_t quality, size_t maxColorBudget) {
+  pjpeg_image_info_t imageInfo;
+  PicoJpegDecodeGuard picoJpegGuard;
+  if (pjpeg_decode_init(&imageInfo, JpegToBmpConverter::jpegReadCallback, &context, 0) != 0) return false;
+
+  if (imageInfo.m_width <= 0 || imageInfo.m_height <= 0 || targetMaxWidth <= 0 || targetMaxHeight <= 0) {
+    return false;
+  }
+
+  const float scaleX = static_cast<float>(targetMaxWidth) / static_cast<float>(imageInfo.m_width);
+  const float scaleY = static_cast<float>(targetMaxHeight) / static_cast<float>(imageInfo.m_height);
+  float scale = std::min(scaleX, scaleY);
+  if (scale > 1.0f) {
+    scale = 1.0f;
+  }
+
+  int outWidth = std::max(1, static_cast<int>(std::lround(static_cast<float>(imageInfo.m_width) * scale)));
+  int outHeight = std::max(1, static_cast<int>(std::lround(static_cast<float>(imageInfo.m_height) * scale)));
+  const size_t colorBytes = static_cast<size_t>(outWidth) * static_cast<size_t>(outHeight) * 3u;
+  if (maxColorBudget != 0 && colorBytes > maxColorBudget) {
+    const float memoryScale = std::sqrt(static_cast<float>(maxColorBudget) / static_cast<float>(colorBytes));
+    outWidth = std::max(1, static_cast<int>(std::floor(static_cast<float>(outWidth) * memoryScale)));
+    outHeight = std::max(1, static_cast<int>(std::floor(static_cast<float>(outHeight) * memoryScale)));
+  }
+  const uint32_t scaleX_fp = (static_cast<uint32_t>(imageInfo.m_width) << 16) / static_cast<uint32_t>(outWidth);
+  const uint32_t scaleY_fp = (static_cast<uint32_t>(imageInfo.m_height) << 16) / static_cast<uint32_t>(outHeight);
+
+  // Precompute the source column sampled by each output column. This lets the per-MCU-row decode
+  // buffer hold only `outWidth` columns instead of the full source width, so its size scales with
+  // the (small) thumbnail rather than the (large) cover -> no ~76 KB allocation tied to source width.
+  uint8_t* thumbnail =
+      allocThumbnailPixels(static_cast<size_t>(outWidth) * static_cast<size_t>(outHeight) * 3u);
+  uint16_t* srcColForOut =
+      static_cast<uint16_t*>(allocateConversionScratch(static_cast<size_t>(outWidth) * sizeof(uint16_t)));
+  uint8_t* bandBuffer =
+      static_cast<uint8_t*>(allocateConversionScratch(static_cast<size_t>(outWidth) *
+                                                      static_cast<size_t>(imageInfo.m_MCUHeight) * 3u));
+  if (!thumbnail || !srcColForOut || !bandBuffer) {
+    freeThumbnailPixels(thumbnail);
+    free(srcColForOut);
+    free(bandBuffer);
+    return false;
+  }
+  for (int x = 0; x < outWidth; x++) {
+    int sx = (x * scaleX_fp) >> 16;
+    if (sx < 0) sx = 0;
+    if (sx >= imageInfo.m_width) sx = imageInfo.m_width - 1;
+    srcColForOut[x] = static_cast<uint16_t>(sx);
+  }
+  memset(thumbnail, 255, static_cast<size_t>(outWidth) * static_cast<size_t>(outHeight) * 3u);
+
+  int currentOutY = 0;
+  bool decodeFailed = false;
+  unsigned long lastService = millis();
+
+  for (int mcuY = 0; mcuY < imageInfo.m_MCUSPerCol && !decodeFailed; mcuY++) {
+    memset(bandBuffer, 255, static_cast<size_t>(outWidth) * static_cast<size_t>(imageInfo.m_MCUHeight) * 3u);
+
+    int outX = 0;  // monotonic cursor over sampled output columns
+    for (int mcuX = 0; mcuX < imageInfo.m_MCUSPerRow; mcuX++) {
+      if (pjpeg_decode_mcu() != 0) {
+        decodeFailed = true;
+        break;
+      }
+
+      const int mcuColStart = mcuX * imageInfo.m_MCUWidth;
+      const int mcuColEnd = mcuColStart + imageInfo.m_MCUWidth;
+      while (outX < outWidth && srcColForOut[outX] < mcuColEnd) {
+        const int bX = srcColForOut[outX] - mcuColStart;  // local column within this MCU, in [0, MCUWidth)
+        for (int bY = 0; bY < imageInfo.m_MCUHeight; bY++) {
+          const int off = (bY / 8 * (imageInfo.m_MCUWidth / 8) + bX / 8) * 64 + (bY % 8) * 8 + (bX % 8);
+          uint8_t r = imageInfo.m_pMCUBufR[off];
+          uint8_t g = r;
+          uint8_t b = r;
+          if (imageInfo.m_comps != 1) {
+            g = imageInfo.m_pMCUBufG[off];
+            b = imageInfo.m_pMCUBufB[off];
+          }
+          uint8_t* dst =
+              bandBuffer + (static_cast<size_t>(bY) * static_cast<size_t>(outWidth) + static_cast<size_t>(outX)) * 3u;
+          dst[0] = r;
+          dst[1] = g;
+          dst[2] = b;
+        }
+        outX++;
+      }
+      // PicoJPEG runs entirely in this task. A scheduler yield alone does not
+      // give CPU 0's idle task a run, so block for one tick at a bounded rate.
+      if (millis() - lastService >= 8) {
+        esp_task_wdt_reset();
+        vTaskDelay(pdMS_TO_TICKS(1));
+        lastService = millis();
+      }
+    }
+
+    for (int y = 0; y < imageInfo.m_MCUHeight && (mcuY * imageInfo.m_MCUHeight + y) < imageInfo.m_height; y++) {
+      const int currentSrcY = mcuY * imageInfo.m_MCUHeight + y;
+      const uint8_t* srcRow = bandBuffer + static_cast<size_t>(y) * static_cast<size_t>(outWidth) * 3u;
+
+      while (currentOutY < outHeight) {
+        const int sampleSrcY = (currentOutY * scaleY_fp) >> 16;
+        if (sampleSrcY < currentSrcY) {
+          currentOutY++;
+          continue;
+        }
+        if (sampleSrcY > currentSrcY) {
+          break;
+        }
+        uint8_t* outRow = thumbnail + static_cast<size_t>(currentOutY) * static_cast<size_t>(outWidth) * 3u;
+        memcpy(outRow, srcRow, static_cast<size_t>(outWidth) * 3u);
+        currentOutY++;
+      }
+    }
+    if (millis() - lastService >= 8) {
+      esp_task_wdt_reset();
+      vTaskDelay(pdMS_TO_TICKS(1));
+      lastService = millis();
+    }
+  }
+
+  free(srcColForOut);
+  srcColForOut = nullptr;
+
+  while (!decodeFailed && currentOutY < outHeight) {
+    uint8_t* outRow = thumbnail + static_cast<size_t>(currentOutY) * static_cast<size_t>(outWidth) * 3u;
+    const uint8_t* prevRow = currentOutY > 0
+                                 ? thumbnail + static_cast<size_t>(currentOutY - 1) * static_cast<size_t>(outWidth) * 3u
+                                 : nullptr;
+    if (prevRow) {
+      memcpy(outRow, prevRow, static_cast<size_t>(outWidth) * 3u);
+    } else {
+      memset(outRow, 255, static_cast<size_t>(outWidth) * 3u);
+    }
+    currentOutY++;
+  }
+
+  bool encoded = false;
+  if (!decodeFailed) {
+    if (quality < 1) quality = 1;
+    if (quality > 100) quality = 100;
+    gJpegThumbnailOut = &jpegOut;
+    gJpegThumbnailBytesWritten = 0;
+    encoded = TooJpeg::writeJpeg(jpegThumbnailWriteByte, thumbnail, static_cast<unsigned short>(outWidth),
+                                 static_cast<unsigned short>(outHeight), true, quality, true);
+    gJpegThumbnailOut = nullptr;
+  }
+
+  freeThumbnailPixels(thumbnail);
+  free(bandBuffer);
+  return encoded;
+}
+
+bool JpegToBmpConverter::jpegFileToThumbnailJpegPass(FsFile& jpegFile, Print& jpegOut, int targetMaxWidth,
+                                                     int targetMaxHeight, uint8_t quality, size_t maxColorBudget) {
+  JpegReadBuffer readBuf;
+  if (!readBuf.data) return false;
+  JpegReadContext context(jpegFile, readBuf.data, JpegReadBuffer::kSize);
+  return jpegReadContextToThumbnailJpegPass(context, jpegOut, targetMaxWidth, targetMaxHeight, quality,
+                                             maxColorBudget);
+}
+
+bool isProgressiveJpegBytes(const uint8_t* bytes, const size_t size) {
+  if (!bytes || size < 4 || bytes[0] != 0xFF || bytes[1] != 0xD8) return true;
+  size_t pos = 2;
+  while (pos + 1 < size) {
+    if (bytes[pos++] != 0xFF) continue;
+    while (pos < size && bytes[pos] == 0xFF) ++pos;
+    if (pos >= size) break;
+    const uint8_t marker = bytes[pos++];
+    if (marker == 0xC2 || marker == 0xC9 || marker == 0xCA) return true;
+    if (marker == 0xC0 || marker == 0xC1) return false;
+    if (marker == 0xD8 || marker == 0xD9 || marker == 0x01 || (marker >= 0xD0 && marker <= 0xD7)) continue;
+    if (pos + 1 >= size) break;
+    const uint16_t segmentSize = (static_cast<uint16_t>(bytes[pos]) << 8) | bytes[pos + 1];
+    if (segmentSize < 2 || pos + segmentSize > size) break;
+    pos += segmentSize;
+  }
+  return true;
+}
+
+bool JpegToBmpConverter::jpegBytesToThumbnailJpeg(const uint8_t* jpegBytes, const size_t jpegSize, Print& jpegOut,
+                                                   const int targetMaxWidth, const int targetMaxHeight,
+                                                   const uint8_t quality) {
+  if (isProgressiveJpegBytes(jpegBytes, jpegSize)) return false;
+  static const size_t kColorBudgets[] = {0u /* default, best quality */, 65536u /* mild fragmentation */,
+                                         49152u /* heavy fragmentation fallback */};
+  for (const size_t budget : kColorBudgets) {
+    JpegReadBuffer readBuf;
+    if (!readBuf.data) return false;
+    JpegReadContext context(jpegBytes, jpegSize, readBuf.data, JpegReadBuffer::kSize);
+    if (jpegReadContextToThumbnailJpegPass(context, jpegOut, targetMaxWidth, targetMaxHeight, quality, budget)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool JpegToBmpConverter::jpegFileTo1BitThumbnailBmp(FsFile& jpegFile, Print& bmpOut, int targetMaxWidth,
+                                                    int targetMaxHeight) {
+  if (isUnsupportedJpeg(jpegFile)) return false;
+
+  JpegReadBuffer readBuf;
+  if (!readBuf.data) return false;
+  JpegReadContext context(jpegFile, readBuf.data, JpegReadBuffer::kSize);
+  pjpeg_image_info_t imageInfo;
+  PicoJpegDecodeGuard picoJpegGuard;
+
+  if (pjpeg_decode_init(&imageInfo, jpegReadCallback, &context, 0) != 0) return false;
+
+  int outWidth = imageInfo.m_width;
+  int outHeight = imageInfo.m_height;
+  uint32_t scaleX_fp = 65536;
+  uint32_t scaleY_fp = 65536;
+
+  if (targetMaxWidth > 0 && (imageInfo.m_width > targetMaxWidth || imageInfo.m_height > targetMaxHeight)) {
+    float scale = std::min((float)targetMaxWidth / imageInfo.m_width, (float)targetMaxHeight / imageInfo.m_height);
+
+    outWidth = (int)(imageInfo.m_width * scale);
+    outHeight = (int)(imageInfo.m_height * scale);
+    scaleX_fp = (uint32_t)(imageInfo.m_width << 16) / outWidth;
+    scaleY_fp = (uint32_t)(imageInfo.m_height << 16) / outHeight;
+  }
+
+  const int bytesPerRow = (outWidth + 31) / 32 * 4;
+  const int imageSize = bytesPerRow * outHeight;
+
+  bmpOut.write('B');
+  bmpOut.write('M');
+  write32(bmpOut, 62 + imageSize);
+  write32(bmpOut, 0);
+  write32(bmpOut, 62);
+  write32(bmpOut, 40);
+  write32Signed(bmpOut, outWidth);
+  write32Signed(bmpOut, -outHeight);
+  write16(bmpOut, 1);
+  write16(bmpOut, 1);
+  write32(bmpOut, 0);
+  write32(bmpOut, imageSize);
+  write32(bmpOut, 2835);
+  write32(bmpOut, 2835);
+  write32(bmpOut, 2);
+  write32(bmpOut, 2);
+
+  uint8_t palette[8] = {0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0x00};
+  for (const uint8_t i : palette) bmpOut.write(i);
+
+  uint8_t* rowBuffer = static_cast<uint8_t*>(allocateConversionScratch(bytesPerRow));
+  uint8_t* mcuRowBuffer =
+      static_cast<uint8_t*>(allocateConversionScratch(static_cast<size_t>(imageInfo.m_width) *
+                                                      static_cast<size_t>(imageInfo.m_MCUHeight)));
+  uint32_t* rowAccum = new uint32_t[outWidth]();
+  uint16_t* rowCount = new uint16_t[outWidth]();
+
+  int16_t* errorBuffer = new int16_t[outWidth * 2]();
+
+  int currentOutY = 0;
+  uint32_t nextOutY_srcStart = scaleY_fp;
+
+  for (int mcuY = 0; mcuY < imageInfo.m_MCUSPerCol; mcuY++) {
+    for (int mcuX = 0; mcuX < imageInfo.m_MCUSPerRow; mcuX++) {
+      if (pjpeg_decode_mcu() != 0) break;
+
+      for (int bY = 0; bY < imageInfo.m_MCUHeight; bY++) {
+        for (int bX = 0; bX < imageInfo.m_MCUWidth; bX++) {
+          int pX = mcuX * imageInfo.m_MCUWidth + bX;
+          if (pX >= imageInfo.m_width) continue;
+
+          int off = (bY / 8 * (imageInfo.m_MCUWidth / 8) + bX / 8) * 64 + (bY % 8) * 8 + (bX % 8);
+          uint8_t g;
+
+          if (imageInfo.m_comps == 1) {
+            g = imageInfo.m_pMCUBufR[off];
+          } else {
+            g = rgbToGray(imageInfo.m_pMCUBufR[off], imageInfo.m_pMCUBufG[off], imageInfo.m_pMCUBufB[off]);
+          }
+
+          mcuRowBuffer[bY * imageInfo.m_width + pX] = g;
+        }
+      }
+    }
+
+    for (int y = 0; y < imageInfo.m_MCUHeight && (mcuY * imageInfo.m_MCUHeight + y) < imageInfo.m_height; y++) {
+      uint8_t* srcRow = mcuRowBuffer + y * imageInfo.m_width;
+
+      for (int ox = 0; ox < outWidth; ox++) {
+        int sxS = (ox * scaleX_fp) >> 16;
+        int sxE = ((ox + 1) * scaleX_fp) >> 16;
+
+        for (int sx = sxS; sx < sxE && sx < imageInfo.m_width; sx++) {
+          rowAccum[ox] += srcRow[sx];
+          rowCount[ox]++;
+        }
+      }
+
+      if (((uint32_t)((mcuY * imageInfo.m_MCUHeight + y) + 1) << 16) >= nextOutY_srcStart && currentOutY < outHeight) {
+        memset(rowBuffer, 0, bytesPerRow);
+
+        int16_t* currentError = &errorBuffer[(currentOutY & 1) * outWidth];
+        int16_t* nextError = &errorBuffer[((currentOutY + 1) & 1) * outWidth];
+
+        for (int x = 0; x < outWidth; x++) {
+          uint8_t gray = 0;
+          if (rowCount[x] > 0) {
+            gray = (uint8_t)(rowAccum[x] / rowCount[x]);
+          }
+
+          int16_t corrected = gray + currentError[x];
+          if (corrected < 0) corrected = 0;
+          if (corrected > 255) corrected = 255;
+
+          uint8_t bit;
+          uint8_t quantized;
+
+          if (corrected < 128) {
+            bit = 1;
+            quantized = 0;
+          } else {
+            bit = 0;
+            quantized = 255;
+          }
+
+          int16_t error = corrected - quantized;
+
+          if (x < outWidth - 1) {
+            currentError[x + 1] += (error * 7) / 16;
+          }
+          nextError[x] += (error * 5) / 16;
+          if (x > 0) {
+            nextError[x - 1] += (error * 3) / 16;
+          }
+          if (x < outWidth - 1) {
+            nextError[x + 1] += (error * 1) / 16;
+          }
+
+          rowBuffer[x / 8] |= (bit << (7 - (x % 8)));
+        }
+
+        bmpOut.write(rowBuffer, bytesPerRow);
+
+        currentOutY++;
+        memset(rowAccum, 0, outWidth * 4);
+        memset(rowCount, 0, outWidth * 2);
+        nextOutY_srcStart = (uint32_t)(currentOutY + 1) * scaleY_fp;
+
+        if (currentOutY < outHeight) {
+          memset(nextError, 0, outWidth * sizeof(int16_t));
+        }
+      }
+    }
+  }
+
+  free(rowBuffer);
+  free(mcuRowBuffer);
+  delete[] rowAccum;
+  delete[] rowCount;
+  delete[] errorBuffer;
+
+  return true;
+}
+
+/**
+ * Decodes a JPEG but only processes the TOP portion of the source image,
+ * scaling it to fill the targetMaxWidth/Height.
+ * * @param verticalCropPercent 0.5f for top half, 0.75f for top three-quarters, etc.
+ */
+bool JpegToBmpConverter::jpegFileToTopCropBmp(FsFile& jpegFile, Print& bmpOut, int targetMaxWidth, int targetMaxHeight,
+                                              float verticalCropPercent) {
+  if (isUnsupportedJpeg(jpegFile)) return false;
+
+  JpegReadBuffer readBuf;
+  if (!readBuf.data) return false;
+  JpegReadContext context(jpegFile, readBuf.data, JpegReadBuffer::kSize);
+  pjpeg_image_info_t imageInfo;
+  PicoJpegDecodeGuard picoJpegGuard;
+
+  if (pjpeg_decode_init(&imageInfo, jpegReadCallback, &context, 0) != 0) return false;
+
+  int cropSrcWidth = imageInfo.m_width;
+  int cropSrcHeight = (int)(imageInfo.m_height * verticalCropPercent);
+
+  if (cropSrcHeight <= 0) return false;
+
+  uint32_t scaleX_fp = (uint32_t)(((uint64_t)cropSrcWidth << 16) / targetMaxWidth);
+  uint32_t scaleY_fp = (uint32_t)(((uint64_t)cropSrcHeight << 16) / targetMaxHeight);
+
+  const int bytesPerRow = (targetMaxWidth * 2 + 31) / 32 * 4;
+  const int imageSize = bytesPerRow * targetMaxHeight;
+
+  bmpOut.write('B');
+  bmpOut.write('M');
+  write32(bmpOut, 70 + imageSize);
+  write32(bmpOut, 0);
+  write32(bmpOut, 70);
+  write32(bmpOut, 40);
+  write32Signed(bmpOut, targetMaxWidth);
+  write32Signed(bmpOut, -targetMaxHeight);
+  write16(bmpOut, 1);
+  write16(bmpOut, 2);
+  write32(bmpOut, 0);
+  write32(bmpOut, imageSize);
+  write32(bmpOut, 2835);
+  write32(bmpOut, 2835);
+  write32(bmpOut, 4);
+  write32(bmpOut, 4);
+
+  uint8_t palette[16] = {0, 0, 0, 0, 85, 85, 85, 0, 170, 170, 170, 0, 255, 255, 255, 0};
+  for (uint8_t i : palette) bmpOut.write(i);
+
+  uint8_t* rowBuffer = static_cast<uint8_t*>(allocateConversionScratch(bytesPerRow));
+  uint8_t* mcuRowBuffer =
+      static_cast<uint8_t*>(allocateConversionScratch(static_cast<size_t>(imageInfo.m_width) *
+                                                      static_cast<size_t>(imageInfo.m_MCUHeight)));
+  int16_t* errorBuffer = new int16_t[targetMaxWidth * 2]();
+
+  struct ScaleMapEntry {
+    uint16_t srcX;
+  };
+
+  ScaleMapEntry* scaleMap = new ScaleMapEntry[targetMaxWidth];
+  for (int x = 0; x < targetMaxWidth; x++) {
+    scaleMap[x].srcX = (x * scaleX_fp) >> 16;
+
+    if (scaleMap[x].srcX >= cropSrcWidth) scaleMap[x].srcX = cropSrcWidth - 1;
+  }
+
+  uint8_t* fadeFactors = new uint8_t[targetMaxHeight];
+  int gradientStartRow = (targetMaxHeight * 80) / 100;
+  int gradientZoneHeight = targetMaxHeight - gradientStartRow;
+
+  for (int row = 0; row < targetMaxHeight; row++) {
+    if (row > gradientStartRow) {
+      fadeFactors[row] = ((row - gradientStartRow) * 128) / gradientZoneHeight;
+    } else {
+      fadeFactors[row] = 0;
+    }
+  }
+
+  const int mcuWidth = imageInfo.m_MCUWidth;
+  const int mcuHeight = imageInfo.m_MCUHeight;
+  const int imgWidth = imageInfo.m_width;
+  const int imgHeight = imageInfo.m_height;
+  const int mcusPerRow = imageInfo.m_MCUSPerRow;
+  const bool isGrayscale = (imageInfo.m_comps == 1);
+
+  int currentOutY = 0;
+  int srcYLimit = cropSrcHeight;
+
+  uint32_t* srcYThresholds = new uint32_t[targetMaxHeight + 1];
+  for (int oy = 0; oy <= targetMaxHeight; oy++) {
+    srcYThresholds[oy] = (uint32_t)oy * scaleY_fp;
+  }
+  int nextSrcYIndex = 1;
+
+  for (int mcuY = 0; mcuY < imageInfo.m_MCUSPerCol; mcuY++) {
+    if (mcuY * mcuHeight >= srcYLimit) break;
+
+    for (int mcuX = 0; mcuX < mcusPerRow; mcuX++) {
+      if (pjpeg_decode_mcu() != 0) break;
+
+      if (isGrayscale) {
+        for (int bY = 0; bY < mcuHeight; bY++) {
+          uint8_t* destRow = mcuRowBuffer + bY * imgWidth;
+          for (int bX = 0; bX < mcuWidth; bX++) {
+            int pX = mcuX * mcuWidth + bX;
+            if (pX >= imgWidth) continue;
+            int off = (bY / 8 * (mcuWidth / 8) + bX / 8) * 64 + (bY % 8) * 8 + (bX % 8);
+            destRow[pX] = imageInfo.m_pMCUBufR[off];
+          }
+        }
+      } else {
+        const uint8_t* rBuf = imageInfo.m_pMCUBufR;
+        const uint8_t* gBuf = imageInfo.m_pMCUBufG;
+        const uint8_t* bBuf = imageInfo.m_pMCUBufB;
+
+        for (int bY = 0; bY < mcuHeight; bY++) {
+          uint8_t* destRow = mcuRowBuffer + bY * imgWidth;
+          for (int bX = 0; bX < mcuWidth; bX++) {
+            int pX = mcuX * mcuWidth + bX;
+            if (pX >= imgWidth) continue;
+            int off = (bY / 8 * (mcuWidth / 8) + bX / 8) * 64 + (bY % 8) * 8 + (bX % 8);
+
+            destRow[pX] = (rBuf[off] * 77 + gBuf[off] * 150 + bBuf[off] * 29) >> 8;
+          }
+        }
+      }
+    }
+
+    for (int y = 0; y < mcuHeight; y++) {
+      int currentSrcY = mcuY * mcuHeight + y;
+      if (currentSrcY >= srcYLimit || currentSrcY >= imgHeight) break;
+
+      uint8_t* srcRow = mcuRowBuffer + y * imgWidth;
+
+      while (nextSrcYIndex <= targetMaxHeight && currentSrcY >= (srcYThresholds[nextSrcYIndex] >> 16)) {
+        memset(rowBuffer, 0, bytesPerRow);
+
+        int16_t* currentError = &errorBuffer[(currentOutY & 1) * targetMaxWidth];
+        int16_t* nextError = &errorBuffer[((currentOutY + 1) & 1) * targetMaxWidth];
+
+        uint8_t fadeAmount = fadeFactors[currentOutY];
+
+        int invFade = 255 - fadeAmount;
+
+        for (int x = 0; x < targetMaxWidth; x++) {
+          int sx = scaleMap[x].srcX;
+          uint16_t gray = srcRow[sx];
+
+          if (fadeAmount > 0) {
+            gray = (gray * invFade + (224 * fadeAmount)) >> 8;
+          }
+
+          int16_t corrected = (int16_t)gray + currentError[x];
+          if (corrected < 0) corrected = 0;
+          if (corrected > 255) corrected = 255;
+
+          const ImageToneSample tone = quantizeTwoBitImage(corrected);
+          const uint8_t twoBit = tone.level;
+          const int quantized = tone.value;
+
+          int16_t err = corrected - quantized;
+
+          if (x < targetMaxWidth - 1) currentError[x + 1] += (err * 6) / 16;
+          nextError[x] += (err * 4) / 16;
+          if (x > 0) nextError[x - 1] += (err * 2) / 16;
+          if (x < targetMaxWidth - 1) nextError[x + 1] += (err * 1) / 16;
+
+          int byteIdx = (x * 2) >> 3;
+          int bitShift = 6 - ((x * 2) & 7);
+          rowBuffer[byteIdx] |= (twoBit << bitShift);
+        }
+
+        bmpOut.write(rowBuffer, bytesPerRow);
+        currentOutY++;
+        nextSrcYIndex++;
+
+        if (currentOutY < targetMaxHeight) {
+          memset(nextError, 0, targetMaxWidth * sizeof(int16_t));
+        }
+      }
+    }
+  }
+
+  free(rowBuffer);
+  free(mcuRowBuffer);
+  delete[] errorBuffer;
+  delete[] scaleMap;
+  delete[] fadeFactors;
+  delete[] srcYThresholds;
+
+  return true;
+}
+
+bool JpegToBmpConverter::jpegFileToEpubWebStyle2BitBmpStream(FsFile& jpegFile, Print& bmpOut) {
+  if (isUnsupportedJpeg(jpegFile)) return false;
+
+  JpegReadBuffer readBuf;
+  if (!readBuf.data) return false;
+  JpegReadContext context(jpegFile, readBuf.data, JpegReadBuffer::kSize);
+  pjpeg_image_info_t imageInfo;
+  PicoJpegDecodeGuard picoJpegGuard;
+  if (pjpeg_decode_init(&imageInfo, jpegReadCallback, &context, 0) != 0) return false;
+
+  const int sw = imageInfo.m_width;
+  const int sh = imageInfo.m_height;
+  if (sw <= 0 || sh <= 0) return false;
+
+  int dw = 0;
+  int dh = 0;
+  epubWebContainDimensionsFloor(sw, sh, 500, 820, &dw, &dh);
+
+  epubWebWrite2BitBmpHeader(bmpOut, dw, dh);
+
+  const int mcuWidth = imageInfo.m_MCUWidth;
+  const int mcuHeight = imageInfo.m_MCUHeight;
+  const int imgWidth = imageInfo.m_width;
+  const int imgHeight = imageInfo.m_height;
+  const bool isGrayscale = (imageInfo.m_comps == 1);
+  const int mcusPerRow = imageInfo.m_MCUSPerRow;
+
+  uint8_t* mcuRowBuffer =
+      static_cast<uint8_t*>(allocateConversionScratch(static_cast<size_t>(imgWidth) * static_cast<size_t>(mcuHeight)));
+  uint8_t* grayDw = static_cast<uint8_t*>(allocateConversionScratch(static_cast<size_t>(dw)));
+  if (!mcuRowBuffer || !grayDw) {
+    free(mcuRowBuffer);
+    free(grayDw);
+    return false;
+  }
+
+  EpubWeb2BitRowPacker packer;
+  if (!packer.init(dw)) {
+    free(mcuRowBuffer);
+    free(grayDw);
+    return false;
+  }
+
+  auto decodeStripe = [&]() -> bool {
+    for (int mcuX = 0; mcuX < mcusPerRow; mcuX++) {
+      if (pjpeg_decode_mcu() != 0) return false;
+
+      if (isGrayscale) {
+        for (int bY = 0; bY < mcuHeight; bY++) {
+          uint8_t* destRow = mcuRowBuffer + bY * imgWidth;
+          for (int bX = 0; bX < mcuWidth; bX++) {
+            int pX = mcuX * mcuWidth + bX;
+            if (pX >= imgWidth) continue;
+
+            int off = (bY / 8 * (mcuWidth / 8) + bX / 8) * 64 + (bY % 8) * 8 + (bX % 8);
+            destRow[pX] = imageInfo.m_pMCUBufR[off];
+          }
+        }
+      } else {
+        const uint8_t* rBuf = imageInfo.m_pMCUBufR;
+        const uint8_t* gBuf = imageInfo.m_pMCUBufG;
+        const uint8_t* bBuf = imageInfo.m_pMCUBufB;
+
+        for (int bY = 0; bY < mcuHeight; bY++) {
+          uint8_t* destRow = mcuRowBuffer + bY * imgWidth;
+          for (int bX = 0; bX < mcuWidth; bX++) {
+            int pX = mcuX * mcuWidth + bX;
+            if (pX >= imgWidth) continue;
+
+            int off = (bY / 8 * (mcuWidth / 8) + bX / 8) * 64 + (bY % 8) * 8 + (bX % 8);
+            destRow[pX] = (rBuf[off] * 77 + gBuf[off] * 150 + bBuf[off] * 29) >> 8;
+          }
+        }
+      }
+    }
+    return true;
+  };
+
+  int stripeMcuY = -1;
+
+  for (int oy = 0; oy < dh; oy++) {
+    const int sy = (dh <= 1) ? 0 : std::min(sh - 1, (oy * sh) / dh);
+
+    while (stripeMcuY < 0 || sy < stripeMcuY * mcuHeight || sy >= stripeMcuY * mcuHeight + mcuHeight) {
+      stripeMcuY++;
+      if (stripeMcuY >= imageInfo.m_MCUSPerCol) {
+        packer.freeBuffers();
+        free(mcuRowBuffer);
+        free(grayDw);
+        return false;
+      }
+      if (!decodeStripe()) {
+        packer.freeBuffers();
+        free(mcuRowBuffer);
+        free(grayDw);
+        return false;
+      }
+    }
+
+    const int rowInStripe = sy - stripeMcuY * mcuHeight;
+    if (rowInStripe < 0 || rowInStripe >= mcuHeight || sy >= imgHeight) {
+      packer.freeBuffers();
+      free(mcuRowBuffer);
+      free(grayDw);
+      return false;
+    }
+
+    const uint8_t* srcRow = mcuRowBuffer + rowInStripe * imgWidth;
+    for (int ox = 0; ox < dw; ox++) {
+      const int sx = (dw <= 1) ? 0 : std::min(sw - 1, (ox * sw) / dw);
+      grayDw[ox] = srcRow[sx];
+    }
+
+    if (!packer.writeGrayRow(bmpOut, grayDw)) {
+      packer.freeBuffers();
+      free(mcuRowBuffer);
+      free(grayDw);
+      return false;
+    }
+  }
+
+  packer.freeBuffers();
+  free(mcuRowBuffer);
+  free(grayDw);
+  return true;
+}
+
+bool JpegToBmpConverter::resizeBitmap(FsFile& bmpFile, Print& bmpOut, int targetWidth, int targetHeight) {
+  Bitmap bitmap(bmpFile);
+
+  if (bitmap.parseHeaders() != BmpReaderError::Ok) {
+    return false;
+  }
+
+  int originalWidth = bitmap.getWidth();
+  int originalHeight = bitmap.getHeight();
+
+  float scale = std::min((float)targetWidth / originalWidth, (float)targetHeight / originalHeight);
+
+  int finalWidth = originalWidth * scale;
+  int finalHeight = originalHeight * scale;
+
+  uint8_t header[70] = {0};
+  header[0] = 'B';
+  header[1] = 'M';
+  int rowSize = ((finalWidth * 2 + 31) / 32) * 4;
+  int fileSize = 70 + (rowSize * finalHeight);
+  *(int*)&header[2] = fileSize;
+  header[10] = 70;
+  *(int*)&header[14] = 40;
+  *(int*)&header[18] = finalWidth;
+  *(int*)&header[22] = -finalHeight;
+  *(short*)&header[26] = 1;
+  *(short*)&header[28] = 2;
+  *(int*)&header[34] = rowSize * finalHeight;
+  *(int*)&header[46] = 4;
+
+  uint32_t palette[4] = {0x00000000, 0x55555500, 0xAAAAAA00, 0xFFFFFF00};
+  memcpy(&header[54], palette, 16);
+
+  bmpOut.write(header, 70);
+
+  int outputRowSize = (originalWidth + 3) / 4;
+  uint8_t* outputRow = new uint8_t[outputRowSize];
+  uint8_t* rowBytes = new uint8_t[bitmap.getRowBytes()];
+  uint8_t* finalRow = new uint8_t[rowSize];
+
+  bitmap.rewindToData();
+
+  uint32_t lastService = millis();
+  for (int bmpY = 0; bmpY < originalHeight; bmpY++) {
+    if (bitmap.readNextRow(outputRow, rowBytes) != BmpReaderError::Ok) {
+      delete[] outputRow;
+      delete[] rowBytes;
+      delete[] finalRow;
+      return false;
+    }
+
+    int destY = bmpY * scale;
+    if (destY >= finalHeight) continue;
+
+    if (destY == 0 || destY != (int)((bmpY - 1) * scale)) {
+      memset(finalRow, 0, rowSize);
+    }
+
+    for (int bmpX = 0; bmpX < originalWidth; bmpX++) {
+      int destX = bmpX * scale;
+      if (destX >= finalWidth) continue;
+
+      uint8_t val = (outputRow[bmpX / 4] >> (6 - ((bmpX * 2) % 8))) & 0x03;
+
+      int bytePos = destX / 4;
+      int shift = 6 - ((destX % 4) * 2);
+      finalRow[bytePos] |= (val << shift);
+    }
+
+    if (destY == finalHeight - 1 || (int)((bmpY + 1) * scale) > destY) {
+      bmpOut.write(finalRow, rowSize);
+    }
+
+    if (millis() - lastService >= 8) {
+      esp_task_wdt_reset();
+      vTaskDelay(pdMS_TO_TICKS(1));
+      lastService = millis();
+    }
+  }
+
+  delete[] outputRow;
+  delete[] rowBytes;
+  delete[] finalRow;
+
+  return true;
+}
+
+bool JpegToBmpConverter::resizeBitmapToPng(FsFile& bmpFile, Print& pngOut, int targetWidth, int targetHeight) {
+  Bitmap bitmap(bmpFile);
+  if (bitmap.parseHeaders() != BmpReaderError::Ok || targetWidth <= 0 || targetHeight <= 0) {
+    return false;
+  }
+
+  const int sourceWidth = bitmap.getWidth();
+  const int sourceHeight = bitmap.getHeight();
+  const float scale = std::min(static_cast<float>(targetWidth) / sourceWidth,
+                               static_cast<float>(targetHeight) / sourceHeight);
+  const int width = std::max(1, static_cast<int>(sourceWidth * scale));
+  const int height = std::max(1, static_cast<int>(sourceHeight * scale));
+  const size_t imageBytes = static_cast<size_t>(width) * static_cast<size_t>(height);
+
+  uint8_t* image = static_cast<uint8_t*>(heap_caps_malloc(imageBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (!image) image = static_cast<uint8_t*>(heap_caps_malloc(imageBytes, MALLOC_CAP_8BIT));
+  if (!image) return false;
+
+  const size_t outputRowBytes = static_cast<size_t>((sourceWidth + 3) / 4);
+  uint8_t* outputRow = static_cast<uint8_t*>(allocateConversionScratch(outputRowBytes));
+  uint8_t* rowBytes = static_cast<uint8_t*>(allocateConversionScratch(static_cast<size_t>(bitmap.getRowBytes())));
+  if (!outputRow || !rowBytes || bitmap.rewindToData() != BmpReaderError::Ok) {
+    free(outputRow);
+    free(rowBytes);
+    heap_caps_free(image);
+    return false;
+  }
+
+  int outputY = 0;
+  uint32_t lastService = millis();
+  for (int sourceY = 0; sourceY < sourceHeight && outputY < height; ++sourceY) {
+    if (bitmap.readNextRow(outputRow, rowBytes) != BmpReaderError::Ok) {
+      free(outputRow);
+      free(rowBytes);
+      heap_caps_free(image);
+      return false;
+    }
+
+    while (outputY < height && (outputY * sourceHeight) / height <= sourceY) {
+      uint8_t* destination = image + static_cast<size_t>(outputY) * static_cast<size_t>(width);
+      for (int outputX = 0; outputX < width; ++outputX) {
+        const int sourceX = std::min(sourceWidth - 1, (outputX * sourceWidth) / width);
+        const uint8_t level = (outputRow[sourceX >> 2] >> (6 - ((sourceX & 3) * 2))) & 0x03;
+        destination[outputX] = static_cast<uint8_t>(level * 85);
+      }
+      ++outputY;
+    }
+
+    if (millis() - lastService >= 8) {
+      esp_task_wdt_reset();
+      vTaskDelay(pdMS_TO_TICKS(1));
+      lastService = millis();
+    }
+  }
+
+  free(outputRow);
+  free(rowBytes);
+  if (outputY != height) {
+    heap_caps_free(image);
+    return false;
+  }
+
+  size_t pngBytes = 0;
+  void* png = tdefl_write_image_to_png_file_in_memory_ex(image, width, height, 1, &pngBytes, 6, MZ_FALSE);
+  heap_caps_free(image);
+  if (!png || pngBytes == 0) {
+    if (png) mz_free(png);
+    return false;
+  }
+
+  bool success = true;
+  const auto* data = static_cast<const uint8_t*>(png);
+  for (size_t offset = 0; offset < pngBytes; offset += 2048) {
+    const size_t size = std::min<size_t>(2048, pngBytes - offset);
+    if (pngOut.write(data + offset, size) != size) {
+      success = false;
+      break;
+    }
+    esp_task_wdt_reset();
+    vTaskDelay(pdMS_TO_TICKS(1));
+  }
+  mz_free(png);
+  return success;
+}
