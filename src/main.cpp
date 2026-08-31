@@ -42,14 +42,10 @@
 #include "activity/system/SleepActivity.h"
 #include "activity/util/KeyboardEntryActivity.h"
 #include "activity/util/FullScreenMessageActivity.h"
-#include "state/OpdsServerStore.h"
 #include "state/ReaderSetting.h"
 #include "state/SystemSetting.h"
 #include "system/FontManager.h"
 #include "system/Frontlight.h"
-#if FREEINK_DEVICE_X4PRO
-#include "system/FrontlightPreferences.h"
-#endif
 #include "system/Fonts.h"
 #include "system/ScreenComponents.h"
 #include "system/MappedInputManager.h"
@@ -305,7 +301,7 @@ void verifyPowerButtonDuration() {
   // A short power press must be sufficient both to sleep while awake and to
   // wake from deep sleep. Accept the wake immediately; waitForPowerRelease()
   // below still prevents the held wake press from leaking into the first page.
-  if (SETTINGS.shortPressPowerButton || SETTINGS.shortPwrBtn == SystemSetting::SHORT_PWRBTN::SLEEP) return;
+  if (SETTINGS.shortPwrBtn == SystemSetting::SHORT_PWRBTN::SLEEP) return;
   const auto start = millis();
   bool abort = false;
   gpio.update();
@@ -383,7 +379,7 @@ bool handleGlobalPowerRefresh() {
   // Refresh the framebuffer currently on screen. On dual-buffer devices the
   // inactive buffer can still contain the previous page after a swap.
   renderer.syncWriteBufferFromActive();
-  renderer.displayBuffer(HalDisplay::MANUAL_REFRESH);
+  renderer.displayBuffer(FREEINK_DEVICE_X4PRO ? HalDisplay::FULL_REFRESH : HalDisplay::HALF_REFRESH);
   return true;
 }
 
@@ -412,20 +408,6 @@ void setup() {
     while (!INX_SERIAL && (millis() - start) < 3000) delay(10);
   }
 
-  if (sdCardAvailable) {
-    SETTINGS.loadFromFile();
-    renderer.setDarkMode(SETTINGS.darkMode != 0);
-    READER_SETTINGS.loadFromFile();
-    OPDS_STORE.loadOrMigrate({"Default", SETTINGS.opdsServerUrl, SETTINGS.opdsUsername, SETTINGS.opdsPassword});
-#if FREEINK_DEVICE_X4PRO
-    frontlight_preferences::Settings lightSettings;
-    if (frontlight_preferences::load(lightSettings)) {
-      frontlight.setColorTemperature(lightSettings.warmPercent);
-      frontlight.setBrightness(lightSettings.brightness);
-      if (lightSettings.enabled == 0) frontlight.off();
-    }
-#endif
-  }
   switch (gpio.getWakeupReason()) {
     case HalGPIO::WakeupReason::PowerButton:
       verifyPowerButtonDuration();

@@ -61,13 +61,15 @@ void drawCell(const GfxRenderer& renderer, const int x, const int y, const int w
 }  // namespace
 
 void Heatmap::render(const int x, const int y, const int width, const int height,
-                     const HomeTheme::HeatmapView view) const {
-  renderContent(x, y, width, height, view, false);
+                     const HomeTheme::HeatmapView view, const bool showLabel,
+                     const HomeTheme::CarouselLabelColor labelColor) const {
+  renderContent(x, y, width, height, view, false, showLabel, labelColor);
 }
 
 void Heatmap::preview(const int x, const int y, const int width, const int height,
-                      const HomeTheme::HeatmapView view) const {
-  renderContent(x, y, width, height, view, true);
+                      const HomeTheme::HeatmapView view, const bool showLabel,
+                      const HomeTheme::CarouselLabelColor labelColor) const {
+  renderContent(x, y, width, height, view, true, showLabel, labelColor);
 }
 
 bool Heatmap::needsRefresh(const HomeTheme::HeatmapView view) const {
@@ -77,7 +79,8 @@ bool Heatmap::needsRefresh(const HomeTheme::HeatmapView view) const {
 }
 
 void Heatmap::renderContent(const int x, const int y, const int width, const int height,
-                            const HomeTheme::HeatmapView view, const bool sample) const {
+                            const HomeTheme::HeatmapView view, const bool sample, const bool showLabel,
+                            const HomeTheme::CarouselLabelColor labelColor) const {
   if (width <= 0 || height <= 0) return;
   renderer_.rectangle.fill(x, y, width, height, false);
 
@@ -100,12 +103,21 @@ void Heatmap::renderContent(const int x, const int y, const int width, const int
   const int titleY = y + paddingY;
   const char* viewLabel = HomeTheme::heatmapViewLabel(view);
   const int viewWidth = renderer_.text.getWidth(smallFont, viewLabel);
-  renderer_.text.render(titleFont, x + paddingX, titleY, "Reading heatmap", true, EpdFontFamily::BOLD);
+  if (showLabel) {
+    if (labelColor == HomeTheme::CarouselLabelColor::Gray) {
+      renderer_.text.renderGray(titleFont, x + paddingX, titleY, "Reading heatmap", true, EpdFontFamily::BOLD);
+    } else {
+      renderer_.text.render(titleFont, x + paddingX, titleY, "Reading heatmap", true, EpdFontFamily::BOLD);
+    }
+  }
   renderer_.text.render(smallFont, x + width - paddingX - viewWidth, titleY + 2, viewLabel, true,
                         EpdFontFamily::REGULAR);
 
   const int legendHeight = smallLine + 4;
-  const int gridTop = titleY + titleLine + 7;
+  // The view label is always visible. Keep a header row for it even when the
+  // optional "Reading heatmap" title is hidden, otherwise the grid covers it.
+  const int headerLine = showLabel ? titleLine : smallLine + 2;
+  const int gridTop = titleY + headerLine + 7;
   const int gridBottom = y + height - paddingY - legendHeight;
   if (gridBottom <= gridTop) return;
 

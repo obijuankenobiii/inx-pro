@@ -535,7 +535,7 @@ class SystemSetting {
    * @return Duration in ms (10ms for sleep, 400ms for ignore)
    */
   uint16_t getPowerButtonDuration() const {
-    return (shortPressPowerButton || shortPwrBtn == SystemSetting::SHORT_PWRBTN::SLEEP) ? 10 : 400;
+    return shortPwrBtn == SystemSetting::SHORT_PWRBTN::SLEEP ? 10 : 400;
   }
 
   /**

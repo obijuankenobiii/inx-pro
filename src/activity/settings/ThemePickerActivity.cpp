@@ -329,7 +329,7 @@ void ThemePickerActivity::renderWidgetPreview(const HomeTheme::Widget widget, co
       favorites_.preview(x, y, width, height, background, style, showLabel, labelColor, shadowStyle);
       break;
     case HomeTheme::Widget::Heatmap:
-      heatmap_.preview(x, y, width, height, heatmapView);
+      heatmap_.preview(x, y, width, height, heatmapView, showLabel, labelColor);
       break;
     case HomeTheme::Widget::Empty:
     default:
@@ -473,9 +473,12 @@ void ThemePickerActivity::openHeatmapSettings(const int slot) {
   widgetSlot_ = slot;
   heatmapSettingsFinished_ = false;
   enterNewActivity(new BaseHeatmapActivity(
-      renderer, mappedInput, heatmapViews_[slot],
-      [this, slot](const HomeTheme::HeatmapView view) {
+      renderer, mappedInput, heatmapViews_[slot], carouselLabels_[slot] != 0, carouselLabelColors_[slot],
+      [this, slot](const HomeTheme::HeatmapView view, const bool showLabel,
+                   const HomeTheme::CarouselLabelColor labelColor) {
         heatmapViews_[slot] = view;
+        carouselLabels_[slot] = showLabel ? 1 : 0;
+        carouselLabelColors_[slot] = labelColor;
         heatmapSettingsFinished_ = true;
       },
       [] {}));
@@ -560,6 +563,8 @@ void ThemePickerActivity::handleTouch(const int x, const int y) {
         carouselShadowStyles_[widgetSlot_] = HomeTheme::CarouselShadowStyle::None;
       } else if (supportsHeatmapSettings(widgets_[widgetSlot_])) {
         heatmapViews_[widgetSlot_] = HomeTheme::HeatmapView::Weekly;
+        carouselLabels_[widgetSlot_] = 1;
+        carouselLabelColors_[widgetSlot_] = HomeTheme::CarouselLabelColor::Black;
       } else {
         carouselStyles_[widgetSlot_] = HomeTheme::CarouselStyle::Centered;
         carouselLabels_[widgetSlot_] = 0;
@@ -714,6 +719,8 @@ void ThemePickerActivity::loop() {
           carouselShadowStyles_[widgetSlot_] = HomeTheme::CarouselShadowStyle::None;
         } else if (supportsHeatmapSettings(widgets_[widgetSlot_])) {
           heatmapViews_[widgetSlot_] = HomeTheme::HeatmapView::Weekly;
+          carouselLabels_[widgetSlot_] = 1;
+          carouselLabelColors_[widgetSlot_] = HomeTheme::CarouselLabelColor::Black;
         } else {
           carouselStyles_[widgetSlot_] = HomeTheme::CarouselStyle::Centered;
           carouselLabels_[widgetSlot_] = 0;

@@ -38,7 +38,7 @@ class Page : public Activity, public navigation::Menu {
   Page(const char* name, GfxRenderer& renderer, MappedInputManager& mappedInput);
   ~Page() override = default;
 
-  bool allowGlobalPowerRefresh() override { return false; }
+  bool allowGlobalPowerRefresh() override { return true; }
   void onEnter() override;
   virtual void loop() override;
 

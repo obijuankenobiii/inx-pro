@@ -11,7 +11,7 @@ namespace HomeTheme {
 namespace {
 
 constexpr char kThemeFile[] = "/.system/home_themes.bin";
-constexpr uint8_t kVersion = 11;
+constexpr uint8_t kVersion = 12;
 constexpr uint8_t kLegacyCarouselShadowVersion = 8;
 constexpr uint8_t kLegacyCarouselShadowStyleVersion = 9;
 constexpr uint8_t kSleepThemeVersion = 3;
@@ -107,7 +107,7 @@ bool defaultBackground(const Widget widget) {
 }
 
 bool defaultCarouselLabel(const Widget widget) {
-  return widget == Widget::Carousel || widget == Widget::Favorites;
+  return widget == Widget::Carousel || widget == Widget::Favorites || widget == Widget::Heatmap;
 }
 
 CarouselStyle defaultCarouselStyleForWidget(const Widget widget) {
@@ -157,7 +157,7 @@ void load() {
   serialization::readPod(file, storedActive);
   if ((version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != 7 &&
        version != kLegacyCarouselShadowVersion && version != kLegacyCarouselShadowStyleVersion &&
-       version != 10 && version != kVersion) || storedCount == 0 ||
+       version != 10 && version != 11 && version != kVersion) || storedCount == 0 ||
       storedCount > kMaxThemes) {
     file.close();
     return;
@@ -219,6 +219,9 @@ void load() {
       }
       serialization::readPod(file, theme.carouselLabels[i]);
       theme.carouselLabels[i] = theme.carouselLabels[i] != 0 ? 1 : 0;
+      // Heatmap labels were always visible before label settings were exposed. Preserve that
+      // behavior when loading themes written before the new Heatmap label controls existed.
+      if (version < kVersion && theme.widgets[i] == Widget::Heatmap) theme.carouselLabels[i] = 1;
     }
     for (int i = 0; i < 4; ++i) {
       if (version < kLegacyCarouselShadowVersion) {

@@ -139,8 +139,11 @@ std::vector<SettingInfo> buildSystemSettings() {
   settings.push_back(SettingInfo::Enum("Flick sensitivity", &SystemSetting::shakePageTurnSensitivity,
                                        {"Low", "Normal", "High"}, GroupType::DEVICE_ADVANCED));
 #endif
-  settings.push_back(SettingInfo::Toggle("Short Press Power Button", &SystemSetting::shortPressPowerButton,
-                                         GroupType::DEVICE_ADVANCED));
+  settings.push_back(SettingInfo::Enum("Short Press Power Button", &SystemSetting::shortPwrBtn,
+                                       {"Sleep", "Refresh"},
+                                       {SystemSetting::SHORT_PWRBTN::SLEEP,
+                                        SystemSetting::SHORT_PWRBTN::PAGE_REFRESH},
+                                       GroupType::DEVICE_ADVANCED));
 
   settings.push_back(SettingInfo::Separator("Actions", GroupType::DEVICE_ACTIONS));
   settings.push_back(SettingInfo::Action("Delete Cache", GroupType::DEVICE_ACTIONS));

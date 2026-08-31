@@ -178,7 +178,8 @@ void HomeWidgetLayout::renderGrid(const HomeTheme::Theme& theme, const int carou
                           theme.carouselLabelColors[slot], theme.carouselShadowStyles[slot]);
         break;
       case HomeTheme::Widget::Heatmap:
-        heatmap_.render(bounds.x, bounds.y, bounds.width, bounds.height, theme.heatmapViews[slot]);
+        heatmap_.render(bounds.x, bounds.y, bounds.width, bounds.height, theme.heatmapViews[slot],
+                        theme.carouselLabels[slot] != 0, theme.carouselLabelColors[slot]);
         break;
       case HomeTheme::Widget::Empty:
       default:

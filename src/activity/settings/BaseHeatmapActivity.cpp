@@ -7,6 +7,7 @@
 
 #include "activity/page/SubPage.h"
 #include "activity/page/components/global/PopUp.h"
+#include "activity/page/components/global/Toggle.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
 
@@ -23,7 +24,12 @@ void BaseHeatmapActivity::render() {
   const int contentTop = SubPage::header(renderer, "Reading heatmap");
   const int font = systemFontId();
   const int width = renderer.getScreenWidth();
-  renderer.rectangle.fill(0, contentTop, width, kRowHeight, static_cast<int>(GfxRenderer::FillTone::Paper));
+  const int labelY = contentTop + kRowHeight;
+  const int labelColorY = contentTop + kRowHeight * 2;
+  for (int row = 0; row < 3; ++row) {
+    renderer.rectangle.fill(0, contentTop + row * kRowHeight, width, kRowHeight,
+                            static_cast<int>(GfxRenderer::FillTone::Paper));
+  }
   renderer.text.render(font, 20, contentTop + (kRowHeight - renderer.text.getLineHeight(font)) / 2, "View", true,
                        EpdFontFamily::REGULAR);
   const char* label = HomeTheme::heatmapViewLabel(view_);
@@ -31,7 +37,20 @@ void BaseHeatmapActivity::render() {
   renderer.text.render(font, width - labelWidth - 20,
                        contentTop + (kRowHeight - renderer.text.getLineHeight(font)) / 2, label, true,
                        EpdFontFamily::REGULAR);
+  renderer.text.render(font, 20, labelY + (kRowHeight - renderer.text.getLineHeight(font)) / 2, "Label", true,
+                       EpdFontFamily::REGULAR);
+  Toggle::render(renderer, width - 20, labelY, kRowHeight, showLabel_);
+  renderer.text.render(font, 20, labelColorY + (kRowHeight - renderer.text.getLineHeight(font)) / 2,
+                       "Label color", true, EpdFontFamily::REGULAR);
+  const char* labelColor = HomeTheme::carouselLabelColorLabel(labelColor_);
+  const int labelColorWidth = renderer.text.getWidth(font, labelColor);
+  renderer.text.render(font, width - labelColorWidth - 20,
+                       labelColorY + (kRowHeight - renderer.text.getLineHeight(font)) / 2, labelColor, true,
+                       EpdFontFamily::REGULAR);
+  renderer.line.render(0, labelY - 1, width, labelY - 1, true, LineRender::Style::Dotted);
+  renderer.line.render(0, labelColorY - 1, width, labelColorY - 1, true, LineRender::Style::Dotted);
   if (viewPopup_) renderViewPopup();
+  if (labelColorPopup_) renderLabelColorPopup();
   renderer.displayBuffer();
 }
 
@@ -44,8 +63,17 @@ void BaseHeatmapActivity::renderViewPopup() {
   PopUp::border(renderer, box);
 }
 
+void BaseHeatmapActivity::renderLabelColorPopup() {
+  const std::vector<std::string> values = {"Black", "Gray"};
+  const PopUpBounds box = PopUp::bounds(renderer, static_cast<int>(values.size()));
+  PopUp::background(renderer, box);
+  PopUp::title(renderer, box, "Label color");
+  PopUp::list(renderer, box, values, static_cast<int>(labelColor_), 0);
+  PopUp::border(renderer, box);
+}
+
 void BaseHeatmapActivity::close() {
-  if (onApply_) onApply_(view_);
+  if (onApply_) onApply_(view_, showLabel_, labelColor_);
   if (onBack_) onBack_();
 }
 
@@ -68,9 +96,33 @@ void BaseHeatmapActivity::handleTouch(const int x, const int y) {
     return;
   }
 
+  if (labelColorPopup_) {
+    const PopUpBounds box = PopUp::bounds(renderer, 2);
+    if (!inside(x, y, box.x, box.y, box.width, box.height)) {
+      labelColorPopup_ = false;
+      render();
+      return;
+    }
+    const int optionY = y - box.y - box.header;
+    if (optionY < 0 || optionY >= box.rows * box.row) return;
+    const int selected = optionY / box.row;
+    if (selected <= static_cast<int>(HomeTheme::CarouselLabelColor::Gray)) {
+      labelColor_ = static_cast<HomeTheme::CarouselLabelColor>(selected);
+      labelColorPopup_ = false;
+      render();
+    }
+    return;
+  }
+
   const int contentTop = FREEINK_DEVICE_X4PRO ? 80 : 70;
   if (inside(x, y, 0, contentTop, renderer.getScreenWidth(), kRowHeight)) {
     viewPopup_ = true;
+    render();
+  } else if (inside(x, y, 0, contentTop + kRowHeight, renderer.getScreenWidth(), kRowHeight)) {
+    showLabel_ = !showLabel_;
+    render();
+  } else if (inside(x, y, 0, contentTop + kRowHeight * 2, renderer.getScreenWidth(), kRowHeight)) {
+    labelColorPopup_ = true;
     render();
   }
 }
@@ -96,6 +148,32 @@ void BaseHeatmapActivity::loop() {
       const int delta = mappedInput.wasPressed(MappedInputManager::Button::Up) ? 2 : 1;
       view_ = static_cast<HomeTheme::HeatmapView>((static_cast<int>(view_) + delta) % 3);
       viewPopup_ = false;
+      render();
+    }
+    return;
+  }
+
+  if (labelColorPopup_) {
+    if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+      labelColorPopup_ = false;
+      render();
+      return;
+    }
+    if (mappedInput.hasTouch()) {
+      float nx = 0.0f;
+      float ny = 0.0f;
+      if (mappedInput.wasTouchTapInScreen(renderer, nx, ny)) {
+        handleTouch(static_cast<int>(nx * renderer.getScreenWidth()),
+                    static_cast<int>(ny * renderer.getScreenHeight()));
+        return;
+      }
+    }
+    if (mappedInput.wasPressed(MappedInputManager::Button::Up) ||
+        mappedInput.wasPressed(MappedInputManager::Button::Down)) {
+      labelColor_ = labelColor_ == HomeTheme::CarouselLabelColor::Black
+                        ? HomeTheme::CarouselLabelColor::Gray
+                        : HomeTheme::CarouselLabelColor::Black;
+      labelColorPopup_ = false;
       render();
     }
     return;
