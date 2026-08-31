@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <vector>
@@ -8,12 +9,18 @@
 /** Lists and installs compiled SD-font packages hosted in the inx-font repository. */
 class FontPackageManager {
  public:
+  enum class Category : uint8_t {
+    SansSerif,
+    Serif,
+  };
+
   struct Package {
     std::string name;          // Display name. The selected tab supplies the bit-depth variant.
     std::string variant;       // Variant tab identifier: "1-bit" or "2-bit".
     std::string url;           // Raw GitHub ZIP URL.
     std::string installFamily; // Separate SD family so variants cannot overwrite each other.
     size_t size = 0;
+    Category category = Category::SansSerif;
   };
 
   static bool fetchAvailable(std::vector<Package>& packages, std::string& error);

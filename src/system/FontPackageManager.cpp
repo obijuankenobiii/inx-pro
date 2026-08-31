@@ -20,47 +20,50 @@ struct StaticPackage {
   const char* name;
   const char* variant;
   const char* path;
+  FontPackageManager::Category category;
 };
 
+// Classifications follow the upstream family designs. Monospace families are grouped with
+// sans-serif because this filter intentionally exposes only the two user-facing categories.
 constexpr StaticPackage kStaticPackages[] = {
-    {"Alegreya", "1-bit", "1bit/Alegreya.zip"},
-    {"AtkinsonHL-Mono", "1-bit", "1bit/AtkinsonHL-Mono.zip"},
-    {"AtkinsonHL-Next", "1-bit", "1bit/AtkinsonHL-Next.zip"},
-    {"BitterPro", "1-bit", "1bit/BitterPro.zip"},
-    {"ChareInk7", "1-bit", "1bit/ChareInk7.zip"},
-    {"Charis", "1-bit", "1bit/Charis.zip"},
-    {"Inter", "1-bit", "1bit/Inter.zip"},
-    {"Lexend", "1-bit", "1bit/Lexend.zip"},
-    {"LexicaUltralegible", "1-bit", "1bit/LexicaUltralegible.zip"},
-    {"Literata", "1-bit", "1bit/Literata.zip"},
-    {"Lora", "1-bit", "1bit/Lora.zip"},
-    {"Merriweather", "1-bit", "1bit/Merriweather.zip"},
-    {"NotoSans", "1-bit", "1bit/NotoSans.zip"},
-    {"OpenDyslexic", "1-bit", "1bit/OpenDyslexic.zip"},
-    {"PlexMono", "1-bit", "1bit/PlexMono.zip"},
-    {"PlexSans", "1-bit", "1bit/PlexSans.zip"},
-    {"SourceSans3", "1-bit", "1bit/SourceSans3.zip"},
-    {"SourceSerif4", "1-bit", "1bit/SourceSerif4.zip"},
-    {"Tinos", "1-bit", "1bit/Tinos.zip"},
-    {"Alegreya", "2-bit", "2bit/Alegreya.zip"},
-    {"AtkinsonHL-Mono", "2-bit", "2bit/AtkinsonHL-Mono.zip"},
-    {"AtkinsonHL-Next", "2-bit", "2bit/AtkinsonHL-Next.zip"},
-    {"BitterPro", "2-bit", "2bit/BitterPro.zip"},
-    {"ChareInk7", "2-bit", "2bit/ChareInk7.zip"},
-    {"Charis", "2-bit", "2bit/Charis.zip"},
-    {"Inter", "2-bit", "2bit/Inter.zip"},
-    {"Lexend", "2-bit", "2bit/Lexend.zip"},
-    {"LexicaUltralegible", "2-bit", "2bit/LexicaUltralegible.zip"},
-    {"Literata", "2-bit", "2bit/Literata.zip"},
-    {"Lora", "2-bit", "2bit/Lora.zip"},
-    {"Merriweather", "2-bit", "2bit/Merriweather.zip"},
-    {"NotoSans", "2-bit", "2bit/NotoSans.zip"},
-    {"OpenDyslexic", "2-bit", "2bit/OpenDyslexic.zip"},
-    {"PlexMono", "2-bit", "2bit/PlexMono.zip"},
-    {"PlexSans", "2-bit", "2bit/PlexSans.zip"},
-    {"SourceSans3", "2-bit", "2bit/SourceSans3.zip"},
-    {"SourceSerif4", "2-bit", "2bit/SourceSerif4.zip"},
-    {"Tinos", "2-bit", "2bit/Tinos.zip"},
+    {"Alegreya", "1-bit", "1bit/Alegreya.zip", FontPackageManager::Category::Serif},
+    {"AtkinsonHL-Mono", "1-bit", "1bit/AtkinsonHL-Mono.zip", FontPackageManager::Category::SansSerif},
+    {"AtkinsonHL-Next", "1-bit", "1bit/AtkinsonHL-Next.zip", FontPackageManager::Category::SansSerif},
+    {"BitterPro", "1-bit", "1bit/BitterPro.zip", FontPackageManager::Category::Serif},
+    {"ChareInk7", "1-bit", "1bit/ChareInk7.zip", FontPackageManager::Category::Serif},
+    {"Charis", "1-bit", "1bit/Charis.zip", FontPackageManager::Category::Serif},
+    {"Inter", "1-bit", "1bit/Inter.zip", FontPackageManager::Category::SansSerif},
+    {"Lexend", "1-bit", "1bit/Lexend.zip", FontPackageManager::Category::SansSerif},
+    {"LexicaUltralegible", "1-bit", "1bit/LexicaUltralegible.zip", FontPackageManager::Category::SansSerif},
+    {"Literata", "1-bit", "1bit/Literata.zip", FontPackageManager::Category::Serif},
+    {"Lora", "1-bit", "1bit/Lora.zip", FontPackageManager::Category::Serif},
+    {"Merriweather", "1-bit", "1bit/Merriweather.zip", FontPackageManager::Category::Serif},
+    {"NotoSans", "1-bit", "1bit/NotoSans.zip", FontPackageManager::Category::SansSerif},
+    {"OpenDyslexic", "1-bit", "1bit/OpenDyslexic.zip", FontPackageManager::Category::SansSerif},
+    {"PlexMono", "1-bit", "1bit/PlexMono.zip", FontPackageManager::Category::SansSerif},
+    {"PlexSans", "1-bit", "1bit/PlexSans.zip", FontPackageManager::Category::SansSerif},
+    {"SourceSans3", "1-bit", "1bit/SourceSans3.zip", FontPackageManager::Category::SansSerif},
+    {"SourceSerif4", "1-bit", "1bit/SourceSerif4.zip", FontPackageManager::Category::Serif},
+    {"Tinos", "1-bit", "1bit/Tinos.zip", FontPackageManager::Category::Serif},
+    {"Alegreya", "2-bit", "2bit/Alegreya.zip", FontPackageManager::Category::Serif},
+    {"AtkinsonHL-Mono", "2-bit", "2bit/AtkinsonHL-Mono.zip", FontPackageManager::Category::SansSerif},
+    {"AtkinsonHL-Next", "2-bit", "2bit/AtkinsonHL-Next.zip", FontPackageManager::Category::SansSerif},
+    {"BitterPro", "2-bit", "2bit/BitterPro.zip", FontPackageManager::Category::Serif},
+    {"ChareInk7", "2-bit", "2bit/ChareInk7.zip", FontPackageManager::Category::Serif},
+    {"Charis", "2-bit", "2bit/Charis.zip", FontPackageManager::Category::Serif},
+    {"Inter", "2-bit", "2bit/Inter.zip", FontPackageManager::Category::SansSerif},
+    {"Lexend", "2-bit", "2bit/Lexend.zip", FontPackageManager::Category::SansSerif},
+    {"LexicaUltralegible", "2-bit", "2bit/LexicaUltralegible.zip", FontPackageManager::Category::SansSerif},
+    {"Literata", "2-bit", "2bit/Literata.zip", FontPackageManager::Category::Serif},
+    {"Lora", "2-bit", "2bit/Lora.zip", FontPackageManager::Category::Serif},
+    {"Merriweather", "2-bit", "2bit/Merriweather.zip", FontPackageManager::Category::Serif},
+    {"NotoSans", "2-bit", "2bit/NotoSans.zip", FontPackageManager::Category::SansSerif},
+    {"OpenDyslexic", "2-bit", "2bit/OpenDyslexic.zip", FontPackageManager::Category::SansSerif},
+    {"PlexMono", "2-bit", "2bit/PlexMono.zip", FontPackageManager::Category::SansSerif},
+    {"PlexSans", "2-bit", "2bit/PlexSans.zip", FontPackageManager::Category::SansSerif},
+    {"SourceSans3", "2-bit", "2bit/SourceSans3.zip", FontPackageManager::Category::SansSerif},
+    {"SourceSerif4", "2-bit", "2bit/SourceSerif4.zip", FontPackageManager::Category::Serif},
+    {"Tinos", "2-bit", "2bit/Tinos.zip", FontPackageManager::Category::Serif},
 };
 
 bool isSafeBinName(const std::string& name) {
@@ -125,7 +128,8 @@ bool FontPackageManager::fetchAvailable(std::vector<Package>& packages, std::str
   packages.reserve(sizeof(kStaticPackages) / sizeof(kStaticPackages[0]));
   for (const StaticPackage& item : kStaticPackages) {
     const std::string installFamily = std::string(item.name) + " " + item.variant;
-    packages.push_back({item.name, item.variant, std::string(kFontRepositoryBase) + item.path, installFamily, 0});
+    packages.push_back(
+        {item.name, item.variant, std::string(kFontRepositoryBase) + item.path, installFamily, 0, item.category});
   }
   return true;
 }

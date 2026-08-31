@@ -30,6 +30,8 @@ constexpr int kActionIconGap = 12;
 constexpr int kScrollCaretSize = 40;
 constexpr int kTabWidth = 120;
 constexpr int kTabHeight = Button::height - 10;
+constexpr int kCategoryFilterWidth = 150;
+constexpr int kCategoryFilterRowHeight = UiLayout::LIST_ITEM_HEIGHT;
 
 int pageBodyTop() { return FREEINK_DEVICE_X4PRO ? 80 : 70; }
 
@@ -127,6 +129,8 @@ void FontManagerActivity::onEnter() {
   selectedIndex_ = 0;
   scrollOffset_ = 0;
   selectedVisible_ = false;
+  categoryFilterOpen_ = false;
+  categoryFilter_ = CategoryFilter::All;
   packages_.clear();
   activeVariant_ = 1;
   installingPackageIndex_ = -1;
@@ -182,7 +186,7 @@ int FontManagerActivity::visibleRowCount(const int bodyTop) const {
 int FontManagerActivity::visiblePackageCount() const {
   int count = 0;
   for (const FontPackageManager::Package& package : packages_) {
-    if (package.variant == activeVariantName()) ++count;
+    if (package.variant == activeVariantName() && matchesCategory(package)) ++count;
   }
   return count;
 }
@@ -191,7 +195,8 @@ int FontManagerActivity::packageIndexAt(const int visibleIndex) const {
   if (visibleIndex < 0) return -1;
   int index = 0;
   for (int packageIndex = 0; packageIndex < static_cast<int>(packages_.size()); ++packageIndex) {
-    if (packages_[static_cast<size_t>(packageIndex)].variant != activeVariantName()) continue;
+    const FontPackageManager::Package& package = packages_[static_cast<size_t>(packageIndex)];
+    if (package.variant != activeVariantName() || !matchesCategory(package)) continue;
     if (index == visibleIndex) return packageIndex;
     ++index;
   }
@@ -204,6 +209,73 @@ void FontManagerActivity::selectVariant(const int variant) {
   selectedIndex_ = 0;
   scrollOffset_ = 0;
   selectedVisible_ = false;
+  updateDisplay();
+}
+
+int FontManagerActivity::categoryFilterCount() const { return 3; }
+
+const char* FontManagerActivity::categoryFilterLabel() const {
+  switch (categoryFilter_) {
+    case CategoryFilter::SansSerif:
+      return "Sans Serif";
+    case CategoryFilter::Serif:
+      return "Serif";
+    case CategoryFilter::All:
+    default:
+      return "All";
+  }
+}
+
+bool FontManagerActivity::matchesCategory(const FontPackageManager::Package& package) const {
+  if (categoryFilter_ == CategoryFilter::All) return true;
+  const auto category = categoryFilter_ == CategoryFilter::Serif ? FontPackageManager::Category::Serif
+                                                                  : FontPackageManager::Category::SansSerif;
+  return package.category == category;
+}
+
+ButtonBounds FontManagerActivity::categoryFilterBounds() const {
+  return {kSideMargin, pageBodyTop(), kCategoryFilterWidth, kTabHeight};
+}
+
+void FontManagerActivity::categoryFilterDropdown() const {
+  const int x = kSideMargin;
+  const int y = pageBodyTop() + kTabHeight;
+  const int height = categoryFilterCount() * kCategoryFilterRowHeight + 1;
+  const char* labels[] = {"All", "Sans Serif", "Serif"};
+  const int font = systemFontId();
+
+  renderer.rectangle.fill(x, y, kCategoryFilterWidth, height, false);
+  for (int index = 0; index < categoryFilterCount(); ++index) {
+    const int rowY = y + index * kCategoryFilterRowHeight;
+    const int textY = rowY + (kCategoryFilterRowHeight - renderer.text.getLineHeight(font)) / 2;
+    renderer.text.render(font, x + 20, textY, labels[index], true, EpdFontFamily::REGULAR);
+    if (index + 1 < categoryFilterCount()) {
+      renderer.line.render(x + 10, rowY + kCategoryFilterRowHeight, x + kCategoryFilterWidth - 10,
+                           rowY + kCategoryFilterRowHeight, true, LineRender::Style::Dotted);
+    }
+  }
+  renderer.rectangle.render(x, y, kCategoryFilterWidth, height, true);
+}
+
+void FontManagerActivity::handleCategoryFilterTap(const int tapX, const int tapY) {
+  const int x = kSideMargin;
+  const int y = pageBodyTop() + kTabHeight;
+  const int height = categoryFilterCount() * kCategoryFilterRowHeight + 1;
+  if (tapX >= x && tapX < x + kCategoryFilterWidth && tapY >= y && tapY < y + height) {
+    applyCategoryFilter((tapY - y) / kCategoryFilterRowHeight);
+  } else {
+    categoryFilterOpen_ = false;
+    updateDisplay();
+  }
+}
+
+void FontManagerActivity::applyCategoryFilter(const int index) {
+  if (index < 0 || index >= categoryFilterCount()) return;
+  categoryFilter_ = static_cast<CategoryFilter>(index);
+  selectedIndex_ = 0;
+  scrollOffset_ = 0;
+  selectedVisible_ = false;
+  categoryFilterOpen_ = false;
   updateDisplay();
 }
 
@@ -443,6 +515,7 @@ void FontManagerActivity::render() {
     }
 
     const int tabsX = screenW - kSideMargin - kTabWidth * 2;
+    Button::render(renderer, categoryFilterBounds(), categoryFilterLabel(), categoryFilterOpen_, font);
     for (int tab = 0; tab < 2; ++tab) {
       const int tabX = tabsX + tab * kTabWidth;
       const bool selectedTab = tab == activeVariant_;
@@ -490,6 +563,7 @@ void FontManagerActivity::render() {
     renderer.bitmap.iconScaled(LibraryFilterRight, caretBounds.x, caretBounds.y, 30, 30, kScrollCaretSize,
                                kScrollCaretSize, caretOrientation);
     mappedInput.mapLabels("\xC2\xAB Back", "Download", "Up", "Down");
+    if (categoryFilterOpen_) categoryFilterDropdown();
   } else {
     const int centerY = bodyTop + (screenH - bodyTop - 80) / 2;
     renderer.text.centered(font, centerY - 26, status_.c_str(), true, EpdFontFamily::BOLD);
@@ -536,6 +610,15 @@ void FontManagerActivity::loop() {
       if (state_ == State::Ready && !packages_.empty()) {
         const int bodyTop = pageBodyTop();
         const int fontListTop = listTop(bodyTop);
+        if (categoryFilterOpen_) {
+          handleCategoryFilterTap(x, y);
+          return;
+        }
+        if (contains(categoryFilterBounds(), x, y)) {
+          categoryFilterOpen_ = true;
+          updateDisplay();
+          return;
+        }
         const int tabsX = renderer.getScreenWidth() - kSideMargin - kTabWidth * 2;
         if (y >= bodyTop && y < bodyTop + kTabHeight && x >= tabsX && x < tabsX + kTabWidth * 2) {
           selectVariant((x - tabsX) / kTabWidth);

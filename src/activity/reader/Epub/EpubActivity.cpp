@@ -1170,6 +1170,11 @@ void EpubActivity::loop() {
                                     (settingsDrawer && settingsDrawer->shouldUpdate()) ||
                                     (bookSettings.orientation != bookLayoutAppliedOrientation_);
     if (layoutNeedsRebuild) {
+      // Remove the drawer from the displayed frame before the layout rebuild starts. The rebuild
+      // shows its own progress UI and must never compose it over the stale settings panel.
+      if (settingsDrawer) settingsDrawer->hide();
+      settingsDrawerVisible = false;
+      renderScreen(true);
       applyBookSettings();
       if (settingsDrawer) {
         settingsDrawer->clearUpdateFlag();

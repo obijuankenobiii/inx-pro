@@ -27,6 +27,7 @@ class FontManagerActivity final : public ActivityWithSubactivity {
 
  private:
   enum class State : uint8_t { Loading, Ready, Downloading, Failed };
+  enum class CategoryFilter : uint8_t { All, SansSerif, Serif };
 
   static constexpr int kRowHeight = Page::LIST_ITEM_HEIGHT;
   static constexpr int kTabHeight = Button::height - 10;
@@ -40,6 +41,8 @@ class FontManagerActivity final : public ActivityWithSubactivity {
   int selectedIndex_ = 0;
   int scrollOffset_ = 0;
   bool selectedVisible_ = false;
+  bool categoryFilterOpen_ = false;
+  CategoryFilter categoryFilter_ = CategoryFilter::All;
   int installingPackageIndex_ = -1;
   volatile size_t progressDownloaded_ = 0;
   volatile size_t progressTotal_ = 0;
@@ -71,4 +74,11 @@ class FontManagerActivity final : public ActivityWithSubactivity {
   int visiblePackageCount() const;
   int packageIndexAt(int visibleIndex) const;
   void selectVariant(int variant);
+  int categoryFilterCount() const;
+  const char* categoryFilterLabel() const;
+  bool matchesCategory(const FontPackageManager::Package& package) const;
+  ButtonBounds categoryFilterBounds() const;
+  void categoryFilterDropdown() const;
+  void handleCategoryFilterTap(int tapX, int tapY);
+  void applyCategoryFilter(int index);
 };
