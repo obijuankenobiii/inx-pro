@@ -9,6 +9,7 @@
 #include "activity/page/SubPage.h"
 #include "activity/page/components/global/PopUp.h"
 #include "activity/settings/BaseCarouselActivity.h"
+#include "activity/settings/BaseHeatmapActivity.h"
 #include "images/ThemeBorder.h"
 #include "images/Setting.h"
 #include "state/HomeTheme.h"
@@ -42,6 +43,8 @@ bool supportsCarouselSettings(const HomeTheme::Widget widget) {
          widget == HomeTheme::Widget::Favorites;
 }
 
+bool supportsHeatmapSettings(const HomeTheme::Widget widget) { return widget == HomeTheme::Widget::Heatmap; }
+
 struct CarouselSettingsBounds {
   int x;
   int y;
@@ -57,9 +60,9 @@ CarouselSettingsBounds carouselSettingsBounds(const int cellX, const int cellY, 
 int widgetOptionCount(const HomeTheme::Layout layout, const bool sleepTheme) {
   if (layout == HomeTheme::Layout::Classic) return 1;
 #if FREEINK_DEVICE_STICKY
-  return sleepTheme ? 5 : 11;
+  return sleepTheme ? 5 : 12;
 #else
-  return sleepTheme ? 3 : 9;
+  return sleepTheme ? 3 : 10;
 #endif
 }
 
@@ -80,6 +83,7 @@ HomeTheme::Widget widgetOptionAt(const bool sleepTheme, const int index) {
 #endif
     HomeTheme::Widget::TodaysReading,
     HomeTheme::Widget::Favorites,
+    HomeTheme::Widget::Heatmap,
   };
   static constexpr HomeTheme::Widget sleepOptions[] = {
       HomeTheme::Widget::Empty,
@@ -229,7 +233,7 @@ void ThemePickerActivity::renderWidgetPicker() {
     const int cellY = previewY + (slot / columns) * cellH;
     renderWidgetPreview(widgets_[slot], cellX, cellY, cellW, cellH, backgrounds_[slot] != 0,
                         carouselStyles_[slot], carouselLabels_[slot] != 0, carouselLabelColors_[slot],
-                        carouselShadowStyles_[slot]);
+                        carouselShadowStyles_[slot], heatmapViews_[slot]);
   }
 
   renderBorder(borders_[0], previewX, previewY, previewW, previewH);
@@ -242,6 +246,12 @@ void ThemePickerActivity::renderWidgetPicker() {
     const int cellX = previewX + (slot % columns) * cellW;
     const int cellY = previewY + (slot / columns) * cellH;
     if (supportsCarouselSettings(widgets_[slot])) {
+      const CarouselSettingsBounds settings = carouselSettingsBounds(cellX, cellY, cellW, cellH);
+      renderer.rectangle.fill(settings.x - 4, settings.y - 4, settings.size + 8, settings.size + 8, false);
+      renderer.rectangle.render(settings.x - 4, settings.y - 4, settings.size + 8, settings.size + 8, true);
+      renderer.bitmap.icon(Setting, settings.x, settings.y, settings.size, settings.size);
+    }
+    if (supportsHeatmapSettings(widgets_[slot])) {
       const CarouselSettingsBounds settings = carouselSettingsBounds(cellX, cellY, cellW, cellH);
       renderer.rectangle.fill(settings.x - 4, settings.y - 4, settings.size + 8, settings.size + 8, false);
       renderer.rectangle.render(settings.x - 4, settings.y - 4, settings.size + 8, settings.size + 8, true);
@@ -281,7 +291,8 @@ void ThemePickerActivity::renderWidgetPreview(const HomeTheme::Widget widget, co
                                               const int width, const int height, const bool background,
                                               const HomeTheme::CarouselStyle style, const bool showLabel,
                                               const HomeTheme::CarouselLabelColor labelColor,
-                                              const HomeTheme::CarouselShadowStyle shadowStyle) {
+                                              const HomeTheme::CarouselShadowStyle shadowStyle,
+                                              const HomeTheme::HeatmapView heatmapView) {
   if (width <= 0 || height <= 0) return;
 
   switch (widget) {
@@ -316,6 +327,9 @@ void ThemePickerActivity::renderWidgetPreview(const HomeTheme::Widget widget, co
       break;
     case HomeTheme::Widget::Favorites:
       favorites_.preview(x, y, width, height, background, style, showLabel, labelColor, shadowStyle);
+      break;
+    case HomeTheme::Widget::Heatmap:
+      heatmap_.preview(x, y, width, height, heatmapView);
       break;
     case HomeTheme::Widget::Empty:
     default:
@@ -374,6 +388,7 @@ void ThemePickerActivity::editTheme() {
     carouselLabels_[i] = theme.carouselLabels[i];
     carouselLabelColors_[i] = theme.carouselLabelColors[i];
     carouselShadowStyles_[i] = theme.carouselShadowStyles[i];
+    heatmapViews_[i] = theme.heatmapViews[i];
 #if !FREEINK_DEVICE_STICKY
     if (widgets_[i] == HomeTheme::Widget::Temperature || widgets_[i] == HomeTheme::Widget::Humidity) {
       widgets_[i] = HomeTheme::Widget::Empty;
@@ -382,6 +397,7 @@ void ThemePickerActivity::editTheme() {
       carouselLabels_[i] = 0;
       carouselLabelColors_[i] = HomeTheme::CarouselLabelColor::Black;
       carouselShadowStyles_[i] = HomeTheme::CarouselShadowStyle::None;
+      heatmapViews_[i] = HomeTheme::HeatmapView::Weekly;
     }
 #endif
   }
@@ -394,6 +410,7 @@ void ThemePickerActivity::editTheme() {
     for (HomeTheme::CarouselShadowStyle& style : carouselShadowStyles_) {
       style = HomeTheme::CarouselShadowStyle::None;
     }
+    for (HomeTheme::HeatmapView& view : heatmapViews_) view = HomeTheme::HeatmapView::Weekly;
   }
   widgetSlot_ = 0;
   editingExisting_ = true;
@@ -405,11 +422,11 @@ void ThemePickerActivity::saveEditorAndClose() {
   if (screen_ == Screen::Widgets && editingExisting_ && !widgetPopup_ && !borderPopup_) {
     if (editingSleep_) {
       HomeTheme::updateSleep(layout_, widgets_, borders_, backgrounds_, carouselStyles_, carouselLabels_,
-                             carouselLabelColors_, carouselShadowStyles_,
+                             carouselLabelColors_, carouselShadowStyles_, heatmapViews_,
                              HomeTheme::slotCount(layout_));
     } else {
       HomeTheme::update(selected_, layout_, widgets_, borders_, backgrounds_, carouselStyles_, carouselLabels_,
-                        carouselLabelColors_, carouselShadowStyles_,
+                        carouselLabelColors_, carouselShadowStyles_, heatmapViews_,
                         HomeTheme::slotCount(layout_));
     }
   }
@@ -450,6 +467,18 @@ void ThemePickerActivity::openCarouselSettings(const int slot) {
         carouselSettingsFinished_ = true;
       },
       [] {}, widgets_[slot] == HomeTheme::Widget::Recent));
+}
+
+void ThemePickerActivity::openHeatmapSettings(const int slot) {
+  widgetSlot_ = slot;
+  heatmapSettingsFinished_ = false;
+  enterNewActivity(new BaseHeatmapActivity(
+      renderer, mappedInput, heatmapViews_[slot],
+      [this, slot](const HomeTheme::HeatmapView view) {
+        heatmapViews_[slot] = view;
+        heatmapSettingsFinished_ = true;
+      },
+      [] {}));
 }
 
 void ThemePickerActivity::moveWidgetPopupSelection(const int delta) {
@@ -529,6 +558,8 @@ void ThemePickerActivity::handleTouch(const int x, const int y) {
         carouselLabels_[widgetSlot_] = 1;
         carouselLabelColors_[widgetSlot_] = HomeTheme::CarouselLabelColor::Black;
         carouselShadowStyles_[widgetSlot_] = HomeTheme::CarouselShadowStyle::None;
+      } else if (supportsHeatmapSettings(widgets_[widgetSlot_])) {
+        heatmapViews_[widgetSlot_] = HomeTheme::HeatmapView::Weekly;
       } else {
         carouselStyles_[widgetSlot_] = HomeTheme::CarouselStyle::Centered;
         carouselLabels_[widgetSlot_] = 0;
@@ -558,6 +589,13 @@ void ThemePickerActivity::handleTouch(const int x, const int y) {
           return;
         }
       }
+      if (supportsHeatmapSettings(widgets_[slot])) {
+        const CarouselSettingsBounds settings = carouselSettingsBounds(cellX, cellY, cellW, cellH);
+        if (inside(x, y, settings.x - 8, settings.y - 8, settings.size + 16, settings.size + 16)) {
+          openHeatmapSettings(slot);
+          return;
+        }
+      }
     }
     if (inside(x, y, previewX, previewY, previewW, previewH)) {
       const int column = std::min(columns - 1, (x - previewX) / cellW);
@@ -582,6 +620,11 @@ void ThemePickerActivity::loop() {
     if (carouselSettingsFinished_) {
       exitActivity();
       carouselSettingsFinished_ = false;
+      render();
+    }
+    if (heatmapSettingsFinished_) {
+      exitActivity();
+      heatmapSettingsFinished_ = false;
       render();
     }
     return;
@@ -666,14 +709,16 @@ void ThemePickerActivity::loop() {
         if (widgets_[widgetSlot_] == HomeTheme::Widget::Empty) borders_[widgetSlot_] = HomeTheme::Border::None;
         if (supportsCarouselSettings(widgets_[widgetSlot_])) {
           carouselStyles_[widgetSlot_] = HomeTheme::defaultCarouselStyle(widgets_[widgetSlot_]);
-        carouselLabels_[widgetSlot_] = 1;
-        carouselLabelColors_[widgetSlot_] = HomeTheme::CarouselLabelColor::Black;
-        carouselShadowStyles_[widgetSlot_] = HomeTheme::CarouselShadowStyle::None;
-      } else {
-        carouselStyles_[widgetSlot_] = HomeTheme::CarouselStyle::Centered;
-        carouselLabels_[widgetSlot_] = 0;
-        carouselLabelColors_[widgetSlot_] = HomeTheme::CarouselLabelColor::Black;
-        carouselShadowStyles_[widgetSlot_] = HomeTheme::CarouselShadowStyle::None;
+          carouselLabels_[widgetSlot_] = 1;
+          carouselLabelColors_[widgetSlot_] = HomeTheme::CarouselLabelColor::Black;
+          carouselShadowStyles_[widgetSlot_] = HomeTheme::CarouselShadowStyle::None;
+        } else if (supportsHeatmapSettings(widgets_[widgetSlot_])) {
+          heatmapViews_[widgetSlot_] = HomeTheme::HeatmapView::Weekly;
+        } else {
+          carouselStyles_[widgetSlot_] = HomeTheme::CarouselStyle::Centered;
+          carouselLabels_[widgetSlot_] = 0;
+          carouselLabelColors_[widgetSlot_] = HomeTheme::CarouselLabelColor::Black;
+          carouselShadowStyles_[widgetSlot_] = HomeTheme::CarouselShadowStyle::None;
         }
         widgetPopup_ = false;
         render();

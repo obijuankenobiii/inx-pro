@@ -72,6 +72,12 @@ struct GlobalReadingStats {
         totalSessions(0) {}
 };
 
+/** A daily reading bucket keyed by the local hardware RTC date (YYYYMMDD). */
+struct ReadingHistoryEntry {
+  uint32_t dateKey = 0;
+  uint32_t readingTimeMs = 0;
+};
+
 /**
  * Saves reading statistics for a book to its cache directory.
  *
@@ -130,3 +136,21 @@ GlobalReadingStats aggregateGlobalStatsFromBooks(const std::vector<BookReadingSt
  * Recomputes global totals by scanning all per-book statistics files.
  */
 GlobalReadingStats generateGlobalStats();
+
+/** Adds elapsed reading time to the current RTC date bucket. */
+void recordReadingHistoryMs(uint32_t elapsedMs);
+
+/** Flushes pending RTC history changes to /.system/statistics.bin. */
+void saveReadingHistory();
+
+/** Returns all retained daily RTC buckets, oldest first. */
+const std::vector<ReadingHistoryEntry>& getReadingHistory();
+
+/** Returns the current local RTC date as YYYYMMDD, or false when unavailable. */
+bool currentRtcDateKey(uint32_t& dateKey);
+
+/** Converts a YYYYMMDD date key to a monotonic civil-day number. */
+int64_t readingDateToDay(uint32_t dateKey);
+
+/** Converts a monotonic civil-day number back to a YYYYMMDD date key. */
+uint32_t readingDayToDate(int64_t day);

@@ -10,6 +10,7 @@
 #include "../widget/Humidity.h"
 #include "../widget/TodaysReading.h"
 #include "../widget/Favorites.h"
+#include "../widget/Heatmap.h"
 #include "state/HomeTheme.h"
 
 class GfxRenderer;
@@ -81,4 +82,5 @@ class HomeWidgetLayout final {
   Humidity humidity_;
   TodaysReading todaysReading_;
   Favorites favorites_;
+  Heatmap heatmap_;
 };

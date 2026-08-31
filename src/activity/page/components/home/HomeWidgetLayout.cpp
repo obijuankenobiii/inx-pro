@@ -7,7 +7,7 @@
 HomeWidgetLayout::HomeWidgetLayout(GfxRenderer& renderer)
     : renderer_(renderer), carousel_(renderer), clock_(renderer), calendar_(renderer), recent_(renderer),
       shortcut_(renderer), shortcutList_(renderer), temperature_(renderer), humidity_(renderer), todaysReading_(renderer),
-      favorites_(renderer) {}
+      favorites_(renderer), heatmap_(renderer) {}
 
 void HomeWidgetLayout::render(const HomeTheme::Theme& theme, const int carouselIndex, const int favoriteIndex) const {
   switch (theme.layout) {
@@ -48,6 +48,8 @@ bool HomeWidgetLayout::needsRefresh(const HomeTheme::Theme& theme) const {
     if (theme.widgets[slot] == HomeTheme::Widget::Humidity && humidity_.needsRefresh()) return true;
 #endif
     if (theme.widgets[slot] == HomeTheme::Widget::TodaysReading && todaysReading_.needsRefresh()) return true;
+    if (theme.widgets[slot] == HomeTheme::Widget::Heatmap &&
+        heatmap_.needsRefresh(theme.heatmapViews[slot])) return true;
   }
   return false;
 }
@@ -174,6 +176,9 @@ void HomeWidgetLayout::renderGrid(const HomeTheme::Theme& theme, const int carou
         favorites_.render(favoriteIndex, bounds.x, bounds.y, bounds.width, bounds.height,
                           theme.backgrounds[slot] != 0, theme.carouselStyles[slot], theme.carouselLabels[slot] != 0,
                           theme.carouselLabelColors[slot], theme.carouselShadowStyles[slot]);
+        break;
+      case HomeTheme::Widget::Heatmap:
+        heatmap_.render(bounds.x, bounds.y, bounds.width, bounds.height, theme.heatmapViews[slot]);
         break;
       case HomeTheme::Widget::Empty:
       default:
