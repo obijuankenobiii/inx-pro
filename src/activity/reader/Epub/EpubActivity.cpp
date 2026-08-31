@@ -98,7 +98,8 @@ uint32_t floatBits(const float value) {
  * @param onGoToHome Callback for navigating to Home
  */
 EpubActivity::EpubActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, std::unique_ptr<Epub> epub,
-                           const std::function<void()>& onGoBack, const std::function<void()>& onGoToHome)
+                           const std::function<void()>& onGoBack, const std::function<void()>& onGoToHome,
+                           const int initialSpineIndex, const int initialPageNumber)
     : ActivityWithSubactivity("EpubReader", renderer, mappedInput),
       currentFontId(0),
       nextFontId(0),
@@ -107,6 +108,8 @@ EpubActivity::EpubActivity(GfxRenderer& renderer, MappedInputManager& mappedInpu
       onGoToHome(onGoToHome),
       currentSpineIndex(0),
       nextPageNumber(0),
+      initialSpineIndex_(initialSpineIndex),
+      initialPageNumber_(initialPageNumber),
       pagesUntilFullRefresh(0),
       cachedSpineIndex(0),
       cachedChapterTotalPageCount(0),
@@ -583,6 +586,12 @@ void EpubActivity::fastPath() {
     cachedSpineIndex = 0;
     cachedChapterTotalPageCount = 0;
   }
+  if (initialSpineIndex_ >= 0 && initialSpineIndex_ < totalSpineItems && initialPageNumber_ >= 0) {
+    currentSpineIndex = initialSpineIndex_;
+    nextPageNumber = initialPageNumber_;
+    cachedSpineIndex = currentSpineIndex;
+    cachedChapterTotalPageCount = 0;
+  }
 
   loadCurrentSection();
   statusBar = std::unique_ptr<StatusBar>(new StatusBar(renderer, *epub, bookSettings, &readingStats_));
@@ -611,6 +620,10 @@ bool EpubActivity::slowPath() {
   const int initialSpine = epub->getSpineIndexForInitialOpen();
   currentSpineIndex = (initialSpine == 0 && epub->getSpineItemsCount() > 1) ? 1 : initialSpine;
   nextPageNumber = 0;
+  if (initialSpineIndex_ >= 0 && initialSpineIndex_ < epub->getSpineItemsCount() && initialPageNumber_ >= 0) {
+    currentSpineIndex = initialSpineIndex_;
+    nextPageNumber = initialPageNumber_;
+  }
 
   FontManager::ensureReaderLayoutFonts(calculateViewport().fontId, renderer);
   BOOK_STATE.addOrUpdateBook(epub->getPath(), epub->getTitle(), epub->getAuthor());

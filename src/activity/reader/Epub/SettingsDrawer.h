@@ -203,6 +203,7 @@ class SettingsDrawer {
   std::vector<std::string> selectorOptions_;
   uint8_t* selectorFrame_ = nullptr;
   size_t selectorFrameSize_ = 0;
+  bool selectorFrameRestored_ = false;
   GroupType selectorGroup_ = GroupType::FONT;
 
   std::array<bool, kGroupCount> groupExpanded_{};  ///< Expansion state for each group, no heap nodes.

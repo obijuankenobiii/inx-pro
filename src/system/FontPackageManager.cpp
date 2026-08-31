@@ -88,6 +88,34 @@ std::string entryBaseName(const std::string& entryName) {
   const size_t slash = entryName.rfind('/');
   return slash == std::string::npos ? entryName : entryName.substr(slash + 1);
 }
+
+bool removeDirectoryTree(const std::string& path) {
+  FsFile directory = SdMan.open(path.c_str());
+  if (!directory || !directory.isDirectory()) {
+    if (directory) directory.close();
+    return false;
+  }
+
+  bool removed = true;
+  char name[128] = {};
+  while (true) {
+    FsFile entry = directory.openNextFile();
+    if (!entry) break;
+    entry.getName(name, sizeof(name));
+    const bool isDirectory = entry.isDirectory();
+    entry.close();
+
+    const std::string childPath = path + "/" + name;
+    if (isDirectory) {
+      if (!removeDirectoryTree(childPath)) removed = false;
+    } else if (!SdMan.remove(childPath.c_str())) {
+      removed = false;
+    }
+  }
+  directory.close();
+
+  return removed && SdMan.removeDir(path.c_str());
+}
 }  // namespace
 
 bool FontPackageManager::fetchAvailable(std::vector<Package>& packages, std::string& error) {
@@ -213,6 +241,36 @@ bool FontPackageManager::install(const Package& package, std::string& error, Pro
   SdMan.remove(kDownloadPath);
   if (extractedFiles == 0) {
     error = "No compiled font files found in package";
+    return false;
+  }
+
+  FontManager::scanSDFonts("/fonts", true);
+  return true;
+}
+
+bool FontPackageManager::remove(const Package& package, std::string& error) {
+  error.clear();
+  if (!SdMan.ready()) {
+    error = "SD card is not ready";
+    return false;
+  }
+
+  const std::string family = packageFamily(package, "");
+  if (family.empty() || family == "." || family == "..") {
+    error = "Invalid font package";
+    return false;
+  }
+
+  const std::string familyPath = std::string("/fonts/") + family;
+  SdIoMutex::Lock ioLock;
+  if (!SdMan.exists(familyPath.c_str())) {
+    error = "Font is not installed";
+    return false;
+  }
+
+  FontManager::unloadAllSDFonts();
+  if (!removeDirectoryTree(familyPath)) {
+    error = "Could not remove font files";
     return false;
   }
 

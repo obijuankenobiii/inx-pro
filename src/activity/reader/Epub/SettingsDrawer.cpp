@@ -687,7 +687,7 @@ void SettingsDrawer::renderWithRefresh(HalDisplay::RefreshMode mode) {
   // The first standalone drawer render follows a page display, which swaps the dual
   // framebuffers. Rebase the writable buffer from the page currently on the panel so
   // the drawer is composited over the book, not the previous activity screen.
-  if (!embedded_) {
+  if (!embedded_ && !selectorFrameRestored_) {
     renderer.syncWriteBufferFromActive();
   }
   drawBackground();
@@ -706,6 +706,7 @@ void SettingsDrawer::renderWithRefresh(HalDisplay::RefreshMode mode) {
     // into the inactive buffer so a later tab render cannot swap an old
     // selector back onto the screen.
     renderer.syncWriteBufferFromActive();
+    selectorFrameRestored_ = false;
     return;
   }
   renderer.displayBuffer(mode);
@@ -713,6 +714,7 @@ void SettingsDrawer::renderWithRefresh(HalDisplay::RefreshMode mode) {
   // buffer identical to what was just displayed; the drawer only redraws its
   // panel, while a selector may have painted below that panel.
   renderer.syncWriteBufferFromActive();
+  selectorFrameRestored_ = false;
 }
 
 /**
@@ -1161,6 +1163,7 @@ void SettingsDrawer::captureSelectorFrame() {
   if (!selectorOpen_ || selectorOptions_.empty()) return;
 
   clearSelectorFrame();
+  selectorFrameRestored_ = false;
   renderer.syncWriteBufferFromActive();
   const size_t size = renderer.getBufferSize();
   uint8_t* frame = renderer.getFrameBuffer();
@@ -1176,6 +1179,7 @@ void SettingsDrawer::restoreSelectorFrame() {
   if (selectorFrame_ && selectorFrameSize_ == renderer.getBufferSize()) {
     if (uint8_t* frame = renderer.getFrameBuffer()) {
       std::memcpy(frame, selectorFrame_, selectorFrameSize_);
+      selectorFrameRestored_ = true;
     }
   }
   clearSelectorFrame();

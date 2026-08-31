@@ -13,6 +13,7 @@
 #include "images/Check.h"
 #include "images/Download.h"
 #include "images/LibraryFilterRight.h"
+#include "images/Trash.h"
 #include "state/ReaderSetting.h"
 #include "system/FontManager.h"
 #include "system/Fonts.h"
@@ -25,6 +26,7 @@ constexpr uint32_t kInstallTaskStack = 8192;
 constexpr int kBottomMargin = 44;
 constexpr int kSideMargin = 20;
 constexpr int kActionIconSize = 40;
+constexpr int kActionIconGap = 12;
 constexpr int kScrollCaretSize = 40;
 constexpr int kTabWidth = 120;
 constexpr int kTabHeight = Button::height - 10;
@@ -251,6 +253,33 @@ void FontManagerActivity::selectInstalled() {
   updateDisplay();
 }
 
+void FontManagerActivity::removeSelected() {
+  const int packageIndex = packageIndexAt(selectedIndex_);
+  if (packageIndex < 0) return;
+
+  const FontPackageManager::Package& package = packages_[static_cast<size_t>(packageIndex)];
+  if (!FontPackageManager::isInstalled(package)) return;
+
+  const std::string family = StringUtils::sanitizeFilename(package.installFamily, 48);
+  const std::vector<std::string> families = FontManager::readerFontFamilyEnumLabels();
+  const bool wasSelectedReaderFont = READER_SETTINGS.fontFamily < families.size() &&
+                                     families[READER_SETTINGS.fontFamily] == family;
+  std::string error;
+  if (!FontPackageManager::remove(package, error)) {
+    status_ = error.empty() ? "Font removal failed." : error;
+    updateDisplay();
+    return;
+  }
+
+  if (wasSelectedReaderFont) {
+    READER_SETTINGS.fontFamily = SystemSetting::CHAREINK;
+    READER_SETTINGS.saveToFile();
+  }
+  selectedVisible_ = false;
+  status_ = "Font removed.";
+  updateDisplay();
+}
+
 void FontManagerActivity::startInstallation() {
   if (installTaskHandle_ || installingPackageIndex_ < 0 || shuttingDown_) return;
 
@@ -429,7 +458,9 @@ void FontManagerActivity::render() {
       const bool selected = selectedVisible_ && index == selectedIndex_;
       if (selected) renderer.rectangle.fill(0, y, screenW, kRowHeight, static_cast<int>(GfxRenderer::FillTone::Ink));
       const int textY = y + (kRowHeight - renderer.text.getLineHeight(font)) / 2;
-      const int maxNameWidth = screenW - (kSideMargin * 2) - kActionIconSize - 20;
+      const int deleteIconX = screenW - kSideMargin - kActionIconSize;
+      const int actionIconX = deleteIconX - kActionIconGap - kActionIconSize;
+      const int maxNameWidth = screenW - (kSideMargin * 2) - (kActionIconSize * 2) - kActionIconGap - 20;
       const std::string packageName = renderer.text.truncate(font, packages_[static_cast<size_t>(packageIndex)].name.c_str(),
                                                               maxNameWidth, EpdFontFamily::REGULAR);
       const bool installed = FontPackageManager::isInstalled(packages_[static_cast<size_t>(packageIndex)]);
@@ -438,13 +469,14 @@ void FontManagerActivity::render() {
       } else {
         renderer.text.render(font, kSideMargin, textY, packageName.c_str(), !selected, EpdFontFamily::REGULAR);
       }
-      const int iconX = screenW - kSideMargin - kActionIconSize;
       const int iconY = y + (kRowHeight - kActionIconSize) / 2;
       if (installed) {
-        renderer.bitmap.icon(Check, iconX, iconY, kActionIconSize, kActionIconSize,
-                                   BitmapRender::Orientation::None, selected);
+        renderer.bitmap.icon(Check, actionIconX, iconY, kActionIconSize, kActionIconSize,
+                             BitmapRender::Orientation::None, selected);
+        renderer.bitmap.icon(Trash, deleteIconX, iconY, kActionIconSize, kActionIconSize,
+                             BitmapRender::Orientation::None, selected);
       } else {
-        renderer.bitmap.icon(Download, iconX, iconY, kActionIconSize, kActionIconSize,
+        renderer.bitmap.icon(Download, deleteIconX, iconY, kActionIconSize, kActionIconSize,
                              BitmapRender::Orientation::None, selected);
       }
       if (index + 1 < end) {
@@ -526,7 +558,17 @@ void FontManagerActivity::loop() {
         if (x >= 0 && x < renderer.getScreenWidth() && y >= fontListTop &&
             y < fontListTop + visibleRows * kRowHeight && tapped >= 0 && tapped < total) {
           selectedIndex_ = tapped;
-          installSelected();
+          const int packageIndex = packageIndexAt(tapped);
+          const bool installed = packageIndex >= 0 &&
+                                 FontPackageManager::isInstalled(packages_[static_cast<size_t>(packageIndex)]);
+          const int deleteIconX = renderer.getScreenWidth() - kSideMargin - kActionIconSize;
+          const ButtonBounds deleteBounds{deleteIconX, fontListTop + (tapped - scrollOffset_) * kRowHeight,
+                                          kActionIconSize, kRowHeight};
+          if (installed && contains(deleteBounds, x, y)) {
+            removeSelected();
+          } else {
+            installSelected();
+          }
         }
       } else if (state_ == State::Failed && contains(actionBounds(renderer), x, y)) {
         state_ = State::Loading;

@@ -21,6 +21,7 @@
 #include "components/home/Preview.h"
 #include "components/global/Button.h"
 #include "images/Close.h"
+#include "images/Download.h"
 #include "images/Trash.h"
 #include "activity/util/KeyboardEntryActivity.h"
 #include "dictionary/StarDictLookup.h"
@@ -32,6 +33,8 @@
 #include "system/MappedInputManager.h"
 
 extern void openReaderFromCallback(const std::string& path, std::function<void()> returnToCaller);
+extern void openReaderFromCallback(const std::string& path, std::function<void()> returnToCaller, int spineIndex,
+                                   int pageNumber);
 extern void onGoToHome();
 extern void openDictionaryLookupKeyboard();
 
@@ -72,6 +75,14 @@ constexpr int bookGroupHeaderHeight = 42;
 constexpr int deleteSize = 40;
 constexpr int deleteHitPadding = 15;
 constexpr int dictionaryLookupButtonGap = 12;
+constexpr int openPageIconSize = 40;
+constexpr int openPageActionPadding = 5;
+constexpr int openPageActionSize = openPageIconSize + openPageActionPadding * 2;
+
+ButtonBounds openPageActionBounds(const GfxRenderer& renderer) {
+  return {renderer.getScreenWidth() - 20 - openPageActionSize,
+          renderer.getScreenHeight() - 20 - openPageActionSize, openPageActionSize, openPageActionSize};
+}
 
 ButtonBounds dictionaryLookupButtonBounds(const GfxRenderer& renderer) {
   const int font = systemFontId();
@@ -95,6 +106,23 @@ std::string cachedTitle(const std::string& cachePath) {
     }
   }
   return "Untitled book";
+}
+
+std::string cachePathForBookPath(const std::string& bookPath) {
+  return "/.metadata/epub/" + std::to_string(std::hash<std::string>{}(bookPath));
+}
+
+std::string bookPathForCachePath(const std::string& cachePath) {
+  for (const RecentBook& book : RECENT_BOOKS.getBooks()) {
+    if (book.path.empty()) continue;
+    const std::string bookCache = book.cachePath.empty() ? cachePathForBookPath(book.path) : book.cachePath;
+    if (bookCache == cachePath) return book.path;
+  }
+
+  for (const BookState::Book& book : BOOK_STATE.getAllBooks()) {
+    if (!book.path.empty() && cachePathForBookPath(book.path) == cachePath) return book.path;
+  }
+  return {};
 }
 
 std::string bookmarkLabel(const std::string& bookTitle, const EpubBookmark& bookmark) {
@@ -360,15 +388,23 @@ void HomeSubPage::load() {
 void HomeSubPage::loadBookmarks(const std::string& cachePath, const std::string& title) {
   EpubBookmarks bookmarks;
   bookmarks.load(cachePath);
+  const std::string bookPath = bookPathForCachePath(cachePath);
   for (const EpubBookmark& bookmark : bookmarks.entries()) {
-    rows.push_back({bookmarkLabel(title, bookmark), title, cachePath, static_cast<int>(bookmark.spineIndex),
-                    static_cast<int>(bookmark.pageNumber), {}, false});
+    Row row;
+    row.label = bookmarkLabel(title, bookmark);
+    row.title = title;
+    row.cachePath = cachePath;
+    row.spine = static_cast<int>(bookmark.spineIndex);
+    row.page = static_cast<int>(bookmark.pageNumber);
+    row.bookPath = bookPath;
+    rows.push_back(std::move(row));
   }
 }
 
 void HomeSubPage::loadHighlights(const std::string& cachePath, const std::string& title) {
   const std::string directory = cachePath + "/ann";
   if (!SdMan.exists(directory.c_str())) return;
+  const std::string bookPath = bookPathForCachePath(cachePath);
 
   for (const String& file : SdMan.listFiles(directory.c_str())) {
     int spine = 0;
@@ -379,7 +415,16 @@ void HomeSubPage::loadHighlights(const std::string& cachePath, const std::string
     if (!EpubAnnotationStorage::load(cachePath, spine, page, stored)) continue;
     for (const EpubAnnotationRecord& record : stored) {
       const std::string text = trimText(record.text);
-      rows.push_back({text.empty() ? title : text, title, cachePath, spine, page, record, true});
+      Row row;
+      row.label = text.empty() ? title : text;
+      row.title = title;
+      row.cachePath = cachePath;
+      row.spine = spine;
+      row.page = page;
+      row.annotation = record;
+      row.highlight = true;
+      row.bookPath = bookPath;
+      rows.push_back(std::move(row));
     }
   }
 }
@@ -457,12 +502,23 @@ bool HomeSubPage::contentInput() {
     updateRequired = true;
     return true;
   }
+  if ((section == Section::Bookmarks || section == Section::Highlights) && selected >= 0 &&
+      selected < static_cast<int>(rows.size())) {
+    const Row& row = rows[static_cast<size_t>(selected)];
+    const ButtonBounds openPage = openPageActionBounds(renderer);
+    if (!row.bookPath.empty() && row.spine >= 0 && row.page >= 0 && x >= openPage.x && x < openPage.x + openPage.width &&
+        y >= openPage.y && y < openPage.y + openPage.height) {
+      openReaderFromCallback(row.bookPath, [] { onGoToHome(); }, row.spine, row.page);
+      return true;
+    }
+  }
   if (section == Section::Highlights && selected >= 0 && selected < static_cast<int>(rows.size())) {
     const Row& row = rows[static_cast<size_t>(selected)];
     if (!row.annotation.noteAudioPath.empty() && row.annotation.note.empty()) {
       const int buttonY = renderer.getScreenHeight() - contentBottom - Button::height;
       const int buttonW = Button::width(renderer, "Transcribe note", systemFontId());
-      const int buttonX = renderer.getScreenWidth() - 20 - buttonW;
+      const ButtonBounds openPage = openPageActionBounds(renderer);
+      const int buttonX = openPage.x - 12 - buttonW;
       const ButtonBounds button{buttonX, buttonY, buttonW, Button::height};
       if (x >= button.x && x < button.x + button.width && y >= button.y && y < button.y + button.height) {
         startNoteTranscription();
@@ -487,6 +543,17 @@ void HomeSubPage::menu() {
     return;
   }
   renderer.bitmap.icon(Close, renderer.getScreenWidth() - 60, 20, 40, 40);
+  if ((section == Section::Bookmarks || section == Section::Highlights) && selected >= 0 &&
+      selected < static_cast<int>(rows.size())) {
+    const Row& row = rows[static_cast<size_t>(selected)];
+    if (!row.bookPath.empty() && row.spine >= 0 && row.page >= 0) {
+      const ButtonBounds openPage = openPageActionBounds(renderer);
+      renderer.rectangle.fill(openPage.x, openPage.y, openPage.width, openPage.height, true);
+      renderer.bitmap.iconScaled(Download, openPage.x + openPageActionPadding, openPage.y + openPageActionPadding,
+                                 openPageIconSize, openPageIconSize, openPageIconSize, openPageIconSize,
+                                 BitmapRender::Orientation::Rotate270CW, true);
+    }
+  }
 }
 
 bool HomeSubPage::showingBookList() const {
@@ -804,7 +871,8 @@ void HomeSubPage::highlightContent(const Row& row) {
   const int noteButtonY = bottom - Button::height;
   const int noteLabelY = noteButtonY - lineHeight - 10;
   const int noteReserve = hasNote ? lineHeight * 3 + 20 : 0;
-  const int textBottom = hasVoiceNote ? noteLabelY - 14 : bottom - noteReserve;
+  const int contentBottomForActions = bottom - openPageActionSize - 10;
+  const int textBottom = hasVoiceNote ? noteLabelY - 14 : contentBottomForActions - noteReserve;
 
   const std::string title = renderer.text.truncate(font, row.title.c_str(), width, EpdFontFamily::BOLD);
   renderer.text.render(font, left, y, title.c_str(), true, EpdFontFamily::BOLD);
@@ -824,13 +892,13 @@ void HomeSubPage::highlightContent(const Row& row) {
     remaining = trimText(remaining);
     y += lineHeight + 6;
   }
-  if (hasNote && y + lineHeight <= bottom) {
+  if (hasNote && y + lineHeight <= contentBottomForActions) {
     y += 10;
     renderer.text.render(font, left, y, "Note", true, EpdFontFamily::BOLD);
     y += lineHeight + 6;
 
     std::string note = row.annotation.note;
-    while (!note.empty() && y + lineHeight <= bottom) {
+    while (!note.empty() && y + lineHeight <= contentBottomForActions) {
       size_t length = note.size();
       while (length > 0 && renderer.text.getWidth(font, note.substr(0, length).c_str()) > width) {
         const size_t space = note.rfind(' ', length - 1);
@@ -847,7 +915,8 @@ void HomeSubPage::highlightContent(const Row& row) {
   if (hasVoiceNote) {
     const char* buttonLabel = "Transcribe note";
     const int buttonW = Button::width(renderer, "Transcribe note", font);
-    const int buttonX = renderer.getScreenWidth() - right - buttonW;
+    const ButtonBounds openPage = openPageActionBounds(renderer);
+    const int buttonX = openPage.x - 12 - buttonW;
     Button::render(renderer, {buttonX, noteButtonY, buttonW, Button::height}, transcriptionPending_ ? "" : buttonLabel,
                    true, font);
     if (transcriptionPending_) {

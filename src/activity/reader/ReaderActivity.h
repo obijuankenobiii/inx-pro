@@ -27,6 +27,8 @@ class ReaderActivity final : public ActivityWithSubactivity {
  private:
   std::string initialBookPath;                             ///< Path to the book file to open
   std::string currentBookPath;                             ///< Path of currently loaded book for navigation
+  int initialSpineIndex = -1;                              ///< Optional EPUB spine index to open
+  int initialPageNumber = -1;                              ///< Optional EPUB page number to open
   const std::function<void(const std::string&)> onGoBack;  ///< Callback to return to previous activity
 
   /**
@@ -144,9 +146,12 @@ class ReaderActivity final : public ActivityWithSubactivity {
    * @param onGoToCallback Callback function to open library at specified path
    */
   explicit ReaderActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, const std::string& initialBookPath,
-                          std::function<void(const std::string&)> onGoBack)
+                          std::function<void(const std::string&)> onGoBack, const int initialSpineIndex = -1,
+                          const int initialPageNumber = -1)
       : ActivityWithSubactivity("Reader", renderer, mappedInput),
         initialBookPath(initialBookPath),
+        initialSpineIndex(initialSpineIndex),
+        initialPageNumber(initialPageNumber),
         onGoBack(std::move(onGoBack)) {}
 
   /**

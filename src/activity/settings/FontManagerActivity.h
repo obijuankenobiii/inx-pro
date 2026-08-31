@@ -54,6 +54,7 @@ class FontManagerActivity final : public ActivityWithSubactivity {
 
   void loadPackages();
   void installSelected();
+  void removeSelected();
   void selectInstalled();
   void startInstallation();
   void launchWifiSelection();

@@ -95,6 +95,8 @@ void onGoToLibrary(const std::string& path = "/");
 void setupDisplayAndFonts();
 void onNetworkModeSelected(NetworkMode mode);
 void openReaderFromCallback(const std::string& path, std::function<void()> returnToCaller);
+void openReaderFromCallback(const std::string& path, std::function<void()> returnToCaller, int spineIndex,
+                            int pageNumber);
 bool handleGlobalPowerRefresh();
 
 namespace {
@@ -197,6 +199,11 @@ bool isExportedNoteImage(const std::string& path) {
  * @brief Opens the reader activity and returns to the library when closed.
  */
 void openReaderFromCallback(const std::string& path, std::function<void()> returnToCaller) {
+  openReaderFromCallback(path, std::move(returnToCaller), -1, -1);
+}
+
+void openReaderFromCallback(const std::string& path, std::function<void()> returnToCaller, const int spineIndex,
+                            const int pageNumber) {
   // Defensive copy: `path` is typically a reference into the calling activity's own state (e.g.
   // the previous library activity's currentPageItems), but switchTo() deletes that activity before this function's
   // arguments are used to construct the new one - passing `path` itself through would dangle.
@@ -208,7 +215,8 @@ void openReaderFromCallback(const std::string& path, std::function<void()> retur
   switchTo<ReaderActivity>(render, input, pathCopy,
                            [returnToCaller](const std::string&) {
                              if (returnToCaller) returnToCaller();
-                           });
+                           },
+                           spineIndex, pageNumber);
 }
 
 /**
