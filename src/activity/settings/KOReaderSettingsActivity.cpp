@@ -182,7 +182,7 @@ void KOReaderSettingsActivity::render() {
   const auto screenHeight = renderer.getScreenHeight();
 
   renderer.clearScreen();
-  const int dividerY = SubPage::header(renderer, "KOReader Sync");
+  const int dividerY = SubPage::header(renderer, "KOReader");
 
   int startY = dividerY;
   int visibleAreaHeight = screenHeight - startY - 60;

@@ -21,11 +21,42 @@
 
 namespace {
 
-ButtonBounds startButtonBounds(const GfxRenderer& renderer) {
-  constexpr int font = MONTSERRAT_10_FONT_ID;
+ButtonBounds startButtonBounds(const GfxRenderer& renderer, const int font) {
   const int width = Button::width(renderer, "Start Sync", font);
   return {(renderer.getScreenWidth() - width) / 2, renderer.getScreenHeight() - Button::height - 30, width,
           Button::height};
+}
+
+ButtonBounds uploadButtonBounds(const GfxRenderer& renderer, const int font) {
+  const int width = Button::width(renderer, "Upload Progress", font);
+  return {(renderer.getScreenWidth() - width) / 2, renderer.getScreenHeight() - Button::height - 30, width,
+          Button::height};
+}
+
+int syncContentTop() {
+  constexpr int headerTop = FREEINK_DEVICE_X4PRO ? 20 : 10;
+  return headerTop + 40 + 20;
+}
+
+ButtonBounds resultOptionBounds(const GfxRenderer& renderer, const bool remoteHasDevice, const int option) {
+  const int resultTop = syncContentTop() + 32;
+  const int remoteY = resultTop + 40;
+  const int localY = remoteY + (remoteHasDevice ? 130 : 105);
+  const int optionY = localY + 80;
+  return {0, optionY + option * UiLayout::LIST_ITEM_HEIGHT, renderer.getScreenWidth(), UiLayout::LIST_ITEM_HEIGHT};
+}
+
+bool touchPointInBounds(MappedInputManager& input, const GfxRenderer& renderer, const ButtonBounds& bounds, int& x,
+                        int& y) {
+  if (!input.hasTouch()) return false;
+
+  float tapX = 0.0f;
+  float tapY = 0.0f;
+  if (!input.wasTouchTapInScreen(renderer, tapX, tapY)) return false;
+
+  x = static_cast<int>(tapX * renderer.getScreenWidth());
+  y = static_cast<int>(tapY * renderer.getScreenHeight());
+  return x >= bounds.x && x < bounds.x + bounds.width && y >= bounds.y && y < bounds.y + bounds.height;
 }
 
 void wifiOff() {
@@ -271,14 +302,15 @@ void KOReaderSyncActivity::render() {
 
   renderer.clearScreen();
   const int contentTop = SubPage::header(renderer, "KOReader Sync");
+  const int font = systemFontId();
   const int pageWidth = renderer.getScreenWidth();
   const int pageHeight = renderer.getScreenHeight();
   const int contentCenterY = contentTop + (pageHeight - contentTop) / 2;
 
   if (state == NO_CREDENTIALS) {
-    renderer.text.centered(MONTSERRAT_10_FONT_ID, contentCenterY - 20, "No credentials configured", true,
+    renderer.text.centered(font, contentCenterY - 20, "No credentials configured", true,
                            EpdFontFamily::BOLD);
-    renderer.text.centered(MONTSERRAT_10_FONT_ID, contentCenterY + 20, "Set up KOReader account in Settings");
+    renderer.text.centered(font, contentCenterY + 20, "Set up KOReader account in Settings");
 
     const auto labels = mappedInput.mapLabels("Back", "", "", "");
     renderer.displayBuffer();
@@ -286,23 +318,21 @@ void KOReaderSyncActivity::render() {
   }
 
   if (state == IDLE) {
-    renderer.text.centered(MONTSERRAT_10_FONT_ID, contentCenterY - 30, "Ready to sync this book", true,
+    renderer.text.centered(font, contentCenterY - 30, "Ready to sync this book", true,
                            EpdFontFamily::BOLD);
-    Button::render(renderer, startButtonBounds(renderer), "Start Sync", true, MONTSERRAT_10_FONT_ID);
+    Button::render(renderer, startButtonBounds(renderer, font), "Start Sync", true, font);
     renderer.displayBuffer();
     return;
   }
 
   if (state == SYNCING || state == UPLOADING) {
-    renderer.text.centered(MONTSERRAT_10_FONT_ID, contentCenterY, statusMessage.c_str(), true, EpdFontFamily::BOLD);
+    renderer.text.centered(font, contentCenterY, statusMessage.c_str(), true, EpdFontFamily::BOLD);
     renderer.displayBuffer();
     return;
   }
 
   if (state == SHOWING_RESULT) {
     const int resultTop = contentTop + 32;
-    renderer.text.centered(MONTSERRAT_10_FONT_ID, resultTop, "Progress found!", true, EpdFontFamily::BOLD);
-
     const int remoteTocIndex = epub->getTocIndexForSpineIndex(remotePosition.spineIndex);
     const std::string remoteChapter = (remoteTocIndex >= 0)
                                           ? epub->getTocItem(remoteTocIndex).title
@@ -312,30 +342,30 @@ void KOReaderSyncActivity::render() {
 
     const int left = 20;
     const int remoteY = resultTop + 40;
-    renderer.text.render(MONTSERRAT_10_FONT_ID, left, remoteY, "Remote:", true);
+    renderer.text.render(font, left, remoteY, "Remote:", true);
     char remoteChapterStr[128];
     snprintf(remoteChapterStr, sizeof(remoteChapterStr), "  %s", remoteChapter.c_str());
-    renderer.text.render(MONTSERRAT_10_FONT_ID, left, remoteY + 25, remoteChapterStr);
+    renderer.text.render(font, left, remoteY + 25, remoteChapterStr);
     char remotePageStr[64];
     snprintf(remotePageStr, sizeof(remotePageStr), "  Page %d, %.2f%% overall", remotePosition.pageNumber + 1,
              remoteProgress.percentage * 100);
-    renderer.text.render(MONTSERRAT_10_FONT_ID, left, remoteY + 50, remotePageStr);
+    renderer.text.render(font, left, remoteY + 50, remotePageStr);
 
     if (!remoteProgress.device.empty()) {
       char deviceStr[64];
       snprintf(deviceStr, sizeof(deviceStr), "  From: %s", remoteProgress.device.c_str());
-      renderer.text.render(MONTSERRAT_10_FONT_ID, left, remoteY + 75, deviceStr);
+      renderer.text.render(font, left, remoteY + 75, deviceStr);
     }
 
     const int localY = remoteY + (remoteProgress.device.empty() ? 105 : 130);
-    renderer.text.render(MONTSERRAT_10_FONT_ID, left, localY, "Local:", true);
+    renderer.text.render(font, left, localY, "Local:", true);
     char localChapterStr[128];
     snprintf(localChapterStr, sizeof(localChapterStr), "  %s", localChapter.c_str());
-    renderer.text.render(MONTSERRAT_10_FONT_ID, left, localY + 25, localChapterStr);
+    renderer.text.render(font, left, localY + 25, localChapterStr);
     char localPageStr[64];
     snprintf(localPageStr, sizeof(localPageStr), "  Page %d/%d, %.2f%% overall", currentPage + 1, totalPagesInSpine,
              localProgress.percentage * 100);
-    renderer.text.render(MONTSERRAT_10_FONT_ID, left, localY + 50, localPageStr);
+    renderer.text.render(font, left, localY + 50, localPageStr);
 
     const int optionY = localY + 80;
     const int optionHeight = UiLayout::LIST_ITEM_HEIGHT;
@@ -344,8 +374,8 @@ void KOReaderSyncActivity::render() {
       renderer.rectangle.fill(0, optionY, pageWidth, optionHeight,
                               static_cast<int>(GfxRenderer::FillTone::Ink));
     }
-    const int optionTextY = optionY + (optionHeight - renderer.text.getLineHeight(MONTSERRAT_10_FONT_ID)) / 2;
-    renderer.text.render(MONTSERRAT_10_FONT_ID, 20, optionTextY, "Apply remote progress", selectedOption != 0);
+    const int optionTextY = optionY + (optionHeight - renderer.text.getLineHeight(font)) / 2;
+    renderer.text.render(font, 20, optionTextY, "Apply remote progress", selectedOption != 0);
     renderer.line.render(0, optionY + optionHeight - 1, pageWidth, optionY + optionHeight - 1, true,
                          LineRender::Style::Dotted);
 
@@ -353,7 +383,7 @@ void KOReaderSyncActivity::render() {
       renderer.rectangle.fill(0, optionY + optionHeight, pageWidth, optionHeight,
                               static_cast<int>(GfxRenderer::FillTone::Ink));
     }
-    renderer.text.render(MONTSERRAT_10_FONT_ID, 20, optionTextY + optionHeight, "Upload local progress",
+    renderer.text.render(font, 20, optionTextY + optionHeight, "Upload local progress",
                          selectedOption != 1);
     renderer.line.render(0, optionY + optionHeight * 2 - 1, pageWidth, optionY + optionHeight * 2 - 1, true,
                          LineRender::Style::Dotted);
@@ -364,9 +394,10 @@ void KOReaderSyncActivity::render() {
   }
 
   if (state == NO_REMOTE_PROGRESS) {
-    renderer.text.centered(MONTSERRAT_10_FONT_ID, contentCenterY - 20, "No remote progress found", true,
+    renderer.text.centered(font, contentCenterY - 20, "No remote progress found", true,
                            EpdFontFamily::BOLD);
-    renderer.text.centered(MONTSERRAT_10_FONT_ID, contentCenterY + 20, "Upload current position?");
+    renderer.text.centered(font, contentCenterY + 20, "Upload current position?");
+    Button::render(renderer, uploadButtonBounds(renderer, font), "Upload Progress", true, font);
 
     const auto labels = mappedInput.mapLabels("Cancel", "Upload", "", "");
     renderer.displayBuffer();
@@ -374,7 +405,7 @@ void KOReaderSyncActivity::render() {
   }
 
   if (state == UPLOAD_COMPLETE) {
-    renderer.text.centered(MONTSERRAT_10_FONT_ID, contentCenterY, "Progress uploaded!", true, EpdFontFamily::BOLD);
+    renderer.text.centered(font, contentCenterY, "Progress uploaded!", true, EpdFontFamily::BOLD);
 
     const auto labels = mappedInput.mapLabels("Back", "", "", "");
     renderer.displayBuffer();
@@ -382,8 +413,8 @@ void KOReaderSyncActivity::render() {
   }
 
   if (state == SYNC_FAILED) {
-    renderer.text.centered(MONTSERRAT_10_FONT_ID, contentCenterY - 20, "Sync failed", true, EpdFontFamily::BOLD);
-    renderer.text.centered(MONTSERRAT_10_FONT_ID, contentCenterY + 20, statusMessage.c_str());
+    renderer.text.centered(font, contentCenterY - 20, "Sync failed", true, EpdFontFamily::BOLD);
+    renderer.text.centered(font, contentCenterY + 20, statusMessage.c_str());
 
     const auto labels = mappedInput.mapLabels("Back", "", "", "");
     renderer.displayBuffer();
@@ -403,16 +434,9 @@ void KOReaderSyncActivity::loop() {
 
   if (state == IDLE) {
     bool start = mappedInput.wasReleased(MappedInputManager::Button::Confirm);
-    if (mappedInput.hasTouch()) {
-      float tapX = 0.0f;
-      float tapY = 0.0f;
-      if (mappedInput.wasTouchTapInScreen(renderer, tapX, tapY)) {
-        const int x = static_cast<int>(tapX * renderer.getScreenWidth());
-        const int y = static_cast<int>(tapY * renderer.getScreenHeight());
-        const ButtonBounds button = startButtonBounds(renderer);
-        start = x >= button.x && x < button.x + button.width && y >= button.y && y < button.y + button.height;
-      }
-    }
+    int tapX = 0;
+    int tapY = 0;
+    if (!start) start = touchPointInBounds(mappedInput, renderer, startButtonBounds(renderer, systemFontId()), tapX, tapY);
     if (start) {
       startSync();
       return;
@@ -431,6 +455,20 @@ void KOReaderSyncActivity::loop() {
   }
 
   if (state == SHOWING_RESULT) {
+    int tapX = 0;
+    int tapY = 0;
+    const ButtonBounds firstOption = resultOptionBounds(renderer, !remoteProgress.device.empty(), 0);
+    const ButtonBounds options{firstOption.x, firstOption.y, firstOption.width, firstOption.height * 2};
+    if (touchPointInBounds(mappedInput, renderer, options, tapX, tapY)) {
+      selectedOption = (tapY - firstOption.y) / firstOption.height;
+      if (selectedOption == 0) {
+        onSyncComplete(remotePosition.spineIndex, remotePosition.pageNumber);
+      } else {
+        performUpload();
+      }
+      return;
+    }
+
     if (mappedInput.wasReleased(MappedInputManager::Button::Up) ||
         mappedInput.wasReleased(MappedInputManager::Button::Left) ||
         mappedInput.wasReleased(MappedInputManager::Button::Down) ||
@@ -454,7 +492,19 @@ void KOReaderSyncActivity::loop() {
   }
 
   if (state == NO_REMOTE_PROGRESS) {
+    int tapX = 0;
+    int tapY = 0;
+    const bool upload = touchPointInBounds(mappedInput, renderer, uploadButtonBounds(renderer, systemFontId()), tapX, tapY);
     if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+      if (documentHash.empty()) {
+        if (KOREADER_STORE.getMatchMethod() == DocumentMatchMethod::FILENAME) {
+          documentHash = KOReaderDocumentId::calculateFromFilename(epubPath);
+        } else {
+          documentHash = KOReaderDocumentId::calculate(epubPath);
+        }
+      }
+      performUpload();
+    } else if (upload) {
       if (documentHash.empty()) {
         if (KOREADER_STORE.getMatchMethod() == DocumentMatchMethod::FILENAME) {
           documentHash = KOReaderDocumentId::calculateFromFilename(epubPath);
