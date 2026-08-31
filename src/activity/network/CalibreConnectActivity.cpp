@@ -16,6 +16,7 @@
 #include <lwip/sockets.h>
 
 #include "activity/page/SubPage.h"
+#include "activity/page/components/global/Button.h"
 #include "WifiSelectionActivity.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
@@ -53,6 +54,16 @@ constexpr int SMALL_SPACING = 25;
  */
 constexpr int SECTION_SPACING = 40;
 
+ButtonBounds exitButtonBounds(const GfxRenderer& renderer) {
+  const int width = Button::width(renderer, "Exit", systemFontId());
+  return {renderer.getScreenWidth() - width - 20, renderer.getScreenHeight() - Button::height - 20, width,
+          Button::height};
+}
+
+bool contains(const ButtonBounds& bounds, const int x, const int y) {
+  return x >= bounds.x && x < bounds.x + bounds.width && y >= bounds.y && y < bounds.y + bounds.height;
+}
+
 /**
  * @brief HTML response for Calibre web interface root page
  */
@@ -77,19 +88,6 @@ const char* CDP_RESPONSE =
     "Connection: close\r\n"
     "\r\n"
     "OK";
-
-/**
- * @brief Renders the header section for the activity
- * @param renderer Graphics renderer instance
- * @param startY Starting Y coordinate
- * @param title Header title text
- * @param subtitle Optional subtitle text
- */
-int renderActivityHeader(const GfxRenderer& renderer, int startY, const char* title, const char* subtitle = nullptr) {
-  (void)startY;
-  (void)subtitle;
-  return SubPage::header(renderer, title);
-}
 
 /**
  * @brief Truncates a string to a maximum length, adding ellipsis if needed
@@ -313,12 +311,14 @@ void CalibreConnectActivity::loop() {
     float tapNx = 0.0f;
     float tapNy = 0.0f;
     if (mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy)) {
-      exitRequested = true;
+      const int tapX = static_cast<int>(tapNx * renderer.getScreenWidth());
+      const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
+      if (contains(exitButtonBounds(renderer), tapX, tapY)) exitRequested = true;
       return;
     }
   }
 
-  if (mappedInput.isPressed(MappedInputManager::Button::Back)) {
+  if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
     exitRequested = true;
     return;
   }
@@ -476,6 +476,7 @@ void CalibreConnectActivity::displayTaskLoop() {
  * @brief Main rendering function that dispatches to appropriate state renderers
  */
 void CalibreConnectActivity::render() const {
+  renderer.syncWriteBufferFromActive();
   renderer.clearScreen();
 
   int screenWidth = renderer.getScreenWidth();
@@ -485,7 +486,7 @@ void CalibreConnectActivity::render() const {
   if (state == CalibreConnectState::SERVER_RUNNING) {
     renderServerRunning(screenWidth, screenHeight, startY);
   } else if (state == CalibreConnectState::SERVER_STARTING) {
-    const int contentStart = renderActivityHeader(renderer, startY, "Connect to Calibre", "Starting server...");
+    const int contentStart = SubPage::header(renderer, "Connect to Calibre");
 
     int centerY = contentStart + (screenHeight - contentStart) / 2;
 
@@ -493,12 +494,13 @@ void CalibreConnectActivity::render() const {
 
     auto labels = mappedInput.mapLabels("« Exit", "", "", "");
   } else if (state == CalibreConnectState::ERROR) {
-    const int contentStart = renderActivityHeader(renderer, startY, "Connect to Calibre", "Setup Failed");
+    const int contentStart = SubPage::header(renderer, "Connect to Calibre");
 
     int centerY = contentStart + (screenHeight - contentStart) / 2;
 
     renderer.text.centered(systemFontId(), centerY - 20, "Could not start server");
     renderer.text.centered(systemFontId(), centerY + 10, "Press Exit to try again");
+    Button::render(renderer, exitButtonBounds(renderer), "Exit", true, systemFontId());
 
     auto labels = mappedInput.mapLabels("« Exit", "", "", "");
   }
@@ -513,7 +515,7 @@ void CalibreConnectActivity::render() const {
  * @param startY Starting Y coordinate for content
  */
 void CalibreConnectActivity::renderServerRunning(int screenWidth, int screenHeight, int startY) const {
-  const int contentStart = renderActivityHeader(renderer, startY, "Connect to Calibre", "Server Running");
+  const int contentStart = SubPage::header(renderer, "Connect to Calibre");
 
   int currentY = contentStart + SECTION_SPACING - 10;
 
@@ -558,7 +560,7 @@ void CalibreConnectActivity::renderServerRunning(int screenWidth, int screenHeig
     if (!currentUploadName.empty()) {
       label += ": " + truncateString(currentUploadName, 30);
     }
-    renderer.text.render(MONTSERRAT_8_FONT_ID, CONTENT_MARGIN, currentY, label.c_str());
+    renderer.text.render(systemFontId(), CONTENT_MARGIN, currentY, label.c_str());
 
     constexpr int barWidth = 300;
     constexpr int barHeight = 16;
@@ -570,8 +572,9 @@ void CalibreConnectActivity::renderServerRunning(int screenWidth, int screenHeig
 
   if (lastCompleteAt > 0 && (millis() - lastCompleteAt) < 6000) {
     std::string msg = "Received: " + truncateString(lastCompleteName, 30);
-    renderer.text.render(MONTSERRAT_8_FONT_ID, CONTENT_MARGIN, currentY, msg.c_str());
+    renderer.text.render(systemFontId(), CONTENT_MARGIN, currentY, msg.c_str());
   }
 
+  Button::render(renderer, exitButtonBounds(renderer), "Exit", true, systemFontId());
   auto labels = mappedInput.mapLabels("« Exit", "", "", "");
 }

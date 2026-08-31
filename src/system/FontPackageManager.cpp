@@ -1,0 +1,221 @@
+#include "FontPackageManager.h"
+
+#include <SDCardManager.h>
+
+#include "../network/HttpDownloader.h"
+#include "FontManager.h"
+#include <FsHelpers.h>
+#include <ZipFile.h>
+#include "util/SdIoMutex.h"
+#include "util/StringUtils.h"
+
+namespace {
+constexpr char kFontRepositoryBase[] =
+    "https://raw.githubusercontent.com/obijuankenobiii/inx-font/main/";
+constexpr char kDownloadPath[] = "/.system/font-package.zip";
+constexpr size_t kMaxPackageBytes = 5 * 1024 * 1024;
+constexpr size_t kMaxExtractedBytes = 16 * 1024 * 1024;
+
+struct StaticPackage {
+  const char* name;
+  const char* variant;
+  const char* path;
+};
+
+constexpr StaticPackage kStaticPackages[] = {
+    {"Alegreya", "1-bit", "1bit/Alegreya.zip"},
+    {"AtkinsonHL-Mono", "1-bit", "1bit/AtkinsonHL-Mono.zip"},
+    {"AtkinsonHL-Next", "1-bit", "1bit/AtkinsonHL-Next.zip"},
+    {"BitterPro", "1-bit", "1bit/BitterPro.zip"},
+    {"ChareInk7", "1-bit", "1bit/ChareInk7.zip"},
+    {"Charis", "1-bit", "1bit/Charis.zip"},
+    {"Inter", "1-bit", "1bit/Inter.zip"},
+    {"Lexend", "1-bit", "1bit/Lexend.zip"},
+    {"LexicaUltralegible", "1-bit", "1bit/LexicaUltralegible.zip"},
+    {"Literata", "1-bit", "1bit/Literata.zip"},
+    {"Lora", "1-bit", "1bit/Lora.zip"},
+    {"Merriweather", "1-bit", "1bit/Merriweather.zip"},
+    {"NotoSans", "1-bit", "1bit/NotoSans.zip"},
+    {"OpenDyslexic", "1-bit", "1bit/OpenDyslexic.zip"},
+    {"PlexMono", "1-bit", "1bit/PlexMono.zip"},
+    {"PlexSans", "1-bit", "1bit/PlexSans.zip"},
+    {"SourceSans3", "1-bit", "1bit/SourceSans3.zip"},
+    {"SourceSerif4", "1-bit", "1bit/SourceSerif4.zip"},
+    {"Tinos", "1-bit", "1bit/Tinos.zip"},
+    {"Alegreya", "2-bit", "2bit/Alegreya.zip"},
+    {"AtkinsonHL-Mono", "2-bit", "2bit/AtkinsonHL-Mono.zip"},
+    {"AtkinsonHL-Next", "2-bit", "2bit/AtkinsonHL-Next.zip"},
+    {"BitterPro", "2-bit", "2bit/BitterPro.zip"},
+    {"ChareInk7", "2-bit", "2bit/ChareInk7.zip"},
+    {"Charis", "2-bit", "2bit/Charis.zip"},
+    {"Inter", "2-bit", "2bit/Inter.zip"},
+    {"Lexend", "2-bit", "2bit/Lexend.zip"},
+    {"LexicaUltralegible", "2-bit", "2bit/LexicaUltralegible.zip"},
+    {"Literata", "2-bit", "2bit/Literata.zip"},
+    {"Lora", "2-bit", "2bit/Lora.zip"},
+    {"Merriweather", "2-bit", "2bit/Merriweather.zip"},
+    {"NotoSans", "2-bit", "2bit/NotoSans.zip"},
+    {"OpenDyslexic", "2-bit", "2bit/OpenDyslexic.zip"},
+    {"PlexMono", "2-bit", "2bit/PlexMono.zip"},
+    {"PlexSans", "2-bit", "2bit/PlexSans.zip"},
+    {"SourceSans3", "2-bit", "2bit/SourceSans3.zip"},
+    {"SourceSerif4", "2-bit", "2bit/SourceSerif4.zip"},
+    {"Tinos", "2-bit", "2bit/Tinos.zip"},
+};
+
+bool isSafeBinName(const std::string& name) {
+  if (!StringUtils::checkFileExtension(name, ".bin")) return false;
+  if (name.empty() || name == "." || name == "..") return false;
+  for (const char c : name) {
+    if (c == '/' || c == '\\' || c == ':' || c < 32) return false;
+  }
+  return true;
+}
+
+std::string packageFamily(const FontPackageManager::Package& package, const std::string& entryName) {
+  if (!package.installFamily.empty()) {
+    return StringUtils::sanitizeFilename(package.installFamily, 48);
+  }
+
+  const size_t slash = entryName.find('/');
+  if (slash != std::string::npos && slash > 0 && entryName.compare(0, slash, "__MACOSX") != 0) {
+    return StringUtils::sanitizeFilename(entryName.substr(0, slash), 48);
+  }
+  return StringUtils::sanitizeFilename(package.name, 48);
+}
+
+std::string entryBaseName(const std::string& entryName) {
+  const size_t slash = entryName.rfind('/');
+  return slash == std::string::npos ? entryName : entryName.substr(slash + 1);
+}
+}  // namespace
+
+bool FontPackageManager::fetchAvailable(std::vector<Package>& packages, std::string& error) {
+  packages.clear();
+  error.clear();
+
+  packages.reserve(sizeof(kStaticPackages) / sizeof(kStaticPackages[0]));
+  for (const StaticPackage& item : kStaticPackages) {
+    const std::string installFamily = std::string(item.name) + " " + item.variant;
+    packages.push_back({item.name, item.variant, std::string(kFontRepositoryBase) + item.path, installFamily, 0});
+  }
+  return true;
+}
+
+bool FontPackageManager::isInstalled(const Package& package) {
+  if (!SdMan.ready()) return false;
+
+  SdIoMutex::Lock ioLock;
+  const std::string family = packageFamily(package, "");
+  const std::string familyPath = std::string("/fonts/") + family;
+  FsFile directory = SdMan.open(familyPath.c_str());
+  if (!directory || !directory.isDirectory()) {
+    if (directory) directory.close();
+    return false;
+  }
+
+  bool installed = false;
+  for (FsFile file = directory.openNextFile(); file; file = directory.openNextFile()) {
+    char name[128] = {0};
+    file.getName(name, sizeof(name));
+    if (!file.isDirectory() && isSafeBinName(name)) {
+      installed = true;
+      file.close();
+      break;
+    }
+    file.close();
+  }
+  directory.close();
+  return installed;
+}
+
+bool FontPackageManager::install(const Package& package, std::string& error, ProgressCallback progress) {
+  error.clear();
+  if (package.url.empty()) {
+    error = "Invalid font package";
+    return false;
+  }
+  if (package.size > kMaxPackageBytes) {
+    error = "Font package is larger than 5 MB";
+    return false;
+  }
+  if (!SdMan.ready()) {
+    error = "SD card is not ready";
+    return false;
+  }
+
+  SdIoMutex::Lock ioLock;
+  SdMan.mkdir("/.system");
+  if (HttpDownloader::downloadToFile(package.url, kDownloadPath, "", "", progress) != HttpDownloader::OK) {
+    error = "Font download failed";
+    return false;
+  }
+
+  FsFile archiveFile = SdMan.open(kDownloadPath);
+  const size_t downloadedSize = archiveFile ? archiveFile.size() : 0;
+  if (archiveFile) archiveFile.close();
+  if (downloadedSize == 0 || downloadedSize > kMaxPackageBytes) {
+    SdMan.remove(kDownloadPath);
+    error = "Invalid font package size";
+    return false;
+  }
+
+  ZipFile zip{std::string(kDownloadPath)};
+  if (!zip.open() || !zip.loadAllFileStatSlims()) {
+    zip.close();
+    SdMan.remove(kDownloadPath);
+    error = "Font package is not a valid ZIP";
+    return false;
+  }
+
+  SdMan.mkdir("/fonts");
+  size_t extractedBytes = 0;
+  int extractedFiles = 0;
+  for (size_t i = 0; i < zip.entryCount(); ++i) {
+    const char* name = zip.fileNameAt(i);
+    if (!name) continue;
+    const std::string entryName = FsHelpers::normalisePath(name);
+    const std::string baseName = entryBaseName(entryName);
+    if (entryName.empty() || entryName.find("__MACOSX/") == 0 || !isSafeBinName(baseName)) continue;
+
+    size_t inflatedSize = 0;
+    if (!zip.getInflatedFileSize(entryName.c_str(), &inflatedSize) || inflatedSize == 0 ||
+        extractedBytes + inflatedSize > kMaxExtractedBytes) {
+      continue;
+    }
+
+    const std::string family = packageFamily(package, entryName);
+    const std::string familyPath = std::string("/fonts/") + family;
+    const std::string outputPath = familyPath + "/" + StringUtils::sanitizeFilename(baseName, 96);
+    SdMan.mkdir(familyPath.c_str());
+
+    FsFile output;
+    if (!SdMan.openFileForWrite("FONT", outputPath, output)) {
+      zip.close();
+      SdMan.remove(kDownloadPath);
+      error = "Could not create font file on SD card";
+      return false;
+    }
+    const bool copied = zip.readFileToStream(entryName.c_str(), output, 1024, kMaxExtractedBytes);
+    output.close();
+    if (!copied) {
+      SdMan.remove(outputPath.c_str());
+      zip.close();
+      SdMan.remove(kDownloadPath);
+      error = "Could not extract font package";
+      return false;
+    }
+    extractedBytes += inflatedSize;
+    ++extractedFiles;
+  }
+
+  zip.close();
+  SdMan.remove(kDownloadPath);
+  if (extractedFiles == 0) {
+    error = "No compiled font files found in package";
+    return false;
+  }
+
+  FontManager::scanSDFonts("/fonts", true);
+  return true;
+}

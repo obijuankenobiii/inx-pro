@@ -56,6 +56,7 @@ class ReaderPresetsActivity final : public ActivityWithSubactivity, public navig
   int presetIndexForRow(int row) const;  ///< store index for a preset row, or -1 for the Add-new row
   bool isButtonMappingRow(int row) const;
   bool isQuickActionsRow(int row) const;
+  bool isFontManagerRow(int row) const;
   void activateSelectedRow();
   void openEditor(int presetIndex);
   void openRenameKeyboard(int presetIndex);
@@ -86,6 +87,7 @@ class ReaderPresetsActivity final : public ActivityWithSubactivity, public navig
   int selectedRow_ = -1;
   int scrollOffset_ = 0;
   int itemsPerPage_ = 1;
+  int listItemHeight_ = kListItemHeight;
 
   bool overlayOpen_ = false;
   int overlayPresetIndex_ = -1;

@@ -130,49 +130,6 @@ void FontManager::initialize(GfxRenderer& renderer) {
   static EpdFontFamily chareink18FontFamily(&chareink18RegularFont, &chareink18BoldFont, &chareink18ItalicFont,
                                             &chareink18BoldItalicFont);
 
-  static EpdFont atkinson_hyperlegible8RegularFont(&atkinson_hyperlegible_8_regular);
-  static EpdFontFamily atkinson_hyperlegible8FontFamily(&atkinson_hyperlegible8RegularFont, nullptr, nullptr, nullptr);
-
-  static EpdFont atkinson_hyperlegible10RegularFont(&atkinson_hyperlegible_10_regular);
-  static EpdFont atkinson_hyperlegible10BoldFont(&atkinson_hyperlegible_10_bold);
-  static EpdFont atkinson_hyperlegible10ItalicFont(&atkinson_hyperlegible_10_italic);
-  static EpdFont atkinson_hyperlegible10BoldItalicFont(&atkinson_hyperlegible_10_bolditalic);
-  static EpdFontFamily atkinson_hyperlegible10FontFamily(
-      &atkinson_hyperlegible10RegularFont, &atkinson_hyperlegible10BoldFont, &atkinson_hyperlegible10ItalicFont,
-      &atkinson_hyperlegible10BoldItalicFont);
-
-  static EpdFont atkinson_hyperlegible12RegularFont(&atkinson_hyperlegible_12_regular);
-  static EpdFont atkinson_hyperlegible12BoldFont(&atkinson_hyperlegible_12_bold);
-  static EpdFont atkinson_hyperlegible12ItalicFont(&atkinson_hyperlegible_12_italic);
-  static EpdFont atkinson_hyperlegible12BoldItalicFont(&atkinson_hyperlegible_12_bolditalic);
-  static EpdFontFamily atkinson_hyperlegible12FontFamily(
-      &atkinson_hyperlegible12RegularFont, &atkinson_hyperlegible12BoldFont, &atkinson_hyperlegible12ItalicFont,
-      &atkinson_hyperlegible12BoldItalicFont);
-
-  static EpdFont atkinson_hyperlegible14RegularFont(&atkinson_hyperlegible_14_regular);
-  static EpdFont atkinson_hyperlegible14BoldFont(&atkinson_hyperlegible_14_bold);
-  static EpdFont atkinson_hyperlegible14ItalicFont(&atkinson_hyperlegible_14_italic);
-  static EpdFont atkinson_hyperlegible14BoldItalicFont(&atkinson_hyperlegible_14_bolditalic);
-  static EpdFontFamily atkinson_hyperlegible14FontFamily(
-      &atkinson_hyperlegible14RegularFont, &atkinson_hyperlegible14BoldFont, &atkinson_hyperlegible14ItalicFont,
-      &atkinson_hyperlegible14BoldItalicFont);
-
-  static EpdFont atkinson_hyperlegible16RegularFont(&atkinson_hyperlegible_16_regular);
-  static EpdFont atkinson_hyperlegible16BoldFont(&atkinson_hyperlegible_16_bold);
-  static EpdFont atkinson_hyperlegible16ItalicFont(&atkinson_hyperlegible_16_italic);
-  static EpdFont atkinson_hyperlegible16BoldItalicFont(&atkinson_hyperlegible_16_bolditalic);
-  static EpdFontFamily atkinson_hyperlegible16FontFamily(
-      &atkinson_hyperlegible16RegularFont, &atkinson_hyperlegible16BoldFont, &atkinson_hyperlegible16ItalicFont,
-      &atkinson_hyperlegible16BoldItalicFont);
-
-  static EpdFont atkinson_hyperlegible18RegularFont(&atkinson_hyperlegible_18_regular);
-  static EpdFont atkinson_hyperlegible18BoldFont(&atkinson_hyperlegible_18_bold);
-  static EpdFont atkinson_hyperlegible18ItalicFont(&atkinson_hyperlegible_18_italic);
-  static EpdFont atkinson_hyperlegible18BoldItalicFont(&atkinson_hyperlegible_18_bolditalic);
-  static EpdFontFamily atkinson_hyperlegible18FontFamily(
-      &atkinson_hyperlegible18RegularFont, &atkinson_hyperlegible18BoldFont, &atkinson_hyperlegible18ItalicFont,
-      &atkinson_hyperlegible18BoldItalicFont);
-
   static EpdFont montserrat8RegularFont(&montserrat_8_regular);
   static EpdFontFamily montserrat8FontFamily(&montserrat8RegularFont, nullptr, nullptr, nullptr);
 
@@ -222,13 +179,6 @@ void FontManager::initialize(GfxRenderer& renderer) {
   renderer.insertFont(CHAREINK_16_FONT_ID, chareink16FontFamily);
   renderer.insertFont(CHAREINK_18_FONT_ID, chareink18FontFamily);
 
-  renderer.insertFont(ATKINSON_HYPERLEGIBLE_8_FONT_ID, atkinson_hyperlegible8FontFamily);
-  renderer.insertFont(ATKINSON_HYPERLEGIBLE_10_FONT_ID, atkinson_hyperlegible10FontFamily);
-  renderer.insertFont(ATKINSON_HYPERLEGIBLE_12_FONT_ID, atkinson_hyperlegible12FontFamily);
-  renderer.insertFont(ATKINSON_HYPERLEGIBLE_14_FONT_ID, atkinson_hyperlegible14FontFamily);
-  renderer.insertFont(ATKINSON_HYPERLEGIBLE_16_FONT_ID, atkinson_hyperlegible16FontFamily);
-  renderer.insertFont(ATKINSON_HYPERLEGIBLE_18_FONT_ID, atkinson_hyperlegible18FontFamily);
-
   renderer.insertFont(MONTSERRAT_8_FONT_ID, montserrat8FontFamily);
   renderer.insertFont(MONTSERRAT_10_FONT_ID, montserrat10FontFamily);
   renderer.insertFont(MONTSERRAT_12_FONT_ID, montserrat12FontFamily);
@@ -238,9 +188,7 @@ void FontManager::initialize(GfxRenderer& renderer) {
 
   renderer.insertFont(MONTSERRAT_CLOCK_70_FONT_ID, montserratClock70FontFamily);
 
-  INX_SERIAL.println(
-      "[FontManager] Initialized (Atkinson Hyperlegible + Montserrat + ChareInk reader + Montserrat clock + SD "
-      "streaming)");
+  INX_SERIAL.println("[FontManager] Initialized (Montserrat + ChareInk reader + Montserrat clock + SD streaming)");
 }
 
 /**
@@ -257,17 +205,6 @@ int FontManager::getNextFont(int currentFontId) {
     case CHAREINK_16_FONT_ID:
     case CHAREINK_18_FONT_ID:
       return CHAREINK_18_FONT_ID;
-    case ATKINSON_HYPERLEGIBLE_8_FONT_ID:
-      return ATKINSON_HYPERLEGIBLE_10_FONT_ID;
-    case ATKINSON_HYPERLEGIBLE_10_FONT_ID:
-      return ATKINSON_HYPERLEGIBLE_12_FONT_ID;
-    case ATKINSON_HYPERLEGIBLE_12_FONT_ID:
-      return ATKINSON_HYPERLEGIBLE_14_FONT_ID;
-    case ATKINSON_HYPERLEGIBLE_14_FONT_ID:
-      return ATKINSON_HYPERLEGIBLE_16_FONT_ID;
-    case ATKINSON_HYPERLEGIBLE_16_FONT_ID:
-    case ATKINSON_HYPERLEGIBLE_18_FONT_ID:
-      return ATKINSON_HYPERLEGIBLE_18_FONT_ID;
     case MONTSERRAT_8_FONT_ID:
       return MONTSERRAT_10_FONT_ID;
     case MONTSERRAT_10_FONT_ID:
@@ -660,9 +597,6 @@ bool FontManager::ensureFontReady(int fontId, GfxRenderer& renderer) {
   if (fontId >= CHAREINK_10_FONT_ID && fontId <= CHAREINK_18_FONT_ID) {
     return true;
   }
-  if (fontId >= ATKINSON_HYPERLEGIBLE_8_FONT_ID && fontId <= ATKINSON_HYPERLEGIBLE_18_FONT_ID) {
-    return true;
-  }
   if (fontId >= MONTSERRAT_8_FONT_ID && fontId <= MONTSERRAT_18_FONT_ID) {
     return true;
   }
@@ -763,24 +697,6 @@ const FontManager::FontInfo* FontManager::getFontInfo(int fontId) {
   static FontInfo info;
 
   switch (fontId) {
-    case ATKINSON_HYPERLEGIBLE_8_FONT_ID:
-      info = {"Atkinson Hyperlegible 8", "Atkinson Hyperlegible", fontId, 8, true};
-      return &info;
-    case ATKINSON_HYPERLEGIBLE_10_FONT_ID:
-      info = {"Atkinson Hyperlegible 10", "Atkinson Hyperlegible", fontId, 10, true};
-      return &info;
-    case ATKINSON_HYPERLEGIBLE_12_FONT_ID:
-      info = {"Atkinson Hyperlegible 12", "Atkinson Hyperlegible", fontId, 12, true};
-      return &info;
-    case ATKINSON_HYPERLEGIBLE_14_FONT_ID:
-      info = {"Atkinson Hyperlegible 14", "Atkinson Hyperlegible", fontId, 14, true};
-      return &info;
-    case ATKINSON_HYPERLEGIBLE_16_FONT_ID:
-      info = {"Atkinson Hyperlegible 16", "Atkinson Hyperlegible", fontId, 16, true};
-      return &info;
-    case ATKINSON_HYPERLEGIBLE_18_FONT_ID:
-      info = {"Atkinson Hyperlegible 18", "Atkinson Hyperlegible", fontId, 18, true};
-      return &info;
     case MONTSERRAT_8_FONT_ID:
       info = {"Montserrat 8", "Montserrat", fontId, 8, true};
       return &info;
@@ -835,13 +751,6 @@ std::vector<FontManager::FontInfo> FontManager::getAllAvailableFonts() {
 
   std::vector<FontInfo> fonts;
 
-  fonts.push_back({"Atkinson Hyperlegible 8", "Atkinson Hyperlegible", ATKINSON_HYPERLEGIBLE_8_FONT_ID, 8, true});
-  fonts.push_back({"Atkinson Hyperlegible 10", "Atkinson Hyperlegible", ATKINSON_HYPERLEGIBLE_10_FONT_ID, 10, true});
-  fonts.push_back({"Atkinson Hyperlegible 12", "Atkinson Hyperlegible", ATKINSON_HYPERLEGIBLE_12_FONT_ID, 12, true});
-  fonts.push_back({"Atkinson Hyperlegible 14", "Atkinson Hyperlegible", ATKINSON_HYPERLEGIBLE_14_FONT_ID, 14, true});
-  fonts.push_back({"Atkinson Hyperlegible 16", "Atkinson Hyperlegible", ATKINSON_HYPERLEGIBLE_16_FONT_ID, 16, true});
-  fonts.push_back({"Atkinson Hyperlegible 18", "Atkinson Hyperlegible", ATKINSON_HYPERLEGIBLE_18_FONT_ID, 18, true});
-
   fonts.push_back({"Montserrat 8", "Montserrat", MONTSERRAT_8_FONT_ID, 8, true});
   fonts.push_back({"Montserrat 10", "Montserrat", MONTSERRAT_10_FONT_ID, 10, true});
   fonts.push_back({"Montserrat 12", "Montserrat", MONTSERRAT_12_FONT_ID, 12, true});
@@ -866,20 +775,11 @@ std::vector<FontManager::FontInfo> FontManager::getAllAvailableFonts() {
  * @brief Gets all fonts belonging to a specific family
  */
 std::vector<FontManager::FontInfo> FontManager::getFontsByFamily(const std::string& family) {
-  if (!g_scannedForFonts && family != "Atkinson Hyperlegible" && family != "Montserrat" && family != "ChareInk") {
+  if (!g_scannedForFonts && family != "Montserrat" && family != "ChareInk") {
     (void)scanSDFonts("/fonts", false);
   }
 
   std::vector<FontInfo> result;
-
-  if (family == "Atkinson Hyperlegible") {
-    result.push_back({"Atkinson Hyperlegible 8", "Atkinson Hyperlegible", ATKINSON_HYPERLEGIBLE_8_FONT_ID, 8, true});
-    result.push_back({"Atkinson Hyperlegible 10", "Atkinson Hyperlegible", ATKINSON_HYPERLEGIBLE_10_FONT_ID, 10, true});
-    result.push_back({"Atkinson Hyperlegible 12", "Atkinson Hyperlegible", ATKINSON_HYPERLEGIBLE_12_FONT_ID, 12, true});
-    result.push_back({"Atkinson Hyperlegible 14", "Atkinson Hyperlegible", ATKINSON_HYPERLEGIBLE_14_FONT_ID, 14, true});
-    result.push_back({"Atkinson Hyperlegible 16", "Atkinson Hyperlegible", ATKINSON_HYPERLEGIBLE_16_FONT_ID, 16, true});
-    result.push_back({"Atkinson Hyperlegible 18", "Atkinson Hyperlegible", ATKINSON_HYPERLEGIBLE_18_FONT_ID, 18, true});
-  }
 
   if (family == "Montserrat") {
     result.push_back({"Montserrat 8", "Montserrat", MONTSERRAT_8_FONT_ID, 8, true});
@@ -917,7 +817,6 @@ std::vector<std::string> FontManager::getAllFamilies() {
   }
 
   std::vector<std::string> families;
-  families.push_back("Atkinson Hyperlegible");
   families.push_back("Montserrat");
   families.push_back("ChareInk");
 
@@ -933,9 +832,6 @@ std::vector<std::string> FontManager::getAllFamilies() {
  * @brief Checks if a specific font is loaded
  */
 bool FontManager::isFontLoaded(int fontId) {
-  if (fontId >= ATKINSON_HYPERLEGIBLE_8_FONT_ID && fontId <= ATKINSON_HYPERLEGIBLE_18_FONT_ID) {
-    return true;
-  }
   if (fontId >= MONTSERRAT_8_FONT_ID && fontId <= MONTSERRAT_18_FONT_ID) {
     return true;
   }
@@ -956,7 +852,7 @@ bool FontManager::isFontLoaded(int fontId) {
  */
 void FontManager::printFontStats() {
   INX_SERIAL.println("=== Font Manager Stats ===");
-  INX_SERIAL.printf("Built-in fonts: Atkinson system + Atkinson/ChareInk reader (embedded)\n");
+  INX_SERIAL.printf("Built-in fonts: Montserrat system + ChareInk reader (embedded)\n");
   INX_SERIAL.printf("SD fonts discovered: %d\n", (int)g_sdFonts.size());
 
   int loadedCount = 0;
@@ -978,24 +874,6 @@ void FontManager::printFontStats() {
  * @brief Gets font ID for a specific family and size
  */
 int FontManager::getFontId(const std::string& family, int size) {
-  if (family == "Atkinson Hyperlegible") {
-    switch (size) {
-      case 8:
-        return ATKINSON_HYPERLEGIBLE_8_FONT_ID;
-      case 10:
-        return ATKINSON_HYPERLEGIBLE_10_FONT_ID;
-      case 12:
-        return ATKINSON_HYPERLEGIBLE_12_FONT_ID;
-      case 14:
-        return ATKINSON_HYPERLEGIBLE_14_FONT_ID;
-      case 16:
-        return ATKINSON_HYPERLEGIBLE_16_FONT_ID;
-      case 18:
-        return ATKINSON_HYPERLEGIBLE_18_FONT_ID;
-      default:
-        return ATKINSON_HYPERLEGIBLE_12_FONT_ID;
-    }
-  }
   if (family == "Montserrat") {
     switch (size) {
       case 8:
@@ -1041,9 +919,6 @@ int FontManager::getFontId(const std::string& family, int size) {
 }
 
 int FontManager::getMaxFontId(int currentFontId) {
-  if (currentFontId >= ATKINSON_HYPERLEGIBLE_8_FONT_ID && currentFontId <= ATKINSON_HYPERLEGIBLE_18_FONT_ID) {
-    return ATKINSON_HYPERLEGIBLE_18_FONT_ID;
-  }
   if (currentFontId >= MONTSERRAT_8_FONT_ID && currentFontId <= MONTSERRAT_18_FONT_ID) {
     return MONTSERRAT_18_FONT_ID;
   }
@@ -1079,7 +954,7 @@ uint32_t FontManager::readerFontFamilyOptionCount() {
   if (!g_scannedForFonts) {
     (void)scanSDFonts("/fonts", false);
   }
-  return 3u + static_cast<uint32_t>(g_sdFamiliesSorted.size());
+  return 2u + static_cast<uint32_t>(g_sdFamiliesSorted.size());
 }
 
 std::vector<std::string> FontManager::readerFontFamilyEnumLabels() {
@@ -1087,7 +962,6 @@ std::vector<std::string> FontManager::readerFontFamilyEnumLabels() {
     (void)scanSDFonts("/fonts", false);
   }
   std::vector<std::string> out;
-  out.push_back("Atkinson Hyperlegible");
   out.push_back("ChareInk");
   out.push_back("Montserrat");
   out.insert(out.end(), g_sdFamiliesSorted.begin(), g_sdFamiliesSorted.end());
@@ -1095,23 +969,20 @@ std::vector<std::string> FontManager::readerFontFamilyEnumLabels() {
 }
 
 std::string FontManager::readerFontFamilyLabel(uint8_t slot) {
-  if (!g_scannedForFonts && slot >= 3u) {
+  if (!g_scannedForFonts && slot >= 2u) {
     (void)scanSDFonts("/fonts", false);
   }
   if (slot == 0) {
-    return "Atkinson Hyperlegible";
-  }
-  if (slot == 1) {
     return "ChareInk";
   }
-  if (slot == 2) {
+  if (slot == 1) {
     return "Montserrat";
   }
-  const size_t idx = static_cast<size_t>(slot) - 3u;
+  const size_t idx = static_cast<size_t>(slot) - 2u;
   if (idx < g_sdFamiliesSorted.size()) {
     return g_sdFamiliesSorted[idx];
   }
-  return "Atkinson Hyperlegible";
+  return "ChareInk";
 }
 
 void FontManager::clampReaderFontFamilySlot(uint8_t& slot) {
@@ -1128,7 +999,7 @@ void FontManager::clampReaderFontFamilySlot(uint8_t& slot) {
 }
 
 int FontManager::getFontIdNearestPointSize(const std::string& family, int preferredPt) {
-  if (!g_scannedForFonts && family != "Atkinson Hyperlegible" && family != "ChareInk") {
+  if (!g_scannedForFonts && family != "ChareInk" && family != "Montserrat") {
     (void)scanSDFonts("/fonts", false);
   }
   int smallestGeId = -1;

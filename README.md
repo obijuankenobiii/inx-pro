@@ -207,6 +207,8 @@ You can also install fonts on the SD card:
 
 The web font manager converts TTF/OTF files into the `.bin` format used by the reader. Regular is required; bold, italic, and bold italic are optional.
 
+The device **Settings -> Reader -> Font Manager** lists the static ZIP catalog from the [`inx-font`](https://github.com/obijuankenobiii/inx-font) repository. Each font is available as a `1-bit` and `2-bit` pack. Select a pack to download it; the compiled files are extracted into `/fonts/<family> <variant>/` and become available in Reader presets. Packs are limited to 5 MB.
+
 ## Custom Sleep Images
 
 Put sleep images on the SD card:

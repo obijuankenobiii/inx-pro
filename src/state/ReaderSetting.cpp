@@ -455,7 +455,7 @@ int ReaderSetting::getReaderFontIdForSettingsUi(uint8_t familySlot, uint8_t size
   if (familySlot < SystemSetting::FONT_FAMILY_BUILTIN_COUNT) {
     return getReaderFontIdForFamilyAndSize(familySlot, sizeIndex);
   }
-  return getReaderFontIdForFamilyAndSize(SystemSetting::ATKINSON_HYPERLEGIBLE, sizeIndex);
+  return getReaderFontIdForFamilyAndSize(SystemSetting::CHAREINK, sizeIndex);
 #endif
 }
 
@@ -473,32 +473,13 @@ int ReaderSetting::getReaderFontIdForFamilyAndSize(uint8_t family, uint8_t size)
 
   if (family >= SystemSetting::FONT_FAMILY_BUILTIN_COUNT) {
     const std::string sdName = FontManager::readerFontFamilyLabel(family);
-    if (sdName == "Atkinson Hyperlegible" || sdName == "ChareInk") {
-      if (sdName == "Atkinson Hyperlegible") {
-        return getReaderFontIdForFamilyAndSize(SystemSetting::ATKINSON_HYPERLEGIBLE, size);
-      }
-      if (sdName == "ChareInk") {
-        return getReaderFontIdForFamilyAndSize(SystemSetting::CHAREINK, size);
-      }
+    if (sdName == "ChareInk") {
+      return getReaderFontIdForFamilyAndSize(SystemSetting::CHAREINK, size);
     }
     return FontManager::getFontIdNearestPointSize(sdName, preferredPt);
   }
 
   switch (family) {
-    case SystemSetting::ATKINSON_HYPERLEGIBLE:
-      switch (size) {
-        case SystemSetting::EXTRA_SMALL:
-          return ATKINSON_HYPERLEGIBLE_10_FONT_ID;
-        case SystemSetting::SMALL:
-          return ATKINSON_HYPERLEGIBLE_12_FONT_ID;
-        case SystemSetting::MEDIUM:
-        default:
-          return ATKINSON_HYPERLEGIBLE_14_FONT_ID;
-        case SystemSetting::LARGE:
-          return ATKINSON_HYPERLEGIBLE_16_FONT_ID;
-        case SystemSetting::EXTRA_LARGE:
-          return ATKINSON_HYPERLEGIBLE_18_FONT_ID;
-      }
     case SystemSetting::MONTSERRAT:
       switch (size) {
         case SystemSetting::EXTRA_SMALL:

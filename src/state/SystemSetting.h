@@ -216,12 +216,11 @@ class SystemSetting {
 
   /**
    * @brief Font family options (stored in fontFamily / BookSettings::fontFamily)
-   * @details 0–2 are built-ins; 3+ select SD card folders under /fonts (sorted names), see FontManager.
+   * @details 0–1 are built-ins; 2+ select SD card folders under /fonts (sorted names), see FontManager.
    */
   enum FONT_FAMILY {
-    ATKINSON_HYPERLEGIBLE = 0,  ///< Atkinson Hyperlegible
-    CHAREINK = 1,               ///< ChareInk
-    MONTSERRAT = 2,             ///< Montserrat
+    CHAREINK = 0,    ///< ChareInk
+    MONTSERRAT = 1,  ///< Montserrat
     FONT_FAMILY_BUILTIN_COUNT,
     FONT_FAMILY_COUNT = FONT_FAMILY_BUILTIN_COUNT  ///< Built-in count; reader option count includes SD families
   };

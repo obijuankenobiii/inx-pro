@@ -1,7 +1,7 @@
 /**
  * @file PdfFont.h
  * @brief Font resolution: maps a PDF font resource dict to one of the firmware's built-in bitmap fonts
- * (Atkinson Hyperlegible). We never render a PDF's own glyph outlines (embedded or not) - only its own
+ * (ChareInk). We never render a PDF's own glyph outlines (embedded or not) - only its own
  * text/encoding metadata (BaseFont style hints, /Widths or /W, /Encoding, /ToUnicode) is used to pick the
  * right characters and advance widths, then the system font draws them. This means embedding is irrelevant
  * to whether a font is supported: a font with /FontFile2 renders exactly like one without.

@@ -12,6 +12,7 @@
 #include <WiFi.h>
 
 #include "activity/page/SubPage.h"
+#include "activity/page/components/global/Button.h"
 #include "activity/network/WifiSelectionActivity.h"
 #include "network/HttpDownloader.h"
 #include "system/Fonts.h"
@@ -24,6 +25,17 @@ namespace {
 constexpr int PAGE_ITEMS = 8;
 constexpr int SKIP_PAGE_MS = 700;
 constexpr int kListItemHeight = Page::LIST_ITEM_HEIGHT;
+constexpr int kBodyTop = FREEINK_DEVICE_X4PRO ? 80 : 70;
+
+ButtonBounds retryButtonBounds(const GfxRenderer& renderer) {
+  const int width = Button::width(renderer, "Retry", systemFontId());
+  return {renderer.getScreenWidth() - width - 20, renderer.getScreenHeight() - Button::height - 20, width,
+          Button::height};
+}
+
+bool contains(const ButtonBounds& bounds, const int x, const int y) {
+  return x >= bounds.x && x < bounds.x + bounds.width && y >= bounds.y && y < bounds.y + bounds.height;
+}
 }  // namespace
 
 /** Static trampoline that dispatches to the instance's displayTaskLoop. */
@@ -89,6 +101,21 @@ void OpdsBookBrowserActivity::loop() {
   if (SubPage::closeInput(renderer, mappedInput, onGoToHome)) return;
 
   if (state == BrowserState::ERROR) {
+    if (mappedInput.hasTouch()) {
+      float tapNx = 0.0f;
+      float tapNy = 0.0f;
+      if (mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy)) {
+        const int tapX = static_cast<int>(tapNx * renderer.getScreenWidth());
+        const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
+        if (contains(retryButtonBounds(renderer), tapX, tapY)) {
+          state = BrowserState::LOADING;
+          statusMessage = "Loading...";
+          updateRequired = true;
+          fetchFeed(currentPath);
+        }
+        return;
+      }
+    }
     if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
       if (WiFi.status() == WL_CONNECTED && WiFi.localIP() != IPAddress(0, 0, 0, 0)) {
         INX_SERIAL.printf("[%lu] [OPDS] Retry: WiFi connected, retrying fetch\n", millis());
@@ -125,6 +152,27 @@ void OpdsBookBrowserActivity::loop() {
   }
 
   if (state == BrowserState::BROWSING) {
+    if (mappedInput.hasTouch()) {
+      float tapNx = 0.0f;
+      float tapNy = 0.0f;
+      if (mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy)) {
+        const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
+        const int pageStartIndex = selectorIndex / PAGE_ITEMS * PAGE_ITEMS;
+        const int visibleIndex = (tapY - kBodyTop) / kListItemHeight;
+        const int tappedIndex = pageStartIndex + visibleIndex;
+        if (tapY >= kBodyTop && visibleIndex >= 0 && visibleIndex < PAGE_ITEMS &&
+            tappedIndex >= 0 && tappedIndex < static_cast<int>(entries.size())) {
+          selectorIndex = tappedIndex;
+          const auto& entry = entries[static_cast<size_t>(tappedIndex)];
+          if (entry.type == OpdsEntryType::BOOK) {
+            downloadBook(entry);
+          } else {
+            navigateToEntry(entry);
+          }
+        }
+        return;
+      }
+    }
     const bool prevReleased = mappedInput.wasReleased(MappedInputManager::Button::Up) ||
                               mappedInput.wasReleased(MappedInputManager::Button::Left);
     const bool nextReleased = mappedInput.wasReleased(MappedInputManager::Button::Down) ||
@@ -208,6 +256,7 @@ void OpdsBookBrowserActivity::render() const {
   if (state == BrowserState::ERROR) {
     renderer.text.centered(systemFontId(), pageHeight / 2 - 20, "Error:");
     renderer.text.centered(systemFontId(), pageHeight / 2 + 10, errorMessage.c_str());
+    Button::render(renderer, retryButtonBounds(renderer), "Retry", true, systemFontId());
     const auto labels = mappedInput.mapLabels("« Back", "Retry", "", "");
     renderer.displayBuffer();
     return;
