@@ -141,6 +141,45 @@ KOReaderSyncClient::Error KOReaderSyncClient::authenticate() {
   return SERVER_ERROR;
 }
 
+KOReaderSyncClient::Error KOReaderSyncClient::createUser() {
+  lastHttpCode = 0;
+  if (!KOREADER_STORE.hasCredentials()) {
+    INX_SERIAL.printf("[%lu] [KOSync] No credentials configured\n", millis());
+    return NO_CREDENTIALS;
+  }
+
+  const std::string url = KOREADER_STORE.getBaseUrl() + "/users/create";
+  const uint32_t freeHeap = ESP.getFreeHeap();
+  if (freeHeap < MIN_HEAP_FOR_TLS) {
+    INX_SERIAL.printf("[%lu] [KOSync] Insufficient heap for TLS: %u bytes free\n", millis(), (unsigned)freeHeap);
+    return LOW_MEMORY;
+  }
+
+  // KOReader's registration API expects the MD5 auth key, not the plaintext
+  // password. This is the same request used by the CrossPoint sync server.
+  JsonDocument doc;
+  doc["username"] = KOREADER_STORE.getUsername();
+  doc["password"] = KOREADER_STORE.getMd5Password();
+  std::string body;
+  serializeJson(doc, body);
+
+  INX_SERIAL.printf("[%lu] [KOSync] Creating account at %s\n", millis(), url.c_str());
+  const int httpCode = doRequest(url, "POST", &body, nullptr);
+  INX_SERIAL.printf("[%lu] [KOSync] Create user response: %d\n", millis(), httpCode);
+
+  if (httpCode >= 200 && httpCode < 300) {
+    return OK;
+  }
+  // The KOReader protocol uses 402 when the username is already registered.
+  if (httpCode == 402) {
+    return USER_EXISTS;
+  }
+  if (httpCode < 0) {
+    return NETWORK_ERROR;
+  }
+  return SERVER_ERROR;
+}
+
 KOReaderSyncClient::Error KOReaderSyncClient::getProgress(const std::string& documentHash,
                                                           KOReaderProgress& outProgress) {
   lastHttpCode = 0;
@@ -251,6 +290,8 @@ const char* KOReaderSyncClient::errorString(Error error) {
       return "No progress found (first time reading this book?)";
     case LOW_MEMORY:
       return "Not enough memory for sync - please retry";
+    case USER_EXISTS:
+      return "Username is already registered";
     default:
       return "Unknown error";
   }

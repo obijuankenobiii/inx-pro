@@ -20,8 +20,9 @@
 constexpr int LIST_ITEM_HEIGHT = Page::LIST_ITEM_HEIGHT;
 
 namespace {
-constexpr int MENU_ITEMS = 5;
-const char* menuNames[MENU_ITEMS] = {"Username", "Password", "Sync Server URL", "Document Matching", "Authenticate"};
+constexpr int MENU_ITEMS = 6;
+const char* menuNames[MENU_ITEMS] = {"Username", "Password", "Sync Server URL", "Document Matching", "Sign Up",
+                                     "Authenticate"};
 }  // namespace
 
 void KOReaderSettingsActivity::taskTrampoline(void* param) {
@@ -65,7 +66,9 @@ void KOReaderSettingsActivity::loop() {
     float tapNy = 0.0f;
     if (mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy)) {
       const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
-      const int bodyTop = UiLayout::PAGE_HEADER_HEIGHT;
+      // Keep the hit-test aligned with SubPage::header(). Its top padding is
+      // device-specific, while the old fixed UiLayout value was not.
+      const int bodyTop = (FREEINK_DEVICE_X4PRO ? 20 : 10) + 40 + 20;
       if (tapY >= bodyTop && tapY < bodyTop + MENU_ITEMS * LIST_ITEM_HEIGHT) {
         selectedIndex = (tapY - bodyTop) / LIST_ITEM_HEIGHT;
         handleSelection();
@@ -150,16 +153,20 @@ void KOReaderSettingsActivity::handleSelection() {
     KOREADER_STORE.setMatchMethod(newMethod);
     KOREADER_STORE.saveToFile();
     updateRequired = true;
-  } else if (selectedIndex == 4) {
+  } else if (selectedIndex == 4 || selectedIndex == 5) {
     if (!KOREADER_STORE.hasCredentials()) {
       xSemaphoreGive(renderingMutex);
       return;
     }
     exitActivity();
-    enterNewActivity(new KOReaderAuthActivity(renderer, mappedInput, [this] {
-      exitActivity();
-      updateRequired = true;
-    }));
+    const auto mode = selectedIndex == 4 ? KOReaderAuthActivity::Mode::SIGN_UP
+                                         : KOReaderAuthActivity::Mode::AUTHENTICATE;
+    enterNewActivity(new KOReaderAuthActivity(renderer, mappedInput,
+                                               [this] {
+                                                 exitActivity();
+                                                 updateRequired = true;
+                                               },
+                                               mode));
   }
 
   xSemaphoreGive(renderingMutex);
@@ -209,7 +216,7 @@ void KOReaderSettingsActivity::render() {
         status = KOREADER_STORE.getServerUrl().empty() ? "Default" : "Custom";
       } else if (i == 3) {
         status = KOREADER_STORE.getMatchMethod() == DocumentMatchMethod::FILENAME ? "Filename" : "Binary";
-      } else if (i == 4) {
+      } else if (i == 4 || i == 5) {
         status = KOREADER_STORE.hasCredentials() ? "" : "Set credentials first";
       }
 

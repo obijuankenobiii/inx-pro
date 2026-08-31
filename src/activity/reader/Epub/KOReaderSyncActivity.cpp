@@ -14,7 +14,7 @@
 #include "activity/network/WifiSelectionActivity.h"
 #include "activity/page/components/global/Button.h"
 #include "activity/page/SubPage.h"
-#include "system/UiLayout.h"
+#include "images/Download.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
 #include "system/TimeZoneAutoDetect.h"
@@ -27,23 +27,53 @@ ButtonBounds startButtonBounds(const GfxRenderer& renderer, const int font) {
           Button::height};
 }
 
-ButtonBounds uploadButtonBounds(const GfxRenderer& renderer, const int font) {
-  const int width = Button::width(renderer, "Upload Progress", font);
-  return {(renderer.getScreenWidth() - width) / 2, renderer.getScreenHeight() - Button::height - 30, width,
-          Button::height};
-}
-
 int syncContentTop() {
   constexpr int headerTop = FREEINK_DEVICE_X4PRO ? 20 : 10;
   return headerTop + 40 + 20;
 }
 
-ButtonBounds resultOptionBounds(const GfxRenderer& renderer, const bool remoteHasDevice, const int option) {
-  const int resultTop = syncContentTop() + 32;
-  const int remoteY = resultTop + 40;
-  const int localY = remoteY + (remoteHasDevice ? 130 : 105);
-  const int optionY = localY + 80;
-  return {0, optionY + option * UiLayout::LIST_ITEM_HEIGHT, renderer.getScreenWidth(), UiLayout::LIST_ITEM_HEIGHT};
+struct SyncActionButtons {
+  ButtonBounds upload;
+  ButtonBounds download;
+};
+
+constexpr int kSyncActionIconSize = 40;
+constexpr int kSyncActionGap = 10;
+constexpr int kSyncActionRightMargin = 20;
+constexpr int kSyncActionBottomMargin = 20;
+
+int syncActionButtonWidth(const GfxRenderer& renderer, const char* label, const int font) {
+  return renderer.text.getWidth(font, label) + kSyncActionIconSize + kSyncActionGap + Button::horizontalPadding * 2;
+}
+
+SyncActionButtons syncActionButtons(const GfxRenderer& renderer, const int font) {
+  const int uploadWidth = syncActionButtonWidth(renderer, "Upload", font);
+  const int downloadWidth = syncActionButtonWidth(renderer, "Download", font);
+  const int y = renderer.getScreenHeight() - kSyncActionBottomMargin - Button::height;
+  const int downloadX = renderer.getScreenWidth() - kSyncActionRightMargin - downloadWidth;
+  const int uploadX = downloadX - kSyncActionGap - uploadWidth;
+  return {{uploadX, y, uploadWidth, Button::height}, {downloadX, y, downloadWidth, Button::height}};
+}
+
+ButtonBounds singleUploadButton(const GfxRenderer& renderer, const int font) {
+  const int width = syncActionButtonWidth(renderer, "Upload", font);
+  return {renderer.getScreenWidth() - kSyncActionRightMargin - width,
+          renderer.getScreenHeight() - kSyncActionBottomMargin - Button::height, width, Button::height};
+}
+
+void renderSyncActionButton(const GfxRenderer& renderer, const ButtonBounds& bounds, const char* label,
+                            const bool fill, const BitmapRender::Orientation iconOrientation, const int font) {
+  // Use the shared button component for the fill and border, then place the icon
+  // and label as one compound action without changing the global button layout.
+  Button::render(renderer, bounds, "", fill, font);
+  const int labelWidth = renderer.text.getWidth(font, label);
+  const int contentWidth = kSyncActionIconSize + kSyncActionGap + labelWidth;
+  const int contentX = bounds.x + (bounds.width - contentWidth) / 2;
+  const int iconY = bounds.y + (bounds.height - kSyncActionIconSize) / 2;
+  const int textY = bounds.y + (bounds.height - renderer.text.getLineHeight(font)) / 2;
+  renderer.text.render(font, contentX, textY, label, !fill, EpdFontFamily::REGULAR);
+  renderer.bitmap.icon(Download, contentX + labelWidth + kSyncActionGap, iconY, kSyncActionIconSize,
+                       kSyncActionIconSize, iconOrientation, fill);
 }
 
 bool touchPointInBounds(MappedInputManager& input, const GfxRenderer& renderer, const ButtonBounds& bounds, int& x,
@@ -342,51 +372,32 @@ void KOReaderSyncActivity::render() {
 
     const int left = 20;
     const int remoteY = resultTop + 40;
-    renderer.text.render(font, left, remoteY, "Remote:", true);
-    char remoteChapterStr[128];
-    snprintf(remoteChapterStr, sizeof(remoteChapterStr), "  %s", remoteChapter.c_str());
-    renderer.text.render(font, left, remoteY + 25, remoteChapterStr);
+    renderer.text.render(font, left, remoteY, "Remote", true, EpdFontFamily::BOLD);
+    renderer.text.render(font, left, remoteY + 35, remoteChapter.c_str());
     char remotePageStr[64];
-    snprintf(remotePageStr, sizeof(remotePageStr), "  Page %d, %.2f%% overall", remotePosition.pageNumber + 1,
+    snprintf(remotePageStr, sizeof(remotePageStr), "Page %d, %.2f%% overall", remotePosition.pageNumber + 1,
              remoteProgress.percentage * 100);
-    renderer.text.render(font, left, remoteY + 50, remotePageStr);
+    renderer.text.render(font, left, remoteY + 65, remotePageStr);
 
     if (!remoteProgress.device.empty()) {
       char deviceStr[64];
-      snprintf(deviceStr, sizeof(deviceStr), "  From: %s", remoteProgress.device.c_str());
-      renderer.text.render(font, left, remoteY + 75, deviceStr);
+      snprintf(deviceStr, sizeof(deviceStr), "From: %s", remoteProgress.device.c_str());
+      renderer.text.render(font, left, remoteY + 95, deviceStr);
     }
 
-    const int localY = remoteY + (remoteProgress.device.empty() ? 105 : 130);
-    renderer.text.render(font, left, localY, "Local:", true);
-    char localChapterStr[128];
-    snprintf(localChapterStr, sizeof(localChapterStr), "  %s", localChapter.c_str());
-    renderer.text.render(font, left, localY + 25, localChapterStr);
+    const int localY = remoteY + (remoteProgress.device.empty() ? 135 : 155);
+    renderer.text.render(font, left, localY, "Local", true, EpdFontFamily::BOLD);
+    renderer.text.render(font, left, localY + 35, localChapter.c_str());
     char localPageStr[64];
-    snprintf(localPageStr, sizeof(localPageStr), "  Page %d/%d, %.2f%% overall", currentPage + 1, totalPagesInSpine,
+    snprintf(localPageStr, sizeof(localPageStr), "Page %d/%d, %.2f%% overall", currentPage + 1, totalPagesInSpine,
              localProgress.percentage * 100);
-    renderer.text.render(font, left, localY + 50, localPageStr);
+    renderer.text.render(font, left, localY + 65, localPageStr);
 
-    const int optionY = localY + 80;
-    const int optionHeight = UiLayout::LIST_ITEM_HEIGHT;
-
-    if (selectedOption == 0) {
-      renderer.rectangle.fill(0, optionY, pageWidth, optionHeight,
-                              static_cast<int>(GfxRenderer::FillTone::Ink));
-    }
-    const int optionTextY = optionY + (optionHeight - renderer.text.getLineHeight(font)) / 2;
-    renderer.text.render(font, 20, optionTextY, "Apply remote progress", selectedOption != 0);
-    renderer.line.render(0, optionY + optionHeight - 1, pageWidth, optionY + optionHeight - 1, true,
-                         LineRender::Style::Dotted);
-
-    if (selectedOption == 1) {
-      renderer.rectangle.fill(0, optionY + optionHeight, pageWidth, optionHeight,
-                              static_cast<int>(GfxRenderer::FillTone::Ink));
-    }
-    renderer.text.render(font, 20, optionTextY + optionHeight, "Upload local progress",
-                         selectedOption != 1);
-    renderer.line.render(0, optionY + optionHeight * 2 - 1, pageWidth, optionY + optionHeight * 2 - 1, true,
-                         LineRender::Style::Dotted);
+    const SyncActionButtons actions = syncActionButtons(renderer, font);
+    renderSyncActionButton(renderer, actions.upload, "Upload", selectedOption == 1,
+                           BitmapRender::Orientation::Rotate180, font);
+    renderSyncActionButton(renderer, actions.download, "Download", selectedOption == 0,
+                           BitmapRender::Orientation::None, font);
 
     const auto labels = mappedInput.mapLabels("Back", "Select", "Dir Up", "Dir Down");
     renderer.displayBuffer();
@@ -397,7 +408,8 @@ void KOReaderSyncActivity::render() {
     renderer.text.centered(font, contentCenterY - 20, "No remote progress found", true,
                            EpdFontFamily::BOLD);
     renderer.text.centered(font, contentCenterY + 20, "Upload current position?");
-    Button::render(renderer, uploadButtonBounds(renderer, font), "Upload Progress", true, font);
+    renderSyncActionButton(renderer, singleUploadButton(renderer, font), "Upload", true,
+                           BitmapRender::Orientation::Rotate180, font);
 
     const auto labels = mappedInput.mapLabels("Cancel", "Upload", "", "");
     renderer.displayBuffer();
@@ -457,15 +469,15 @@ void KOReaderSyncActivity::loop() {
   if (state == SHOWING_RESULT) {
     int tapX = 0;
     int tapY = 0;
-    const ButtonBounds firstOption = resultOptionBounds(renderer, !remoteProgress.device.empty(), 0);
-    const ButtonBounds options{firstOption.x, firstOption.y, firstOption.width, firstOption.height * 2};
-    if (touchPointInBounds(mappedInput, renderer, options, tapX, tapY)) {
-      selectedOption = (tapY - firstOption.y) / firstOption.height;
-      if (selectedOption == 0) {
-        onSyncComplete(remotePosition.spineIndex, remotePosition.pageNumber);
-      } else {
-        performUpload();
-      }
+    const SyncActionButtons actions = syncActionButtons(renderer, systemFontId());
+    if (touchPointInBounds(mappedInput, renderer, actions.download, tapX, tapY)) {
+      selectedOption = 0;
+      onSyncComplete(remotePosition.spineIndex, remotePosition.pageNumber);
+      return;
+    }
+    if (touchPointInBounds(mappedInput, renderer, actions.upload, tapX, tapY)) {
+      selectedOption = 1;
+      performUpload();
       return;
     }
 
@@ -494,7 +506,8 @@ void KOReaderSyncActivity::loop() {
   if (state == NO_REMOTE_PROGRESS) {
     int tapX = 0;
     int tapY = 0;
-    const bool upload = touchPointInBounds(mappedInput, renderer, uploadButtonBounds(renderer, systemFontId()), tapX, tapY);
+    const ButtonBounds uploadBounds = singleUploadButton(renderer, systemFontId());
+    const bool upload = touchPointInBounds(mappedInput, renderer, uploadBounds, tapX, tapY);
     if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
       if (documentHash.empty()) {
         if (KOREADER_STORE.getMatchMethod() == DocumentMatchMethod::FILENAME) {

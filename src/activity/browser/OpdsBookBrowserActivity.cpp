@@ -14,6 +14,7 @@
 #include "activity/page/SubPage.h"
 #include "activity/page/components/global/Button.h"
 #include "activity/network/WifiSelectionActivity.h"
+#include "images/Download.h"
 #include "network/HttpDownloader.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
@@ -31,6 +32,35 @@ ButtonBounds retryButtonBounds(const GfxRenderer& renderer) {
   const int width = Button::width(renderer, "Retry", systemFontId());
   return {renderer.getScreenWidth() - width - 20, renderer.getScreenHeight() - Button::height - 20, width,
           Button::height};
+}
+
+constexpr int kActionIconSize = 40;
+constexpr int kActionGap = 10;
+constexpr int kActionRightMargin = 20;
+constexpr int kActionBottomMargin = 20;
+
+int actionButtonWidth(const GfxRenderer& renderer, const char* label) {
+  return renderer.text.getWidth(systemFontId(), label) + kActionIconSize + kActionGap + Button::horizontalPadding * 2;
+}
+
+ButtonBounds downloadButtonBounds(const GfxRenderer& renderer) {
+  const int width = actionButtonWidth(renderer, "Download");
+  return {renderer.getScreenWidth() - kActionRightMargin - width,
+          renderer.getScreenHeight() - kActionBottomMargin - Button::height, width, Button::height};
+}
+
+void renderDownloadButton(const GfxRenderer& renderer, const ButtonBounds& bounds) {
+  const int font = systemFontId();
+  const int labelWidth = renderer.text.getWidth(font, "Download");
+  const int contentWidth = labelWidth + kActionGap + kActionIconSize;
+  const int contentX = bounds.x + (bounds.width - contentWidth) / 2;
+  const int textY = bounds.y + (bounds.height - renderer.text.getLineHeight(font)) / 2;
+  const int iconY = bounds.y + (bounds.height - kActionIconSize) / 2;
+
+  Button::render(renderer, bounds, "", true, font);
+  renderer.text.render(font, contentX, textY, "Download", false, EpdFontFamily::REGULAR);
+  renderer.bitmap.icon(Download, contentX + labelWidth + kActionGap, iconY, kActionIconSize, kActionIconSize,
+                       BitmapRender::Orientation::None, true);
 }
 
 bool contains(const ButtonBounds& bounds, const int x, const int y) {
@@ -156,6 +186,15 @@ void OpdsBookBrowserActivity::loop() {
       float tapNx = 0.0f;
       float tapNy = 0.0f;
       if (mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy)) {
+        if (!entries.empty() && entries[static_cast<size_t>(selectorIndex)].type == OpdsEntryType::BOOK) {
+          const int tapX = static_cast<int>(tapNx * renderer.getScreenWidth());
+          const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
+          if (contains(downloadButtonBounds(renderer), tapX, tapY)) {
+            downloadBook(entries[static_cast<size_t>(selectorIndex)]);
+            return;
+          }
+        }
+
         const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
         const int pageStartIndex = selectorIndex / PAGE_ITEMS * PAGE_ITEMS;
         const int visibleIndex = (tapY - kBodyTop) / kListItemHeight;
@@ -316,6 +355,10 @@ void OpdsBookBrowserActivity::render() const {
     renderer.text.render(systemFontId(), 20, textY, item.c_str(), !isSelected);
     renderer.line.render(0, itemY + kListItemHeight - 1, pageWidth, itemY + kListItemHeight - 1, true,
                          LineRender::Style::Dotted);
+  }
+
+  if (entries[static_cast<size_t>(selectorIndex)].type == OpdsEntryType::BOOK) {
+    renderDownloadButton(renderer, downloadButtonBounds(renderer));
   }
 
   renderer.displayBuffer();
