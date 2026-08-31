@@ -4,6 +4,7 @@
 #include <WiFi.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 
@@ -37,6 +38,28 @@ int pageBodyTop() { return FREEINK_DEVICE_X4PRO ? 80 : 70; }
 
 bool contains(const ButtonBounds& bounds, const int x, const int y) {
   return x >= bounds.x && x < bounds.x + bounds.width && y >= bounds.y && y < bounds.y + bounds.height;
+}
+
+std::string displayFontName(const std::string& name) {
+  std::string result;
+  result.reserve(name.size() + 8);
+  for (size_t i = 0; i < name.size(); ++i) {
+    const unsigned char current = static_cast<unsigned char>(name[i]);
+    if (current == '-' || current == '_') {
+      if (!result.empty() && result.back() != ' ') result.push_back(' ');
+      continue;
+    }
+
+    const unsigned char previous = i > 0 ? static_cast<unsigned char>(name[i - 1]) : 0;
+    const unsigned char next = i + 1 < name.size() ? static_cast<unsigned char>(name[i + 1]) : 0;
+    const bool startsWord = std::isupper(current) &&
+                            (std::islower(previous) || std::isdigit(previous) ||
+                             (std::isupper(previous) && std::islower(next)));
+    const bool startsNumber = std::isdigit(current) && std::isalpha(previous);
+    if ((startsWord || startsNumber) && !result.empty() && result.back() != ' ') result.push_back(' ');
+    result.push_back(static_cast<char>(current));
+  }
+  return result;
 }
 
 ButtonBounds actionBounds(const GfxRenderer& renderer) {
@@ -478,10 +501,10 @@ void FontManagerActivity::render() {
     const int centerY = bodyTop + (screenH - bodyTop - 80) / 2;
     renderer.text.centered(font, centerY - 72, "DOWNLOADING FONT", true, EpdFontFamily::BOLD);
     const int packageIndex = installingPackageIndex_;
-    const char* packageName = packageIndex >= 0 && packageIndex < static_cast<int>(packages_.size())
-                                  ? packages_[static_cast<size_t>(packageIndex)].name.c_str()
-                                  : "Font";
-    const std::string name = renderer.text.truncate(font, packageName, screenW - 60);
+    const std::string packageName = packageIndex >= 0 && packageIndex < static_cast<int>(packages_.size())
+                                        ? displayFontName(packages_[static_cast<size_t>(packageIndex)].name)
+                                        : "Font";
+    const std::string name = renderer.text.truncate(font, packageName.c_str(), screenW - 60);
     renderer.text.centered(font, centerY - 34, name.c_str(), true, EpdFontFamily::BOLD);
     renderer.text.centered(font, centerY + 4, "Installing font package", true, EpdFontFamily::REGULAR);
 
@@ -534,8 +557,9 @@ void FontManagerActivity::render() {
       const int deleteIconX = screenW - kSideMargin - kActionIconSize;
       const int actionIconX = deleteIconX - kActionIconGap - kActionIconSize;
       const int maxNameWidth = screenW - (kSideMargin * 2) - (kActionIconSize * 2) - kActionIconGap - 20;
-      const std::string packageName = renderer.text.truncate(font, packages_[static_cast<size_t>(packageIndex)].name.c_str(),
-                                                              maxNameWidth, EpdFontFamily::REGULAR);
+      const std::string displayName = displayFontName(packages_[static_cast<size_t>(packageIndex)].name);
+      const std::string packageName = renderer.text.truncate(font, displayName.c_str(), maxNameWidth,
+                                                              EpdFontFamily::REGULAR);
       const bool installed = FontPackageManager::isInstalled(packages_[static_cast<size_t>(packageIndex)]);
       if (installed && !selected) {
         renderer.text.renderGray(font, kSideMargin, textY, packageName.c_str(), true, EpdFontFamily::REGULAR);

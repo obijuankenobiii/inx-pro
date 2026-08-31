@@ -179,6 +179,10 @@ bool EpubDictionaryUi::lookupAt(EpubActivity& act, const int x, const int y) {
     }
     return false;
   }
+  // Selecting "Look up" from the word-action popup is already an explicit lookup request.
+  // Go straight to the definition instead of making the user tap the in-overlay Look up button
+  // a second time. Closing the definition keeps mode_ active, returning to the word selector.
+  performLookup(act);
   return true;
 }
 
