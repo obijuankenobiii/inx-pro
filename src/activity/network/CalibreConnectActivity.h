@@ -10,12 +10,11 @@
 #include <freertos/task.h>
 
 #include <functional>
+#include <memory>
 #include <string>
 
 #include "activity/ActivityWithSubactivity.h"
-
-/** Forward declaration of WebServerContext structure */
-struct WebServerContext;
+#include "network/LocalServer.h"
 
 /**
  * @brief Possible states for the CalibreConnect activity
@@ -118,13 +117,14 @@ class CalibreConnectActivity final : public ActivityWithSubactivity {
   std::string connectedIP;                                         /**< IP address of connected WiFi */
   std::string connectedSSID;                                       /**< SSID of connected WiFi network */
 
-  WebServerContext* serverCtx = nullptr; /**< Web server context (raw pointer) */
+  std::unique_ptr<LocalServer> webServer; /**< Shared HTTP/WebSocket/discovery server */
 
   size_t lastProgressReceived = 0;  /**< Last reported bytes received for upload */
   size_t lastProgressTotal = 0;     /**< Last reported total bytes for upload */
   std::string currentUploadName;    /**< Name of file currently being uploaded */
   std::string lastCompleteName;     /**< Name of last completed upload */
   unsigned long lastCompleteAt = 0; /**< Timestamp of last completed upload */
+  unsigned long lastProcessedCompleteAt = 0; /**< Last server completion already reflected in the UI */
 
   const std::function<void()> onComplete; /**< Callback invoked on activity exit */
 };

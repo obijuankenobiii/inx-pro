@@ -7,13 +7,7 @@
 
 #include <ESPmDNS.h>
 #include <GfxRenderer.h>
-#include <SDCardManager.h>
 #include <WiFi.h>
-#include <errno.h>
-#include <esp_task_wdt.h>
-#include <fcntl.h>
-#include <lwip/netdb.h>
-#include <lwip/sockets.h>
 
 #include "activity/page/SubPage.h"
 #include "activity/page/components/global/Button.h"
@@ -28,11 +22,6 @@ namespace {
  * @brief mDNS hostname for device discovery on local network
  */
 constexpr const char* HOSTNAME = "inx";
-
-/**
- * @brief HTTP port for Calibre wireless connection
- */
-constexpr uint16_t HTTP_PORT = 8080;
 
 /**
  * @brief Left/right margin for text content
@@ -65,31 +54,6 @@ bool contains(const ButtonBounds& bounds, const int x, const int y) {
 }
 
 /**
- * @brief HTML response for Calibre web interface root page
- */
-const char* HTML_HEADER =
-    "HTTP/1.1 200 OK\r\n"
-    "Content-Type: text/html\r\n"
-    "Connection: close\r\n"
-    "\r\n"
-    "<!DOCTYPE html><html><head><title>CrossPoint Reader</title>"
-    "<meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-    "<style>body{font-family:sans-serif;padding:2rem;text-align:center}</style></head>"
-    "<body><h1>CrossPoint Reader</h1><p>Calibre wireless device connection active</p>"
-    "<p>Use the Calibre desktop app to send books</p></body></html>";
-
-/**
- * @brief Response for Calibre device protocol (CDP) endpoint
- */
-const char* CDP_RESPONSE =
-    "HTTP/1.1 200 OK\r\n"
-    "Content-Type: text/plain\r\n"
-    "Content-Length: 2\r\n"
-    "Connection: close\r\n"
-    "\r\n"
-    "OK";
-
-/**
  * @brief Truncates a string to a maximum length, adding ellipsis if needed
  * @param str Input string to truncate
  * @param maxLength Maximum allowed length
@@ -102,25 +66,6 @@ std::string truncateString(const std::string& str, int maxLength) {
   return result;
 }
 }  // namespace
-
-/**
- * @brief Web server context structure managing connection state and upload progress
- */
-struct WebServerContext {
-  int serverSocket = -1; /**< Server socket file descriptor */
-  int clientSocket = -1; /**< Client socket file descriptor */
-  bool running = false;  /**< Flag indicating if server is running */
-
-  bool uploadInProgress = false;    /**< Flag indicating if upload is active */
-  size_t uploadReceived = 0;        /**< Bytes received so far */
-  size_t uploadTotal = 0;           /**< Total bytes expected */
-  std::string uploadFilename;       /**< Name of file being uploaded */
-  unsigned long lastActivity = 0;   /**< Timestamp of last network activity */
-  unsigned long lastCompleteAt = 0; /**< Timestamp of last completed upload */
-  std::string lastCompleteName;     /**< Name of last completed upload */
-
-  FsFile uploadFile; /**< File handle for writing upload data */
-};
 
 /**
  * @brief Destructor - stops web server and cleans up resources
@@ -152,6 +97,7 @@ void CalibreConnectActivity::onEnter() {
   currentUploadName.clear();
   lastCompleteName.clear();
   lastCompleteAt = 0;
+  lastProcessedCompleteAt = 0;
   exitRequested = false;
 
   // Install the Wi-Fi child before starting the Calibre renderer. Starting the parent task first
@@ -166,8 +112,7 @@ void CalibreConnectActivity::onEnter() {
     connectedSSID = WiFi.SSID().c_str();
   }
 
-  // 3072 overflows the stack canary during mDNS/socket setup (their internal call depth routinely
-  // needs more than that on this platform) - see startWebServer()'s MDNS.begin()/socket() calls.
+  // Keep display rendering off the activity loop while the network server is active.
   xTaskCreate(&CalibreConnectActivity::taskTrampoline, "CalibreConnectTask", 8192, this, 1, &displayTaskHandle);
 
   if (alreadyConnected) {
@@ -229,70 +174,36 @@ void CalibreConnectActivity::startWebServer() {
   updateRequired = true;
 
   if (MDNS.begin(HOSTNAME)) {
-    MDNS.addService("http", "tcp", HTTP_PORT);
-    INX_SERIAL.printf("[CAL] mDNS started: http://%s.local:%d/\n", HOSTNAME, HTTP_PORT);
+    MDNS.addService("http", "tcp", 80);
+    INX_SERIAL.printf("[CAL] mDNS started: http://%s.local/\n", HOSTNAME);
   }
 
-  serverCtx = new WebServerContext();
+  // Use the shared server implementation used by File Transfer and Hotspot.
+  // It provides HTTP 80, WebSocket 81, and UDP discovery on 8134, which is the
+  // protocol expected by the CrossPoint Calibre plugin.
+  webServer.reset(new LocalServer());
+  webServer->begin();
 
-  serverCtx->serverSocket = socket(AF_INET, SOCK_STREAM, 0);
-  if (serverCtx->serverSocket < 0) {
+  if (webServer->isRunning()) {
+    lastProcessedCompleteAt = webServer->getWsUploadStatus().lastCompleteAt;
+    state = CalibreConnectState::SERVER_RUNNING;
+    updateRequired = true;
+    INX_SERIAL.printf("[CAL] Compatible web server started on HTTP 80, WebSocket 81\n");
+  } else {
+    webServer.reset();
     state = CalibreConnectState::ERROR;
     updateRequired = true;
-    return;
+    INX_SERIAL.printf("[CAL] Failed to start compatible web server\n");
   }
-
-  int opt = 1;
-  setsockopt(serverCtx->serverSocket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-
-  struct sockaddr_in serverAddr;
-  serverAddr.sin_family = AF_INET;
-  serverAddr.sin_addr.s_addr = INADDR_ANY;
-  serverAddr.sin_port = htons(HTTP_PORT);
-
-  if (bind(serverCtx->serverSocket, reinterpret_cast<struct sockaddr*>(&serverAddr), sizeof(serverAddr)) < 0) {
-    close(serverCtx->serverSocket);
-    serverCtx->serverSocket = -1;
-    state = CalibreConnectState::ERROR;
-    updateRequired = true;
-    return;
-  }
-
-  if (listen(serverCtx->serverSocket, 5) < 0) {
-    close(serverCtx->serverSocket);
-    serverCtx->serverSocket = -1;
-    state = CalibreConnectState::ERROR;
-    updateRequired = true;
-    return;
-  }
-
-  int flags = fcntl(serverCtx->serverSocket, F_GETFL, 0);
-  fcntl(serverCtx->serverSocket, F_SETFL, flags | O_NONBLOCK);
-
-  serverCtx->running = true;
-  serverCtx->lastActivity = millis();
-  state = CalibreConnectState::SERVER_RUNNING;
-  updateRequired = true;
-
-  INX_SERIAL.printf("[CAL] Web server started on port %d\n", HTTP_PORT);
 }
 
 /**
  * @brief Stops the web server and cleans up all related resources
  */
 void CalibreConnectActivity::stopWebServer() {
-  if (serverCtx) {
-    if (serverCtx->clientSocket >= 0) {
-      close(serverCtx->clientSocket);
-    }
-    if (serverCtx->serverSocket >= 0) {
-      close(serverCtx->serverSocket);
-    }
-    if (serverCtx->uploadFile) {
-      serverCtx->uploadFile.close();
-    }
-    delete serverCtx;
-    serverCtx = nullptr;
+  if (webServer) {
+    webServer->stop();
+    webServer.reset();
   }
 }
 
@@ -323,125 +234,38 @@ void CalibreConnectActivity::loop() {
     return;
   }
 
-  if (serverCtx && serverCtx->running && state == CalibreConnectState::SERVER_RUNNING) {
-    esp_task_wdt_reset();
+  if (webServer && webServer->isRunning() && state == CalibreConnectState::SERVER_RUNNING) {
+    webServer->handleClient();
 
-    if (serverCtx->clientSocket < 0) {
-      struct sockaddr_in clientAddr;
-      socklen_t clientLen = sizeof(clientAddr);
-      serverCtx->clientSocket =
-          accept(serverCtx->serverSocket, reinterpret_cast<struct sockaddr*>(&clientAddr), &clientLen);
-
-      if (serverCtx->clientSocket >= 0) {
-        int flags = fcntl(serverCtx->clientSocket, F_GETFL, 0);
-        fcntl(serverCtx->clientSocket, F_SETFL, flags | O_NONBLOCK);
-        serverCtx->lastActivity = millis();
+    const LocalServer::WsUploadStatus status = webServer->getWsUploadStatus();
+    bool changed = false;
+    if (status.inProgress) {
+      if (status.received != lastProgressReceived || status.total != lastProgressTotal ||
+          status.filename != currentUploadName) {
+        lastProgressReceived = status.received;
+        lastProgressTotal = status.total;
+        currentUploadName = status.filename;
+        changed = true;
       }
+    } else if (lastProgressReceived != 0 || lastProgressTotal != 0 || !currentUploadName.empty()) {
+      lastProgressReceived = 0;
+      lastProgressTotal = 0;
+      currentUploadName.clear();
+      changed = true;
     }
 
-    if (serverCtx->clientSocket >= 0) {
-      char buffer[512];
-      int bytesRead = recv(serverCtx->clientSocket, buffer, sizeof(buffer) - 1, 0);
-
-      if (bytesRead > 0) {
-        buffer[bytesRead] = '\0';
-        serverCtx->lastActivity = millis();
-
-        if (strstr(buffer, "GET / ") || strstr(buffer, "GET /index.html")) {
-          send(serverCtx->clientSocket, HTML_HEADER, strlen(HTML_HEADER), 0);
-          close(serverCtx->clientSocket);
-          serverCtx->clientSocket = -1;
-        } else if (strstr(buffer, "POST /cdp")) {
-          send(serverCtx->clientSocket, CDP_RESPONSE, strlen(CDP_RESPONSE), 0);
-          close(serverCtx->clientSocket);
-          serverCtx->clientSocket = -1;
-        } else if (strstr(buffer, "POST /upload")) {
-          const char* filenameStart = strstr(buffer, "filename=\"");
-          if (filenameStart) {
-            filenameStart += 10;
-            const char* filenameEnd = strchr(filenameStart, '"');
-            if (filenameEnd) {
-              serverCtx->uploadFilename = std::string(filenameStart, filenameEnd - filenameStart);
-              serverCtx->uploadInProgress = true;
-              serverCtx->uploadReceived = 0;
-              serverCtx->uploadTotal = 0;
-
-              std::string savePath = "/" + serverCtx->uploadFilename;
-              if (SdMan.openFileForWrite("CAL", savePath.c_str(), serverCtx->uploadFile)) {
-                INX_SERIAL.printf("[CAL] Saving upload to: %s\n", savePath.c_str());
-              }
-
-              const char* dataStart = strstr(buffer, "\r\n\r\n");
-              if (dataStart) {
-                dataStart += 4;
-                size_t headerLen = dataStart - buffer;
-                size_t dataLen = bytesRead - headerLen;
-
-                if (dataLen > 0 && serverCtx->uploadFile) {
-                  serverCtx->uploadFile.write(reinterpret_cast<const uint8_t*>(dataStart), dataLen);
-                  serverCtx->uploadReceived += dataLen;
-                }
-              }
-
-              lastProgressReceived = serverCtx->uploadReceived;
-              lastProgressTotal = serverCtx->uploadTotal;
-              currentUploadName = serverCtx->uploadFilename;
-              updateRequired = true;
-            }
-          }
-
-          const char* response =
-              "HTTP/1.1 200 OK\r\n"
-              "Content-Type: text/plain\r\n"
-              "Transfer-Encoding: chunked\r\n"
-              "\r\n";
-          send(serverCtx->clientSocket, response, strlen(response), 0);
-        } else {
-          if (serverCtx->uploadInProgress && serverCtx->uploadFile) {
-            serverCtx->uploadFile.write(reinterpret_cast<const uint8_t*>(buffer), bytesRead);
-            serverCtx->uploadReceived += bytesRead;
-
-            lastProgressReceived = serverCtx->uploadReceived;
-            updateRequired = true;
-
-            if (bytesRead < static_cast<int>(sizeof(buffer)) || strstr(buffer, "0\r\n\r\n")) {
-              serverCtx->uploadInProgress = false;
-              serverCtx->uploadFile.close();
-              serverCtx->lastCompleteAt = millis();
-              serverCtx->lastCompleteName = serverCtx->uploadFilename;
-
-              lastCompleteAt = serverCtx->lastCompleteAt;
-              lastCompleteName = serverCtx->lastCompleteName;
-              lastProgressReceived = 0;
-              lastProgressTotal = 0;
-              currentUploadName.clear();
-              updateRequired = true;
-
-              const char* finalResp = "0\r\n\r\n";
-              send(serverCtx->clientSocket, finalResp, strlen(finalResp), 0);
-              close(serverCtx->clientSocket);
-              serverCtx->clientSocket = -1;
-            }
-          }
-        }
-      } else if (bytesRead == 0 || errno != EAGAIN) {
-        if (serverCtx->uploadInProgress && serverCtx->uploadFile) {
-          serverCtx->uploadFile.close();
-        }
-        close(serverCtx->clientSocket);
-        serverCtx->clientSocket = -1;
-        serverCtx->uploadInProgress = false;
-      }
+    if (status.lastCompleteAt != 0 && status.lastCompleteAt != lastProcessedCompleteAt) {
+      lastCompleteAt = status.lastCompleteAt;
+      lastCompleteName = status.lastCompleteName;
+      lastProcessedCompleteAt = status.lastCompleteAt;
+      changed = true;
     }
-
-    if (serverCtx->clientSocket >= 0 && millis() - serverCtx->lastActivity > 30000) {
-      if (serverCtx->uploadInProgress && serverCtx->uploadFile) {
-        serverCtx->uploadFile.close();
-      }
-      close(serverCtx->clientSocket);
-      serverCtx->clientSocket = -1;
-      serverCtx->uploadInProgress = false;
+    if (lastCompleteAt > 0 && millis() - lastCompleteAt >= 6000) {
+      lastCompleteAt = 0;
+      lastCompleteName.clear();
+      changed = true;
     }
+    if (changed) updateRequired = true;
   }
 
   if (exitRequested) {
