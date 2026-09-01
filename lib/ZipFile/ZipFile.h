@@ -108,6 +108,10 @@ class ZipFile {
   bool loadAllFileStatSlims();
   bool hasFileStatSlims() const { return fileStatSlimsLoaded; }
   size_t entryCount() const { return fileStatSlimCache.size(); }
+  /** Returns the normalized entry name after loadAllFileStatSlims(). */
+  const char* fileNameAt(size_t index) const {
+    return index < fileStatSlimCache.size() ? fileStatSlimCache[index].name.c_str() : nullptr;
+  }
   bool getInflatedFileSize(const char* filename, size_t* size);
   std::unique_ptr<Stream> openStream(const char* filename);
 

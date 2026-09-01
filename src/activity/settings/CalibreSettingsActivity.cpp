@@ -21,7 +21,7 @@ namespace {
 constexpr int MENU_ITEMS = 3;
 constexpr int kListItemHeight = Page::LIST_ITEM_HEIGHT;
 const char* menuNames[MENU_ITEMS] = {"OPDS Server URL", "Username", "Password"};
-}  // namespace
+}
 
 /** FreeRTOS task entry point that forwards to displayTaskLoop. */
 void CalibreSettingsActivity::taskTrampoline(void* param) {

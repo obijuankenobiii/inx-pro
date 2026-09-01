@@ -13,4 +13,4 @@ bool remove(const std::string& cachePath, const EpubAnnotationRecord& record);
 bool update(const std::string& cachePath, const EpubAnnotationRecord& oldRecord,
             const EpubAnnotationRecord& updatedRecord);
 
-}  // namespace EpubAnnotationStorage
+}

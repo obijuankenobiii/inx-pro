@@ -20,9 +20,6 @@ constexpr size_t kMinimumStreamChunkSize = 16 * 1024;
 constexpr size_t kZipServiceByteBudget = 64 * 1024;
 constexpr uint32_t kZipServiceTimeBudgetMs = 8;
 
-// ZIP processing must yield often enough for the Sticky watchdog, but yielding
-// around every 1 KiB transfer turns SD throughput into deliberate sleeps. This
-// services the watchdog by time or byte budget instead.
 class ZipServiceBudget {
  public:
   void account(const size_t bytes) {
@@ -39,7 +36,7 @@ class ZipServiceBudget {
   size_t bytesSinceService_ = 0;
   uint32_t lastServiceAt_ = millis();
 };
-}  // namespace
+}
 
 bool inflateOneShot(const uint8_t* inputBuf, const size_t deflatedSize, uint8_t* outputBuf, const size_t inflatedSize) {
   const auto inflator = static_cast<tinfl_decompressor*>(malloc(sizeof(tinfl_decompressor)));
@@ -103,9 +100,6 @@ bool ZipFile::loadAllFileStatSlims() {
     file.seekCur(8);
     file.read(&fileStat.localHeaderOffset, 4);
     if (nameLen >= sizeof(itemName)) {
-      // A malformed/very long entry name must not overrun the fixed central
-      // directory scratch buffer. It remains accessible through the fallback
-      // scanner, while normal EPUB paths stay in the PSRAM index.
       file.seekCur(nameLen + m + k);
       service.account(static_cast<size_t>(nameLen) + m + k + 46);
       continue;
@@ -652,12 +646,6 @@ ZipFile::Stream::Result ZipFile::Stream::pump(Print& out, const size_t maxOutput
     }
 
     size_t inBytes = inputFilled_ - inputCursor_;
-    // tinfl's wrapping mode requires the complete output ring to have a
-    // power-of-two size. Passing the caller's 12 KiB slice here made the
-    // effective ring 12 KiB and immediately returned TINFL_STATUS_BAD_PARAM.
-    // Inflate into the remaining contiguous part of the fixed 32 KiB ring,
-    // then use pendingBytes_ above to emit no more than maxOutputBytes to the
-    // caller on this reader-loop slice.
     size_t outBytes = TINFL_LZ_DICT_SIZE - windowCursor_;
     const tinfl_status status = tinfl_decompress(static_cast<tinfl_decompressor*>(inflator_), inputBuffer_ + inputCursor_,
                                                  &inBytes, window_, window_ + windowCursor_, &outBytes,
@@ -838,8 +826,6 @@ bool ZipFile::readFileToStream(const char* filename, Print& out, const size_t re
         }
       }
 
-      // Deflate can perform a long run of CPU-only iterations. The time budget
-      // still services it even if this iteration produced no output bytes.
       service.account(0);
 
       if (status < 0) {

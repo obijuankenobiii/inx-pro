@@ -10,7 +10,7 @@
 
 namespace {
 
-constexpr size_t kBackwardBlockSearchLimit = 8192;  // don't scan unboundedly backward on a huge buffer
+constexpr size_t kBackwardBlockSearchLimit = 8192;
 
 /** True if c can appear in an (X)HTML tag name. */
 bool isTagNameChar(const char c) { return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '-' || c == '_'; }
@@ -90,8 +90,6 @@ size_t findEnclosingBlockStart(const std::string& html, const size_t pos) {
     const std::pair<std::string, bool> tag = readTagNameAt(html, lt);
     const std::string lowerName = lowerAscii(tag.first);
     if (!tag.second && isBlockContainerTagName(lowerName)) {
-      // Only a real enclosing container if it's still open at `pos` - i.e. its own close tag (if any)
-      // doesn't appear before pos, which would mean this candidate already ended before our target.
       const std::string closeTag = "</" + lowerName;
       const size_t closeBeforePos = html.find(closeTag, lt);
       if (closeBeforePos == std::string::npos || closeBeforePos >= pos) {
@@ -112,7 +110,7 @@ std::string innerHtmlOfTagAt(const std::string& html, const size_t tagStart, con
     return "";
   }
   if (openTagEnd > 0 && html[openTagEnd - 1] == '/') {
-    return "";  // self-closing - no inner content
+    return "";
   }
 
   const std::string openPrefix = "<" + tagName;
@@ -123,12 +121,11 @@ std::string innerHtmlOfTagAt(const std::string& html, const size_t tagStart, con
     const size_t nextOpen = html.find(openPrefix, pos);
     const size_t nextClose = html.find(closeTag, pos);
     if (nextClose == std::string::npos) {
-      return "";  // no matching close tag - malformed, bail rather than guess
+      return "";
     }
     if (nextOpen != std::string::npos && nextOpen < nextClose) {
       const size_t after = nextOpen + openPrefix.size();
       const char c = after < html.size() ? html[after] : ' ';
-      // Only count it as a nested same-name tag if the name actually ends here (not e.g. <tagName2>).
       if (!isTagNameChar(c)) {
         ++depth;
       }
@@ -144,7 +141,7 @@ std::string innerHtmlOfTagAt(const std::string& html, const size_t tagStart, con
   return "";
 }
 
-}  // namespace
+}
 
 std::string extractElementInnerHtmlById(const std::string& html, const std::string& targetId) {
   if (targetId.empty()) {
@@ -159,9 +156,6 @@ std::string extractElementInnerHtmlById(const std::string& html, const std::stri
     return "";
   }
 
-  // If the id sits on a block container itself (e.g. <aside epub:type="footnote" id="fn1">), that's
-  // the whole footnote - use it directly. Otherwise (id on an inline marker/backlink tag), the real
-  // text is most likely sibling content in the enclosing block - use that instead.
   if (isBlockContainerTagName(lowerAscii(idTag.first))) {
     return innerHtmlOfTagAt(html, idTagStart, idTag.first);
   }

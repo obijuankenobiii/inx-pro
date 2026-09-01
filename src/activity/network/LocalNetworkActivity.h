@@ -98,6 +98,9 @@ class LocalNetworkActivity final : public ActivityWithSubactivity {
   /** @brief Renders the server running state UI */
   void renderServerRunning() const;
 
+  /** @brief Draws a QR code for the local transfer URL */
+  void drawQRCode(int x, int y, const std::string& data) const;
+
   /**
    * @brief Callback for WiFi selection completion
    * @param connected True if WiFi connection successful

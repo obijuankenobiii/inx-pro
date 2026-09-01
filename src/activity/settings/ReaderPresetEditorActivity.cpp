@@ -129,7 +129,7 @@ std::string defaultPresetNameFor(const BookSettings& settings) {
   return "Preset";
 }
 
-}  // namespace
+}
 
 ReaderPresetEditorActivity::ReaderPresetEditorActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
                                                        int presetIndex, std::function<void()> onDone)
@@ -144,7 +144,8 @@ void ReaderPresetEditorActivity::onEnter() {
   enteredAtMs_ = millis();
 
   if (isNew_) {
-    working_ = READER_PRESETS.settingsOf(0);  // seed from Default
+    working_ = READER_PRESETS.settingsOf(0);
+    working_.paragraphAlignment = SystemSetting::FOLLOW_CSS;
     name_ = defaultPresetNameFor(working_);
   } else {
     working_ = READER_PRESETS.settingsOf(presetIndex_);
@@ -158,12 +159,9 @@ void ReaderPresetEditorActivity::onEnter() {
   const int screenW = renderer.getScreenWidth();
 
   drawer_.reset(new SettingsDrawer(renderer, working_, [this]() {
-    // A value changed: make sure the (possibly new) reader font is loaded before the preview redraws.
     FontManager::ensureFontReady(working_.getReaderFontId(), renderer);
   }));
 
-  // Aim for ~65% drawer height, then snap it to a whole number of rows so the menu has no dead space
-  // at the bottom; the preview absorbs whatever remains.
   const int drawerRegionHeight = drawer_->snapEmbeddedHeight(screenH * 65 / 100);
   previewHeight_ = screenH - drawerRegionHeight;
   drawer_->setEmbeddedRegion(0, previewHeight_, screenW, drawerRegionHeight);
@@ -173,11 +171,11 @@ void ReaderPresetEditorActivity::onEnter() {
   });
 
   renderer.clearScreen(0xFF);
-  drawer_->show();  // draws the embedded region, then invokes the invalidate callback (preview + push)
+  drawer_->show();
 }
 
 void ReaderPresetEditorActivity::onExit() {
-  exitActivity();  // tear down keyboard sub-activity if any
+  exitActivity();
   drawer_.reset();
 }
 
@@ -186,12 +184,9 @@ void ReaderPresetEditorActivity::renderPreview() {
   const int margin = std::max<int>(6, working_.screenMargin);
   const int fontId = working_.getReaderFontId();
 
-  // Clear the preview region (no header label/tag; the demo text is the focus).
   renderer.rectangle.fill(0, 0, screenW, previewHeight_, false);
   renderer.bitmap.icon(Close, screenW - 60, 20, 40, 40);
 
-  // Mirror EpubActivity::calculateViewport() so the preview reserves exactly the status-bar space
-  // used by this preset.
   const bool hasStatusBar = (working_.statusBarLeft.item != StatusBarItem::NONE ||
                              working_.statusBarMiddle.item != StatusBarItem::NONE ||
                              working_.statusBarRight.item != StatusBarItem::NONE);
@@ -244,16 +239,10 @@ void ReaderPresetEditorActivity::renderPreview() {
     renderer.text.render(fontId, x + headW, y, tail, true, EpdFontFamily::REGULAR);
   };
 
-  // Paragraph 0 opens with a drop cap ("T", split off kLoremParagraph1's first letter) followed by a
-  // small-caps run for the next few words - the classic chapter-opening treatment - so the preview shows
-  // both effects together, illustrating how they actually look in a real book.
   constexpr int kDropCapLines = 2;
   constexpr int kSmallCapsWordCount = 4;
   const char dropCapLetter[2] = {kLoremParagraph1[0], '\0'};
   const int dropCapFontId = READER_SETTINGS.getReaderFontIdForFamilyAndSize(working_.fontFamily, SystemSetting::EXTRA_LARGE);
-  // Unlike the body font (ensured in onEnter()/the drawer's change callback), this larger same-family size
-  // is only ever touched here - for an SD custom font it's a distinct, separately-loaded slot, so without
-  // this it silently has no glyph data and the drop cap (and its width, throwing off the wrap indent) is blank.
   FontManager::ensureFontReady(dropCapFontId, renderer);
   const int dropCapWidth = renderer.text.getWidth(dropCapFontId, dropCapLetter, EpdFontFamily::BOLD) + 6;
 
@@ -272,7 +261,6 @@ void ReaderPresetEditorActivity::renderPreview() {
       const int lineIndent = dropCapLinesLeft > 0 ? dropCapWidth : (firstLine ? indentPx : 0);
       const int lineMaxWidth = maxWidth - lineIndent;
 
-      // Greedily pack words for this line.
       const int lineStart = i;
       int naturalWidth = 0;
       int widths[kPreviewMaxWords] = {};
@@ -313,7 +301,6 @@ void ReaderPresetEditorActivity::renderPreview() {
       if (dropCapLinesLeft > 0) --dropCapLinesLeft;
     }
     if (p == 0) {
-      // Align the drop cap's cap-top with the first body line's cap-top, same formula as PageDropCap::render.
       const int dropAscender = renderer.text.getFontAscenderSize(dropCapFontId);
       const int bodyBaseline = paragraphFirstLineY + fontAscender;
       renderer.text.render(dropCapFontId, margin, bodyBaseline - dropAscender, dropCapLetter, true, EpdFontFamily::BOLD);
@@ -321,8 +308,6 @@ void ReaderPresetEditorActivity::renderPreview() {
     y += paragraphGap;
   }
 
-  // A short bulleted list, so the preview also shows list-marker size/spacing (Page::listMarker in the
-  // real reader draws the same plain filled circle rather than relying on font glyph coverage).
   static const char* kListItems[] = {"First list item here", "Second list item too"};
   const int bulletRadius = std::max(3, fontAscender / 4);
   const int bulletIndent = std::max(1, renderer.text.getLineHeight(fontId));
@@ -394,9 +379,8 @@ void ReaderPresetEditorActivity::renderPreviewFullBar(int barTop, int barHeight)
   const int textY = barTop + (barHeight - renderer.text.getLineHeight(fontId)) / 2 + 2;
 
   if (style == StatusBarItem::PAGE_BARS) {
-    // Mock: a row of small filled/outline bars across the full width, like real page bars.
     constexpr int kBars = 24;
-    constexpr int kFilledBars = 9;  // representative "partway through the book" look
+    constexpr int kFilledBars = 9;
     const int barMarginX = 12;
     const int totalW = screenW - 2 * barMarginX;
     const int barW = std::max(2, totalW / kBars - 1);
@@ -411,7 +395,6 @@ void ReaderPresetEditorActivity::renderPreviewFullBar(int barTop, int barHeight)
     return;
   }
 
-  // PROGRESS_BAR / PROGRESS_BAR_WITH_PERCENT: one full-width bar, ~40% filled for a representative look.
   const bool withPercent = style == StatusBarItem::PROGRESS_BAR_WITH_PERCENT;
   const char* pct = "40%";
   const int pctW = withPercent ? renderer.text.getWidth(fontId, pct) : 0;
@@ -461,14 +444,11 @@ void ReaderPresetEditorActivity::doSaveAndFinish() {
   } else {
     READER_PRESETS.update(presetIndex_, name_, working_);
   }
-  // The parent deletes this activity inside onDone_; copy to a local and touch no members afterward.
   auto done = onDone_;
   if (done) done();
 }
 
 void ReaderPresetEditorActivity::discardAndFinish() {
-  // The parent removes this editor in onDone_, so do not access members after
-  // invoking the callback.
   auto done = onDone_;
   if (done) done();
 }
@@ -538,16 +518,15 @@ void ReaderPresetEditorActivity::handleSavePrompt() {
 
 void ReaderPresetEditorActivity::loop() {
   if (subActivity) {
-    ActivityWithSubactivity::loop();  // run the keyboard
+    ActivityWithSubactivity::loop();
     if (finishRequested_) {
       finishRequested_ = false;
-      exitActivity();  // tear down the keyboard now that its loop returned
+      exitActivity();
       doSaveAndFinish();
     }
     return;
   }
 
-  // Debounce the entry transition so the press that opened the editor isn't read as a Back.
   if (millis() - enteredAtMs_ < 200) {
     return;
   }
@@ -557,9 +536,6 @@ void ReaderPresetEditorActivity::loop() {
     return;
   }
 
-  // Vertical swipes belong to the embedded SettingsDrawer (its list and dropdowns scroll). The
-  // X4 Pro can also synthesize a Back edge for a touch gesture, so consume the swipe before the
-  // editor's Back/exit path gets a chance to run.
   const bool verticalSwipe = mappedInput.wasTouchSwipeUp() || mappedInput.wasTouchSwipeDown() ||
                              mappedInput.wasTouchSwipeUpForRenderer(renderer) ||
                              mappedInput.wasTouchSwipeDownForRenderer(renderer);

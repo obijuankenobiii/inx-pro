@@ -19,9 +19,12 @@
  */
 class KOReaderAuthActivity final : public ActivityWithSubactivity {
  public:
+  enum class Mode { AUTHENTICATE, SIGN_UP };
+
   explicit KOReaderAuthActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
-                                const std::function<void()>& onComplete)
-      : ActivityWithSubactivity("KOReaderAuth", renderer, mappedInput), onComplete(onComplete) {}
+                                const std::function<void()>& onComplete,
+                                Mode mode = Mode::AUTHENTICATE)
+      : ActivityWithSubactivity("KOReaderAuth", renderer, mappedInput), onComplete(onComplete), mode(mode) {}
 
   void onEnter() override;
   void onExit() override;
@@ -40,6 +43,7 @@ class KOReaderAuthActivity final : public ActivityWithSubactivity {
   std::string errorMessage;
 
   const std::function<void()> onComplete;
+  const Mode mode;
 
   void onWifiSelectionComplete(bool success);
   void performAuthentication();

@@ -32,4 +32,4 @@ void drawToggleCheckbox(const GfxRenderer& renderer, int valueColumnRight, int i
   Toggle::render(renderer, valueColumnRight, itemY, itemHeight, checked, rowSelected);
 }
 
-}  // namespace ReaderFontSettingsDraw
+}

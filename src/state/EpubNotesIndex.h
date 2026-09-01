@@ -13,4 +13,4 @@ inline void invalidate() {
   }
 }
 
-}  // namespace EpubNotesIndex
+}

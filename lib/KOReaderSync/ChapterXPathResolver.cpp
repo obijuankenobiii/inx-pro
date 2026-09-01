@@ -481,8 +481,6 @@ class XPathProgressResolver final : public Print {
       return;
     }
 
-    // Start a new text node on first non-empty content after any element boundary.
-    // This matches KOReader's text()[N] indexing and skips empty text nodes from anchors.
     if (pendingTextNode) {
       if (!textNodeIndexStack.empty()) {
         textNodeIndexStack.back()++;
@@ -522,7 +520,7 @@ class XPathProgressResolver final : public Print {
   std::vector<PathSegment> path;
   std::string xpath;
 };
-}  // namespace
+}
 
 std::string ChapterXPathResolver::findXPathForParagraph(const std::shared_ptr<Epub>& epub, const int spineIndex,
                                                         const uint16_t paragraphIndex) {

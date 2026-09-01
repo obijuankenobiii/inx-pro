@@ -13,9 +13,6 @@
 #include <cstdlib>
 #include <cstring>
 
-// Same per-pixel hot-loop rationale as JpegRender.cpp/PngRender.cpp/ImageToneDither.cpp: these small
-// helpers (adjustTwoBitImageLevelForDisplay, mapQualityGray2Level, quantize*) run once or twice per
-// pixel of every image render. Placed after includes so it doesn't affect inlined header code.
 #pragma GCC optimize("O2")
 
 #include "Bitmap.h"
@@ -166,9 +163,6 @@ uint8_t adjustTwoBitImageLevelForDisplay(const uint8_t level) {
   return l;
 }
 
-// mapQualityGray2Level() and grayscaleCodeTable() are defined per device in
-// lib/hal_<device>/ImageToneMap.cpp — see BitmapUtil.h.
-
 static inline uint8_t quantizeNoise(int gray, int x, int y) {
   uint32_t hash = static_cast<uint32_t>(x) * 374761393u + static_cast<uint32_t>(y) * 668265263u;
   hash = (hash ^ (hash >> 13)) * 1274126177u;
@@ -257,7 +251,7 @@ inline void epubWebWrite32(Print& out, uint32_t v) {
 
 inline void epubWebWrite32Signed(Print& out, int32_t v) { epubWebWrite32(out, static_cast<uint32_t>(v)); }
 
-}  // namespace
+}
 
 uint8_t epubWebRgb565ToGray8Rounded(uint16_t p) {
   const int r = ((p >> 11) & 0x1F) << 3;

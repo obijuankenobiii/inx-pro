@@ -4,8 +4,6 @@
 #include <cstdlib>
 #include <cstring>
 
-// Hot per-pixel dithering math for every image render; opted into -O2 (see JpegRender.cpp for why - the
-// firmware otherwise builds with -Os). Placed after includes so it doesn't affect inlined header code.
 #pragma GCC optimize("O2")
 
 namespace {
@@ -13,8 +11,6 @@ int clamp255(const int v) { return std::max(0, std::min(255, v)); }
 
 constexpr int kCleanPaperMin = 248;
 
-// Amplitude of the ordered lattice that breaks Floyd-Steinberg "worm" lines on flat gray areas.
-// Larger = more texture breakup (but more visible dither); 0 = pure FS (worms return).
 constexpr int kGrayscaleMicroDither = 20;
 
 int perceptualTone(const int gray) {
@@ -33,7 +29,7 @@ int perceptualTone(const int gray) {
   return clamp255(gray);
 }
 
-}  // namespace
+}
 
 FourToneImageDitherer::FourToneImageDitherer(const int width) : width_(width) {
   if (width_ <= 0) {
@@ -156,20 +152,15 @@ ImageToneSample FourToneImageDitherer::processGrayscaleFS(const int gray, const 
     return quantize(255);
   }
 
-  // Ordered lattice bias breaks the Floyd-Steinberg "worm" lines on flat gray areas. It is a pure
-  // function of (x, row_), so both grayscale passes (LSB then MSB) still produce identical levels.
   const int lattice = ((x * 13 + row_ * 7 + ((x ^ row_) * 3)) & 15) - 8;
   const int biased = clamp255(adjusted + (lattice * kGrayscaleMicroDither) / 12);
 
   const ImageToneSample out = quantize(biased);
-  // Diffuse the true tone error (from adjusted, not the lattice-biased value) so the lattice only
-  // perturbs the quantization decision and does not propagate as new worms.
   const int error = adjusted - static_cast<int>(out.value);
   if (error == 0) {
     return out;
   }
 
-  // Floyd-Steinberg (7/3/5/1 over 16): smooth, conserves all error - no Atkinson speckle.
   if (x + 1 < width_) errorRows_[0][0][x + 3] += static_cast<int16_t>((error * 7) / 16);
   if (x > 0) errorRows_[0][1][x + 1] += static_cast<int16_t>((error * 3) / 16);
   errorRows_[0][1][x + 2] += static_cast<int16_t>((error * 5) / 16);

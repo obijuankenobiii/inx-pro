@@ -25,21 +25,15 @@
 #define LOG_DBG(...) ((void)0)
 #define LOG_ERR(tag, fmt, ...) INX_SERIAL.printf("[PNG] " fmt "\n", ##__VA_ARGS__)
 
-// ============================================================================
-// IMAGE PROCESSING OPTIONS - Same as JpegToBmpConverter for consistency
-// ============================================================================
 constexpr bool USE_8BIT_OUTPUT = false;
 constexpr bool USE_ATKINSON = false;
 constexpr bool USE_FLOYD_STEINBERG = true;
 constexpr bool USE_PRESCALE = true;
-// ============================================================================
 
-// Keep PNG 1-bit output aligned with the low-quality JPEG reader path.
 static inline uint8_t darkenOneBitPngGray(const uint8_t gray) {
   return gray > 22 ? static_cast<uint8_t>(gray - 22) : 0;
 }
 
-// BMP writing helpers (same as JpegToBmpConverter)
 inline void write16(Print& out, const uint16_t value) {
   out.write(value & 0xFF);
   out.write((value >> 8) & 0xFF);
@@ -59,7 +53,6 @@ inline void write32Signed(Print& out, const int32_t value) {
   out.write((value >> 24) & 0xFF);
 }
 
-// Paeth predictor function per PNG spec
 inline uint8_t paethPredictor(uint8_t a, uint8_t b, uint8_t c) {
   int p = static_cast<int>(a) + b - c;
   int pa = p > a ? p - a : a - p;
@@ -72,9 +65,6 @@ inline uint8_t paethPredictor(uint8_t a, uint8_t b, uint8_t c) {
 
 namespace {
 
-// PNG-to-BMP conversion is cache generation, never the visible PNG decode
-// path. Keep its large scanline scratch in PSRAM so a large cover leaves the
-// internal heap available for display and active image rendering.
 void* allocateConversionScratch(const size_t bytes, const bool zero = false) {
 #if defined(ARDUINO_ARCH_ESP32)
   void* memory = heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
@@ -90,10 +80,6 @@ inline void servicePngWatchdog() {
 #ifdef ARDUINO
   static uint32_t lastYield = 0;
   esp_task_wdt_reset();
-  // PNG cover conversion runs in loopTask and repeatedly writes into SdFat.
-  // Arduino's yield() does not reliably schedule IDLE0 on this target, so
-  // periodically block for a tick as the JPEG path does. This keeps the idle
-  // watchdog fed without changing conversion output or holding a CPU core.
   const uint32_t now = millis();
   if (now - lastYield >= 8) {
     vTaskDelay(pdMS_TO_TICKS(1));
@@ -102,10 +88,8 @@ inline void servicePngWatchdog() {
 #endif
 }
 
-// PNG constants
 uint8_t PNG_SIGNATURE[8] = {137, 80, 78, 71, 13, 10, 26, 10};
 
-// PNG color types
 enum PngColorType : uint8_t {
   PNG_COLOR_GRAYSCALE = 0,
   PNG_COLOR_RGB = 2,
@@ -114,7 +98,6 @@ enum PngColorType : uint8_t {
   PNG_COLOR_RGBA = 6,
 };
 
-// PNG filter types
 enum PngFilter : uint8_t {
   PNG_FILTER_NONE = 0,
   PNG_FILTER_SUB = 1,
@@ -123,7 +106,6 @@ enum PngFilter : uint8_t {
   PNG_FILTER_PAETH = 4,
 };
 
-// Read a big-endian 32-bit value from file
 bool readBE32(FsFile& file, uint32_t& value) {
   uint8_t buf[4];
   if (file.read(buf, 4) != 4) return false;
@@ -228,32 +210,26 @@ struct PngDecodeContext {
   bool zstreamInitialized;
   FsFile* file;
 
-  // PNG image properties
   uint32_t width;
   uint32_t height;
   uint8_t bitDepth;
   uint8_t colorType;
-  uint8_t bytesPerPixel;  // after expanding sub-byte depths
-  uint32_t rawRowBytes;   // bytes per raw row (without filter byte)
+  uint8_t bytesPerPixel;
+  uint32_t rawRowBytes;
 
-  // Scanline buffers
-  uint8_t* currentRow;   // current defiltered scanline
-  uint8_t* previousRow;  // previous defiltered scanline
+  uint8_t* currentRow;
+  uint8_t* previousRow;
 
-  // Chunk reading state
-  uint32_t chunkBytesRemaining;  // bytes left in current IDAT chunk
-  bool idatCrcPending;           // current IDAT data ended; CRC still needs skipping
-  bool idatFinished;             // no more IDAT chunks
+  uint32_t chunkBytesRemaining;
+  bool idatCrcPending;
+  bool idatFinished;
 
-  // File read buffer for feeding miniz
   uint8_t readBuf[2048];
 
-  // Palette for indexed color (type 3)
   uint8_t palette[256 * 3];
   uint8_t paletteAlpha[256];
   int paletteSize;
 
-  // PNG tRNS transparency for grayscale/RGB images
   bool hasTransparentGray;
   bool hasTransparentRgb;
   uint16_t transparentGray;
@@ -262,8 +238,6 @@ struct PngDecodeContext {
   uint16_t transparentBlue;
 };
 
-// Read the next IDAT chunk header, skipping non-IDAT chunks
-// Returns true if an IDAT chunk was found
 static bool findNextIdatChunk(PngDecodeContext& ctx) {
   while (true) {
     uint32_t chunkLen;
@@ -277,11 +251,8 @@ static bool findNextIdatChunk(PngDecodeContext& ctx) {
       return true;
     }
 
-    // Skip this chunk's data + 4-byte CRC
-    // Use seek to skip efficiently
     if (!ctx.file->seekCur(chunkLen + 4)) return false;
 
-    // If we hit IEND, there are no more chunks
     if (memcmp(chunkType, "IEND", 4) == 0) {
       return false;
     }
@@ -356,16 +327,12 @@ static bool pngInflateRead(PngDecodeContext& ctx, uint8_t* dest, const size_t le
   return true;
 }
 
-// Decode one scanline: decompress filter byte + raw bytes, then unfilter
 static bool decodeScanline(PngDecodeContext& ctx) {
-  // Decompress filter byte
   uint8_t filterType;
   if (!pngInflateRead(ctx, &filterType, 1)) return false;
 
-  // Decompress raw row data into currentRow
   if (!pngInflateRead(ctx, ctx.currentRow, ctx.rawRowBytes)) return false;
 
-  // Apply reverse filter
   const int bpp = ctx.bytesPerPixel;
 
   switch (filterType) {
@@ -421,8 +388,6 @@ static uint8_t rgbToGrayFast(const uint8_t r, const uint8_t g, const uint8_t b) 
   return static_cast<uint8_t>((r * 25 + g * 50 + b * 25) / 100);
 }
 
-// Batch-convert an entire scanline to grayscale.
-// Branches once on colorType/bitDepth, then runs a tight loop for the whole row.
 static void convertScanlineToGray(const PngDecodeContext& ctx, uint8_t* grayRow) {
   const uint8_t* src = ctx.currentRow;
   const uint32_t w = ctx.width;
@@ -454,7 +419,6 @@ static void convertScanlineToGray(const PngDecodeContext& ctx, uint8_t* grayRow)
 
     case PNG_COLOR_RGB:
       if (ctx.bitDepth == 8) {
-        // Fast path: most common EPUB cover format
         for (uint32_t x = 0; x < w; x++) {
           const uint8_t* p = src + x * 3;
           uint8_t gray = rgbToGrayFast(p[0], p[1], p[2]);
@@ -521,14 +485,12 @@ static void convertScanlineToGray(const PngDecodeContext& ctx, uint8_t* grayRow)
 }
 
 static bool pngDecodeBegin(FsFile& pngFile, PngDecodeContext& ctx) {
-  // Verify PNG signature
   uint8_t sig[8];
   if (pngFile.read(sig, 8) != 8 || memcmp(sig, PNG_SIGNATURE, 8) != 0) {
     LOG_ERR("PNG", "Invalid PNG signature");
     return false;
   }
 
-  // Read IHDR chunk
   uint32_t ihdrLen;
   if (!readBE32(pngFile, ihdrLen)) return false;
 
@@ -550,7 +512,6 @@ static bool pngDecodeBegin(FsFile& pngFile, PngDecodeContext& ctx) {
   uint8_t filter = ihdrRest[3];
   uint8_t interlace = ihdrRest[4];
 
-  // Skip IHDR CRC
   pngFile.seekCur(4);
 
   LOG_DBG("PNG", "Image: %ux%u, depth=%u, color=%u, interlace=%u", width, height, bitDepth, colorType, interlace);
@@ -565,7 +526,6 @@ static bool pngDecodeBegin(FsFile& pngFile, PngDecodeContext& ctx) {
     return false;
   }
 
-  // Safety limits
   constexpr int MAX_IMAGE_WIDTH = 2048;
   constexpr int MAX_IMAGE_HEIGHT = 3072;
 
@@ -574,7 +534,6 @@ static bool pngDecodeBegin(FsFile& pngFile, PngDecodeContext& ctx) {
     return false;
   }
 
-  // Calculate bytes per pixel and raw row bytes
   uint8_t bytesPerPixel;
   uint32_t rawRowBytes;
 
@@ -587,7 +546,6 @@ static bool pngDecodeBegin(FsFile& pngFile, PngDecodeContext& ctx) {
         bytesPerPixel = 1;
         rawRowBytes = width;
       } else {
-        // Sub-byte: 1, 2, or 4 bits
         bytesPerPixel = 1;
         rawRowBytes = (width * bitDepth + 7) / 8;
       }
@@ -613,13 +571,11 @@ static bool pngDecodeBegin(FsFile& pngFile, PngDecodeContext& ctx) {
       return false;
   }
 
-  // Validate raw row bytes won't cause memory issues
   if (rawRowBytes > 16384) {
     LOG_ERR("PNG", "Row too large: %u bytes", rawRowBytes);
     return false;
   }
 
-  // Initialize decode context
   memset(&ctx, 0, sizeof(ctx));
   ctx.file = &pngFile;
   ctx.width = width;
@@ -631,7 +587,6 @@ static bool pngDecodeBegin(FsFile& pngFile, PngDecodeContext& ctx) {
   ctx.paletteSize = 0;
   memset(ctx.paletteAlpha, 255, sizeof(ctx.paletteAlpha));
 
-  // Allocate scanline buffers
   ctx.currentRow = static_cast<uint8_t*>(allocateConversionScratch(rawRowBytes));
   ctx.previousRow = static_cast<uint8_t*>(allocateConversionScratch(rawRowBytes, true));
   if (!ctx.currentRow || !ctx.previousRow) {
@@ -641,7 +596,6 @@ static bool pngDecodeBegin(FsFile& pngFile, PngDecodeContext& ctx) {
     return false;
   }
 
-  // Scan for PLTE chunk (palette) and first IDAT chunk
   bool foundIdat = false;
   while (!foundIdat) {
     uint32_t chunkLen;
@@ -657,7 +611,7 @@ static bool pngDecodeBegin(FsFile& pngFile, PngDecodeContext& ctx) {
       size_t palBytes = entries * 3;
       pngFile.read(ctx.palette, palBytes);
       if (chunkLen > palBytes) pngFile.seekCur(chunkLen - palBytes);
-      pngFile.seekCur(4);  // CRC
+      pngFile.seekCur(4);
     } else if (memcmp(chunkType, "tRNS", 4) == 0) {
       if (colorType == PNG_COLOR_PALETTE) {
         const uint32_t alphaCount = std::min<uint32_t>(chunkLen, sizeof(ctx.paletteAlpha));
@@ -680,7 +634,7 @@ static bool pngDecodeBegin(FsFile& pngFile, PngDecodeContext& ctx) {
       } else {
         pngFile.seekCur(chunkLen);
       }
-      pngFile.seekCur(4);  // CRC
+      pngFile.seekCur(4);
     } else if (memcmp(chunkType, "IDAT", 4) == 0) {
       ctx.chunkBytesRemaining = chunkLen;
       ctx.idatCrcPending = true;
@@ -725,7 +679,7 @@ static void pngDecodeAdvanceScanline(PngDecodeContext& ctx) {
   ctx.previousRow = ctx.currentRow;
   ctx.currentRow = temp;
 }
-}  // namespace
+}
 
 bool PngToBmpConverter::pngFileToBmpStreamInternal(FsFile& pngFile, Print& bmpOut, int targetWidth, int targetHeight,
                                                    bool oneBit, bool crop) {
@@ -746,7 +700,6 @@ bool PngToBmpConverter::pngFileToBmpStreamInternal(FsFile& pngFile, Print& bmpOu
   const uint32_t width = ctx.width;
   const uint32_t height = ctx.height;
 
-  // Calculate output dimensions (same logic as JpegToBmpConverter)
   int outWidth = width;
   int outHeight = height;
   uint32_t scaleX_fp = 65536;
@@ -777,7 +730,6 @@ bool PngToBmpConverter::pngFileToBmpStreamInternal(FsFile& pngFile, Print& bmpOu
             targetHeight);
   }
 
-  // Write BMP header
   int bytesPerRow;
   if (USE_8BIT_OUTPUT && !oneBit) {
     writeBmpHeader8bit(bmpOut, outWidth, outHeight);
@@ -790,7 +742,6 @@ bool PngToBmpConverter::pngFileToBmpStreamInternal(FsFile& pngFile, Print& bmpOu
     bytesPerRow = (outWidth * 2 + 31) / 32 * 4;
   }
 
-  // Allocate BMP row buffer
   auto* rowBuffer = static_cast<uint8_t*>(allocateConversionScratch(bytesPerRow));
   if (!rowBuffer) {
     LOG_ERR("PNG", "Failed to allocate row buffer");
@@ -808,7 +759,6 @@ bool PngToBmpConverter::pngFileToBmpStreamInternal(FsFile& pngFile, Print& bmpOu
     imageDitherer = new FourToneImageDitherer(outWidth);
   }
 
-  // Scaling accumulators
   uint32_t* rowAccum = nullptr;
   uint16_t* rowCount = nullptr;
   int currentOutY = 0;
@@ -820,8 +770,6 @@ bool PngToBmpConverter::pngFileToBmpStreamInternal(FsFile& pngFile, Print& bmpOu
     nextOutY_srcStart = scaleY_fp;
   }
 
-  // Allocate grayscale row buffer - batch-convert each scanline to avoid
-  // per-pixel getPixelGray() switch overhead in the hot loops
   auto* grayRow = static_cast<uint8_t*>(allocateConversionScratch(width));
   if (!grayRow) {
     LOG_ERR("PNG", "Failed to allocate grayscale row buffer");
@@ -837,24 +785,20 @@ bool PngToBmpConverter::pngFileToBmpStreamInternal(FsFile& pngFile, Print& bmpOu
 
   bool success = true;
 
-  // Process each scanline
   for (uint32_t y = 0; y < height; y++) {
     if ((y & 0x1F) == 0) {
       servicePngWatchdog();
     }
 
-    // Decode one scanline
     if (!decodeScanline(ctx)) {
       LOG_ERR("PNG", "Failed to decode scanline %u", y);
       success = false;
       break;
     }
 
-    // Batch-convert entire scanline to grayscale (one branch, tight loop)
     convertScanlineToGray(ctx, grayRow);
 
     if (!needsScaling) {
-      // Direct output (no scaling)
       memset(rowBuffer, 0, bytesPerRow);
 
       if (USE_8BIT_OUTPUT && !oneBit) {
@@ -884,7 +828,6 @@ bool PngToBmpConverter::pngFileToBmpStreamInternal(FsFile& pngFile, Print& bmpOu
       }
       bmpOut.write(rowBuffer, bytesPerRow);
     } else {
-      // Area-averaging scaling (same as JpegToBmpConverter)
       for (int outX = 0; outX < outWidth; outX++) {
         const int srcXStart = (static_cast<uint32_t>(outX) * scaleX_fp) >> 16;
         const int srcXEnd = (static_cast<uint32_t>(outX + 1) * scaleX_fp) >> 16;
@@ -905,11 +848,8 @@ bool PngToBmpConverter::pngFileToBmpStreamInternal(FsFile& pngFile, Print& bmpOu
         rowCount[outX] += count;
       }
 
-      // Check if we've crossed into the next output row(s)
       const uint32_t srcY_fp = static_cast<uint32_t>(y + 1) << 16;
 
-      // Output all rows whose boundaries we've crossed (handles both up and downscaling)
-      // For upscaling, one source row may produce multiple output rows
       while (srcY_fp >= nextOutY_srcStart && currentOutY < outHeight) {
         memset(rowBuffer, 0, bytesPerRow);
 
@@ -947,25 +887,19 @@ bool PngToBmpConverter::pngFileToBmpStreamInternal(FsFile& pngFile, Print& bmpOu
 
         nextOutY_srcStart = static_cast<uint32_t>(currentOutY + 1) * scaleY_fp;
 
-        // For upscaling: don't reset accumulators if next output row uses same source data
-        // Only reset when we'll move to a new source row
         if (srcY_fp >= nextOutY_srcStart) {
-          // More output rows to emit from same source - keep accumulator data
           continue;
         }
-        // Moving to next source row - reset accumulators
         memset(rowAccum, 0, outWidth * sizeof(uint32_t));
         memset(rowCount, 0, outWidth * sizeof(uint16_t));
       }
     }
 
-    // Swap current/previous row buffers
     uint8_t* temp = ctx.previousRow;
     ctx.previousRow = ctx.currentRow;
     ctx.currentRow = temp;
   }
 
-  // Clean up
   free(grayRow);
   delete[] rowAccum;
   delete[] rowCount;

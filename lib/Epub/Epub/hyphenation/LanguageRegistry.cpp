@@ -34,7 +34,7 @@ const EntryArray& entries() {
   return kEntries;
 }
 
-}  // namespace
+}
 
 const LanguageHyphenator* getLanguageHyphenatorForPrimaryTag(const std::string& primaryTag) {
   const auto& allEntries = entries();

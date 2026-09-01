@@ -26,7 +26,7 @@ ClockRender::DateTimeView previewDateTime() {
   dt.weekday = 2;
   return dt;
 }
-}  // namespace
+}
 
 void ClockStylePickerActivity::taskTrampoline(void* param) {
   auto* self = static_cast<ClockStylePickerActivity*>(param);

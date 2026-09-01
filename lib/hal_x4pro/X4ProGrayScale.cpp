@@ -11,11 +11,11 @@ namespace x4pro {
 namespace {
 
 constexpr uint8_t kTables = 5;
-constexpr uint8_t kGroups = 7;   // 49 bytes / 7
-constexpr uint8_t kPhases = 4;   // bytes 1..4 of each group
+constexpr uint8_t kGroups = 7;
+constexpr uint8_t kPhases = 4;
 
 struct Phase {
-  uint8_t rail;    // 0 GND, 1 VDH, 2 VDL, 3 VDHR
+  uint8_t rail;
   uint8_t frames;
 };
 
@@ -36,7 +36,7 @@ int totalFrames(const Phase p[kGroups][kPhases], const uint8_t groups) {
   return t;
 }
 
-}  // namespace
+}
 
 const uint8_t (*scaledGrayBank())[49] {
   static uint8_t out[kTables][49];
@@ -46,7 +46,6 @@ const uint8_t (*scaledGrayBank())[49] {
   Phase ph[kTables][kGroups][kPhases] = {};
   uint8_t used[kTables] = {};
 
-  // Decode, scale, and rebalance each table.
   for (uint8_t t = 0; t < kTables; ++t) {
     const uint8_t* src = freeink::kUc8279X3_Xth4[t];
     uint8_t g = 0;
@@ -55,23 +54,21 @@ const uint8_t (*scaledGrayBank())[49] {
       bool empty = true;
       for (uint8_t i = 0; i < kPhases; ++i)
         if (grp[1 + i] != 0) empty = false;
-      if (empty) break;  // terminator group
+      if (empty) break;
       for (uint8_t i = 0; i < kPhases; ++i) {
         const uint8_t b = grp[1 + i];
         const uint8_t frames = static_cast<uint8_t>(b & 0x3F);
         uint16_t scaled = (static_cast<uint16_t>(frames) * X4PRO_GRAY_SPEED + 50u) / 100u;
-        if (frames != 0 && scaled == 0) scaled = 1;  // never drop a phase entirely
-        if (scaled > 63) scaled = 63;                // 6-bit field
+        if (frames != 0 && scaled == 0) scaled = 1;
+        if (scaled > 63) scaled = 63;
         ph[t][g][i] = {static_cast<uint8_t>(b >> 6), static_cast<uint8_t>(scaled)};
       }
     }
     used[t] = g;
 
-    // Rounding perturbs the balance; walk it back to net 0 by growing the longest phase
-    // of whichever rail is short.
     int n = netCharge(ph[t], used[t]);
     while (n != 0) {
-      const uint8_t want = n > 0 ? 2 : 1;  // too positive -> add VDL
+      const uint8_t want = n > 0 ? 2 : 1;
       uint8_t bg = 0xFF, bi = 0, best = 0;
       for (uint8_t g2 = 0; g2 < used[t]; ++g2)
         for (uint8_t i = 0; i < kPhases; ++i)
@@ -80,13 +77,12 @@ const uint8_t (*scaledGrayBank())[49] {
             bg = g2;
             bi = i;
           }
-      if (bg == 0xFF) break;  // nothing to adjust; leave as close as we got
+      if (bg == 0xFF) break;
       ph[t][bg][bi].frames++;
       n = netCharge(ph[t], used[t]);
     }
   }
 
-  // Pad every table with a GND group so all five span the same frame count.
   int longest = 0;
   for (uint8_t t = 0; t < kTables; ++t) longest = max(longest, totalFrames(ph[t], used[t]));
   for (uint8_t t = 0; t < kTables; ++t) {
@@ -99,8 +95,6 @@ const uint8_t (*scaledGrayBank())[49] {
     }
   }
 
-  // Re-encode. Structural bytes match the OEM tables; the group after the last active one
-  // is left all-zero and acts as the terminator.
   for (uint8_t t = 0; t < kTables; ++t) {
     for (uint8_t g = 0; g < used[t]; ++g) {
       uint8_t* dst = out[t] + g * 7;
@@ -116,5 +110,5 @@ const uint8_t (*scaledGrayBank())[49] {
   return out;
 }
 
-}  // namespace x4pro
-}  // namespace inx
+}
+}

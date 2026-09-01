@@ -77,7 +77,8 @@ class EpubActivity final : public ActivityWithSubactivity {
    * @param onGoToHome Callback for navigating to Home
    */
   explicit EpubActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, std::unique_ptr<Epub> epub,
-                        const std::function<void()>& onGoBack, const std::function<void()>& onGoToHome);
+                        const std::function<void()>& onGoBack, const std::function<void()>& onGoToHome,
+                        int initialSpineIndex = -1, int initialPageNumber = -1);
 
   void onEnter() override;
   void onExit() override;
@@ -99,6 +100,8 @@ class EpubActivity final : public ActivityWithSubactivity {
   std::unique_ptr<StatusBar> statusBar = nullptr;
   int currentSpineIndex = 0;
   int nextPageNumber = 0;
+  const int initialSpineIndex_;
+  const int initialPageNumber_;
   int pagesUntilFullRefresh = 0;
   bool pendingPercentJump = false;
   float pendingSpineProgress = 0.0f;
@@ -121,9 +124,6 @@ class EpubActivity final : public ActivityWithSubactivity {
   /** Previous page rendered a high-quality grayscale image that needs an absolute cleanup on the next page. */
   bool lastPageHadHighQualityImage = false;
 
-  // The display owns two framebuffers. After a page is shown, the inactive one
-  // is writable; use it as a validated, already-composed forward page rather
-  // than doing SD/decoder work on the user's page turn.
   struct PreparedPage {
     bool ready = false;
     int spineIndex = -1;

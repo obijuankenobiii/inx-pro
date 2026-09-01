@@ -4,7 +4,7 @@
  * @file QuickActionsSettingsActivity.h
  * @brief Checklist of remaining READER_BUTTON_ACTION values includable in the in-reader popup.
  *
- * Opened from ReaderPresetsActivity's System section. Touch-provided tools are intentionally omitted;
+ * Opened from ButtonMappingActivity's Button & Gestures section. Touch-provided tools are intentionally omitted;
  * toggling a row flips its bit in
  * ReaderSetting::quickActionsMask and saves immediately, same as SettingsDrawer's toggle rows. A
  * button mapped to BTN_ACTION_QUICK_ACTIONS (see ReaderPresetsActivity's button pickers) opens

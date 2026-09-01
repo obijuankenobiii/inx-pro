@@ -14,4 +14,4 @@ class Lock final {
   Lock& operator=(const Lock&) = delete;
 };
 
-}  // namespace SdIoMutex
+}

@@ -39,6 +39,12 @@ class ReaderPresetStore {
   int count();
   bool isDefault(int index) const { return index == 0; }
 
+  /** Store index of the custom preset used for books opened for the first time, or 0 for none. */
+  int defaultPresetIndex();
+  bool isPresetDefault(int index);
+  /** Selects one custom preset as the default; index 0 clears the selection. */
+  bool setDefaultPreset(int index);
+
   /** Display name for a preset index (Default => "Default"). */
   std::string nameOf(int index);
   /** Settings snapshot for a preset index (Default reads the live global reader settings). */
@@ -64,15 +70,13 @@ class ReaderPresetStore {
   ReaderPresetStore() = default;
 
   std::vector<ReaderPreset> userPresets_;  ///< store index i (>=1) maps to userPresets_[i-1]
+  uint8_t defaultPresetIndex_ = 0;         ///< 0 means new books inherit global Reader settings
   bool loaded_ = false;
 
   static constexpr const char* kDir = "/.system";
   static constexpr const char* kPath = "/.system/reader_presets.bin";
-  static constexpr uint32_t kMagic = 0x52505253;  // "RPRS"
-  // Version 6 preserves presets created before Montserrat was added as built-in slot 2. In those
-  // older files, slot 2 and above referred to SD font families; the current mapping starts SD
-  // families at slot 3.
-  static constexpr uint8_t kVersion = 6;
+  static constexpr uint32_t kMagic = 0x52505253;
+  static constexpr uint8_t kVersion = 7;
 };
 
 #define READER_PRESETS ReaderPresetStore::getInstance()

@@ -11,24 +11,49 @@
 #include "EpubActivity.h"
 #include "EpubNavigation.h"
 #include "state/SystemSetting.h"
+#if FREEINK_DEVICE_X4PRO
+#include "system/Frontlight.h"
+#endif
 
 bool ReaderButtonBindings::handleInput(EpubActivity& act) {
-  // Tap left half of the screen = previous page, right half = next page.
-  // Checked first, same "stops at the first action that fires this frame"
-  // rule as the physical buttons below. A tap is momentary (no press/hold
-  // state to track), so this dispatches immediately rather than going
-  // through handleButton()'s state machine.
-  const bool touchEnabled = !act.settingsDrawer || act.settingsDrawer->isTouchEnabled();
-  if (touchEnabled && act.mappedInput.hasTouch()) {
-    float tapNx = 0.0f, tapNy = 0.0f;
-    if (act.mappedInput.wasTouchTapInScreen(act.renderer, tapNx, tapNy)) {
-      dispatch(act, tapNx < 0.5f ? SystemSetting::BTN_ACTION_PAGE_PREVIOUS : SystemSetting::BTN_ACTION_PAGE_NEXT);
+  const unsigned long now = millis();
+  if (pendingDoubleTap_ && now - pendingDoubleTapAtMs_ > kDoubleTapWindowMs) {
+    pendingDoubleTap_ = false;
+    if (READER_SETTINGS.pageTurnMode == ReaderSetting::PAGE_TURN_TAP) {
+      dispatch(act, pendingDoubleTapForward_ ? SystemSetting::BTN_ACTION_PAGE_NEXT
+                                             : SystemSetting::BTN_ACTION_PAGE_PREVIOUS);
       return true;
     }
   }
 
-  // X4 Pro's physical left/right keys and Sticky's side buttons are both exposed through the shared
-  // Up/Down channels. Their labels are adjusted in ButtonMappingActivity for each device.
+  const bool touchEnabled = !act.settingsDrawer || act.settingsDrawer->isTouchEnabled();
+  if (touchEnabled && act.mappedInput.hasTouch()) {
+    float tapNx = 0.0f, tapNy = 0.0f;
+    if (act.mappedInput.wasTouchTapInScreen(act.renderer, tapNx, tapNy)) {
+      const bool forward = tapNx >= 0.5f;
+      if (READER_SETTINGS.doubleTapAction != SystemSetting::BTN_ACTION_NONE) {
+        if (pendingDoubleTap_ && now - pendingDoubleTapAtMs_ <= kDoubleTapWindowMs) {
+          pendingDoubleTap_ = false;
+          dispatch(act, READER_SETTINGS.doubleTapAction);
+        } else {
+          pendingDoubleTap_ = true;
+          pendingDoubleTapForward_ = forward;
+          pendingDoubleTapAtMs_ = now;
+        }
+        return true;
+      }
+      if (READER_SETTINGS.pageTurnMode == ReaderSetting::PAGE_TURN_SWIPE && !forward) {
+        act.pauseReadingStats();
+        act.openTableOfContents();
+        return true;
+      }
+      if (READER_SETTINGS.pageTurnMode == ReaderSetting::PAGE_TURN_TAP) {
+        dispatch(act, forward ? SystemSetting::BTN_ACTION_PAGE_NEXT : SystemSetting::BTN_ACTION_PAGE_PREVIOUS);
+        return true;
+      }
+    }
+  }
+
   if (handleButton(act, MappedInputManager::Button::Up, upState_, READER_SETTINGS.btnLeftAction,
                    READER_SETTINGS.btnLeftLongAction)) {
     return true;
@@ -64,7 +89,7 @@ bool ReaderButtonBindings::handleButton(EpubActivity& act, const MappedInputMana
       dispatch(act, shortAction);
       return true;
     }
-    return false;  // long already fired on this press - don't also fire short on release
+    return false;
   }
 
   return false;
@@ -73,6 +98,9 @@ bool ReaderButtonBindings::handleButton(EpubActivity& act, const MappedInputMana
 void ReaderButtonBindings::reset() {
   upState_ = PressState{};
   downState_ = PressState{};
+  pendingDoubleTap_ = false;
+  pendingDoubleTapForward_ = false;
+  pendingDoubleTapAtMs_ = 0;
 }
 
 void ReaderButtonBindings::dispatch(EpubActivity& act, const uint8_t action) {
@@ -119,6 +147,18 @@ void ReaderButtonBindings::dispatch(EpubActivity& act, const uint8_t action) {
       act.pauseReadingStats();
       act.goToPercentUi_.enter(act);
       break;
+    case SystemSetting::BTN_ACTION_TOGGLE_LIGHT:
+#if FREEINK_DEVICE_X4PRO
+      if (frontlight.present()) {
+        if (frontlight.brightness() > 0) {
+          frontlight.off();
+        } else {
+          frontlight.on();
+        }
+        frontlight_ui::persist();
+      }
+#endif
+      break;
     case SystemSetting::BTN_ACTION_ANNOTATE:
       act.pauseReadingStats();
       act.annUi_.enter(act);
@@ -129,9 +169,6 @@ void ReaderButtonBindings::dispatch(EpubActivity& act, const uint8_t action) {
       break;
     case SystemSetting::BTN_ACTION_PAGE_REFRESH:
       act.invalidatePreparedPage();
-      // X4 Pro has dual host framebuffers. The inactive write buffer may still
-      // contain the previous page after a swap; refresh the page currently on
-      // screen instead of presenting that stale buffer first.
       act.renderer.syncWriteBufferFromActive();
       act.renderer.displayBuffer(HalDisplay::MANUAL_REFRESH);
       act.updateRequired = true;

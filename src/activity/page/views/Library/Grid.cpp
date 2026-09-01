@@ -129,7 +129,7 @@ void drawItem(const GfxRenderer& renderer, const LibraryIndex::Book& item, const
   }
 }
 
-}  // namespace
+}
 
 Grid::Grid(GfxRenderer& renderer, MappedInputManager& mappedInput,
            const std::vector<LibraryIndex::Book>& items, std::function<void(int, bool)> select,
@@ -226,5 +226,5 @@ void Grid::render() const {
   }
 }
 
-}  // namespace library
-}  // namespace views
+}
+}

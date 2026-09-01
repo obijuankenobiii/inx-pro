@@ -163,9 +163,6 @@ std::unique_ptr<Epub> ReaderActivity::loadEpubFromMobi(const std::string& path) 
     return nullptr;
   }
 
-  // Same hash-of-path cache-identity convention Epub itself uses (see Epub's own constructor) - a stable,
-  // deterministic cache path per source file, so re-opening the same .mobi reuses the same transcoded epub
-  // (and its progress/recents, which are tracked by that cache path - see Epub::getPath() callers).
   const std::string cacheDir = "/.metadata/mobi";
   SdMan.mkdir(cacheDir.c_str());
   const std::string cachedEpubPath = cacheDir + "/" + std::to_string(std::hash<std::string>{}(path)) + ".epub";
@@ -197,7 +194,7 @@ void ReaderActivity::onGoToEpubReader(std::unique_ptr<Epub> epub) {
           callback(bookPath);
         }
       },
-      [] {}));
+      [] {}, initialSpineIndex, initialPageNumber));
 }
 
 /**

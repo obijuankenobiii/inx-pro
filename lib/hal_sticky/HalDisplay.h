@@ -33,6 +33,8 @@ class HalDisplay {
   void displayBuffer(RefreshMode mode = RefreshMode::FAST_REFRESH);
   /** Starts a panel refresh and returns while the waveform is running. */
   void displayBufferAsync(RefreshMode mode = RefreshMode::FAST_REFRESH);
+  /** True while an async panel refresh is still running. */
+  bool refreshBusy();
   void refreshDisplay(RefreshMode mode = RefreshMode::FAST_REFRESH, bool turnOffScreen = false);
   /** Copies the displayed dual-buffer frame into the writable framebuffer before partial redraws. */
   void syncWriteBufferFromActive() const;

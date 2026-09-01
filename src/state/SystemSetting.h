@@ -216,12 +216,11 @@ class SystemSetting {
 
   /**
    * @brief Font family options (stored in fontFamily / BookSettings::fontFamily)
-   * @details 0–2 are built-ins; 3+ select SD card folders under /fonts (sorted names), see FontManager.
+   * @details 0–1 are built-ins; 2+ select SD card folders under /fonts (sorted names), see FontManager.
    */
   enum FONT_FAMILY {
-    ATKINSON_HYPERLEGIBLE = 0,  ///< Atkinson Hyperlegible
-    CHAREINK = 1,               ///< ChareInk
-    MONTSERRAT = 2,             ///< Montserrat
+    CHAREINK = 0,    ///< ChareInk
+    MONTSERRAT = 1,  ///< Montserrat
     FONT_FAMILY_BUILTIN_COUNT,
     FONT_FAMILY_COUNT = FONT_FAMILY_BUILTIN_COUNT  ///< Built-in count; reader option count includes SD families
   };
@@ -335,6 +334,7 @@ class SystemSetting {
     BTN_ACTION_GENERATE_FULL_DATA,
     BTN_ACTION_GENERATE_THUMBNAIL,
     BTN_ACTION_GO_TO_PERCENT,
+    BTN_ACTION_TOGGLE_LIGHT,
     READER_BUTTON_ACTION_COUNT
   };
 
@@ -432,6 +432,10 @@ class SystemSetting {
   uint8_t sleepClockRefreshInterval = CLOCK_REFRESH_OFF;  ///< Legacy settings slot; retained for compatibility
   /** UTC offset in 15-minute steps, biased by +12h. 0=UTC-12:00, 80=UTC+08:00, 104=UTC+14:00. */
   uint8_t timeZoneQuarterOffset = 80;
+  /** When enabled, time sync may replace the stored offset using the network lookup. */
+  uint8_t timeZoneAutoDetectEnabled = 1;
+  /** Persisted IANA timezone selected during the WiFi time-sync flow. Empty uses automatic detection. */
+  char timeZoneId[64] = "";
   /** Show the ambient clock (ScreenComponents::drawMenuClock) in the tab-bar chrome. */
   uint8_t showMenuClock = 1;
   /** Keyboard layout used by text-entry activities. */
@@ -451,8 +455,6 @@ class SystemSetting {
   uint8_t sideButtonLayout = PREV_NEXT;                 ///< Side button layout
 
   uint8_t mainMenuNav = MAIN_MENU_NAV_FRONT;  ///< Main-menu tab vs item navigation buttons
-  // Retained in the settings file for binary compatibility. Sticky always uses
-  // bottom tabs, so this value is no longer user-selectable.
   uint8_t uiTheme = UI_THEME_BOTTOM_TABS;
 
   uint8_t sleepTimeout = SLEEP_10_MIN;  ///< Sleep timeout
@@ -536,7 +538,7 @@ class SystemSetting {
    * @return Duration in ms (10ms for sleep, 400ms for ignore)
    */
   uint16_t getPowerButtonDuration() const {
-    return (shortPressPowerButton || shortPwrBtn == SystemSetting::SHORT_PWRBTN::SLEEP) ? 10 : 400;
+    return shortPwrBtn == SystemSetting::SHORT_PWRBTN::SLEEP ? 10 : 400;
   }
 
   /**

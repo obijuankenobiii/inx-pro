@@ -20,6 +20,7 @@ class StickyDisplay {
 
   void displayBuffer(RefreshMode mode);
   void displayBufferAsync(RefreshMode mode);
+  bool refreshBusy();
   void refreshDisplay(RefreshMode mode, bool turnOffScreen);
   void syncWriteBufferFromActive() const;
   void deepSleep();

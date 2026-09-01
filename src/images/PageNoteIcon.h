@@ -2,7 +2,6 @@
 
 #include <cstdint>
 
-// 20x20 1-bit packed notes icon rasterized from the supplied 112x114 PNG.
 static const uint8_t PageNoteIcon[] = {
 0xfc,0x00,0x1f
 ,0xf0,0x00,0x0f

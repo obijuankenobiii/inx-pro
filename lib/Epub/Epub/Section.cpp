@@ -24,16 +24,12 @@
 #include "parsers/ChapterHtmlSlimParser.h"
 
 namespace {
-// 80: fixes a v79 bug where hyphenating a word in a paragraph that had a footnote marker desynced
-// wordFootnoteTargets from the word count, corrupting every field serialized after it - bumping again so
-// any v79 cache written by that buggy code (which looks structurally valid, just corrupted) gets rebuilt
-// rather than being read again and crashing.
-constexpr uint8_t SECTION_FILE_VERSION = 80;
+constexpr uint8_t SECTION_FILE_VERSION = 81;
 constexpr uint32_t HEADER_SIZE = sizeof(uint8_t) + sizeof(int) + sizeof(float) + sizeof(float) + sizeof(bool) +
                                  sizeof(uint8_t) + sizeof(uint16_t) + sizeof(uint16_t) + sizeof(bool) + sizeof(bool) +
                                  sizeof(bool) + sizeof(uint16_t) + sizeof(uint32_t);
 constexpr uint16_t MAX_CACHED_PAGE_OFFSETS = 2048;
-}  // namespace
+}
 
 Section::Section(const std::shared_ptr<Epub>& epubIn, const int spineIndexIn, GfxRenderer& rendererIn)
     : epub(epubIn),
@@ -469,8 +465,6 @@ bool Section::createSectionFile(const int fontId, const int headerFontId, const 
     serialization::writePod(file, lutOffset);
     file.close();
   }
-  // Image dimensions were discovered from ZIP headers during this one layout
-  // pass. Persist them once per completed section, not once per <img>.
   epub->flushImageMetadata();
   return true;
 }
@@ -617,8 +611,6 @@ Section::IncrementalBuildStatus Section::stepIncrementalBuild(const size_t maxIn
     file.sync();
     file.close();
 
-    // Never expose a partly written section. Existing stale cache is kept
-    // until the complete replacement is ready to publish.
     const std::string backupPath = filePath + ".build.old";
     SdMan.remove(backupPath.c_str());
     const bool hadPrevious = SdMan.exists(filePath.c_str());

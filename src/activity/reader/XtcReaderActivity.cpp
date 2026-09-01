@@ -25,6 +25,7 @@
 #include "state/Session.h"
 #include "state/ReaderSetting.h"
 #include "state/SystemSetting.h"
+#include "images/Close.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
 
@@ -32,7 +33,33 @@ namespace {
 constexpr unsigned long skipPageMs = 700;
 constexpr unsigned long goHomeMs = 1000;
 constexpr unsigned long STATS_SAVE_INTERVAL_MS = 30000;
-constexpr int XTC_MENU_ITEM_HEIGHT = 60;
+constexpr int XTC_TOC_PADDING = 20;
+constexpr int XTC_TOC_CLOSE_SIZE = 24;
+constexpr int XTC_TOC_CLOSE_HIT_SIZE = 40;
+constexpr int XTC_TOC_HEADER_HEIGHT = 74;
+constexpr int XTC_TOC_ROW_HEIGHT = 66;
+
+void drawScrollBar(const GfxRenderer& renderer, const int x, const int y, const int height, const int total,
+                   const int visible, const int offset) {
+  if (total <= visible || height <= 0) return;
+
+  constexpr int width = 3;
+  const int maxOffset = std::max(1, total - visible);
+  const int thumbHeight = std::max(14, height * visible / total);
+  const int thumbTravel = std::max(1, height - thumbHeight);
+  const int thumbY = y + offset * thumbTravel / maxOffset;
+  renderer.rectangle.fill(x, y, width, height, static_cast<int>(GfxRenderer::FillTone::Gray), true);
+  renderer.rectangle.fill(x, thumbY, width, thumbHeight, static_cast<int>(GfxRenderer::FillTone::Ink), true);
+}
+
+int xtcTocWidth(const GfxRenderer& renderer) {
+  const int screenWidth = renderer.getScreenWidth();
+  return std::min(screenWidth - 40, std::max(240, screenWidth * 2 / 3));
+}
+
+int xtcTocVisibleRows(const GfxRenderer& renderer) {
+  return std::max(1, (renderer.getScreenHeight() - XTC_TOC_HEADER_HEIGHT) / XTC_TOC_ROW_HEIGHT);
+}
 
 uint8_t xtcQualityGray2Code(const uint8_t level) {
   const uint8_t l = level & 3u;
@@ -86,82 +113,7 @@ bool xtcDrawerNext(const MappedInputManager& input, const GfxRenderer& renderer)
                                      : input.wasPressed(MappedInputManager::Button::Down);
 }
 
-bool xtcValueDecrease(const MappedInputManager& input, const GfxRenderer& renderer) {
-  return isLandscapeReader(renderer) ? input.wasPressed(MappedInputManager::Button::Down)
-                                     : input.wasPressed(MappedInputManager::Button::Left);
 }
-
-bool xtcValueIncrease(const MappedInputManager& input, const GfxRenderer& renderer) {
-  return isLandscapeReader(renderer) ? input.wasPressed(MappedInputManager::Button::Up)
-                                     : input.wasPressed(MappedInputManager::Button::Right);
-}
-
-const char* qualityLabel(const uint8_t quality) {
-  switch (quality) {
-    case SystemSetting::READER_IMAGE_MEDIUM:
-      return "Medium";
-    case SystemSetting::READER_IMAGE_HIGH:
-      return "High";
-    default:
-      return "Low";
-  }
-}
-
-const char* autoTurnLabel() {
-  static char buf[12];
-  if (READER_SETTINGS.xtcPageAutoTurnSeconds == 0) {
-    return "Off";
-  }
-  snprintf(buf, sizeof(buf), "%u sec", READER_SETTINGS.xtcPageAutoTurnSeconds);
-  return buf;
-}
-
-const char* refreshLabel() {
-  static char buf[12];
-  snprintf(buf, sizeof(buf), "%u page%s", READER_SETTINGS.xtcRefreshFrequency, READER_SETTINGS.xtcRefreshFrequency == 1 ? "" : "s");
-  return buf;
-}
-
-const char* powerLabel() {
-  return READER_SETTINGS.xtcShortPwrBtn == SystemSetting::XTC_POWER_PAGE_REFRESH ? "Page Refresh" : "Next";
-}
-
-void changeAutoTurn(const int delta) {
-  int value = static_cast<int>(READER_SETTINGS.xtcPageAutoTurnSeconds) + delta * 10;
-  if (value < 0) value = 60;
-  if (value > 60) value = 0;
-  READER_SETTINGS.xtcPageAutoTurnSeconds = static_cast<uint8_t>(value);
-}
-
-void changeRefreshFrequency(const int delta) {
-  static constexpr uint8_t values[] = {1, 5, 10, 15, 30};
-  constexpr int count = static_cast<int>(sizeof(values) / sizeof(values[0]));
-  int idx = 3;
-  for (int i = 0; i < count; ++i) {
-    if (values[i] == READER_SETTINGS.xtcRefreshFrequency) {
-      idx = i;
-      break;
-    }
-  }
-  idx = (idx + (delta >= 0 ? 1 : count - 1)) % count;
-  READER_SETTINGS.xtcRefreshFrequency = values[idx];
-}
-
-void changeQuality(const int delta) {
-  // Drives the same global "Reader image quality" setting EPUB/PDF already use - see renderPage() - not a
-  // separate XTC-only copy.
-  const int count = SystemSetting::READER_IMAGE_QUALITY_COUNT;
-  int value = static_cast<int>(READER_SETTINGS.readerImageGrayscale) + delta;
-  value = (value % count + count) % count;
-  READER_SETTINGS.readerImageGrayscale = static_cast<uint8_t>(value);
-}
-
-void changePowerButton() {
-  READER_SETTINGS.xtcShortPwrBtn = READER_SETTINGS.xtcShortPwrBtn == SystemSetting::XTC_POWER_NEXT
-                                ? SystemSetting::XTC_POWER_PAGE_REFRESH
-                                : SystemSetting::XTC_POWER_NEXT;
-}
-}  // namespace
 
 void XtcReaderActivity::taskTrampoline(void* param) {
   auto* self = static_cast<XtcReaderActivity*>(param);
@@ -195,6 +147,7 @@ void XtcReaderActivity::onEnter() {
   BOOK_STATE.setReading(xtc->getPath(), true, xtc->getTitle());
 
   updateRequired = true;
+  pagesUntilFullRefresh = READER_SETTINGS.getRefreshFrequency();
 
   xTaskCreate(&XtcReaderActivity::taskTrampoline, "XtcReaderActivityTask", 4096, this, 1, &displayTaskHandle);
 }
@@ -209,8 +162,6 @@ void XtcReaderActivity::onExit() {
   }
   vTaskDelay(pdMS_TO_TICKS(10));
 
-  // High-quality (2-bit grayscale) pages leave more visible ghosting than plain BW pages - flush it with
-  // one extra half refresh on the way out so it doesn't bleed into whatever's shown next.
   if (READER_SETTINGS.readerImageGrayscale == SystemSetting::READER_IMAGE_HIGH) {
     renderer.displayBuffer(HalDisplay::HALF_REFRESH);
   }
@@ -260,8 +211,8 @@ void XtcReaderActivity::loop() {
     return;
   }
 
-  if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
-    openMenuDrawer();
+  if (mappedInput.hasTouch() && mappedInput.wasTouchSwipeUpForRenderer(renderer)) {
+    onGoBack();
     return;
   }
 
@@ -275,51 +226,63 @@ void XtcReaderActivity::loop() {
     return;
   }
 
-  // On the touch reader, an upward swipe from the reading view closes the book - same gesture EPUB's and
-  // PDF's readers use.
-  if (mappedInput.hasTouch() && mappedInput.wasTouchSwipeUpForRenderer(renderer)) {
-    onGoBack();
-    return;
+  if (READER_SETTINGS.pageTurnMode == ReaderSetting::PAGE_TURN_TAP && xtc && xtc->hasChapters() &&
+      !xtc->getChapters().empty() && mappedInput.hasTouch() &&
+      mappedInput.wasTouchSwipeRightForRenderer(renderer)) {
+      openTableOfContents();
+      return;
   }
 
-  // Tap left half of the screen = previous page, right half = next page - same zones as
-  // ReaderButtonBindings::handleInput() uses for EPUB and PdfReaderActivity::loop().
   bool tapPrevTriggered = false;
   bool tapNextTriggered = false;
   if (mappedInput.hasTouch()) {
     float tapNx = 0.0f, tapNy = 0.0f;
-    if (mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy)) {
+    if (READER_SETTINGS.pageTurnMode == ReaderSetting::PAGE_TURN_TAP &&
+        mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy)) {
       (tapNx < 0.5f ? tapPrevTriggered : tapNextTriggered) = true;
     }
   }
 
+  const bool swipePrevTriggered = READER_SETTINGS.pageTurnMode == ReaderSetting::PAGE_TURN_SWIPE &&
+                                  mappedInput.hasTouch() && mappedInput.wasTouchSwipeRightForRenderer(renderer);
+  const bool swipeNextTriggered = READER_SETTINGS.pageTurnMode == ReaderSetting::PAGE_TURN_SWIPE &&
+                                  mappedInput.hasTouch() && mappedInput.wasTouchSwipeLeftForRenderer(renderer);
+
   const bool usePressForPageTurn = READER_SETTINGS.longPressChapterSkip == SystemSetting::LONG_PRESS_OFF;
   const MappedInputManager::MotionGesture motionGesture = mappedInput.readMotionGesture(
       static_cast<uint8_t>(renderer.getOrientation()), SETTINGS.shakePageTurn, SETTINGS.shakePageTurnSensitivity);
-  const bool prevTriggered = tapPrevTriggered || motionGesture == MappedInputManager::MotionGesture::Previous ||
-                             (usePressForPageTurn ? (mappedInput.wasPressed(MappedInputManager::Button::PageBack) ||
-                                                     mappedInput.wasPressed(MappedInputManager::Button::Left))
-                                                  : (mappedInput.wasReleased(MappedInputManager::Button::PageBack) ||
-                                                     mappedInput.wasReleased(MappedInputManager::Button::Left)));
-  if (READER_SETTINGS.xtcShortPwrBtn == SystemSetting::XTC_POWER_PAGE_REFRESH &&
-      mappedInput.wasReleased(MappedInputManager::Button::Power)) {
+  const bool powerReleased = mappedInput.wasReleased(MappedInputManager::Button::Power);
+  const bool powerPagePrevious = powerReleased &&
+                                 READER_SETTINGS.btnPowerShortAction == SystemSetting::BTN_ACTION_PAGE_PREVIOUS;
+  const bool powerPageTurn = powerReleased && READER_SETTINGS.btnPowerShortAction == SystemSetting::BTN_ACTION_PAGE_NEXT;
+  if (powerReleased && READER_SETTINGS.btnPowerShortAction == SystemSetting::BTN_ACTION_PAGE_REFRESH) {
     renderer.displayBuffer(HalDisplay::MANUAL_REFRESH);
     return;
   }
 
-  const bool powerPageTurn = READER_SETTINGS.xtcShortPwrBtn == SystemSetting::XTC_POWER_NEXT &&
-                             mappedInput.wasReleased(MappedInputManager::Button::Power);
+  if (powerReleased && READER_SETTINGS.btnPowerShortAction == SystemSetting::BTN_ACTION_TABLE_OF_CONTENTS) {
+    openTableOfContents();
+    return;
+  }
+
+  const bool prevTriggered = tapPrevTriggered || swipePrevTriggered ||
+                             motionGesture == MappedInputManager::MotionGesture::Previous ||
+                             powerPagePrevious ||
+                             (usePressForPageTurn ? (mappedInput.wasPressed(MappedInputManager::Button::PageBack) ||
+                                                     mappedInput.wasPressed(MappedInputManager::Button::Left))
+                                                  : (mappedInput.wasReleased(MappedInputManager::Button::PageBack) ||
+                                                     mappedInput.wasReleased(MappedInputManager::Button::Left)));
   const bool nextTriggered =
-      tapNextTriggered || motionGesture == MappedInputManager::MotionGesture::Next ||
+      tapNextTriggered || swipeNextTriggered || motionGesture == MappedInputManager::MotionGesture::Next ||
       (usePressForPageTurn ? (mappedInput.wasPressed(MappedInputManager::Button::PageForward) || powerPageTurn ||
                               mappedInput.wasPressed(MappedInputManager::Button::Right))
                            : (mappedInput.wasReleased(MappedInputManager::Button::PageForward) || powerPageTurn ||
                               mappedInput.wasReleased(MappedInputManager::Button::Right)));
 
   if (!prevTriggered && !nextTriggered) {
-    if (READER_SETTINGS.xtcPageAutoTurnSeconds > 0 && xtc && xtc->getPageCount() > 0 && currentPage < xtc->getPageCount() &&
+    if (READER_SETTINGS.pageAutoTurnSeconds > 0 && xtc && xtc->getPageCount() > 0 && currentPage < xtc->getPageCount() &&
         pageStartTime > 0 &&
-        millis() - pageStartTime >= static_cast<uint32_t>(READER_SETTINGS.xtcPageAutoTurnSeconds) * 1000UL) {
+        millis() - pageStartTime >= static_cast<uint32_t>(READER_SETTINGS.pageAutoTurnSeconds) * 1000UL) {
       turnPage(true);
     }
     return;
@@ -392,101 +355,51 @@ void XtcReaderActivity::turnPage(const bool forward, const int skipAmount) {
   updateRequired = true;
 }
 
-void XtcReaderActivity::openMenuDrawer() {
+void XtcReaderActivity::openTableOfContents() {
+  if (!xtc || !xtc->hasChapters() || xtc->getChapters().empty()) {
+    return;
+  }
+
   menuDrawerVisible = true;
-  menuDrawerShowingChapters = false;
-  menuSelectedIndex = 0;
-  menuScrollOffset = 0;
   chapterSelectedIndex = chapterIndexForCurrentPage();
   chapterScrollOffset = std::max(0, chapterSelectedIndex - 2);
-  renderMenuDrawer();
+  renderMenuChapters();
 }
 
 void XtcReaderActivity::closeMenuDrawer(const bool repaintPage) {
   menuDrawerVisible = false;
-  menuDrawerShowingChapters = false;
   if (repaintPage) {
     updateRequired = true;
   }
 }
 
 void XtcReaderActivity::handleMenuDrawerInput() {
-  if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
-    if (menuDrawerShowingChapters) {
-      menuDrawerShowingChapters = false;
-      renderMenuDrawer();
-    } else {
-      suppressBackUntilReleased = true;
-      closeMenuDrawer(true);
+  if (mappedInput.hasTouch() && xtc && xtc->hasChapters()) {
+    const int visibleRows = xtcTocVisibleRows(renderer);
+    const int chapterCount = static_cast<int>(xtc->getChapters().size());
+    const bool swipeUp = mappedInput.wasTouchSwipeUpForRenderer(renderer) || mappedInput.wasTouchSwipeUp();
+    const bool swipeDown = mappedInput.wasTouchSwipeDownForRenderer(renderer) || mappedInput.wasTouchSwipeDown();
+
+    if (swipeUp) {
+      chapterScrollOffset = std::min(std::max(0, chapterCount - visibleRows), chapterScrollOffset + visibleRows);
+      renderMenuChapters();
+      return;
     }
-    return;
+    if (swipeDown) {
+      chapterScrollOffset = std::max(0, chapterScrollOffset - visibleRows);
+      renderMenuChapters();
+      return;
+    }
   }
 
-  if (!menuDrawerShowingChapters) {
-    constexpr int itemCount = 6;
-    if (xtcDrawerPrev(mappedInput, renderer)) {
-      menuSelectedIndex = (menuSelectedIndex - 1 + itemCount) % itemCount;
-      if (menuSelectedIndex < menuScrollOffset) menuScrollOffset = menuSelectedIndex;
-      renderMenuDrawer();
-      return;
-    }
-    if (xtcDrawerNext(mappedInput, renderer)) {
-      menuSelectedIndex = (menuSelectedIndex + 1) % itemCount;
-      renderMenuDrawer();
-      return;
-    }
-
-    int settingDelta = 0;
-    if (xtcValueDecrease(mappedInput, renderer)) settingDelta = -1;
-    if (xtcValueIncrease(mappedInput, renderer)) settingDelta = 1;
-    if (settingDelta != 0 && menuSelectedIndex >= 1 && menuSelectedIndex <= 4) {
-      if (menuSelectedIndex == 1) changeAutoTurn(settingDelta);
-      if (menuSelectedIndex == 2) changeRefreshFrequency(settingDelta);
-      if (menuSelectedIndex == 3) changeQuality(settingDelta);
-      if (menuSelectedIndex == 4) changePowerButton();
-      READER_SETTINGS.saveToFile();
-      pagesUntilFullRefresh = READER_SETTINGS.xtcRefreshFrequency;
-      renderMenuDrawer();
-      return;
-    }
-
-    if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
-      if (menuSelectedIndex == 0) {
-        if (xtc && xtc->hasChapters() && !xtc->getChapters().empty()) {
-          menuDrawerShowingChapters = true;
-          chapterSelectedIndex = chapterIndexForCurrentPage();
-          chapterScrollOffset = std::max(0, chapterSelectedIndex - 2);
-          renderMenuDrawer();
-        }
-      } else if (menuSelectedIndex == 1) {
-        changeAutoTurn(1);
-        READER_SETTINGS.saveToFile();
-        renderMenuDrawer();
-      } else if (menuSelectedIndex == 2) {
-        changeRefreshFrequency(1);
-        READER_SETTINGS.saveToFile();
-        pagesUntilFullRefresh = READER_SETTINGS.xtcRefreshFrequency;
-        renderMenuDrawer();
-      } else if (menuSelectedIndex == 3) {
-        changeQuality(1);
-        READER_SETTINGS.saveToFile();
-        renderMenuDrawer();
-      } else if (menuSelectedIndex == 4) {
-        changePowerButton();
-        READER_SETTINGS.saveToFile();
-        renderMenuDrawer();
-      } else if (menuSelectedIndex == 5) {
-        closeMenuDrawer(false);
-        onGoToHome();
-      }
-      return;
-    }
+  if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+    suppressBackUntilReleased = true;
+    closeMenuDrawer(true);
     return;
   }
 
   if (!xtc || !xtc->hasChapters() || xtc->getChapters().empty()) {
-    menuDrawerShowingChapters = false;
-    renderMenuDrawer();
+    closeMenuDrawer(true);
     return;
   }
 
@@ -494,12 +407,17 @@ void XtcReaderActivity::handleMenuDrawerInput() {
   if (xtcDrawerPrev(mappedInput, renderer)) {
     chapterSelectedIndex = (chapterSelectedIndex - 1 + chapterCount) % chapterCount;
     if (chapterSelectedIndex < chapterScrollOffset) chapterScrollOffset = chapterSelectedIndex;
-    renderMenuDrawer();
+    renderMenuChapters();
     return;
   }
   if (xtcDrawerNext(mappedInput, renderer)) {
     chapterSelectedIndex = (chapterSelectedIndex + 1) % chapterCount;
-    renderMenuDrawer();
+    if (chapterSelectedIndex >= chapterScrollOffset + xtcTocVisibleRows(renderer)) {
+      chapterScrollOffset = chapterSelectedIndex - xtcTocVisibleRows(renderer) + 1;
+    } else if (chapterSelectedIndex < chapterScrollOffset) {
+      chapterScrollOffset = chapterSelectedIndex;
+    }
+    renderMenuChapters();
     return;
   }
   if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
@@ -507,115 +425,99 @@ void XtcReaderActivity::handleMenuDrawerInput() {
     currentPage = static_cast<uint32_t>(xtc->getChapters()[chapterSelectedIndex].startPage);
     startPageTimer();
     closeMenuDrawer(true);
+    return;
   }
-}
 
-void XtcReaderActivity::renderMenuDrawer() {
-  if (menuDrawerShowingChapters) {
-    renderMenuChapters();
-  } else {
-    renderMenuMain();
-  }
-}
-
-void XtcReaderActivity::renderMenuMain() {
-  const int screenW = renderer.getScreenWidth();
-  const int screenH = renderer.getScreenHeight();
-  const bool landscape = isLandscapeReader(renderer);
-  const int drawerW = landscape ? screenW / 2 : screenW;
-  const int drawerH = landscape ? screenH : screenH * 60 / 100;
-  const int drawerX = landscape ? screenW - drawerW : 0;
-  const int drawerY = landscape ? 0 : screenH - drawerH;
-  constexpr int headerH = 64;
-  constexpr int bottomPad = 8;
-  const int visibleRows = std::max(1, (drawerH - headerH - bottomPad) / XTC_MENU_ITEM_HEIGHT);
-  constexpr int itemCount = 6;
-  if (menuSelectedIndex >= menuScrollOffset + visibleRows) menuScrollOffset = menuSelectedIndex - visibleRows + 1;
-  if (menuSelectedIndex < menuScrollOffset) menuScrollOffset = menuSelectedIndex;
-  menuScrollOffset = std::max(0, std::min(menuScrollOffset, std::max(0, itemCount - visibleRows)));
-
-  renderer.rectangle.fill(drawerX, drawerY, drawerW, drawerH, false);
-  renderer.rectangle.render(drawerX, drawerY, drawerW, drawerH, true);
-  renderer.text.render(MONTSERRAT_12_FONT_ID, drawerX + 18, drawerY + 18, "XTC Menu", true,
-                       EpdFontFamily::BOLD);
-  renderer.line.render(drawerX, drawerY + headerH - 1, drawerX + drawerW, drawerY + headerH - 1, true);
-
-  const char* labels[itemCount] = {"Table of Contents", "Auto Page Turn", "Page Until Refresh",
-                                   "Image Quality",     "Power Button",   "Go Home"};
-  const char* values[itemCount] = {
-      "", autoTurnLabel(), refreshLabel(), qualityLabel(READER_SETTINGS.readerImageGrayscale), powerLabel(), ""};
-
-  for (int i = 0; i < visibleRows && menuScrollOffset + i < itemCount; ++i) {
-    const int idx = menuScrollOffset + i;
-    const int rowY = drawerY + headerH + i * XTC_MENU_ITEM_HEIGHT;
-    const bool selected = idx == menuSelectedIndex;
-    renderer.rectangle.fill(
-        drawerX + 1, rowY, drawerW - 2, XTC_MENU_ITEM_HEIGHT,
-        selected ? static_cast<int>(GfxRenderer::FillTone::Ink) : static_cast<int>(GfxRenderer::FillTone::Paper));
-    const int textY = rowY + (XTC_MENU_ITEM_HEIGHT - renderer.text.getLineHeight(MONTSERRAT_10_FONT_ID)) / 2;
-    renderer.text.render(MONTSERRAT_10_FONT_ID, drawerX + 18, textY, labels[idx], selected ? 0 : 1,
-                         idx == 0 ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR);
-    if (values[idx][0] != '\0') {
-      const int valueW = renderer.text.getWidth(MONTSERRAT_10_FONT_ID, values[idx]);
-      renderer.text.render(MONTSERRAT_10_FONT_ID, drawerX + drawerW - 18 - valueW, textY, values[idx],
-                           selected ? 0 : 1);
+  if (mappedInput.hasTouch()) {
+    float tapNx = 0.0f;
+    float tapNy = 0.0f;
+    if (!mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy)) {
+      return;
     }
-    renderer.line.render(drawerX, rowY + XTC_MENU_ITEM_HEIGHT - 1, drawerX + drawerW, rowY + XTC_MENU_ITEM_HEIGHT - 1,
-                         true);
-  }
 
-  renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+    const int x = static_cast<int>(tapNx * renderer.getScreenWidth());
+    const int y = static_cast<int>(tapNy * renderer.getScreenHeight());
+    const int drawerW = xtcTocWidth(renderer);
+    constexpr int drawerX = 0;
+    constexpr int drawerY = 0;
+    constexpr int headerH = XTC_TOC_HEADER_HEIGHT;
+    const int visibleRows = xtcTocVisibleRows(renderer);
+
+    if (x < drawerX || x >= drawerX + drawerW || y < drawerY || y >= renderer.getScreenHeight()) {
+      suppressBackUntilReleased = true;
+      closeMenuDrawer(true);
+      return;
+    }
+    const int closeX = drawerW - XTC_TOC_PADDING - XTC_TOC_CLOSE_HIT_SIZE;
+    const int closeY = (headerH - XTC_TOC_CLOSE_HIT_SIZE) / 2;
+    if (x >= closeX && x < closeX + XTC_TOC_CLOSE_HIT_SIZE && y >= closeY && y < closeY + XTC_TOC_CLOSE_HIT_SIZE) {
+      suppressBackUntilReleased = true;
+      closeMenuDrawer(true);
+      return;
+    }
+    if (y >= drawerY + headerH && y < drawerY + headerH + visibleRows * XTC_TOC_ROW_HEIGHT) {
+      const int row = (y - drawerY - headerH) / XTC_TOC_ROW_HEIGHT;
+      const int tappedIndex = chapterScrollOffset + row;
+      if (tappedIndex >= 0 && tappedIndex < chapterCount) {
+        endPageTimer();
+        currentPage = static_cast<uint32_t>(xtc->getChapters()[tappedIndex].startPage);
+        chapterSelectedIndex = tappedIndex;
+        startPageTimer();
+        closeMenuDrawer(true);
+      }
+    }
+  }
 }
 
 void XtcReaderActivity::renderMenuChapters() {
-  const int screenW = renderer.getScreenWidth();
   const int screenH = renderer.getScreenHeight();
-  const bool landscape = isLandscapeReader(renderer);
-  const int drawerW = landscape ? screenW / 2 : screenW;
-  const int drawerH = landscape ? screenH : screenH * 60 / 100;
-  const int drawerX = landscape ? screenW - drawerW : 0;
-  const int drawerY = landscape ? 0 : screenH - drawerH;
-  constexpr int headerH = 64;
-  constexpr int bottomPad = 8;
-  const int visibleRows = std::max(1, (drawerH - headerH - bottomPad) / XTC_MENU_ITEM_HEIGHT);
+  const int drawerW = xtcTocWidth(renderer);
+  const int visibleRows = xtcTocVisibleRows(renderer);
   const int chapterCount = xtc ? static_cast<int>(xtc->getChapters().size()) : 0;
   if (chapterCount <= 0) {
-    menuDrawerShowingChapters = false;
-    renderMenuMain();
+    menuDrawerVisible = false;
     return;
   }
-  if (chapterSelectedIndex >= chapterScrollOffset + visibleRows) {
-    chapterScrollOffset = chapterSelectedIndex - visibleRows + 1;
-  }
-  if (chapterSelectedIndex < chapterScrollOffset) chapterScrollOffset = chapterSelectedIndex;
   chapterScrollOffset = std::max(0, std::min(chapterScrollOffset, std::max(0, chapterCount - visibleRows)));
 
-  renderer.rectangle.fill(drawerX, drawerY, drawerW, drawerH, false);
-  renderer.rectangle.render(drawerX, drawerY, drawerW, drawerH, true);
-  renderer.text.render(MONTSERRAT_12_FONT_ID, drawerX + 18, drawerY + 18, "Chapters", true,
-                       EpdFontFamily::BOLD);
-  renderer.line.render(drawerX, drawerY + headerH - 1, drawerX + drawerW, drawerY + headerH - 1, true);
+  renderer.syncWriteBufferFromActive();
+  renderer.rectangle.fill(0, 0, drawerW, screenH, false);
+  renderer.rectangle.render(drawerW - 1, 0, 1, screenH, true);
+
+  const int titleY = (XTC_TOC_HEADER_HEIGHT - renderer.text.getLineHeight(MONTSERRAT_12_FONT_ID)) / 2 + 5;
+  renderer.text.render(MONTSERRAT_12_FONT_ID, XTC_TOC_PADDING, titleY, "Table of Contents", true,
+                       EpdFontFamily::REGULAR);
+  const int closeX = drawerW - XTC_TOC_PADDING - XTC_TOC_CLOSE_HIT_SIZE;
+  const int closeY = (XTC_TOC_HEADER_HEIGHT - XTC_TOC_CLOSE_HIT_SIZE) / 2;
+  renderer.bitmap.iconScaled(Close, closeX + (XTC_TOC_CLOSE_HIT_SIZE - XTC_TOC_CLOSE_SIZE) / 2,
+                             closeY + (XTC_TOC_CLOSE_HIT_SIZE - XTC_TOC_CLOSE_SIZE) / 2 + 5,
+                             XTC_TOC_CLOSE_HIT_SIZE, XTC_TOC_CLOSE_HIT_SIZE, XTC_TOC_CLOSE_SIZE,
+                             XTC_TOC_CLOSE_SIZE, BitmapRender::Orientation::None);
+  renderer.line.render(0, XTC_TOC_HEADER_HEIGHT - 1, drawerW, XTC_TOC_HEADER_HEIGHT - 1, true);
 
   const auto& chapters = xtc->getChapters();
   for (int i = 0; i < visibleRows && chapterScrollOffset + i < chapterCount; ++i) {
     const int idx = chapterScrollOffset + i;
-    const int rowY = drawerY + headerH + i * XTC_MENU_ITEM_HEIGHT;
+    const int rowY = XTC_TOC_HEADER_HEIGHT + i * XTC_TOC_ROW_HEIGHT;
     const bool selected = idx == chapterSelectedIndex;
-    renderer.rectangle.fill(
-        drawerX + 1, rowY, drawerW - 2, XTC_MENU_ITEM_HEIGHT,
-        selected ? static_cast<int>(GfxRenderer::FillTone::Ink) : static_cast<int>(GfxRenderer::FillTone::Paper));
-    const int textY = rowY + (XTC_MENU_ITEM_HEIGHT - renderer.text.getLineHeight(MONTSERRAT_10_FONT_ID)) / 2;
+    if (selected) {
+      renderer.rectangle.fill(0, rowY, drawerW, XTC_TOC_ROW_HEIGHT, static_cast<int>(GfxRenderer::FillTone::Ink));
+    }
+    const int textY = rowY + (XTC_TOC_ROW_HEIGHT - renderer.text.getLineHeight(MONTSERRAT_10_FONT_ID)) / 2;
     const std::string& title = chapters[idx].name;
-    renderer.text.render(MONTSERRAT_10_FONT_ID, drawerX + 18, textY,
-                         title.empty() ? "Chapter" : title.c_str(), selected ? 0 : 1);
-    char pageLabel[16];
-    snprintf(pageLabel, sizeof(pageLabel), "%d", chapters[idx].startPage + 1);
-    const int labelW = renderer.text.getWidth(MONTSERRAT_8_FONT_ID, pageLabel);
-    renderer.text.render(MONTSERRAT_8_FONT_ID, drawerX + drawerW - 18 - labelW, textY + 2, pageLabel,
-                         selected ? 0 : 1);
-    renderer.line.render(drawerX, rowY + XTC_MENU_ITEM_HEIGHT - 1, drawerX + drawerW, rowY + XTC_MENU_ITEM_HEIGHT - 1,
-                         true);
+    const int tone = selected ? 0 : 1;
+    const int textWidth = std::max(40, drawerW - XTC_TOC_PADDING * 2);
+    const std::string truncatedTitle = renderer.text.truncate(
+        MONTSERRAT_10_FONT_ID, title.empty() ? "Chapter" : title.c_str(), textWidth);
+    renderer.text.render(MONTSERRAT_10_FONT_ID, XTC_TOC_PADDING, textY, truncatedTitle.c_str(), tone);
+    if (i + 1 < visibleRows && chapterScrollOffset + i + 1 < chapterCount) {
+      renderer.line.render(0, rowY + XTC_TOC_ROW_HEIGHT - 1, drawerW, rowY + XTC_TOC_ROW_HEIGHT - 1, true,
+                           LineRender::Style::Dotted);
+    }
   }
+
+  drawScrollBar(renderer, drawerW - 8, XTC_TOC_HEADER_HEIGHT, visibleRows * XTC_TOC_ROW_HEIGHT, chapterCount,
+                visibleRows, chapterScrollOffset);
 
   renderer.displayBuffer(HalDisplay::FAST_REFRESH);
 }
@@ -732,10 +634,21 @@ void XtcReaderActivity::renderPage() {
 
   renderer.clearScreen();
 
+  const int refreshFrequency = READER_SETTINGS.getRefreshFrequency();
+  auto displayPageAndTrackRefresh = [&] {
+    if (refreshFrequency > 0 && pagesUntilFullRefresh <= 1) {
+      renderer.displayBufferAsync(HalDisplay::HALF_REFRESH);
+      pagesUntilFullRefresh = refreshFrequency;
+    } else {
+      renderer.displayBufferAsync();
+      if (refreshFrequency > 0) {
+        pagesUntilFullRefresh--;
+      }
+    }
+  };
+
   const uint16_t maxSrcY = pageHeight;
 
-  // XTC used to keep its own separate quality setting - now it just follows the same global "Reader image
-  // quality" setting the other readers (EPUB/PDF) already use, so there's one quality dial, not two.
   const uint8_t imageQuality = READER_SETTINGS.readerImageGrayscale < SystemSetting::READER_IMAGE_QUALITY_COUNT
                                    ? READER_SETTINGS.readerImageGrayscale
                                    : SystemSetting::READER_IMAGE_LOW;
@@ -769,15 +682,7 @@ void XtcReaderActivity::renderPage() {
 
     if (imageQuality == SystemSetting::READER_IMAGE_LOW) {
       renderBwPreview();
-      // Async: nothing else touches the display before this function returns, so there is no reason to
-      // block the turn on the ~600ms e-ink refresh.
-      if (pagesUntilFullRefresh <= 1) {
-        renderer.displayBufferAsync(HalDisplay::HALF_REFRESH);
-        pagesUntilFullRefresh = READER_SETTINGS.xtcRefreshFrequency;
-      } else {
-        renderer.displayBufferAsync();
-        pagesUntilFullRefresh--;
-      }
+      displayPageAndTrackRefresh();
 
       free(pageBuffer);
       INX_SERIAL.printf("[%lu] [XTR] Rendered page %lu/%lu (2-bit low/BW)\n", millis(), currentPage + 1,
@@ -802,10 +707,12 @@ void XtcReaderActivity::renderPage() {
                                      },
                                      /*fastQuality=*/true);
 
-      if (pagesUntilFullRefresh <= 1) {
-        pagesUntilFullRefresh = READER_SETTINGS.xtcRefreshFrequency;
-      } else {
-        pagesUntilFullRefresh--;
+      if (refreshFrequency > 0) {
+        if (pagesUntilFullRefresh <= 1) {
+          pagesUntilFullRefresh = refreshFrequency;
+        } else {
+          pagesUntilFullRefresh--;
+        }
       }
       free(pageBuffer);
       INX_SERIAL.printf("[%lu] [XTR] Rendered page %lu/%lu (2-bit high quality)\n", millis(), currentPage + 1,
@@ -814,16 +721,7 @@ void XtcReaderActivity::renderPage() {
     }
 
     renderBwPreview();
-    // Async: the LSB/MSB grayscale calls below (copyGrayscaleLsbBuffers() etc.) already block on this
-    // refresh finishing before they touch the panel, so this only stops blocking the BW base flip while
-    // the two grayscale planes below are being drawn into the (already swapped) write buffer.
-    if (pagesUntilFullRefresh <= 1) {
-      renderer.displayBufferAsync(HalDisplay::HALF_REFRESH);
-      pagesUntilFullRefresh = READER_SETTINGS.xtcRefreshFrequency;
-    } else {
-      renderer.displayBufferAsync();
-      pagesUntilFullRefresh--;
-    }
+    displayPageAndTrackRefresh();
 
     renderer.clearScreen(0x00);
     for (uint16_t y = 0; y < pageHeight; y++) {
@@ -872,9 +770,6 @@ void XtcReaderActivity::renderPage() {
       return !((pageBuffer[srcByte] >> srcBit) & 1);
     };
 
-    // No second plane to read at this bit depth, so Low and Medium are identical here - only High gets
-    // the cleaner/less-ghosting quality-LUT refresh (both grayscale passes draw the same black/white
-    // decision either way - see xtcQualityGray2Code - there's no extra gray level to gain from it).
     if (imageQuality == SystemSetting::READER_IMAGE_HIGH) {
       renderer.renderGrayscalePasses(/*quality=*/true, /*preserveText=*/false,
                                      [&] {
@@ -905,15 +800,7 @@ void XtcReaderActivity::renderPage() {
 
   free(pageBuffer);
 
-  // Async: nothing else touches the display before this function returns, so there is no reason to
-  // block the turn on the ~600ms e-ink refresh.
-  if (pagesUntilFullRefresh <= 1) {
-    renderer.displayBufferAsync(HalDisplay::HALF_REFRESH);
-    pagesUntilFullRefresh = READER_SETTINGS.xtcRefreshFrequency;
-  } else {
-    renderer.displayBufferAsync();
-    pagesUntilFullRefresh--;
-  }
+  displayPageAndTrackRefresh();
 
   INX_SERIAL.printf("[%lu] [XTR] Rendered page %lu/%lu (%u-bit)\n", millis(), currentPage + 1, xtc->getPageCount(),
                 bitDepth);

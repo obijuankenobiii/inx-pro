@@ -45,4 +45,4 @@ bool preview(GfxRenderer& renderer, const std::string& cachePath, const int spin
   return true;
 }
 
-}  // namespace home
+}

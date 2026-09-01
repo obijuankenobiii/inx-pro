@@ -13,7 +13,7 @@
 #include "CssTrackedProperties.h"
 #ifdef ARDUINO
 #include <Arduino.h>
-#include <Esp.h>  // ESP.getFreeHeap() for the CSS heap-reserve guard
+#include <Esp.h>
 #endif
 
 #include <algorithm>
@@ -25,16 +25,12 @@ namespace {
 
 inline void cssParserCooperativeYield() {
 #ifdef ARDUINO
-  // CSS matching runs from loopTask while a chapter is being built. Yield often enough for IDLE0
-  // to run and service the task watchdog on stylesheet-heavy books.
   delay(1);
 #endif
 }
 
-// Hard ceiling on stored rules (each holds only tracked properties, so it's small). The real bound at runtime
-// is the heap-reserve guard in parse(); this just caps worst-case memory if heap is plentiful.
 constexpr size_t kMaxCssRules = 4096;
-constexpr uint32_t kCssParserCacheMagic = 0x43535042;  // "CSPB"
+constexpr uint32_t kCssParserCacheMagic = 0x43535042;
 constexpr uint16_t kCssParserCacheVersion = 6;
 constexpr uint8_t kCssPropertyInvalid = 0xFF;
 
@@ -223,9 +219,6 @@ struct SelectorMatchInfo {
   bool hasClass = false;
   bool hasType = false;
   bool firstLetter = false;
-  // True when the selector has a descendant/child/sibling combinator (e.g. ".box .p1") whose ancestor part we
-  // cannot verify here — we only match its last compound, so it over-matches. Ranked below a plain selector of
-  // the same tier so an element's own rule (".p1") wins over an unverifiable scoped rule (".box .p1").
   bool contextual = false;
 };
 
@@ -236,6 +229,19 @@ bool sliceEqualsString(const TextSlice slice, const std::string& str) {
 bool classTokenListContains(const std::vector<std::string>& classTokensLower, const TextSlice token) {
   for (const auto& tok : classTokensLower) {
     if (sliceEqualsString(token, tok)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool classAttributeContainsToken(const std::string& className, const char* token) {
+  std::vector<std::string> classTokens;
+  splitClassTokens(className, classTokens);
+  for (std::string& classToken : classTokens) {
+    std::transform(classToken.begin(), classToken.end(), classToken.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (classToken == token) {
       return true;
     }
   }
@@ -356,7 +362,7 @@ SelectorMatchInfo matchSelectorList(const std::string& fullSelectorLower, const 
         SelectorMatchInfo clauseInfo;
         if (compoundMatchesElement(lastComp, elementTagLower, classTokensLower, idLower, &clauseInfo)) {
           clauseInfo.firstLetter = clauseFirstLetter;
-          clauseInfo.contextual = lastComp.size < trimCssWsView(clause).size;  // has an ancestor/sibling part
+          clauseInfo.contextual = lastComp.size < trimCssWsView(clause).size;
           return clauseInfo;
         }
       }
@@ -391,10 +397,6 @@ void appendUniqueSelectorKey(std::vector<std::string>& keys, const std::string& 
   keys.push_back(key);
 }
 
-// `matchSelectorList()` evaluates the final compound of every selector clause.
-// Extract its concrete keys for a cheap candidate index; it intentionally does
-// not decide whether a selector matches, because the full matcher still owns
-// pseudo/combinator behavior and cascade correctness.
 bool collectFinalCompoundSelectorKeys(const std::string& selectorLower, std::vector<std::string>& tags,
                                       std::vector<std::string>& classes, std::vector<std::string>& ids) {
   bool needsFallback = false;
@@ -441,10 +443,6 @@ bool collectFinalCompoundSelectorKeys(const std::string& selectorLower, std::vec
       }
       ++i;
     }
-    // A bare `*`, attribute selector, or pseudo-only final compound can match
-    // an element without offering a tag/class/id lookup key.  It stays in a
-    // compact always-check list so the index is an optimization, never a
-    // change in selector semantics (also covers mixed `p, *` lists).
     needsFallback = needsFallback || !clauseHasConcreteKey;
     if (comma == std::string::npos) break;
     start = comma + 1;
@@ -642,7 +640,7 @@ uint8_t toneFromCssColor(const std::string& raw, const uint8_t fallbackTone) {
   return 2;
 }
 
-}  // namespace
+}
 
 CssParser::CssParser() {}
 
@@ -937,7 +935,6 @@ void CssParser::parse(const std::string& cssContent, const std::string& sourcePa
     }
   }
 
-  // Rule set (and thus rule pointers) changed; drop the per-element match cache.
   mcValid_ = false;
   mcMatched_.clear();
   selectorIndexValid_ = false;
@@ -1381,14 +1378,12 @@ int CssParser::getBorderEdgePx(const std::string& edgePropName, const std::strin
 std::string CssParser::getBorderStyleKeyword(const std::string& edge, const std::string& className,
                                              const std::string& id, const std::string& styleAttr,
                                              const std::string& elementTagLower) const {
-  // Pull the first border-style keyword out of a value (handles shorthands like "currentColor double medium").
   auto extractStyle = [](const std::string& raw) -> std::string {
     for (const auto& tokRaw : splitCssWhitespaceList(trimCssWs(raw))) {
       std::string tok = tokRaw;
       std::transform(tok.begin(), tok.end(), tok.begin(),
                      [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
       if (tok == "double" || tok == "dotted" || tok == "dashed" || tok == "solid") return tok;
-      // Other CSS styles render as a plain solid rule on e-ink.
       if (tok == "groove" || tok == "ridge" || tok == "inset" || tok == "outset") return "solid";
     }
     return "";
@@ -1485,7 +1480,6 @@ float CssParser::getFontSizeEm(const std::string& elementTagLower, const std::st
   raw = toLower(trim(raw));
   if (raw.empty()) return 1.0f;
 
-  // Size keywords (approximate CSS scaling).
   if (raw == "medium") return 1.0f;
   if (raw == "small") return 0.83f;
   if (raw == "x-small") return 0.69f;
@@ -1516,9 +1510,9 @@ float CssParser::getFontSizeEm(const std::string& elementTagLower, const std::st
 
   if (unit == "em" || unit == "rem") return num;
   if (unit == "%") return num / 100.0f;
-  if (unit == "px") return num / 16.0f;  // relative to the 16px CSS base
+  if (unit == "px") return num / 16.0f;
   if (unit == "pt") return (num * 96.0f / 72.0f) / 16.0f;
-  return num;  // unitless — treat like em
+  return num;
 }
 
 uint8_t CssParser::getVerticalAlign(const std::string& elementTagLower, const std::string& className,
@@ -1703,7 +1697,6 @@ const std::vector<CssParser::MatchedRule>& CssParser::matchedRulesFor(const std:
     if (!matchInfo.matched) {
       continue;
     }
-    // Universal-only matches (no id/class/type) never contributed a cascaded value, so skip them.
     if (matchInfo.hasId) {
       mcMatched_.push_back({&rule, 2, matchInfo.contextual});
     } else if (matchInfo.hasClass) {
@@ -1737,14 +1730,11 @@ bool CssParser::ruleHasProperty(const CssRule& rule, const std::string& propName
 const CssParser::CssRule* CssParser::winningRuleForProperty(const std::string& propName, const std::string& className,
                                                             const std::string& id, const std::string& elementTagLower,
                                                             const bool ignoreContextual) const {
-  // Rank: id(2) > class(1) > type(0); within a tier a PLAIN selector beats an unverifiable combinator selector
-  // (so an element's own ".p1" wins over a scoped ".box .p1" we can't verify). Highest rank wins; equal rank →
-  // last match in source order wins (>= keeps the later one).
   const CssRule* best = nullptr;
   int bestPriority = -1;
   for (const auto& m : matchedRulesFor(elementTagLower, className, id)) {
     if (ignoreContextual && m.contextual) {
-      continue;  // unverifiable combinator selector — don't let it decide this property
+      continue;
     }
     if (!ruleHasProperty(*m.rule, propName)) {
       continue;
@@ -1765,7 +1755,7 @@ std::string CssParser::getCascadedPropertyValue(const std::string& propName, con
   parseInlineStyle(styleAttr, inlineMap);
   const auto itIn = inlineMap.find(propName);
   if (itIn != inlineMap.end()) {
-    return itIn->second;  // inline style wins over the stylesheet
+    return itIn->second;
   }
 
   const CssRule* winner = winningRuleForProperty(propName, className, id, elementTagLower);
@@ -1843,8 +1833,6 @@ uint8_t CssParser::computeParagraphAlignment(const std::string& className, const
     }
   }
 
-  // Only a plain selector (or inline, handled above) sets a block's own text-align — combinator selectors like
-  // ".box p" are unverifiable here, so they are ignored and the block inherits its ancestor's alignment instead.
   const CssRule* w = winningRuleForProperty("text-align", className, id, elementTagLower, /*ignoreContextual=*/true);
   if (w) {
     const std::string* textAlign = rulePropertyValue(*w, "text-align");
@@ -1852,6 +1840,13 @@ uint8_t CssParser::computeParagraphAlignment(const std::string& className, const
     if (m >= 0 && m <= 3) {
       return static_cast<uint8_t>(m);
     }
+  }
+
+  // A number of EPUB producers emit this legacy class without including its
+  // corresponding stylesheet rule. Treat it as the conventional centered
+  // paragraph class while still allowing inline and real CSS rules to win.
+  if (classAttributeContainsToken(className, "center-text")) {
+    return 2;
   }
 
   if (!bodyTextAlignRaw.empty()) {
@@ -1871,8 +1866,8 @@ bool CssParser::hasTextAlignSpecified(const std::string& elementTagLower, const 
   if (inlineMap.find("text-align") != inlineMap.end()) {
     return true;
   }
-  // Match computeParagraphAlignment: a combinator selector does not count as the element's own alignment.
-  return winningRuleForProperty("text-align", className, id, elementTagLower, /*ignoreContextual=*/true) != nullptr;
+  return winningRuleForProperty("text-align", className, id, elementTagLower, /*ignoreContextual=*/true) != nullptr ||
+         classAttributeContainsToken(className, "center-text");
 }
 
 bool CssParser::isDisplayBlock(const std::string& elementTagLower, const std::string& className, const std::string& id,
@@ -2368,7 +2363,6 @@ bool CssParser::isListStyleNone(const std::string& elementTagLower, const std::s
   if (!type.empty()) {
     return toLower(trimCssWs(type)) == "none";
   }
-  // "list-style" is a shorthand for <type> <position> <image> in any order (e.g. "none" or "square inside").
   const std::string shorthand = getCascadedPropertyValue("list-style", className, id, styleAttr, elementTagLower);
   for (const auto& tok : splitCssWhitespaceList(trimCssWs(shorthand))) {
     if (toLower(tok) == "none") {

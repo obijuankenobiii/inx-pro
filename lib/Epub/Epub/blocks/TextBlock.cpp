@@ -36,7 +36,6 @@ int renderSmallCapsSegment(const GfxRenderer& renderer, const int fontId, const 
   if (text.empty()) {
     return x;
   }
-  // renderSmallCaps returns its advance, so no separate width measurement pass is needed.
   return renderer.text.renderSmallCaps(fontId, x, y, text.c_str(), black, style);
 }
 
@@ -71,7 +70,7 @@ int measureWordSegment(const GfxRenderer& renderer, const int fontId, const std:
                    : renderer.text.getWidth(fontId, text.c_str(), style);
 }
 
-}  // namespace
+}
 
 uint8_t TextBlock::compactByteList(std::list<uint8_t>& values, const uint8_t emptyDefault) {
   if (values.empty()) {
@@ -323,7 +322,6 @@ void TextBlock::render(GfxRenderer& renderer, const int fontId, const int x, con
   const bool hasVerticalAlignVector = wordVerticalAlign && !wordVerticalAlign->empty();
   const bool hasImages = wordImagePaths && !wordImagePaths->empty();
 
-  // Underline sits just below the baseline.
   const int underlineY = y + renderer.text.getFontAscenderSize(fontId) + 1;
   const int lineHeight = renderer.text.getLineHeight(fontId);
 
@@ -336,7 +334,6 @@ void TextBlock::render(GfxRenderer& renderer, const int fontId, const int x, con
     const int startX = slotIt->xpos + x;
     int endX = startX;
 
-    // Inline image word: draw the cached image vertically centered on the line and skip the text path.
     if (hasImages && imgPathIt != wordImagePaths->end() && !imgPathIt->empty()) {
       const int imgW = (wordImageW && imgWIt != wordImageW->end()) ? *imgWIt : 0;
       const int imgH = (wordImageH && imgHIt != wordImageH->end()) ? *imgHIt : 0;
@@ -449,8 +446,6 @@ bool TextBlock::serialize(FsFile& file) const {
   } else {
     for (auto f : *wordVerticalAlign) serialization::writePod(file, f);
   }
-  // Inline image fields (path + display size), parallel to words. A single flag keeps text-only lines free of
-  // any per-word image data on disk (and avoids allocating empty placeholders on load).
   const uint8_t hasImages = (wordImagePaths && !wordImagePaths->empty()) ? 1 : 0;
   serialization::writePod(file, hasImages);
   if (hasImages) {
@@ -466,8 +461,6 @@ bool TextBlock::serialize(FsFile& file) const {
       for (size_t i = 0; i < wordCount; ++i) serialization::writePod(file, static_cast<uint16_t>(0));
     }
   }
-  // Footnote/endnote link targets, parallel to words - same "one flag, skip entirely when absent" shape as
-  // the image fields above, so plain text (the overwhelming majority of lines) pays nothing extra on disk.
   const uint8_t hasFootnoteLinks = (wordFootnoteTargets && !wordFootnoteTargets->empty()) ? 1 : 0;
   serialization::writePod(file, hasFootnoteLinks);
   if (hasFootnoteLinks) {

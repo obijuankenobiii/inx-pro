@@ -35,7 +35,7 @@ class VoiceNoteActivity final : public Activity {
   std::function<void(const std::string&, bool)> onComplete_;
   std::function<void()> onCancel_;
   freeink::Microphone microphone_;
-  void* outputFile_ = nullptr;  // FsFile, kept out of the header.
+  void* outputFile_ = nullptr;
   bool micStarted_ = false;
   bool recording_ = false;
   bool complete_ = false;
@@ -46,7 +46,7 @@ class VoiceNoteActivity final : public Activity {
   volatile uint32_t audioBytes_ = 0;
   volatile uint32_t audioLevel_ = 0;
   mutable uint32_t displayedAudioLevel_ = 0;
-  uint8_t* captureBuffer_ = nullptr;  // PSRAM PCM buffer; SD is written after capture stops.
+  uint8_t* captureBuffer_ = nullptr;
   TaskHandle_t captureTask_ = nullptr;
   unsigned long lastRenderMs_ = 0;
 

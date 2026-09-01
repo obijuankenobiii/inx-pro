@@ -20,8 +20,6 @@
 
 namespace {
 
-// Same formatter OtaUpdateActivity.cpp uses for firmware/package sizes - not shared since this is its only
-// other use.
 std::string formatBytes(const size_t bytes) {
   char buffer[24];
   if (bytes >= 1024 * 1024) {
@@ -55,7 +53,7 @@ const char* displayControllerName(const BoardConfig::DisplayController controlle
   }
 }
 
-}  // namespace
+}
 
 void DeviceInfoActivity::buildRows() {
   rows.clear();

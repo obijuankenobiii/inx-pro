@@ -26,7 +26,7 @@ extern "C" {
 namespace {
 constexpr int LIST_ITEM_HEIGHT = Page::LIST_ITEM_HEIGHT;
 constexpr uint32_t scanMaxMs = 120;
-}  // namespace
+}
 
 /**
  * @brief Static trampoline function for the display task
@@ -51,26 +51,16 @@ void WifiSelectionActivity::onEnter() {
 
   renderingMutex = xSemaphoreCreateMutex();
 
-  // Wi-Fi is entered from screens that may have drawn 2-bit covers.  Rebase
-  // both the writable frame and the controller's previous-frame plane before
-  // the scanning/list screen issues its first FAST update.  This is RAM-plane
-  // synchronization only; it does not refresh the panel.
   renderer.syncWriteBufferFromActive();
   renderer.cleanupGrayscaleWithFrameBuffer();
 
   INX_SERIAL.printf("[%lu] [WIFI] enter mutex=%p mode=%d status=%d scan=%d\n", millis(), renderingMutex,
                  static_cast<int>(WiFi.getMode()), static_cast<int>(WiFi.status()), WiFi.scanComplete());
 
-  // Show the scanning state before loading credentials or initializing the radio. Those operations
-  // can block long enough to make the transition look like a blank screen. The first refresh is
-  // asynchronous so the activity handoff is not held up by the e-ink waveform.
   state = WifiSelectionState::SCANNING;
   updateRequired = true;
-  // The scanner is opened from another activity. Clear that previous page on
-  // the first scanning frame so it cannot remain visible behind the status.
   networkListFullRefreshRequired = true;
 
-  // Initialize all fields before loading credentials or starting the display task.
   selectedNetworkIndex = 0;
   selectedNetworkVisible = false;
   networks.clear();
@@ -82,8 +72,6 @@ void WifiSelectionActivity::onEnter() {
   forgetPromptSelection = 0;
   scanCancelled = false;
 
-  // Match the previous firmware's startup order: load credentials before creating the display
-  // task so SD I/O cannot overlap the first e-paper refresh or delay the radio scan.
   WIFI_STORE.loadFromFile();
 
   state = WifiSelectionState::SCANNING;
@@ -120,8 +108,6 @@ void WifiSelectionActivity::onExit() {
   INX_SERIAL.printf("[%lu] [WIFI] exit scan stop=%d (%s)\n", millis(), static_cast<int>(stopped),
                  esp_err_to_name(stopped));
 
-  // Stop the renderer while holding the same mutex it uses. Deleting it after releasing the
-  // mutex can terminate the task in the middle of displayBuffer(), which is a renderer race.
   xSemaphoreTake(renderingMutex, portMAX_DELAY);
   networks.clear();
   selectedSSID.clear();
@@ -144,8 +130,6 @@ void WifiSelectionActivity::onExit() {
   vSemaphoreDelete(renderingMutex);
   renderingMutex = nullptr;
 
-  // esp_wifi_scan_get_ap_records() releases the driver's scan allocation. Clear any records left
-  // behind when the activity was closed while a scan was active.
   WiFi.scanDelete();
 
   exitActivity();
@@ -161,9 +145,6 @@ void WifiSelectionActivity::startWifiScan() {
   updateRequired = true;
   xSemaphoreGive(renderingMutex);
 
-  // Do not use Arduino's asynchronous scan wrapper: it declares an unfinished scan failed after
-  // max_ms_per_chan * 20, which is the 6-second failure visible in the device log. The ESP-IDF
-  // scan task below waits on the driver's own completion path instead.
   WiFi.scanDelete();
   const bool modeSet = WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);
@@ -200,10 +181,6 @@ void WifiSelectionActivity::scanTaskLoop() {
 
   std::vector<WifiNetworkInfo> foundNetworks;
   if (started == ESP_OK && !scanCancelled) {
-    // This scan was started through ESP-IDF directly, so Arduino's scanComplete()
-    // state is never marked as running and can remain WIFI_SCAN_FAILED (-2).
-    // Read the records owned by this native scan instead of depending on the
-    // Arduino wrapper's cache/event state.
     uint16_t count = 0;
     const esp_err_t countResult = esp_wifi_scan_get_ap_num(&count);
     INX_SERIAL.printf("[%lu] [WIFI] native scan records count=%u count-result=%d (%s)\n", millis(),
@@ -338,8 +315,6 @@ void WifiSelectionActivity::attemptConnection() {
   connectionError.clear();
   updateRequired = true;
 
-  // Credentials are managed by WIFI_STORE. Disable Arduino's persistent credentials and abort
-  // any SDK auto-connect before starting the explicit connection, as CrossPoint does.
   WiFi.persistent(false);
   WiFi.mode(WIFI_STA);
   WiFi.disconnect(true, true);
@@ -416,9 +391,6 @@ bool WifiSelectionActivity::handleTouchInput() {
   INX_SERIAL.printf("[STICKY][WIFI TOUCH] state=%d tap=(%d,%d) normalized=(%.3f,%.3f)\n",
                  static_cast<int>(state), tapX, tapY, tapNx, tapNy);
 
-  // The global loop normally turns the shared header icon into a Back edge. Keep a local
-  // hit-test as a fallback because this activity owns a child renderer/task and can receive a
-  // tap before that shared hit rectangle has been published.
   const bool headerBackHit = ScreenComponents::pageHeaderBackButtonHit(tapX, tapY) ||
                              (tapY < dividerY && tapX >= screenWidth - 96);
   if (headerBackHit) {
@@ -511,9 +483,6 @@ void WifiSelectionActivity::loop() {
 
   if (SubPage::closeInput(renderer, mappedInput, [this]() { onComplete(false); })) return;
 
-  // Back must be handled before the scan/connection state branches. The scanning branch returns
-  // immediately, which previously made the header back icon appear unresponsive while networks
-  // were still being discovered.
   if (mappedInput.wasPressed(MappedInputManager::Button::Back) ||
       mappedInput.wasReleased(MappedInputManager::Button::Back)) {
     onComplete(false);
@@ -672,11 +641,6 @@ void WifiSelectionActivity::render(const bool fullRefresh) const {
       break;
   }
 
-  // The panel refresh itself does not need to keep the Wi-Fi task's mutex.
-  // displayBufferAsync() finishes the RAM transfer and swaps the dual buffers
-  // before it returns; the panel can run the FAST waveform while touch remains
-  // responsive.  The keyboard's entry rebase drains this one pending refresh
-  // before it changes the screen, so it never draws against the old list.
   renderer.displayBufferAsync(fullRefresh ? HalDisplay::FULL_REFRESH : HalDisplay::FAST_REFRESH);
   renderer.syncWriteBufferFromActive();
 }

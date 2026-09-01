@@ -20,16 +20,14 @@ class PdfDocument;
 class PdfLexer;
 
 struct PdfTextRun {
-  double x = 0;  // device pixels, top-left origin, x-right
-  double y = 0;  // device pixels, top-left origin, y-down (already flipped from PDF's bottom-up space)
-  double sourceFontSizePts = 0;  // source PDF font size in points, before the caller's page scale
+  double x = 0;
+  double y = 0;
+  double sourceFontSizePts = 0;
   int fontId = 0;
   EpdFontFamily::Style style = EpdFontFamily::REGULAR;
   std::string utf8Text;
 };
 
-// Lets callers tell "legitimately blank page" apart from "page has text, but Phase 1 can't render its
-// font(s)" - both currently look identical (zero PdfTextRuns) without this.
 struct PdfRenderStats {
   int textRunsEmitted = 0;
   int textShowsSkippedUnsupportedFont = 0;
@@ -60,14 +58,6 @@ struct PdfDrawCommand {
 
 class PdfContentInterpreter {
  public:
-  // `resources` is the page's (already-inheritance-resolved) /Resources dict. `scale` converts PDF user-space
-  // points to device pixels (uniform, scale-to-fit-width). `llx`/`lly` are the page's MediaBox origin and
-  // `pageHeightPts` its MediaBox height, both in points - used to normalize to a 0,0-origin, top-down space.
-  // `measureTextWidthPx`, if provided, measures how wide a run will actually render in device pixels (e.g.
-  // renderer.text.getWidth) - used to advance the cursor by what was actually drawn instead of by the source
-  // PDF font's declared widths, which can differ significantly from our substitute system font's metrics and
-  // otherwise cause runs to drift into overlapping/interleaved text within a line. Without it, advance falls
-  // back to the (possibly mismatched) declared widths - useful for headless/testing use without a renderer.
   PdfContentInterpreter(
       const PdfDocument& doc, const PdfObject& resources, double scale, double llx, double lly, double pageHeightPts,
       std::function<int(int fontId, const char* utf8Text, EpdFontFamily::Style style)> measureTextWidthPx = nullptr);

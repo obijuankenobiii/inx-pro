@@ -22,7 +22,7 @@ struct KOReaderProgress {
 /**
  * HTTP client for KOReader sync API.
  *
- * Base URL: https://sync.koreader.rocks:443/
+ * Base URL: https://sync.crosspointreader.com/
  *
  * API Endpoints:
  *   GET /users/auth - Authenticate (validate credentials)
@@ -35,13 +35,26 @@ struct KOReaderProgress {
  */
 class KOReaderSyncClient {
  public:
-  enum Error { OK = 0, NO_CREDENTIALS, NETWORK_ERROR, AUTH_FAILED, SERVER_ERROR, JSON_ERROR, NOT_FOUND, LOW_MEMORY };
+  enum Error {
+    OK = 0,
+    NO_CREDENTIALS,
+    NETWORK_ERROR,
+    AUTH_FAILED,
+    SERVER_ERROR,
+    JSON_ERROR,
+    NOT_FOUND,
+    LOW_MEMORY,
+    USER_EXISTS
+  };
 
   /**
    * Authenticate with the sync server (validate credentials).
    * @return OK on success, error code on failure
    */
   static Error authenticate();
+
+  /** Register a new account using the stored credentials (POST /users/create). */
+  static Error createUser();
 
   /**
    * Get reading progress for a document.

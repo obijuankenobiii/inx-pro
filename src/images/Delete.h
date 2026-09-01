@@ -1,8 +1,6 @@
 #pragma once
 #include <cstdint>
 
-// 30x30 1-bit delete icon converted from the supplied image.
-// White background, black glyph; rows are packed MSB-first.
 static const uint8_t Delete[] = {
     0xff, 0xff, 0xff, 0xff,
     0xff, 0xff, 0xff, 0xff,

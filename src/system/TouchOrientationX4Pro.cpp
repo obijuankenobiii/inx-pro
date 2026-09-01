@@ -19,7 +19,6 @@
 namespace inx {
 namespace touch {
 
-// Raw panel swipe -> app default (portrait) frame. 90 degree rotation.
 HalGPIO::TouchSwipe toDefaultOrientation(const HalGPIO::TouchSwipe swipe) {
   switch (swipe) {
     case HalGPIO::TouchSwipe::Up: return HalGPIO::TouchSwipe::Right;
@@ -34,8 +33,6 @@ HalGPIO::TouchSwipe toDefaultOrientation(const HalGPIO::TouchSwipe swipe) {
 HalGPIO::TouchSwipe forOrientation(const GfxRenderer::Orientation orientation, const HalGPIO::TouchSwipe swipe) {
   if (swipe == HalGPIO::TouchSwipe::None) return swipe;
 
-  // Inverse of GfxRenderer::rotateCoordinates(), so swipe direction and tap hit-testing
-  // agree in every reader orientation.
   switch (orientation) {
     case GfxRenderer::Orientation::Portrait:
       switch (swipe) {
@@ -114,5 +111,5 @@ void screenToNative(const GfxRenderer::Orientation orientation, const float scre
   }
 }
 
-}  // namespace touch
-}  // namespace inx
+}
+}

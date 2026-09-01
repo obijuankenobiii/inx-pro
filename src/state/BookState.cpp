@@ -32,8 +32,6 @@ bool readBookString(FsFile& file, std::string& value) {
     return false;
   }
 
-  // A damaged or half-written books.bin can otherwise pass an arbitrary 32-bit
-  // value to std::string::resize(), which throws length_error and aborts the ESP32.
   const int available = file.available();
   if (length > MAX_BOOK_STATE_STRING_LENGTH || available < 0 ||
       static_cast<uint64_t>(length) > static_cast<uint64_t>(available)) {
@@ -96,8 +94,6 @@ uint32_t loadAllBooks(std::vector<BookState::Book>& out) {
     count = static_cast<size_t>(count32);
   }
 
-  // Every record has at least three string lengths, an id, and flags. Reject a
-  // corrupt count before reserve() can request an unsafe amount of memory.
   constexpr size_t kMinimumBookRecordBytes = sizeof(uint32_t) * 3 + sizeof(uint32_t) + sizeof(uint8_t);
   const int remaining = inputFile.available();
   if (remaining < 0 || count > static_cast<size_t>(remaining) / kMinimumBookRecordBytes) {
@@ -196,7 +192,7 @@ std::vector<BookState::Book> filterAndSort(std::vector<BookState::Book>& books, 
            [](const BookState::Book& a, const BookState::Book& b) { return a.id > b.id; });
   return result;
 }
-}  // namespace
+}
 
 BookState BookState::instance;
 
@@ -271,7 +267,7 @@ void BookState::setReading(const std::string& path, const bool isReading, const 
   }
   if (target == nullptr) {
     if (!isReading) {
-      return;  // nothing to clear for an untracked book
+      return;
     }
     books.push_back(Book(path, fallbackTitle, "", nextId++));
     target = &books.back();
@@ -328,7 +324,7 @@ void BookState::renamePath(const std::string& oldPath, const std::string& newPat
 
 void BookState::clear(const bool writeFile) {
   if (!writeFile) {
-    return;  // caller already deleted books.bin directly - nothing else to reset
+    return;
   }
   writeAllBooks({}, 1);
 }

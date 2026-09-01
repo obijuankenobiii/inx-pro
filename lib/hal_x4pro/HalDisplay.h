@@ -48,14 +48,20 @@ class HalDisplay {
   static constexpr uint32_t BUFFER_SIZE = DISPLAY_WIDTH_BYTES * DISPLAY_HEIGHT;
 
   void clearScreen(uint8_t color = 0xFF) const;
+  void clearBothBuffers(uint8_t color = 0xFF) const;
+  void finishPendingRefresh() const;
   void drawImage(const uint8_t* imageData, uint16_t x, uint16_t y, uint16_t w, uint16_t h,
                  bool fromProgmem = false) const;
 
   void displayBuffer(RefreshMode mode = RefreshMode::FAST_REFRESH);
   /** Starts a panel refresh and returns while the waveform is running. */
   void displayBufferAsync(RefreshMode mode = RefreshMode::FAST_REFRESH);
+  /** True while an async panel refresh is still running. */
+  bool refreshBusy();
   void refreshDisplay(RefreshMode mode = RefreshMode::FAST_REFRESH, bool turnOffScreen = false);
-  /** No-op on X4 Pro; dual-buffer synchronization is a Sticky-specific path. */
+  /** Copies the displayed dual-buffer frame into the writable framebuffer before partial
+   *  redraws. The X4 Pro builds WITHOUT EINK_DISPLAY_SINGLE_BUFFER_MODE, so this really
+   *  does memcpy - call it before drawing a partial update, never after. */
   void syncWriteBufferFromActive() const;
 
   void deepSleep();

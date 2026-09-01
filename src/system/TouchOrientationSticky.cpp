@@ -16,16 +16,11 @@
 namespace inx {
 namespace touch {
 
-// Sticky's digitizer already matches the UI's portrait frame — nothing to pre-rotate.
 HalGPIO::TouchSwipe toDefaultOrientation(const HalGPIO::TouchSwipe swipe) { return swipe; }
 
 HalGPIO::TouchSwipe forOrientation(const GfxRenderer::Orientation orientation, const HalGPIO::TouchSwipe swipe) {
   if (swipe == HalGPIO::TouchSwipe::None) return swipe;
 
-  // Touch reports against the fixed panel. Reader orientation rotates the content, so
-  // translate the physical direction back into the direction the reader is showing. The
-  // landscape tables intentionally have opposite senses: their labels describe the
-  // visual content rotation.
   switch (orientation) {
     case GfxRenderer::Orientation::Portrait:
       return swipe;
@@ -104,5 +99,5 @@ void screenToNative(const GfxRenderer::Orientation orientation, const float scre
   }
 }
 
-}  // namespace touch
-}  // namespace inx
+}
+}

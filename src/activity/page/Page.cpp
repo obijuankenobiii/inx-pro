@@ -35,9 +35,6 @@ bool Page::menuInput() {
     return back();
   }
 
-  // A swipe is latched for the current update cycle even after the touch point is released, so
-  // process it before hasTouch(). The old nesting dropped the gesture on X4 Pro because the
-  // release had already made hasTouch() false by the time Page::loop() ran.
   if (mappedInput.wasTouchSwipeUpForRenderer(renderer) || mappedInput.wasTouchSwipeDownForRenderer(renderer) ||
       mappedInput.wasTouchSwipeLeftForRenderer(renderer) || mappedInput.wasTouchSwipeRightForRenderer(renderer)) {
     const navigation::Menu::Action action = navigation::Menu::handleInput(mappedInput);
@@ -45,6 +42,17 @@ bool Page::menuInput() {
     routeMenuAction(action);
     return true;
   }
+
+#if FREEINK_DEVICE_X4PRO
+  if (mappedInput.isTouchPressed() || isLightDrawerSliderDragging()) {
+    const navigation::Menu::Action action = navigation::Menu::handleInput(mappedInput);
+    if (action != navigation::Menu::Action::None) {
+      routeMenuAction(action);
+      return true;
+    }
+    if (isLightDrawerSliderDragging()) return true;
+  }
+#endif
 
   if (mappedInput.hasTouch()) {
 
@@ -135,11 +143,6 @@ void Page::render() {
   renderer.clearScreen();
   content();
   menu();
-  // Async: the framebuffer swap is done by the time this returns, so drawing/input can continue while
-  // the panel is still running its waveform - only the e-ink refresh itself (~140ms) remains in flight.
-  // The display's own dual buffers make this safe: every entry point that needs the previous refresh to
-  // have finished (this call included) waits on it first via finish(), so nothing is skipped - it just
-  // stops blocking the caller for the full refresh on every page render.
   renderer.displayBufferAsync();
 }
 

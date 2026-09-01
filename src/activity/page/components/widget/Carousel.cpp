@@ -70,8 +70,6 @@ void renderCover(GfxRenderer& renderer, const RecentBook& book, const int x, con
     ImageRender::Options options;
     options.cropToFill = cropToFill;
     options.cropAnchorX = cropAnchorX;
-    // cropAnchorX is part of the cache key, so the left/right edge crops can
-    // safely use the same durable + PSRAM display-cache path as the center.
     options.useDisplayCache = true;
     options.asyncDisplayCache = true;
     if (SETTINGS.bitmapRoundedCorners == 0) {
@@ -92,9 +90,6 @@ void renderCover(GfxRenderer& renderer, const RecentBook& book, const int x, con
     }
   }
 
-  // Keep the placeholder/border on the same fitted rectangle as the image.
-  // Otherwise a failed or not-yet-available thumbnail briefly leaves the
-  // original center slot visible as a larger white container.
   renderer.rectangle.fill(backgroundX, backgroundY, backgroundWidth, backgroundHeight, false);
   renderer.rectangle.render(backgroundX, backgroundY, backgroundWidth, backgroundHeight, true,
                             SETTINGS.bitmapRoundedCorners != 0, SETTINGS.bitmapRoundedCorners == 2);
@@ -239,7 +234,7 @@ void preloadFrame(GfxRenderer& renderer, const std::vector<RecentBook>& books, c
                0.5f, even);
 }
 
-}  // namespace
+}
 
 void Carousel::render(const int index, const int x, const int y, const int width, const int height,
                       const bool background, const HomeTheme::CarouselStyle style, const bool showLabel,
@@ -345,10 +340,6 @@ void Carousel::preload(const int index, const int x, const int y, const int widt
                                     ? twoBookBounds(x, content.y, width, content.height, books[0], books[1])
                                     : bounds(x, content.y, width, content.height);
   (void)index;
-  // Recents are capped at nine books. Load every persisted thumbnail variant
-  // once, after Home has rendered, so a swipe never triggers PSRAM preloading
-  // or an SD display-cache read. This only promotes existing cache pixels; it
-  // does not decode an image or redraw the screen.
   if (books.size() == 2) {
     const bool even = evenThumbnails();
     preloadCover(renderer_, books[0], layout.centerX, layout.centerY, layout.centerWidth, layout.centerHeight, 0.5f,

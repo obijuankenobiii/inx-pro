@@ -287,7 +287,6 @@ struct BookSettings {
     fontFamily = data[offset++];
     FontManager::clampReaderFontFamilySlot(fontFamily);
     fontSize = data[offset++];
-    // Legacy files stored the lineSpacing enum (0-4) in this slot; migrate those to default 100.
     lineHeight = data[offset++];
     if (lineHeight < 10 || lineHeight > 200) {
       lineHeight = 100;
@@ -543,8 +542,6 @@ struct BookSettings {
     global.textAntiAliasing = textAntiAliasing;
     global.orientation = orientation;
     global.pageAutoTurnSeconds = pageAutoTurnSeconds;
-    // Image quality is a global Reader setting and is intentionally not copied
-    // from per-book or preset settings.
     global.readerSmartRefreshOnImages = readerSmartRefreshOnImages ? 1 : 0;
 
     global.statusBarLeft = static_cast<uint8_t>(statusBarLeft.item);

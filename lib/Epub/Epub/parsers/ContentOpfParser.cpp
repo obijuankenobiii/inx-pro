@@ -14,7 +14,7 @@
 namespace {
 constexpr char MEDIA_TYPE_NCX[] = "application/x-dtbncx+xml";
 constexpr char itemCacheFile[] = "/.items.bin";
-}  // namespace
+}
 
 bool ContentOpfParser::setup() {
   parser = XML_ParserCreate(nullptr);

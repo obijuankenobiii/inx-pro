@@ -52,7 +52,7 @@ class SavedDictionaryWordStore {
 
   struct SavedWordEntry {
     std::string word;
-    std::string filename;  // sanitized, relative to kDir
+    std::string filename;
   };
 
   std::vector<SavedWordEntry> entries_;

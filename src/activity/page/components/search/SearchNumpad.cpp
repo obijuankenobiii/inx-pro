@@ -47,7 +47,7 @@ void drawKey(const GfxRenderer& renderer, const int x, const int y, const int wi
   renderer.text.render(font, x + (width - textWidth) / 2, textY, label, !selected);
 }
 
-}  // namespace
+}
 
 int height(const int top, const int bottom) { return std::max(0, bottom - top); }
 
@@ -143,4 +143,4 @@ bool consumeCollapse(State& state) {
   return collapse;
 }
 
-}  // namespace SearchKeyboardLayout::Numpad
+}

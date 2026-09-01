@@ -19,7 +19,7 @@ constexpr char OPDS_FILE[] = "/.system/opds_servers.bin";
 
 constexpr uint8_t OBFUSCATION_KEY[] = {0x43, 0x72, 0x6F, 0x73, 0x73, 0x50, 0x6F, 0x69, 0x6E, 0x74};
 constexpr size_t KEY_LENGTH = sizeof(OBFUSCATION_KEY);
-}  // namespace
+}
 
 void OpdsServerStore::obfuscate(std::string& data) const {
   for (size_t i = 0; i < data.size(); i++) {

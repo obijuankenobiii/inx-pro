@@ -68,7 +68,7 @@ bool pointInCaret(const PopupBounds& bounds, const int x, const int y, const boo
          y >= bounds.trackY - kCaretSize / 2 - kCaretTouchPadding &&
          y < bounds.trackY + kCaretSize / 2 + kCaretTouchPadding;
 }
-}  // namespace
+}
 
 void GoToPercentUi::enter(EpubActivity& act) {
   percent_ = 0;
@@ -134,8 +134,6 @@ void GoToPercentUi::handleInput(EpubActivity& act) {
       return;
     }
 
-    // Keep the popup open after release. The user can adjust the marker again;
-    // navigation is committed only when the popup is closed.
     dragging_ = false;
     return;
   }

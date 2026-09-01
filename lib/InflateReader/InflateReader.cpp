@@ -7,14 +7,13 @@ namespace {
 constexpr size_t INFLATE_DICT_SIZE = 32768;
 }
 
-// Guarantee the cast pattern in the header comment is valid.
 static_assert(std::is_standard_layout<InflateReader>::value,
               "InflateReader must be standard-layout for the uzlib callback cast to work");
 
 InflateReader::~InflateReader() { deinit(); }
 
 bool InflateReader::init(const bool streaming) {
-  deinit();  // free any previously allocated ring buffer and reset state
+  deinit();
 
   if (streaming) {
     ringBuffer = static_cast<uint8_t*>(malloc(INFLATE_DICT_SIZE));
@@ -48,8 +47,6 @@ void InflateReader::skipZlibHeader() {
 
 bool InflateReader::read(uint8_t* dest, size_t len) {
   if (!ringBuffer) {
-    // One-shot mode: back-references use absolute offset from dest_start.
-    // Valid only when read() is called once with the full output buffer.
     decomp.dest_start = dest;
   }
   decomp.dest = dest;
@@ -62,8 +59,6 @@ bool InflateReader::read(uint8_t* dest, size_t len) {
 
 InflateStatus InflateReader::readAtMost(uint8_t* dest, size_t maxLen, size_t* produced) {
   if (!ringBuffer) {
-    // One-shot mode: back-references use absolute offset from dest_start.
-    // Valid only when readAtMost() is called once with the full output buffer.
     decomp.dest_start = dest;
   }
   decomp.dest = dest;

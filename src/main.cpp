@@ -35,6 +35,7 @@
 #include "activity/page/Search.h"
 #include "activity/page/Settings.h"
 #include "activity/page/Statistics.h"
+#include "activity/page/HeatmapReport.h"
 #include "activity/page/SyncActivity.h"
 #include "activity/reader/ImageViewerActivity.h"
 #include "activity/reader/ReaderActivity.h"
@@ -42,14 +43,10 @@
 #include "activity/system/SleepActivity.h"
 #include "activity/util/KeyboardEntryActivity.h"
 #include "activity/util/FullScreenMessageActivity.h"
-#include "state/OpdsServerStore.h"
 #include "state/ReaderSetting.h"
 #include "state/SystemSetting.h"
 #include "system/FontManager.h"
 #include "system/Frontlight.h"
-#if FREEINK_DEVICE_X4PRO
-#include "system/FrontlightPreferences.h"
-#endif
 #include "system/Fonts.h"
 #include "system/ScreenComponents.h"
 #include "system/MappedInputManager.h"
@@ -86,6 +83,7 @@ void onGoToHome();
 void openSearchFromCallback(std::function<void()> returnToCaller);
 void onSelectBook(const std::string& path);
 void onGoToStatistics();
+void onGoToHeatmapReport(HomeTheme::HeatmapView view);
 void openHomeSubPage(HomeSubPage::Section section);
 void openDictionaryLookupKeyboard();
 void openDictionaryLookup(const std::string& word);
@@ -95,6 +93,8 @@ void onGoToLibrary(const std::string& path = "/");
 void setupDisplayAndFonts();
 void onNetworkModeSelected(NetworkMode mode);
 void openReaderFromCallback(const std::string& path, std::function<void()> returnToCaller);
+void openReaderFromCallback(const std::string& path, std::function<void()> returnToCaller, int spineIndex,
+                            int pageNumber);
 bool handleGlobalPowerRefresh();
 
 namespace {
@@ -151,19 +151,6 @@ void switchTo(Args&&... args) {
   }
 
 #if FREEINK_DEVICE_X4PRO
-  // Input hygiene across EVERY activity transition, not just the reader's.
-  //
-  // A page refresh here takes ~0.5 s, and a full one ~1.3 s, so a finger is routinely still
-  // down when the next activity is constructed. Three things can survive the switch and be
-  // replayed on a screen that never saw the gesture start:
-  //   - a tap already buffered by the outgoing activity's hit-testing
-  //   - a swipe latched for the remainder of this update cycle
-  //   - a touch still physically held, whose release synthesizes a tap later
-  // The last one is what produced "swipe up lands on Settings": the release arrived after
-  // the switch and was hit-tested against the new page's bottom nav.
-  //
-  // Doing this centrally means every page is covered; individual activities do not each
-  // have to remember.
   input.discardPendingTouchTap();
   input.discardPendingSwipe();
   input.ignoreCurrentTouch();
@@ -197,9 +184,11 @@ bool isExportedNoteImage(const std::string& path) {
  * @brief Opens the reader activity and returns to the library when closed.
  */
 void openReaderFromCallback(const std::string& path, std::function<void()> returnToCaller) {
-  // Defensive copy: `path` is typically a reference into the calling activity's own state (e.g.
-  // the previous library activity's currentPageItems), but switchTo() deletes that activity before this function's
-  // arguments are used to construct the new one - passing `path` itself through would dangle.
+  openReaderFromCallback(path, std::move(returnToCaller), -1, -1);
+}
+
+void openReaderFromCallback(const std::string& path, std::function<void()> returnToCaller, const int spineIndex,
+                            const int pageNumber) {
   const std::string pathCopy = path;
   if (isExportedNoteImage(pathCopy)) {
     switchTo<ImageViewerActivity>(render, input, pathCopy, std::move(returnToCaller));
@@ -208,7 +197,8 @@ void openReaderFromCallback(const std::string& path, std::function<void()> retur
   switchTo<ReaderActivity>(render, input, pathCopy,
                            [returnToCaller](const std::string&) {
                              if (returnToCaller) returnToCaller();
-                           });
+                           },
+                           spineIndex, pageNumber);
 }
 
 /**
@@ -223,6 +213,10 @@ void onSelectBook(const std::string& path) {
  */
 void onGoToStatistics() {
   switchTo<Statistics>(render, input, [] { onGoToHome(); });
+}
+
+void onGoToHeatmapReport(const HomeTheme::HeatmapView view) {
+  switchTo<HeatmapReport>(render, input, view, [] { onGoToHome(); });
 }
 
 void openHomeSubPage(const HomeSubPage::Section section) {
@@ -294,10 +288,7 @@ void onGoToLibrary(const std::string& path) {
  * @brief Set up application.
  */
 void verifyPowerButtonDuration() {
-  // A short power press must be sufficient both to sleep while awake and to
-  // wake from deep sleep. Accept the wake immediately; waitForPowerRelease()
-  // below still prevents the held wake press from leaking into the first page.
-  if (SETTINGS.shortPressPowerButton || SETTINGS.shortPwrBtn == SystemSetting::SHORT_PWRBTN::SLEEP) return;
+  if (SETTINGS.shortPwrBtn == SystemSetting::SHORT_PWRBTN::SLEEP) return;
   const auto start = millis();
   bool abort = false;
   gpio.update();
@@ -320,9 +311,6 @@ void verifyPowerButtonDuration() {
 }
 
 void waitForPowerRelease() {
-  // The wake press may still be inside InputManager's debounce window when setup
-  // finishes. Do not let one idle sample make the main loop treat that same held
-  // press as a new short-press sleep command.
   constexpr uint8_t kWakeDebounceSamples = 3;
   bool powerPressed = false;
   for (uint8_t sample = 0; sample < kWakeDebounceSamples; ++sample) {
@@ -332,9 +320,6 @@ void waitForPowerRelease() {
     delay(10);
   }
 
-  // Consume the original wake press through its actual release. A release edge
-  // is generated before setup returns, so it cannot leak into BootActivity or
-  // the recently-opened reader.
   while (powerPressed) {
     delay(10);
     gpio.update();
@@ -358,8 +343,6 @@ bool handleGlobalPowerRefresh() {
   if (!currentActivity || !currentActivity->allowGlobalPowerRefresh()) {
     return false;
   }
-  // EpubReader dispatches its own ReaderSetting power action on release. Do not consume the
-  // same release here as the device-level page refresh first.
   const bool readerPowerAction = currentActivity->handlesReaderPowerButton() &&
                                  READER_SETTINGS.btnPowerShortAction != SystemSetting::BTN_ACTION_NONE;
   if (readerPowerAction) {
@@ -372,10 +355,8 @@ bool handleGlobalPowerRefresh() {
     return false;
   }
 
-  // Refresh the framebuffer currently on screen. On dual-buffer devices the
-  // inactive buffer can still contain the previous page after a swap.
   renderer.syncWriteBufferFromActive();
-  renderer.displayBuffer(HalDisplay::MANUAL_REFRESH);
+  renderer.displayBuffer(FREEINK_DEVICE_X4PRO ? HalDisplay::FULL_REFRESH : HalDisplay::HALF_REFRESH);
   return true;
 }
 
@@ -387,14 +368,11 @@ void setup() {
   gpio.begin();
 
 #if FREEINK_DEVICE_X4PRO
-  // X4 Pro batches can carry SSD1677, UC8179, or UC8279 panels. Resolve the
-  // controller before FreeInkDisplay::begin() selects and initializes a driver.
   freeink::applyXteinkDisplayController();
   frontlight.begin();
 #endif
 
   sdCardAvailable = SdMan.begin();
-
 
   setupDisplayAndFonts();
 
@@ -404,20 +382,6 @@ void setup() {
     while (!INX_SERIAL && (millis() - start) < 3000) delay(10);
   }
 
-  if (sdCardAvailable) {
-    SETTINGS.loadFromFile();
-    renderer.setDarkMode(SETTINGS.darkMode != 0);
-    READER_SETTINGS.loadFromFile();
-    OPDS_STORE.loadOrMigrate({"Default", SETTINGS.opdsServerUrl, SETTINGS.opdsUsername, SETTINGS.opdsPassword});
-#if FREEINK_DEVICE_X4PRO
-    frontlight_preferences::Settings lightSettings;
-    if (frontlight_preferences::load(lightSettings)) {
-      frontlight.setColorTemperature(lightSettings.warmPercent);
-      frontlight.setBrightness(lightSettings.brightness);
-      if (lightSettings.enabled == 0) frontlight.off();
-    }
-#endif
-  }
   switch (gpio.getWakeupReason()) {
     case HalGPIO::WakeupReason::PowerButton:
       verifyPowerButtonDuration();
@@ -445,8 +409,6 @@ void loop() {
   static bool powerDownComboTracking = false;
   static unsigned long powerDownComboStartedAt = 0;
 
-  // Fixed hardware recovery chord: hold Power + physical Down for two seconds.
-  // Keep it ahead of normal power handling so the same hold cannot enter sleep.
   const bool powerDownComboHeld = powerHeld && downHeld;
   if (powerDownComboHeld) {
     if (!powerDownComboTracking) {
@@ -489,9 +451,6 @@ void loop() {
 
   const bool readerPowerAction = currentActivity && currentActivity->handlesReaderPowerButton() &&
                                  READER_SETTINGS.btnPowerShortAction != SystemSetting::BTN_ACTION_NONE;
-  // A reader short-press mapping must not disable the hardware long-press
-  // safety action. Give the mapped short action time to fire on release, then
-  // always sleep when Power remains held.
   const unsigned long powerSleepThreshold = readerPowerAction ? kPowerLongPressMs : SETTINGS.getPowerButtonDuration();
   if (powerHeld && gpio.getHeldTime() > powerSleepThreshold) {
     enterDeepSleep();
@@ -503,15 +462,12 @@ void loop() {
     return;
   }
 
-  // The global status popup blocks page input until the index task completes.
   if (LibraryIndexRefresh::isRunning()) {
     delay(10);
     return;
   }
 
   if (currentActivity) {
-    // The shared page header consumes this touch before the activity loop. Ordinary taps are
-    // buffered by MappedInputManager and remain available to the activity unchanged.
     if (ScreenComponents::pageHeaderBackButtonVisible()) {
       input.consumeHeaderBackTap(renderer);
     }
@@ -527,10 +483,6 @@ void loop() {
     return;
   }
 
-  // Cache pixels were captured during image rendering and are already in the
-  // bounded PSRAM front cache. Persist one plane only after the activity loop
-  // has completed and only on an idle-input frame, avoiding concurrent SD/SPI
-  // transactions with metadata, ZIP, or display work.
   if (!inputActivity) {
     ImageDisplayCache::flushDeferredWrites();
   }

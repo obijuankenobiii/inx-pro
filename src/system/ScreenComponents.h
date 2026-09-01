@@ -20,14 +20,6 @@ class ScreenComponents {
  public:
   static const int BOOK_PROGRESS_BAR_HEIGHT = 4;
 
-  // --- Main tab bar + shared page-header back button -----------------------------------
-  // Moved here from the old UiTheme singleton. That class also carried a MainTabPlacement
-  // (Top/Bottom) abstraction, but mainTabPlacement() hard-returned Bottom and the settings
-  // selector for it had already been removed, so every branch on it was dead. The layout
-  // constants it held are now inlined at their use sites; only these two pieces of real
-  // behaviour needed a home, and this is already the shared screen-chrome helper.
-
-
   /** Draws the page-header back icon and records its hit box. */
   static void drawPageHeaderBackButton(const GfxRenderer& renderer, int startY, int headerHeight);
   /** True if the most recently rendered frame drew that icon. */

@@ -60,7 +60,7 @@ const NumpadKey& getNumpadKey(const int mode, const int row, const int col) {
 }
 
 constexpr unsigned long NUMPAD_MULTI_TAP_TIMEOUT_MS = 900;
-}  // namespace
+}
 
 const char* const KeyboardEntryActivity::keyboard[NUM_ROWS] = {
     "1234567890", "-=[]\\;',./", "qwertyuiop", "asdfghjkl ", "zxcvbnm   ", "^  ____<OK"};
@@ -86,9 +86,6 @@ void KeyboardEntryActivity::displayTaskLoop() {
     xSemaphoreTake(renderingMutex, portMAX_DELAY);
     const unsigned long renderStartedAt = millis();
     ++renderCount;
-    // Timing was gated to the WiFi prompt; make it unconditional so the draw cost and
-    // the panel refresh cost can be told apart on any keyboard. `draw` is the framebuffer
-    // work, `total` includes the blocking FAST_REFRESH inside render().
     const unsigned long drawStartedAt = millis();
     render();
     INX_SERIAL.printf("[%lu] [KEYBOARD] render=%u len=%u total=%lums\n", millis(), renderCount,
@@ -260,8 +257,6 @@ void KeyboardEntryActivity::handleKeyPress() {
 }
 
 void KeyboardEntryActivity::loop() {
-  // Touch taps are handled against the same full-width geometry used by render(). A tap both
-  // selects and activates the key so the touchscreen does not require a second tap.
   if (mappedInput.hasTouch()) {
     if (mappedInput.wasTouchSwipeUp()) {
       if (onCancel) onCancel();
@@ -301,8 +296,6 @@ void KeyboardEntryActivity::loop() {
           }
           updateRequired = true;
         }
-        // QWERTY owns the entire lower keyboard area. Do not let a tap in
-        // its margins fall through to the retired six-row hit map.
         return;
       }
 

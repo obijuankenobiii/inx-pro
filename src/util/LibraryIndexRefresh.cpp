@@ -42,7 +42,7 @@ void clearFrame() {
   displayedProgress = -1;
 }
 
-}  // namespace
+}
 
 void LibraryIndexRefresh::start(GfxRenderer& renderer, Activity* currentScreen) {
   if (running || popup) return;

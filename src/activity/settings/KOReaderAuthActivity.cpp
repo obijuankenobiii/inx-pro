@@ -34,7 +34,7 @@ void KOReaderAuthActivity::onWifiSelectionComplete(const bool success) {
 
   xSemaphoreTake(renderingMutex, portMAX_DELAY);
   state = AUTHENTICATING;
-  statusMessage = "Authenticating...";
+  statusMessage = mode == Mode::SIGN_UP ? "Creating account..." : "Authenticating...";
   xSemaphoreGive(renderingMutex);
   updateRequired = true;
 
@@ -42,15 +42,16 @@ void KOReaderAuthActivity::onWifiSelectionComplete(const bool success) {
 }
 
 void KOReaderAuthActivity::performAuthentication() {
-  const auto result = KOReaderSyncClient::authenticate();
+  const auto result = mode == Mode::SIGN_UP ? KOReaderSyncClient::createUser() : KOReaderSyncClient::authenticate();
 
   xSemaphoreTake(renderingMutex, portMAX_DELAY);
   if (result == KOReaderSyncClient::OK) {
     state = SUCCESS;
-    statusMessage = "Successfully authenticated!";
+    statusMessage = mode == Mode::SIGN_UP ? "Account created!" : "Successfully authenticated!";
   } else {
     state = FAILED;
-    errorMessage = KOReaderSyncClient::errorString(result);
+    errorMessage = result == KOReaderSyncClient::USER_EXISTS ? "Username is already registered"
+                                                              : KOReaderSyncClient::errorString(result);
   }
   xSemaphoreGive(renderingMutex);
   updateRequired = true;
@@ -67,7 +68,7 @@ void KOReaderAuthActivity::onEnter() {
 
   if (WiFi.status() == WL_CONNECTED) {
     state = AUTHENTICATING;
-    statusMessage = "Authenticating...";
+    statusMessage = mode == Mode::SIGN_UP ? "Creating account..." : "Authenticating...";
     updateRequired = true;
 
     xTaskCreate(
@@ -119,7 +120,7 @@ void KOReaderAuthActivity::render() {
   }
 
   renderer.clearScreen();
-  SubPage::header(renderer, "KOReader Auth");
+  SubPage::header(renderer, mode == Mode::SIGN_UP ? "KOReader Sign Up" : "KOReader Auth");
 
   if (state == AUTHENTICATING) {
     renderer.text.centered(systemFontId(), 300, statusMessage.c_str(), true, EpdFontFamily::BOLD);
@@ -128,7 +129,8 @@ void KOReaderAuthActivity::render() {
   }
 
   if (state == SUCCESS) {
-    renderer.text.centered(systemFontId(), 280, "Success!", true, EpdFontFamily::BOLD);
+    renderer.text.centered(systemFontId(), 280, mode == Mode::SIGN_UP ? "Account created!" : "Success!", true,
+                           EpdFontFamily::BOLD);
     renderer.text.centered(systemFontId(), 320, "KOReader sync is ready to use");
 
     const auto labels = mappedInput.mapLabels("Done", "", "", "");
@@ -137,7 +139,8 @@ void KOReaderAuthActivity::render() {
   }
 
   if (state == FAILED) {
-    renderer.text.centered(systemFontId(), 280, "Authentication Failed", true, EpdFontFamily::BOLD);
+    renderer.text.centered(systemFontId(), 280, mode == Mode::SIGN_UP ? "Sign-up failed" : "Authentication Failed",
+                           true, EpdFontFamily::BOLD);
     renderer.text.centered(systemFontId(), 320, errorMessage.c_str());
 
     const auto labels = mappedInput.mapLabels("Back", "", "", "");

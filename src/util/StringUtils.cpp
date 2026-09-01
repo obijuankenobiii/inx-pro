@@ -56,4 +56,4 @@ bool checkFileExtension(const String& fileName, const char* extension) {
   return checkFileExtension(std::string(fileName.c_str()), extension);
 }
 
-}  // namespace StringUtils
+}

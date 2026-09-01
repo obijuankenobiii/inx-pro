@@ -94,8 +94,6 @@ void maskBitmapCornersOutsideRounded(const GfxRenderer& gfx, const int x, const 
         style == BitmapRender::RoundedOutside::SubtlePaperOutside) {
       gfx.drawPixel(px, py, false);
     } else {
-      // Screen-fixed 1/4 tone keeps corner touch-up aligned with the same
-      // lattice used by dithered image containers, independent of bitmap (x,y).
       const bool ink = ((px & 1) == 0) && ((py & 1) == 0);
       gfx.drawPixel(px, py, ink);
     }
@@ -192,7 +190,7 @@ bool readIconBitMsbFirst(const uint8_t* bitmap, const int width, const int heigh
   const uint8_t byte = bitmap[sy * stride + sx / 8];
   return (byte & (0x80 >> (sx % 8))) != 0;
 }
-}  // namespace
+}
 
 void BitmapRender::render(const Bitmap& bitmap, const int x, const int y, const int maxWidth, const int maxHeight,
                           const float cropX, const float cropY, const RoundedOutside roundedOutside,
@@ -231,16 +229,6 @@ void BitmapRender::render(const Bitmap& bitmap, const int x, const int y, const 
   const bool replicateUpscale = isScaled && scale > 1.0f + kScaleEps;
   const int tFirstY = -cropPixY + (bitmap.isTopDown() ? cropPixY : bitmap.getHeight() - 1 - cropPixY);
 
-  // cropPixX is the LEFT offset and already honours cropAnchorX, so the crop is not
-  // symmetric: at anchor 0 nothing is taken off the left, at anchor 1 all of it is.
-  // Subtracting it from both sides (the old `getWidth() - 2 * cropPixX`) is only right for
-  // the centred case. At anchor 1 it made the content too narrow by W*cropX, so the scaled
-  // image no longer filled maxWidth and the remainder of the box stayed blank — the
-  // carousel's left cover rendered as image-then-white. At anchor 0 it made it too wide,
-  // which the mask hid, so only the left slot ever showed the fault.
-  //
-  // The width to draw is simply the cropped width, clamped to what remains to the right of
-  // the offset. croppedWidth is what `scale` was derived from, so the two now agree.
   const int contentW =
       std::max(0, std::min(static_cast<int>(std::floor(croppedWidth)), bitmap.getWidth() - cropPixX));
   const int contentH = bitmap.getHeight() - 2 * cropPixY;
@@ -319,9 +307,6 @@ void BitmapRender::render(const Bitmap& bitmap, const int x, const int y, const 
         if (sy < 0) {
           continue;
         }
-        // Read [cropPixX, cropPixX + contentW). The old `getWidth() - cropPixX` bound assumed
-        // the crop was symmetric, but cropPixX already has cropAnchorX folded in — at anchor 1
-        // it took the offset off the right as well and only a third of the columns were read.
         for (int bmpX = cropPixX; bmpX < cropPixX + contentW; bmpX++) {
           serviceBitmapRender(lastService);
           const int srcCol = bmpX - cropPixX;
@@ -350,7 +335,6 @@ void BitmapRender::render(const Bitmap& bitmap, const int x, const int y, const 
         continue;
       }
 
-      // Same asymmetric-crop bound as the scaled path above.
       for (int bmpX = cropPixX; bmpX < cropPixX + contentW; bmpX++) {
         serviceBitmapRender(lastService);
         int screenX = bmpX - cropPixX;
@@ -761,7 +745,7 @@ static void renderBitmap1Bit(const GfxRenderer& gfx, const Bitmap& bitmap, const
   free(rowBufBytes);
 }
 
-}  // namespace SleepScreenBitmap
+}
 
 void BitmapRender::sleepScreen(const Bitmap& bitmap, const int x, const int y, const int maxWidth, const int maxHeight,
                                const float cropX, const float cropY, const bool coverFill,

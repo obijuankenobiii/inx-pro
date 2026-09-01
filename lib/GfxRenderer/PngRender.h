@@ -9,7 +9,7 @@
 
 #include "BitmapUtil.h"
 #include "ImageRenderMode.h"
-#include "JpegRender.h"  // shared packed two-bit capture/replay surface
+#include "JpegRender.h"
 
 #ifdef SIMULATOR
 #include <SDCardManager.h>

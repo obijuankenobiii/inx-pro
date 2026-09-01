@@ -25,7 +25,6 @@
 
 class GfxRenderer {
  public:
-  // GRAY2_* : quality 2-bit planes used with the quality image LUT.
   enum RenderMode { BW, GRAYSCALE_LSB, GRAYSCALE_MSB, GRAY2_LSB, GRAY2_MSB };
 
   enum Orientation { Portrait, LandscapeClockwise, PortraitInverted, LandscapeCounterClockwise };
@@ -62,7 +61,6 @@ class GfxRenderer {
   friend class BitmapRender;
   friend class TextRender;
 
-  void freeBwBufferChunks();
   void rotateCoordinates(int x, int y, int* rotatedX, int* rotatedY) const;
 
  public:
@@ -96,6 +94,8 @@ class GfxRenderer {
   void displayBufferAsync(const HalDisplay::RefreshMode refreshMode = HalDisplay::FAST_REFRESH) const;
   /** Synchronizes the writable framebuffer from the currently displayed frame for partial redraws. */
   void syncWriteBufferFromActive() const;
+  /** True while the panel is still running a refresh started by displayBufferAsync(). */
+  bool isRefreshBusy() const;
   void invertScreen() const;
   void clearScreen(uint8_t color = 0xFF) const;
   void begin();
@@ -130,17 +130,11 @@ class GfxRenderer {
   void prepareQualityGrayscale() const;
   bool storeBwBuffer();
   void restoreBwBuffer();
-  // Copies the stored BW shadow back into the framebuffer WITHOUT freeing it or touching controller RAM. Lets
-  // the gray planes be rebuilt from the BW frame more than once (e.g. invert for LSB, then again for MSB).
   bool copyStoredBwToFramebuffer() const;
+  /** Drops a stored BW frame without restoring it or touching grayscale driver state. */
+  void freeBwBufferChunks();
   void cleanupGrayscaleWithFrameBuffer() const;
 
-  // One-call 2-bit grayscale sequence shared by sleep + reader. For each plane (LSB then MSB) it sets the
-  // render mode, invokes drawPlane() to populate the framebuffer for that plane, and copies it into the
-  // grayscale RAM bank; then it drives the gray refresh and resets to BW. `quality` selects GRAY2 + the
-  // quality LUT, else GRAYSCALE + the fast LUT. When `preserveText` is true the BW baseline is restored from
-  // the previously stored BW frame (call storeBwBuffer() first); otherwise it is rebased from a clean white
-  // frame so the next BW refresh isn't polluted by the leftover grayscale plane.
   void renderGrayscalePasses(bool quality, bool preserveText, const std::function<void()>& drawPlane,
                              bool fastQuality = false);
   /** Drop BW shadow chunks, grayscale HAL state, and force BW mode (call when leaving image-heavy readers). */

@@ -26,9 +26,6 @@
 
 namespace {
 constexpr uint32_t kDisplayTaskStack = 4096;
-// Sized for the deepest processBook() path: PDF thumbnail generation runs a recursive object-graph parser
-// plus a content-stream interpreter (several layers of std::string/std::vector/std::function locals per
-// page), noticeably heavier than Epub/Xtc's shallower raster-cover extraction.
 constexpr uint32_t kWorkerTaskStack = 16384;
 constexpr int kActionButtonWidth = 180;
 constexpr int kActionButtonHeight = Button::height;
@@ -52,9 +49,6 @@ void drawActionButton(const GfxRenderer& renderer, const int screenWidth, const 
   Button::render(renderer, bounds, label, true, systemFontId());
 }
 
-// Pre-populate the on-disk display cache for a freshly-generated thumbnail at the exact size
-// Library's 2x2 grid draws covers at, so the library's first render after "Generate
-// Thumbnails" hits the cache (raw read) instead of paying for a fresh decode+dither per book.
 void precacheShelfThumbnail(GfxRenderer& renderer, const std::string& thumbPath) {
   int coverW = 0;
   int coverH = 0;
@@ -63,13 +57,8 @@ void precacheShelfThumbnail(GfxRenderer& renderer, const std::string& thumbPath)
     return;
   }
   ImageRender::Options options;
-  // Must match Library's cover options exactly (cropToFill included) - the display
-  // cache is keyed on these, so a mismatch here means the shelf render misses this cache entry.
   options.cropToFill = true;
   options.useDisplayCache = true;
-  // This helper renders into the shared framebuffer only to populate the on-disk cache. Clear the
-  // destination first: image renderers intentionally paint only ink pixels, so stale pixels from a
-  // previous cover would otherwise be persisted as part of this thumbnail's cache.
   renderer.rectangle.fill(0, 0, coverW - 2, coverH - 2, false);
   ImageRender::create(renderer, thumbPath).render(0, 0, coverW - 2, coverH - 2, options);
 }
@@ -134,7 +123,7 @@ void drawThumbnailProgressView(const GfxRenderer& renderer, const int pageWidth,
     renderer.text.centered(systemFontId(), barY + 54, path.c_str(), true, EpdFontFamily::REGULAR);
   }
 }
-}  // namespace
+}
 
 void ThumbnailGeneratorActivity::displayTaskTrampoline(void* param) {
   static_cast<ThumbnailGeneratorActivity*>(param)->displayTaskLoop();
@@ -211,7 +200,6 @@ void ThumbnailGeneratorActivity::startGeneration() {
   currentPath[0] = '\0';
   updateRequired = true;
 
-  // Keep EPUB/JPEG decoding on core 0 while the display task remains on core 1.
   xTaskCreatePinnedToCore(&ThumbnailGeneratorActivity::workerTaskTrampoline, "ThumbGenWorkerTask", kWorkerTaskStack,
                           this, 1, &workerTaskHandle, 0);
 }
@@ -267,9 +255,6 @@ bool ThumbnailGeneratorActivity::processBook(const std::string& path) {
       INX_SERIAL.printf("[%lu] [THUMB-DEBUG] EPUB generation returned ok output=%d jpg=%d png=%d bmp=%d\n", millis(),
                     outputExists, SdMan.exists(thumbJpegPath.c_str()), SdMan.exists(thumbPngPath.c_str()),
                     SdMan.exists(thumbBmpPath.c_str()));
-      // precacheShelfThumbnail draws into the shared framebuffer (it's just borrowing ImageRender's
-      // decode-then-store side effect) - take the same mutex displayTaskLoop uses before render(), so
-      // the two don't interleave writes to the same buffer or race a displayBuffer() refresh.
       if (renderingMutex && xSemaphoreTake(renderingMutex, pdMS_TO_TICKS(500)) == pdTRUE) {
         bool precacheOk = false;
         if (SdMan.exists(thumbJpegPath.c_str())) {
@@ -346,9 +331,6 @@ bool ThumbnailGeneratorActivity::processBook(const std::string& path) {
       return false;
     }
     INX_SERIAL.printf("[%lu] [THUMB-DEBUG] PDF loaded path=%s\n", millis(), path.c_str());
-    // Unlike Epub/Xtc, generateThumbBmp() draws page 0 into the live framebuffer (there's no pre-rendered
-    // raster to resize), so the whole call - not just the precache step below - needs the same mutex
-    // displayTaskLoop takes before render(), to avoid interleaving with this activity's own progress UI.
     bool ok = false;
     if (renderingMutex && xSemaphoreTake(renderingMutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
       ok = pdf.generateThumbBmp(renderer);

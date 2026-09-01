@@ -24,7 +24,7 @@ constexpr int kItemCount = static_cast<int>(sizeof(kItems) / sizeof(kItems[0]));
 constexpr int kColumns = 2;
 constexpr int kRows = 2;
 
-}  // namespace
+}
 
 void Shortcut::render(const int x, const int y, const int width, const int height) const {
   constexpr int innerPadding = 16;

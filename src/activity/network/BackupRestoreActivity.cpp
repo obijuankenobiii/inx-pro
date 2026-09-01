@@ -149,7 +149,7 @@ void writeBackupMarker() {
     marker.close();
   }
 }
-}  // namespace
+}
 
 void BackupRestoreActivity::onEnter() {
   ActivityWithSubactivity::onEnter();
@@ -337,7 +337,6 @@ void BackupRestoreActivity::reloadStoresAfterRestore() {
   SETTINGS.loadFromFile();
   READER_SETTINGS.loadFromFile();
   RECENT_BOOKS.loadFromFile();
-  // BookState no longer caches anything in RAM - every call already reads fresh from books.bin.
   WIFI_STORE.loadFromFile();
   OPDS_STORE.loadFromFile();
   KOREADER_STORE.loadFromFile();

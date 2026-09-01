@@ -57,9 +57,6 @@ class PageElement {
   explicit PageElement(const int16_t xPos, const int16_t yPos) : xPos(xPos), yPos(yPos) {}
   virtual ~PageElement() = default;
 
-  // Page objects are the bounded previous/current/next reader cache. Their
-  // element instances belong in PSRAM so keeping those pages resident does not
-  // crowd the internal heap used by display, Wi-Fi, and SD drivers.
   static void* operator new(std::size_t size);
   static void operator delete(void* pointer) noexcept;
 
@@ -226,19 +223,12 @@ class PageListMarker final : public PageElement {
  */
 class PageImage final : public PageElement {
   std::string cachePath;
-  // Original EPUB entry. Kept in the section cache so a cold image is
-  // extracted only when this page becomes visible, never while paginating the
-  // chapter.
   std::string sourcePath;
   std::weak_ptr<Epub> epub;
   int16_t width;
   int16_t height;
-  bool grayscale;  // true = image has continuous-tone content worth grayscale; false = ~1-bit (comic/line art)
+  bool grayscale;
 
-  // Two-pass grayscale rendering (LSB plane then MSB plane) would otherwise decode this image's JPEG
-  // twice. renderImage() captures the LSB pass's per-pixel dither level here (packed 2 bits/pixel) and
-  // replays it for MSB instead of re-decoding. Scoped to this PageImage's lifetime (one page's worth),
-  // bounded by pixel count in renderImage() - see kMaxGrayscaleCapturePixels there.
   PagePsramBuffer grayscaleCaptureBuffer_;
   size_t grayscaleCaptureCapacity_ = 0;
   int grayscaleCaptureWidth_ = 0;
@@ -261,7 +251,6 @@ class PageImage final : public PageElement {
   PageElementTag getTag() const override { return TAG_PageImage; }
   void render(GfxRenderer& renderer, int fontId, int xOffset, int yOffset,
               ImageRenderMode imageMode = ImageRenderMode::OneBit) override;
-  // Same as render() but lets the caller select the quality render path (options.quality).
   void renderImage(GfxRenderer& renderer, int fontId, int xOffset, int yOffset, ImageRenderMode imageMode,
                    bool quality);
   bool warmDisplayCache(GfxRenderer& renderer, int xOffset, int yOffset, ImageRenderMode imageMode, bool quality) const;
@@ -432,9 +421,6 @@ class Page {
                        [](const std::unique_ptr<PageElement>& element) { return element->getTag() == TAG_PageImage; });
   }
 
-  // True if at least one image on the page has continuous-tone content worth rendering in grayscale. Pages whose
-  // images are all essentially 1-bit (comics / line art / mostly black-and-white) return false, so they can be
-  // rendered as fast 1-bit instead of paying for the grayscale passes.
   bool anyImageNeedsGrayscale() const;
   bool hasNonPngImages() const;
 
@@ -451,15 +437,10 @@ class Page {
                int* imageX = nullptr, int* imageY = nullptr, int* imageWidth = nullptr,
                int* imageHeight = nullptr) const;
 
-  // Fills EACH image's own paint rectangle (centered, at its stored size) with `value` — NOT the union bounding
-  // box. Use this for per-image baseline marks / GRAY2 white bases so text between images on the same page is
-  // never covered. Matches PageImage::render geometry.
   void fillImageRects(GfxRenderer& renderer, int xOffset, int yOffset, bool value, bool onlyGrayscale = false) const;
 
   void render(GfxRenderer& renderer, int fontId, int headerFontId, int xOffset, int yOffset, bool skipImages = false,
               ImageRenderMode imageMode = ImageRenderMode::OneBit, bool skipOnlyGrayscaleImages = false) const;
-  // `quality` routes images through the quality render path (options.quality=true) — the same path the sleep
-  // screen uses — instead of the default 1-bit/medium path.
   void renderImages(GfxRenderer& renderer, int fontId, int xOffset, int yOffset,
                     ImageRenderMode imageMode = ImageRenderMode::OneBit, bool quality = false,
                     bool onlyGrayscale = false) const;

@@ -129,7 +129,7 @@ char displayCharacter(const State& state, const char value) {
 
 void append(std::string& value, const char character) { value.push_back(character); }
 
-}  // namespace
+}
 
 int height(const GfxRenderer& renderer) {
   const int width = renderer.getScreenWidth() - margin * 2;
@@ -245,7 +245,6 @@ bool tap(const GfxRenderer& renderer, const int top, const int bottom, const int
     const int deleteX = layout.left + actionWidth + gap + count * (layout.keyWidth + gap);
     if (tapX < layout.left + actionWidth) {
       if (state.mode == Mode::Letters) {
-        // off -> one-shot shift -> caps lock -> off
         if (state.capsLock) {
           state.capsLock = false;
           state.caps = false;
@@ -324,4 +323,4 @@ bool consumeCollapse(State& state) {
   return collapse;
 }
 
-}  // namespace SearchKeyboardLayout::Qwerty
+}

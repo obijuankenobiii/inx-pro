@@ -8,8 +8,6 @@ class FsFile;
 class GfxRenderer;
 struct JpegLevelCapture;
 
-// Single-frame GIF renderer. Mirrors PngRender/JpegRender: the .gif is cached raw by the EPUB image
-// extractor and decoded here at render time. Animated GIFs render their first frame.
 class GifRender {
  public:
   explicit GifRender(GfxRenderer& renderer) : renderer_(renderer) {}

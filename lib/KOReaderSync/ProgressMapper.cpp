@@ -40,11 +40,10 @@ int parseCharOffset(const std::string& xpath) {
   return val;
 }
 
-// Parse the N from text()[N] in the XPath (1-based; defaults to 1 if absent or 1).
 int parseTextNodeIndex(const std::string& xpath) {
   const size_t textPos = xpath.rfind("text()[");
   if (textPos == std::string::npos) return 1;
-  const size_t numStart = textPos + 7;  // strlen("text()[")
+  const size_t numStart = textPos + 7;
   const size_t numEnd = xpath.find(']', numStart);
   if (numEnd == std::string::npos || numEnd == numStart) return 1;
   int val = 0;
@@ -119,18 +118,13 @@ bool isChapterStartXPath(const std::string& xpath) {
   return true;
 }
 
-// Parsed representation of one step in the XPath ancestry.
 struct XPathStep {
-  char tag[12];      // element name, null-terminated
-  int siblingIndex;  // 1-based sibling index, or 0 if unspecified (treat as 1)
+  char tag[12];
+  int siblingIndex;
 };
 
 static constexpr int MAX_XPATH_DEPTH = 16;
 
-// Parse the XPath segment between /body/DocFragment[N]/body/ and the terminal position
-// into an ordered sequence of steps. Returns step count, 0 on failure.
-// Example input: "/body/DocFragment[1]/body/div[1]/ul/li[4]/text()[1].51"
-// Fills steps with: {div,1}, {ul,1}, {li,4}
 int parseXPathSteps(const std::string& xpath, XPathStep steps[MAX_XPATH_DEPTH]) {
   static const char kBodyFrag[] = "/body/DocFragment[";
   const size_t fragPos = xpath.find(kBodyFrag);
@@ -191,12 +185,10 @@ class ParagraphStreamer final : public Print {
   char entityBuffer[MAX_ENTITY_SIZE] = {};
   size_t entityLen = 0;
 
-  // Forward mode: count <p> paragraphs at a byte offset (legacy, used by generateXPath)
   size_t fwdTarget;
   int fwdResult = 0;
   bool fwdCaptured = false;
 
-  // Reverse mode shared state
   int revChar;
   bool revPFound = false;
   bool revDone = false;
@@ -204,7 +196,6 @@ class ParagraphStreamer final : public Print {
   size_t totalVisChars = 0;
   size_t targetVisChars = 0;
 
-  // --- Legacy reverse mode (paragraph index only, no ancestry) ---
   int revParagraph = 0;
   int pCount = 0;
   int paragraphAtMatch = 0;
@@ -214,7 +205,6 @@ class ParagraphStreamer final : public Print {
   int currentTextNode = 0;
   int paragraphHtmlDepth = -1;
 
-  // --- Ancestry-aware reverse mode ---
   const XPathStep* steps = nullptr;
   int stepCount = 0;
   int siblingCounters[MAX_XPATH_DEPTH] = {};
@@ -222,7 +212,6 @@ class ParagraphStreamer final : public Print {
   int htmlDepth = 0;
   int stepEnteredAtDepth[MAX_XPATH_DEPTH] = {};
 
-  // Tag name accumulation
   enum TagParseState { TAG_IDLE, TAG_IN_NAME, TAG_ATTRS } tagState = TAG_IDLE;
   bool tagIsClose = false;
   char tagName[12] = {};
@@ -230,7 +219,6 @@ class ParagraphStreamer final : public Print {
 
   int matchedDepth = 0;
 
-  // Anchor ID capture
   static constexpr int MAX_ANCHOR_ID = 64;
   char capturedAnchorId[MAX_ANCHOR_ID] = {};
   int capturedAnchorIdLen = 0;
@@ -246,7 +234,7 @@ class ParagraphStreamer final : public Print {
   uint8_t attrNameLen = 0;
   bool currentAttrIsId = false;
   bool inAttrQuote =
-      false;  // true while inside a quoted attribute value (prevents '/' from being treated as self-close)
+      false;
   char attrQuoteChar = 0;
   uint8_t nonVisibleDepth = 0;
 
@@ -381,8 +369,6 @@ class ParagraphStreamer final : public Print {
   void onVisibleCodepoint() {
     totalVisChars++;
     if (revPFound && !revDone) {
-      // Ancestry mode: count only while inside the fully-matched element and in the target text node.
-      // Legacy mode: count only while still inside the matched paragraph and in the target text node.
       const bool inTargetNode = (stepCount > 0) ? (matchedDepth == stepCount && currentTextNode == targetTextNode)
                                                 : (paragraphHtmlDepth >= 0 && currentTextNode == targetTextNode);
       if (inTargetNode) {
@@ -446,7 +432,6 @@ class ParagraphStreamer final : public Print {
       return;
     }
 
-    // Capture a child <a id> inside the fully-matched element even after target char is found.
     if (revPFound && matchedDepth == stepCount && capturedAnchorIdLen == 0 && strcasecmp(tagName, "a") == 0) {
       beginAnchorIdScan();
     }
@@ -459,8 +444,6 @@ class ParagraphStreamer final : public Print {
     if (matchedDepth < stepCount) {
       const XPathStep& target = steps[matchedDepth];
       if (strcasecmp(tagName, target.tag) == 0) {
-        // Count only direct children of the previously matched ancestor step.
-        // For step 0 any depth is valid; subsequent steps must be exactly one level deeper.
         const bool atCorrectDepth = (matchedDepth == 0) || (htmlDepth == stepEnteredAtDepth[matchedDepth - 1] + 1);
         if (!atCorrectDepth) return;
         siblingCounters[matchedDepth]++;
@@ -475,7 +458,7 @@ class ParagraphStreamer final : public Print {
             revPFound = true;
             capturedAnchorIdLen = 0;
             revVisChars = 0;
-            currentTextNode = 1;  // Reset text node counter for this element
+            currentTextNode = 1;
             if (revChar <= 0 && targetTextNode <= 1) {
               targetVisChars = totalVisChars;
               revDone = true;
@@ -493,7 +476,6 @@ class ParagraphStreamer final : public Print {
       return;
     }
 
-    // Legacy mode: each direct child element closing advances the text node index.
     if (stepCount == 0 && revPFound && !revDone && paragraphHtmlDepth >= 0 && htmlDepth == paragraphHtmlDepth + 1) {
       currentTextNode++;
       if (currentTextNode == targetTextNode && revChar <= 0) {
@@ -501,13 +483,11 @@ class ParagraphStreamer final : public Print {
         revDone = true;
       }
     }
-    // Legacy mode: stop tracking when the matched paragraph itself closes.
     if (stepCount == 0 && revPFound && !revDone && paragraphHtmlDepth >= 0 && htmlDepth == paragraphHtmlDepth) {
       revPFound = false;
       paragraphHtmlDepth = -1;
     }
 
-    // Ancestry mode: advance text node when a direct child of the fully-matched element closes.
     if (stepCount > 0 && matchedDepth == stepCount && revPFound && !revDone) {
       const int elementDepth = stepEnteredAtDepth[stepCount - 1];
       if (htmlDepth == elementDepth + 1) {
@@ -524,7 +504,6 @@ class ParagraphStreamer final : public Print {
       if (insideStep[step] && htmlDepth == stepEnteredAtDepth[step]) {
         insideStep[step] = false;
         matchedDepth--;
-        // If the fully-matched element just closed without finding the target, abort.
         if (matchedDepth < stepCount && revPFound && !revDone) {
           revPFound = false;
         }
@@ -559,7 +538,6 @@ class ParagraphStreamer final : public Print {
               onCloseTag();
             else
               onOpenTag();
-            // Self-closing open tag (<br/>). Don't double-fire for close tags (</br/>).
             if (c == '/' && !tagIsClose) onCloseTag();
           }
           tagNameLen = 0;
@@ -569,7 +547,6 @@ class ParagraphStreamer final : public Print {
         }
         break;
       case TAG_ATTRS:
-        // Track quoted attribute values so '/' inside them is not mistaken for self-closing.
         if (!inAttrQuote) {
           if (c == '"' || c == '\'') {
             inAttrQuote = true;
@@ -582,7 +559,6 @@ class ParagraphStreamer final : public Print {
         if (capturingAnchorTag) {
           scanAnchorAttribute(c);
         }
-        // Only treat '/' as self-closing when outside a quoted attribute value.
         if (c == '/' && !inAttrQuote) {
           endAnchorIdScan();
           onCloseTag();
@@ -664,8 +640,6 @@ class ParagraphStreamer final : public Print {
     } else if (globalInTag) {
       processByteInTag(c);
     } else if (nonVisibleDepth > 0) {
-      // Ignore head/style/script/title text. KOReader XPaths are body-relative, and CSS text
-      // should not contribute to intra-spine progress.
     } else {
       if (c == '&') {
         globalInEntity = true;
@@ -701,16 +675,14 @@ bool streamSpine(const std::shared_ptr<Epub>& epub, int spineIndex, ParagraphStr
   const auto href = epub->getSpineItem(spineIndex).href;
   return !href.empty() && epub->readItemContentsToStream(href, s, 1024);
 }
-}  // namespace
+}
 
 KOReaderPosition ProgressMapper::toKOReader(const std::shared_ptr<Epub>& epub, const PagePosition& pos) {
   KOReaderPosition result;
   float intra =
       (pos.totalPages > 1) ? static_cast<float>(pos.pageNumber) / static_cast<float>(pos.totalPages - 1) : 0.0f;
   result.percentage = epub->calculateProgress(pos.spineIndex, intra);
-  // Progress-based XPath correctly handles both <p> and <li> positions.
   result.xpath = ChapterXPathResolver::findXPathForProgress(epub, pos.spineIndex, intra);
-  // Fall back to paragraph-index lookup when progress-based resolution fails.
   if (result.xpath.empty() && pos.hasParagraphIndex && pos.paragraphIndex > 0) {
     result.xpath = ChapterXPathResolver::findXPathForParagraph(epub, pos.spineIndex, pos.paragraphIndex);
   }
@@ -740,7 +712,6 @@ PagePosition ProgressMapper::toCrossPoint(const std::shared_ptr<Epub>& epub, con
 
   XPathStep xpathSteps[MAX_XPATH_DEPTH];
   const int xpathStepCount = parseXPathSteps(koPos.xpath, xpathSteps);
-  // Use ancestry mode whenever the XPath has a structured path (always more accurate than global counting).
   const bool useAncestry = xpathStepCount > 0;
 
   if (xpathSpine >= 0 && xpathSpine < spineCount) {

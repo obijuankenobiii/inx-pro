@@ -32,9 +32,6 @@ constexpr char kMimeType[] = "audio/wav";
 constexpr char kPrompt[] =
     "Generate a verbatim transcript of the speech in this audio. Respond with transcript text "
     "only. Do not add commentary or formatting.";
-// esp_http_client's TLS handshake uses considerably more stack than a normal
-// application task. Keep this separate from the reader task and give it room
-// for mbedTLS without risking a stack-canary reset.
 constexpr uint32_t kTaskStackWords = 16384;
 constexpr size_t kIoBufferSize = 4096;
 
@@ -381,7 +378,7 @@ void worker(void* raw) {
   vTaskDelete(nullptr);
 }
 
-}  // namespace
+}
 
 bool start(const std::string& wavPath) {
   std::lock_guard<std::mutex> lock(gMutex);
@@ -429,4 +426,4 @@ std::string apiKeyLast4() {
   return key.size() > 4 ? key.substr(key.size() - 4) : std::string();
 }
 
-}  // namespace GeminiTranscription
+}

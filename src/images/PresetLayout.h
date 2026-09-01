@@ -1,7 +1,6 @@
 #pragma once
 #include <cstdint>
 
-// 40x40 1-bit preset settings tab icon, white background / black glyph.
 static const uint8_t PresetLayout[] = {
     0xff, 0xff, 0xff, 0xff, 0xff,
     0xff, 0xff, 0xff, 0xff, 0xff,

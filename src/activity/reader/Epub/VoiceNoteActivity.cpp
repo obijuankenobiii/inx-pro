@@ -65,9 +65,6 @@ void writeWavHeader(FsFile& file, uint32_t dataBytes) {
   file.write(h, sizeof(h));
 }
 
-// ESPHome's i2s_audio microphone applies this first-order high-pass filter
-// when `correct_dc_offset` is enabled. Keep the filter state across capture
-// blocks so the boundary between DMA reads does not introduce a click.
 void correctDcOffset(int16_t* samples, size_t sampleCount, int32_t& previousInput, int32_t& previousOutput) {
   constexpr int dcFilterShift = 10;
   for (size_t index = 0; index < sampleCount; ++index) {
@@ -80,7 +77,7 @@ void correctDcOffset(int16_t* samples, size_t sampleCount, int32_t& previousInpu
     samples[index] = static_cast<int16_t>(std::clamp(pcm, static_cast<int32_t>(-32768), static_cast<int32_t>(32767)));
   }
 }
-}  // namespace
+}
 
 VoiceNoteActivity::VoiceNoteActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
                                      std::string outputDirectory,
@@ -310,20 +307,13 @@ void VoiceNoteActivity::render() const {
   const int centerX = recordButtonCenterX(renderer);
   const int centerY = recordButtonCenterY(renderer);
 
-  // The recording control is deliberately just a circle. The supplied mic
-  // glyph is shown while idle; during capture it is replaced by the live
-  // waveform so the button itself communicates that recording is active.
   renderer.circle.render(centerX, centerY, kRecordButtonRadius, true);
   if (!recording_) {
     renderer.bitmap.iconScaled(MicOn, centerX - kMicIconWidth / 2, centerY - kMicIconHeight / 2, 108, 112,
                                kMicIconWidth, kMicIconHeight, BitmapRender::Orientation::None, true);
   } else {
-    // Use the average absolute PCM level so the waveform grows when the user
-    // speaks instead of only cycling on a timer.
     constexpr uint32_t kFullScaleVisualLevel = 2048;
     const uint32_t measuredLevel = audioLevel_;
-    // Attack quickly when speech starts and decay more slowly when it stops,
-    // which makes the waveform follow the voice without flickering.
     if (measuredLevel > displayedAudioLevel_) {
       displayedAudioLevel_ += std::max<uint32_t>(1, (measuredLevel - displayedAudioLevel_) / 2);
     } else if (displayedAudioLevel_ > measuredLevel) {

@@ -24,7 +24,7 @@ constexpr char tmpTocBinFile[] = "/toc.bin.tmp";
 constexpr char tmpCssBinFile[] = "/css.bin.tmp";
 constexpr char imageMetadataFile[] = "/image_dimensions.bin";
 constexpr char imageMetadataTempFile[] = "/image_dimensions.bin.tmp";
-constexpr uint32_t kImageMetadataMagic = 0x444D4949;  // IIMD
+constexpr uint32_t kImageMetadataMagic = 0x444D4949;
 constexpr uint8_t kImageMetadataVersion = 1;
 constexpr uint16_t kMaxImageMetadataEntries = 256;
 constexpr uint16_t kMaxImageMetadataPathBytes = 384;
@@ -50,7 +50,7 @@ std::string normaliseTocTitle(const std::string& title) {
 
   return result;
 }
-}  // namespace
+}
 
 bool BookMetadataCache::beginWrite() {
   buildMode = true;
@@ -202,10 +202,6 @@ bool BookMetadataCache::buildBookBin(const std::string& epubPath, const BookMeta
     delay(1);
   }
 
-  // First TOC entry (in file order) whose spineIndex matches each spine item, keyed by spine index - built
-  // here as a side effect of the pass this loop already does over every TOC entry, so the spine loop below
-  // can look each one up in O(1) instead of the old findFirstTocIndexForSpine() re-scanning the whole TOC
-  // file from scratch for every spine item (O(spineCount * tocCount) for a large book).
   std::vector<int16_t> firstTocIndexForSpine(spineCount, -1);
   tocFile.seek(0);
   for (int i = 0; i < tocCount; i++) {

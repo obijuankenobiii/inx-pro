@@ -26,8 +26,6 @@ namespace frontlight_ui {
 /** One swipe step. Fine near the bottom, coarse where a 1% change is imperceptible. */
 inline int stepBrightness(const int current, const bool up) {
   const int step = current < 10 ? 1 : (current < 30 ? 5 : 10);
-  // Stepping down from 10 should land on 9, not 0 — pick the step for the value being
-  // LEFT, not the one being arrived at.
   const int downStep = current <= 10 ? 1 : (current <= 30 ? 5 : 10);
   int next = current + (up ? step : -downStep);
   if (next < 0) next = 0;
@@ -40,7 +38,6 @@ inline int stepBrightness(const int current, const bool up) {
 inline int percentFromFraction(const float fraction) {
   const float f = fraction < 0.0f ? 0.0f : (fraction > 1.0f ? 1.0f : fraction);
   const int pct = static_cast<int>(100.0f * f * f + 0.5f);
-  // Any deliberate touch above zero should light the panel, even at the far left.
   return (pct == 0 && f > 0.02f) ? 1 : pct;
 }
 
@@ -48,14 +45,12 @@ inline int percentFromFraction(const float fraction) {
 inline float fractionFromPercent(const int percent) {
   const int p = percent < 0 ? 0 : (percent > 100 ? 100 : percent);
   float f = 0.0f;
-  // sqrt without <cmath>: a few Newton steps are plenty for a marker position.
   if (p > 0) {
     f = static_cast<float>(p) / 100.0f;
     for (int i = 0; i < 12; ++i) f = 0.5f * (f + (static_cast<float>(p) / 100.0f) / f);
   }
   return f;
 }
-
 
 /** Write the live brightness/temperature back to NVS. */
 inline void persist() {
@@ -104,8 +99,8 @@ inline bool handleEdgeSwipe(const MappedInputManager& input, const GfxRenderer& 
     INX_SERIAL.printf("[LIGHT] brightness -> %d%%\n", next);
     return true;
   }
-  return false;  // middle band: caller keeps it
+  return false;
 }
 
-}  // namespace frontlight_ui
+}
 #endif

@@ -25,17 +25,12 @@
 #include "../../src/system/EpubPerf.h"
 
 namespace {
-constexpr uint32_t kMagic = 0x43445249;  // IRDC, little-endian on disk
-constexpr uint16_t kVersion = 48;        // reject caches written before complete-read and atomic-write validation
-constexpr uint32_t kCombinedMagic = 0x32435249;  // IRC2 - distinct from kMagic so a combined file can never be
-                                                  // misread as a legacy single-plane one, or vice versa.
+constexpr uint32_t kMagic = 0x43445249;
+constexpr uint16_t kVersion = 48;
+constexpr uint32_t kCombinedMagic = 0x32435249;
 constexpr const char* kCacheDir = "/.system/cache";
 constexpr size_t kIoBufferSize = 16384;
 constexpr size_t kAsyncCacheQueueLength = 6;
-// Rendered pixels are expensive to regenerate and the shared SD/display bus is
-// the slowest part of a page turn. Keep a small, hard-bounded PSRAM front cache
-// in front of the durable SD cache. Entries are individual image planes, so a
-// two-bit image consumes two entries and still has correct plane ordering.
 constexpr size_t kRamCacheSlots = 64;
 constexpr size_t kRamCacheByteBudget = 512 * 1024;
 constexpr size_t kSourceSizeCacheSlots = 16;
@@ -51,8 +46,6 @@ struct CacheHeader {
   uint16_t reserved;
 };
 
-// One combined cache file holds both bit-planes back to back: header, then LSB rows, then MSB rows.
-// Both planes share width/height/rowBytes since they come from the same source render.
 struct CombinedCacheHeader {
   uint32_t magic;
   uint16_t version;
@@ -97,11 +90,6 @@ struct SourceSizeCacheEntry {
   uint32_t readAt = 0;
 };
 
-// Scratch slot for the one two-bit render that can be in flight at a time (this codebase never renders two
-// grayscale images concurrently - one reader page composes at once). Holds each plane's packed rows,
-// captured straight from the framebuffer right after that pass renders, so both can be written out
-// together as one combined cache entry once the second pass finishes - see captureTwoBitPlane()/
-// commitTwoBitCombined().
 struct CombinedCaptureState {
   uint8_t* lsbRows = nullptr;
   uint8_t* msbRows = nullptr;
@@ -119,9 +107,6 @@ void resetCombinedCapture() {
   gCombinedCapture = CombinedCaptureState{};
 }
 
-// This is metadata only: image pixels remain in their existing PSRAM front cache. Keeping the
-// metadata here avoids permanently reserving internal DRAM for cache entries before any image is
-// displayed. All call paths that reach this state already hold SdIoMutex, so first use is serialized.
 struct CacheState {
   std::array<RamCacheEntry, kRamCacheSlots> ramCache{};
   std::array<SourceSizeCacheEntry, kSourceSizeCacheSlots> sourceSizeCache{};
@@ -180,9 +165,6 @@ uint32_t fnv1aAddUint32(uint32_t hash, const uint32_t value) {
 }
 
 uint32_t sourceSize(const std::string& path) {
-  // A carousel asks for three cover paths at a time, then asks for the next
-  // three immediately after a swipe. Retain a short, bounded source-size LRU
-  // so resolving a display-cache key does not reopen every thumbnail on SD.
   const uint32_t now = millis();
   SourceSizeCacheEntry* target = nullptr;
   CacheState* state = cacheState();
@@ -237,11 +219,6 @@ void freeCacheRows(uint8_t* rows) {
   heap_caps_free(rows);
 }
 
-// A display cache entry containing only ink is not a useful image cache for an
-// EPUB page. This catches the failure mode where a decoder/compositor produced
-// a full-black framebuffer and the cache then made that bad result permanent.
-// Check logical pixels only so unused bits at the end of a packed row do not
-// affect the result.
 bool packedRowsAllInk(const uint8_t* rows, const int width, const int height, const int rowBytes) {
   if (!rows || width <= 0 || height <= 0 || rowBytes <= 0) {
     return false;
@@ -380,8 +357,6 @@ uint32_t cacheHash(const std::string& sourcePath, const int width, const int hei
   hash = fnv1aAddUint32(hash, static_cast<uint32_t>(visible.width));
   hash = fnv1aAddUint32(hash, static_cast<uint32_t>(visible.height));
   hash = fnv1aAdd(hash, options.cropToFill ? 1 : 0);
-  // Keep old centered caches valid. Side-carousel caches were previously
-  // disabled, so only non-centered anchors need a distinct new key.
   if (options.cropAnchor != 128) {
     hash = fnv1aAdd(hash, options.cropAnchor);
   }
@@ -392,8 +367,6 @@ uint32_t cacheHash(const std::string& sourcePath, const int width, const int hei
   return hash;
 }
 
-// Same as cacheHash(), minus renderPlane - a combined two-bit entry holds both planes together under one
-// key, not one key per plane.
 uint32_t cacheHashCombined(const std::string& sourcePath, const int width, const int height,
                            const VisibleRect& visible, const ImageDisplayCacheOptions& options) {
   uint32_t hash = 2166136261u;
@@ -449,8 +422,6 @@ bool ensureCacheDir(const std::string& path) {
         INX_SERIAL.printf("[%lu] [IDC] Failed to create cache dir segment: %s\n", millis(), segment.c_str());
         return false;
       }
-      // mkdir can allocate and flush an exFAT directory cluster. Let the idle
-      // task run before creating the next segment or writing the cache file.
       vTaskDelay(pdMS_TO_TICKS(1));
     }
     if (next == std::string::npos) {
@@ -580,9 +551,6 @@ const char* planeName(const ImageDisplayCacheOptions& options) {
   }
 }
 
-// Caller owns SdIoMutex. Loading a durable cache into PSRAM is intentionally
-// separate from drawing it so Home can prepare neighbouring carousel covers
-// while the current screen is already visible.
 bool loadSdCacheIntoRam(const std::string& cachePath, const VisibleRect& visible,
                         const ImageDisplayCacheOptions& options) {
   if (!SdMan.exists(cachePath.c_str())) {
@@ -659,7 +627,7 @@ bool loadSdCacheIntoRam(const std::string& cachePath, const VisibleRect& visible
   return hasRamCache(cachePath);
 }
 
-}  // namespace
+}
 
 std::string ImageDisplayCache::pathFor(GfxRenderer& renderer, const std::string& sourcePath, const int x, const int y,
                                        const int width, const int height, const ImageDisplayCacheOptions& options) {
@@ -683,7 +651,6 @@ std::string ImageDisplayCache::pathForCombined(GfxRenderer& renderer, const std:
   }
   const uint32_t hash = cacheHashCombined(sourcePath, width, height, visible, options);
   char name[48];
-  // .irdc2 extension keeps combined entries out of the legacy single-plane sweep/lookup paths.
   snprintf(name, sizeof(name), "/%02lx/%08lx.irdc2", static_cast<unsigned long>((hash >> 24) & 0xFF),
            static_cast<unsigned long>(hash));
   return std::string(kCacheDir) + name;
@@ -703,9 +670,6 @@ bool ImageDisplayCache::renderIfAvailable(GfxRenderer& renderer, const std::stri
     return false;
   }
 
-  // Cache files are written from the active renderer plane. Replay the same
-  // plane into the same framebuffer/controller plane; swapping LSB and MSB
-  // here changes every two-bit gray value on cache hits.
   if (!drawRamCache(renderer, requestedPath, visible) && !loadSdCacheIntoRam(requestedPath, visible, options)) {
     return false;
   }
@@ -1173,10 +1137,6 @@ bool ImageDisplayCache::storeAsync(GfxRenderer& renderer, const std::string& sou
   job->rows = packedRows;
   job->quality = options.quality;
 
-  // The page can use this plane immediately, even before the low-priority SD
-  // writer has persisted it. This is especially important for the two planes
-  // of a grayscale image: the second pass must not wait for the first cache
-  // file to reach the card.
   const CacheHeader header = {.magic = kMagic,
                               .version = kVersion,
                               .headerSize = sizeof(CacheHeader),
@@ -1199,9 +1159,6 @@ void ImageDisplayCache::flushDeferredWrites(const uint8_t maximumJobs) {
     return;
   }
 
-  // Do not use a worker task here. SdFat/Arduino SPI keeps transaction state
-  // per task, while several metadata reads occur on the loop task without an
-  // external mutex. Persisting in this same task keeps the SPI owner stable.
   for (uint8_t i = 0; i < maximumJobs; ++i) {
     AsyncCacheJob* job = nullptr;
     if (xQueueReceive(gAsyncCacheQueue, &job, 0) != pdTRUE || !job) {

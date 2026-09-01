@@ -13,4 +13,4 @@ struct Settings {
 bool load(Settings& settings);
 bool save(const Settings& settings);
 
-}  // namespace frontlight_preferences
+}

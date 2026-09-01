@@ -34,10 +34,7 @@ class XtcReaderActivity final : public ActivityWithSubactivity {
   uint32_t pageStartTime = 0;
   uint32_t lastSaveTime = 0;
   bool menuDrawerVisible = false;
-  bool menuDrawerShowingChapters = false;
   bool suppressBackUntilReleased = false;
-  int menuSelectedIndex = 0;
-  int menuScrollOffset = 0;
   int chapterSelectedIndex = 0;
   int chapterScrollOffset = 0;
 
@@ -47,11 +44,9 @@ class XtcReaderActivity final : public ActivityWithSubactivity {
   void renderPage();
   void renderEndOfBookStats();
   void handleMenuDrawerInput();
-  void renderMenuDrawer();
-  void renderMenuMain();
   void renderMenuChapters();
   void closeMenuDrawer(bool repaintPage);
-  void openMenuDrawer();
+  void openTableOfContents();
   void turnPage(bool forward, int skipAmount = 1);
   int chapterIndexForCurrentPage() const;
   void saveProgress() const;

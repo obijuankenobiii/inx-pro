@@ -1,7 +1,6 @@
 #pragma once
 #include <cstdint>
 
-// 40x40 1-bit icon converted from the supplied grid view icon.
 static const uint8_t LibraryViewGrid[] = {
   0xff, 0xff, 0xff, 0xff, 0xff, 
   0xff, 0xff, 0xff, 0xff, 0xff, 

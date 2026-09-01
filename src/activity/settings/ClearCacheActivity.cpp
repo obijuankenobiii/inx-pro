@@ -51,7 +51,7 @@ void drawActionButton(const GfxRenderer& renderer, const int screenWidth, const 
   (void)active;
   Button::render(renderer, bounds, label, true, systemFontId());
 }
-}  // namespace
+}
 
 void ClearCacheActivity::taskTrampoline(void* param) {
   auto* self = static_cast<ClearCacheActivity*>(param);

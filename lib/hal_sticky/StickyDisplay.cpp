@@ -3,10 +3,6 @@
 #include <memory>
 #include <vector>
 
-// Sticky owns the reference SSD1677 waveform. This translation unit needs to
-// invalidate FreeInk's private shadow flags after that external activation;
-// keep the compatibility access local to the board wrapper rather than adding
-// a board-specific API to the vendored SDK.
 #define private public
 #include <StickyDisplay.h>
 #undef private
@@ -14,8 +10,6 @@
 #include "../../freeink-sdk/libs/display/FreeInkDisplay/src/lut/Ssd1677Luts.h"
 
 namespace {
-// X4 source-compatible fast quality LUT. Keep this in the board wrapper so
-// the Sticky quality path does not depend on the vendored driver waveform.
 const unsigned char lut_x4_quality_fast[] PROGMEM = {
     0x00, 0x4A, 0x88, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x62, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x88, 0x60, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xA8, 0x44, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -24,9 +18,6 @@ const unsigned char lut_x4_quality_fast[] PROGMEM = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x44, 0x44, 0x44, 0x44, 0x44, 0x17, 0x41, 0xA8, 0x32, 0x50};
 
-// Corrected X4 quality LUT from the old EInkDisplay driver. The vendored
-// FreeInk factory LUT still contains the pre-fix 0x08/0x0B timing and 0x22/
-// 0x30 voltage tail, which collapses or misorders Sticky's mid-grays.
 const unsigned char lut_x4_quality[] PROGMEM = {
     0x00, 0x4A, 0x88, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x80, 0x62, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -76,11 +67,6 @@ void markExternalQualityComplete(EInkDisplay& display) {
   display.setCustomLUT(false);
 }
 
-// Arduino-ESP32 3.3.x/ESP-IDF 5.5 routes attachInterrupt() through the core-0
-// IPC task. On Sticky that path can overflow the small ipc0 stack while the
-// display BUSY edge is being armed. Keep the SDK's normal refresh timing but
-// use its polling wait; this is only a completion-wait policy and does not
-// change the panel waveform or framebuffer path.
 bool stickyBusyWaitSlice(const int8_t busyPin, const uint8_t busyLevel) {
   (void)busyPin;
   (void)busyLevel;
@@ -88,15 +74,13 @@ bool stickyBusyWaitSlice(const int8_t busyPin, const uint8_t busyLevel) {
   return true;
 }
 
-}  // namespace
+}
 
 StickyDisplay::StickyDisplay(const int8_t sclk, const int8_t mosi, const int8_t cs, const int8_t dc,
                              const int8_t rst, const int8_t busy)
     : display(sclk, mosi, cs, dc, rst, busy) {}
 
 void StickyDisplay::begin() {
-  // A non-null slice hook makes EpdBus::waitRefreshComplete() use its bounded
-  // polling implementation instead of registering a BUSY GPIO ISR.
   display.setBusyWaitSliceHook(stickyBusyWaitSlice);
   display.begin();
   qualityReferenceScreenOn = false;
@@ -114,9 +98,6 @@ void StickyDisplay::drawImage(const uint8_t* imageData, const uint16_t x, const 
 void StickyDisplay::finish() {
   if (!display.isRefreshPending()) return;
 
-  // The Sticky BUSY completion edge can happen before FreeInk arms its ISR
-  // waiter. First give BUSY time to assert, then poll it through completion.
-  // FreeInk only clears its pending state after the panel is already idle.
   const unsigned long started = millis();
   while (!display.refreshBusy() && millis() - started < 25) delay(1);
   while (display.refreshBusy()) delay(1);
@@ -131,9 +112,6 @@ void StickyDisplay::displayBuffer(const RefreshMode mode) {
   INX_SERIAL.printf("[%lu] [STICKY-DISPLAY] displayBuffer after async\n", millis());
   finish();
   INX_SERIAL.printf("[%lu] [STICKY-DISPLAY] displayBuffer complete\n", millis());
-  // Sticky's vendor B/W waveforms (0xFF/0xF7) power the panel down after the
-  // refresh. Match EInkDisplay.cpp's isScreenOn guard: preparation is only
-  // valid while the preceding B/W activation left the panel powered.
   qualityReferenceScreenOn = false;
 }
 
@@ -142,6 +120,8 @@ void StickyDisplay::displayBufferAsync(const RefreshMode mode) {
   display.displayBufferAsync(mode);
   qualityReferenceScreenOn = false;
 }
+
+bool StickyDisplay::refreshBusy() { return display.refreshBusy(); }
 
 void StickyDisplay::refreshDisplay(const RefreshMode mode, const bool turnOffScreen) {
   if (!turnOffScreen) {
@@ -220,9 +200,6 @@ void StickyDisplay::displayGrayBufferFastQuality() {
 
 void StickyDisplay::prepareQualityGrayscale() {
   finish();
-  // This is EInkDisplay::prepareQualityGrayscale(): power down the preceding
-  // BW waveform with RED bypass before writing the two grayscale planes. The
-  // FreeInk SSD1677 driver does not implement this hook for Sticky.
   if (!qualityReferenceScreenOn) return;
   freeink::EpdBus& bus = display._bus;
   bus.cmd(CMD_DISPLAY_UPDATE_CTRL1);

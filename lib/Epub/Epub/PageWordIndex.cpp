@@ -59,7 +59,7 @@ void setWordGeometry(PageWordHit& hit, const GfxRenderer& renderer, const int fo
   hit.screenW = std::max(1, wordWidth(renderer, fontId, text, style, bionicPrefix, smallCaps, verticalAlign));
 }
 
-}  // namespace
+}
 
 void buildPageWordIndex(const Page& page, GfxRenderer& renderer, const int bodyFontId, const int headerFontId,
                         const int marginLeft, const int marginTop, std::vector<PageWordHit>& out,

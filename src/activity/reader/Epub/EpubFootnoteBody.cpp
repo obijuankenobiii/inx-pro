@@ -22,24 +22,15 @@
 
 namespace {
 
-// Shared between show() (to lay out bodyLines_ once, at the width it'll actually be rendered at) and
-// drawBodyPanel() (to size/draw the panel itself). Same values as EpubDictionaryUi's definition panel,
-// so the two overlays read as one visual family.
 constexpr int kPanelMargin = 16;
 constexpr int kPanelPad = 20;
 
-// Fixed-size (heap, not stack) buffers used by loadFootnoteBodyText()'s on-SD search.
-// kChunk+kOverlap must match the declared window[] size in that function.
 constexpr size_t kSearchChunkBytes = 512;
-constexpr size_t kSearchOverlapBytes = 96;  // longer than any realistic id="..." attribute
-// Many real EPUBs put a footnote's id on a short inline backlink tag with the actual note text as
-// sibling content in the enclosing block (see FootnoteFragmentExtractor's findEnclosingBlockStart) -
-// that means the useful content isn't only after the match, it can start somewhat before it too, so
-// the capture window reads some leading context in addition to the trailing content.
+constexpr size_t kSearchOverlapBytes = 96;
 constexpr size_t kCaptureLeadingBytes = 2048;
-constexpr size_t kCaptureBytes = 4096;  // generous for any single footnote's markup
+constexpr size_t kCaptureBytes = 4096;
 
-}  // namespace
+}
 
 void EpubFootnoteBody::show(EpubActivity& act, const std::string& footnoteTarget, const std::string& markerText) {
   if (!act.section || !act.epub) {
@@ -56,8 +47,6 @@ void EpubFootnoteBody::show(EpubActivity& act, const std::string& footnoteTarget
     return;
   }
 
-  // Encoded by ChapterHtmlSlimParser::classifyFootnoteLink as "<S|F>:<resolvedPath>#<fragmentId>" -
-  // resolvedPath is already a fully-resolved internal EPUB path (or empty for same-document).
   std::string body;
   if (footnoteTarget.size() < 3 || footnoteTarget[1] != ':') {
     body = "Invalid footnote reference.";
@@ -116,10 +105,6 @@ std::string EpubFootnoteBody::loadFootnoteBodyText(EpubActivity& act, const std:
     return "";
   }
 
-  // Same temp-file pattern as Epub::parseTocNcxFile/parseTocNavFile: extract via the zip's own bounded
-  // (~1KB read buffer + ~33KB inflator dictionary, regardless of item size) decompression path
-  // straight to SD, rather than holding the decompressed item in RAM - a notes/endnotes chapter can be
-  // 100KB+ of markup, well beyond what's safe to hold as one in-memory buffer on this device.
   const std::string tempPath = act.epub->getCachePath() + "/.footnote_extract.tmp";
   {
     FsFile tempFile;
@@ -145,11 +130,6 @@ std::string EpubFootnoteBody::loadFootnoteBodyText(EpubActivity& act, const std:
   const std::string doubleQuoted = "id=\"" + fragmentId + "\"";
   const std::string singleQuoted = "id='" + fragmentId + "'";
 
-  // Phase 1: find id="fragmentId" by scanning the temp file in small fixed chunks, kept in a
-  // heap-allocated buffer - NOT a stack array. This runs several calls deep in the normal
-  // input-handling chain (loopTask), whose stack is not sized to absorb multi-KB local buffers.
-  // kSearchOverlapBytes of the previous chunk is kept so a match spanning a chunk boundary is never
-  // missed.
   constexpr size_t kWindowBufSize = kSearchChunkBytes + kSearchOverlapBytes + 1;
   std::unique_ptr<char[]> window(new (std::nothrow) char[kWindowBufSize]);
   if (!window) {
@@ -166,7 +146,7 @@ std::string EpubFootnoteBody::loadFootnoteBodyText(EpubActivity& act, const std:
       break;
     }
     windowLen += static_cast<size_t>(r);
-    const std::string windowStr(window.get(), windowLen);  // bounded copy, <= kSearchChunkBytes+kSearchOverlapBytes
+    const std::string windowStr(window.get(), windowLen);
     size_t hit = windowStr.find(doubleQuoted);
     if (hit == std::string::npos) {
       hit = windowStr.find(singleQuoted);
@@ -183,16 +163,13 @@ std::string EpubFootnoteBody::loadFootnoteBodyText(EpubActivity& act, const std:
     windowFileStart += static_cast<long>(windowLen - keep);
     windowLen = keep;
     if (static_cast<size_t>(r) < kSearchChunkBytes) {
-      break;  // short read - end of file
+      break;
     }
   }
-  window.reset();  // done with the search buffer before allocating the (larger) capture buffer
+  window.reset();
 
   std::string result;
   if (foundOffset >= 0) {
-    // Seek back a bit before the match too - the id is often on a short inline backlink tag whose
-    // enclosing block (where the real footnote text lives) starts a little earlier in the file; see
-    // FootnoteFragmentExtractor's findEnclosingBlockStart.
     const long captureStart = std::max(0L, foundOffset - static_cast<long>(kCaptureLeadingBytes));
     constexpr size_t kCaptureBufSize = kCaptureLeadingBytes + kCaptureBytes + 1;
     std::unique_ptr<char[]> captureBuf(new (std::nothrow) char[kCaptureBufSize]);
@@ -246,8 +223,8 @@ void EpubFootnoteBody::drawBodyPanel(EpubActivity& act) {
   const int panelX = margin;
   const int panelW = screenW - margin * 2;
   const int panelBottom = screenH - margin;
-  const int defaultPanelTop = screenH * 2 / 5;  // panel height used for short footnotes
-  const int minPanelTop = margin;               // panel can grow up to near the top of the screen
+  const int defaultPanelTop = screenH * 2 / 5;
+  const int minPanelTop = margin;
 
   const int titleFontId = MONTSERRAT_12_FONT_ID;
   const int titleH = act.renderer.text.getLineHeight(titleFontId);
@@ -260,9 +237,7 @@ void EpubFootnoteBody::drawBodyPanel(EpubActivity& act) {
     contentH += act.renderer.text.getLineHeight(sl.fontId) + sl.extraGapBeforePx;
   }
 
-  // Grow the panel to fit the content (up to minPanelTop), instead of always using the default size
-  // and truncating - only falls back to scrolling if the content doesn't fit even at max height.
-  constexpr int kTitleGapPx = 8;  // gap above and below the separator line under the title
+  constexpr int kTitleGapPx = 8;
   const int neededPanelH = pad * 2 + headerH + kTitleGapPx * 2 + contentH;
   const int defaultPanelH = panelBottom - defaultPanelTop;
   const int maxPanelH = panelBottom - minPanelTop;
@@ -273,8 +248,6 @@ void EpubFootnoteBody::drawBodyPanel(EpubActivity& act) {
   panelW_ = panelW;
   panelH_ = panelH;
 
-  // Same sharp-corner white-fill + black-border panel style as the menu/settings drawers, matching
-  // EpubDictionaryUi's definition panel.
   act.renderer.rectangle.fill(panelX, panelTop, panelW, panelH, false);
   act.renderer.rectangle.render(panelX, panelTop, panelW, panelH, true);
 
@@ -370,12 +343,8 @@ void EpubFootnoteBody::drawUiOverlay(EpubActivity& act) {
   if (!mode_) {
     return;
   }
-  // The popup is modal. Rebase the writable framebuffer to paper before drawing it so the X4 Pro
-  // cannot expose the captured reader page through the popup during a fast refresh.
   act.renderer.clearScreen(0xFF);
   drawBodyPanel(act);
-  // Image/grayscale pages need the existing redrive cleanup path; FAST_REFRESH can leave the image
-  // waveform on the panel even though the popup framebuffer is already white.
   act.renderer.displayBuffer(HalDisplay::HALF_REFRESH);
 }
 
@@ -407,7 +376,6 @@ void EpubFootnoteBody::handleInput(EpubActivity& act) {
         }
         return;
       }
-      // Keep a 40px touch target even though the visible X is deliberately compact.
       constexpr int hitPadding = 12;
       if (x >= closeX_ - hitPadding && x < closeX_ + closeSize_ + hitPadding && y >= closeY_ - hitPadding &&
           y < closeY_ + closeSize_ + hitPadding) {

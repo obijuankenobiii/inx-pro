@@ -29,7 +29,7 @@ int closeX(const GfxRenderer& renderer) {
 int rotateX(const GfxRenderer& renderer) {
   return closeX(renderer) - buttonGap - closeSize;
 }
-}  // namespace
+}
 
 void EpubImageViewerUi::open(EpubActivity& activity, const std::string& imagePath, const int pageImageXIn,
                              const int pageImageYIn, const int pageImageWidthIn, const int pageImageHeightIn) {
@@ -45,7 +45,6 @@ void EpubImageViewerUi::open(EpubActivity& activity, const std::string& imagePat
   pageImageHeight = pageImageHeightIn;
 
   if (pageImageWidth > 0 && pageImageHeight > 0) {
-    // PageImage already supplied the dimensions of the rendered raster. Do not reopen the PNG.
     sourceWidth = pageImageWidth;
     sourceHeight = pageImageHeight;
   } else if (!ImageRender::getDimensions(imagePath, &sourceWidth, &sourceHeight) || sourceWidth <= 0 ||
@@ -96,9 +95,6 @@ void EpubImageViewerUi::handleInput(EpubActivity& activity) {
   }
 
   const MappedInputManager& input = activity.mappedInput;
-  // Process the direction in reader coordinates first. A rotated vertical
-  // pan can begin at a native horizontal edge, which the HAL also marks as
-  // Back for non-reader screens.
   if (input.wasTouchSwipeLeftForRenderer(activity.renderer)) {
     panForSwipe(activity, -1, 0);
     return;
@@ -163,9 +159,6 @@ void EpubImageViewerUi::render(EpubActivity& activity) {
   const int x = (screenWidth - width) / 2 + panX;
   const int y = (screenHeight - height) / 2 + panY;
 
-  // PNGs are already reduced to one bit. Keep the viewer on the ordinary BW
-  // framebuffer path so a stale grayscale render mode cannot turn a zoom/pan
-  // redraw into a second image plane.
   if (isPng) {
     activity.renderer.setRenderMode(GfxRenderer::BW);
   }
@@ -173,10 +166,6 @@ void EpubImageViewerUi::render(EpubActivity& activity) {
   const auto present = [&] {
     buttons(activity);
 #if FREEINK_DEVICE_X4PRO
-    // A fast differential update is fine for the initial image, but after a
-    // PNG has moved the old image is no longer the same geometry. A full
-    // refresh is required here to remove the previous zoom/pan image instead
-    // of allowing its charge to remain as visible ghosting.
     const HalDisplay::RefreshMode mode = isPng && cleanRefreshRequired ? HalDisplay::FULL_REFRESH
                                                                          : HalDisplay::FAST_REFRESH;
 #else
@@ -189,7 +178,6 @@ void EpubImageViewerUi::render(EpubActivity& activity) {
   bool pageRasterReady = false;
   if (zoomLevel == 1 && !rasterCache && pageImageX >= 0 && pageImageY >= 0 && pageImageWidth == fitWidth &&
       pageImageHeight == fitHeight) {
-    // The page is still in the framebuffer here. Capture it before the viewer clears the screen.
     pageRasterReady = captureRasterCache(activity.renderer, pageImageX, pageImageY);
   }
 
@@ -202,16 +190,12 @@ void EpubImageViewerUi::render(EpubActivity& activity) {
   options.useDisplayCache = true;
   options.asyncDisplayCache = true;
 
-  // Normal image viewing is one-bit. Once the fitted raster is captured in PSRAM,
-  // zoom/pan can redraw it without reopening or decoding the source image.
   if (options.mode == ImageRenderMode::OneBit && rasterCache && fitWidth > 0 && fitHeight > 0 &&
       renderCachedZoom(activity, x, y, width, height)) {
     present();
     return;
   }
 
-  // Grayscale rendering owns temporary controller buffers; BW rendering does not
-  // need to tear those buffers down on every pan.
   if (options.mode == ImageRenderMode::TwoBit) {
     activity.renderer.resetTransientReaderState();
   }
@@ -329,7 +313,6 @@ bool EpubImageViewerUi::renderCachedZoom(EpubActivity& activity, const int x, co
 }
 
 void EpubImageViewerUi::zoom(EpubActivity& activity) {
-  // A second tap returns to the fitted view; this keeps the viewer control-free and touch-only.
   zoomLevel = zoomLevel == 1 ? 2 : 1;
   panX = 0;
   panY = 0;

@@ -22,14 +22,14 @@ extern void onGoToHome();
 
 namespace {
 constexpr int menuItemCount = 9;
-const char* menuItems[menuItemCount] = {"Manage via wifi",   "Connect to calibre", "Create hotspot",
+const char* menuItems[menuItemCount] = {"Manage via wifi",   "Calibre File Transfer", "Create hotspot",
                                         "OPDS Browser",      "Backup and restore", "KOReader Sync",
                                         "Check for updates", "Choose dictionary",  "Device Information"};
 constexpr int listItemHeight = UiLayout::LIST_ITEM_HEIGHT;
 constexpr int headerTop = 20;
 constexpr int headerHeight = 40;
 constexpr int listGap = 30;
-}  // namespace
+}
 
 void SyncActivity::onEnter() {
   Page::onEnter();
@@ -39,6 +39,10 @@ void SyncActivity::onEnter() {
 }
 
 void SyncActivity::loop() {
+  if (!subActivity && mappedInput.hasTouch() && mappedInput.wasTouchSwipeUpForRenderer(renderer)) {
+    return;
+  }
+
   if (!subActivity && menuInput()) return;
 
   if (subActivity) {
@@ -46,7 +50,6 @@ void SyncActivity::loop() {
     return;
   }
 
-  // A visible popup owns all input until it is closed or an item is chosen.
   if (isOpen()) {
     renderPage();
     return;

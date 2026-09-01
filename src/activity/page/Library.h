@@ -53,12 +53,13 @@ class Library final : public Page {
   int filterPage = 0;
   int filterIndex = 9;
   FilterTab filterTab = FilterTab::Title;
-  std::string typeFilter;  // "" (All), "epub", "pdf", "txt", or "xtc" - see matchesTypeFilter()
+  std::string typeFilter;
   int typeFilterIndex = 0;
   bool sortOpen = false;
   bool filterOpen = false;
   bool refreshing = false;
   int popupBook = -1;
+  bool folderDeleteConfirm = false;
   bool sidebarOpen = false;
   bool allBooksMode = false;
   StateFilter stateFilter = StateFilter::None;
@@ -76,6 +77,7 @@ class Library final : public Page {
   void markFavorite(const LibraryIndex::Book& book);
   void reset(const LibraryIndex::Book& book);
   void erase(const LibraryIndex::Book& book);
+  void eraseFolder(const LibraryIndex::Book& folder);
   void sortDropdown() const;
   void filterPopup() const;
   void handleSortTap(int tapX, int tapY);

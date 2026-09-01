@@ -32,12 +32,17 @@ esp_err_t onHttpEvent(esp_http_client_event_t* event) {
   return ESP_OK;
 }
 #endif
-}  // namespace
+}
 
 bool autoDetectTimeZone() {
 #ifdef INX_SIMULATOR_WEB_ONLY
   return false;
 #else
+  if (SETTINGS.timeZoneAutoDetectEnabled == 0) {
+    INX_SERIAL.printf("[%lu] [TIMEZONE] automatic detection disabled; using UTC offset=%d minutes\n", millis(),
+                      SETTINGS.getTimeZoneOffsetMinutes());
+    return false;
+  }
   ResponseContext context;
   esp_http_client_config_t config = {};
   config.url = kTimeZoneLookupUrl;

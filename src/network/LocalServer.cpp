@@ -614,7 +614,7 @@ void webLibraryIndexTask(void*) {
   vTaskDelete(nullptr);
 }
 #endif
-}  // namespace
+}
 
 LocalServer::LocalServer() {}
 
@@ -1656,8 +1656,6 @@ void LocalServer::collectEpubRenames(const std::string& oldDirPath, const std::s
 
 void LocalServer::migrateEpubBookState(const std::string& oldPath, const std::string& newPath) const {
 #ifndef INX_SIMULATOR_WEB_ONLY
-  // Bookmarks, annotations, reading progress, and book settings all live under a cache dir keyed by
-  // hash(filepath) (see Epub::Epub) - move it alongside the file so a rename doesn't orphan that state.
   const std::string oldCachePath = "/.metadata/epub/" + std::to_string(std::hash<std::string>{}(oldPath));
   const std::string newCachePath = "/.metadata/epub/" + std::to_string(std::hash<std::string>{}(newPath));
 
@@ -1731,8 +1729,6 @@ void LocalServer::handleRename() const {
     return;
   }
 
-  // FAT/exFAT lookups are case-insensitive, so a pure case change (Foo.epub -> FOO.epub) would otherwise
-  // collide with itself here; only block on a genuine name clash.
   if (strcasecmp(newName.c_str(), itemName.c_str()) != 0 && SdMan.exists(newPath.c_str())) {
     server->send(409, "text/plain", "An item with that name already exists");
     return;
@@ -2052,6 +2048,11 @@ void LocalServer::handleSettingsUpdate() const {
       if (v < 0) v = 0;
       if (v > 104) v = 104;
       SETTINGS.timeZoneQuarterOffset = static_cast<uint8_t>(v);
+      SETTINGS.timeZoneAutoDetectEnabled = 0;
+      SETTINGS.timeZoneId[0] = '\0';
+      changed = true;
+    } else if (clockAvailable && strcmp(key, "timeZoneAutoDetectEnabled") == 0) {
+      SETTINGS.timeZoneAutoDetectEnabled = value ? 1 : 0;
       changed = true;
     } else if (strcmp(key, "hideBatteryPercentage") == 0) {
       SETTINGS.hideBatteryPercentage = (uint8_t)value;

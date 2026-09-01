@@ -30,8 +30,6 @@ namespace {
 constexpr unsigned long kChordHoldMs = 600;
 constexpr int kHighlightLatticeStepPx = 2;
 
-// Shared between performLookup() (to lay out definitionLines_ once, at the width it'll actually be
-// rendered at) and drawDefinitionPanel() (to size/draw the panel itself).
 constexpr int kDefinitionPanelMargin = 16;
 constexpr int kDefinitionPanelPad = 20;
 constexpr int kLookupOverlayMargin = 20;
@@ -103,8 +101,6 @@ std::string lookupWordAt(const std::vector<PageWordHit>& words, const size_t foc
     return {};
   }
 
-  // Hyphenation splits one rendered word into two PageLine tokens, for example "hyphen-" and
-  // "ated". The hyphen is only a visual line-break marker; remove it from the dictionary query.
   if (focus + 1 < words.size() && endsWithLineBreakHyphen(words[focus], words[focus + 1]) &&
       !words[focus + 1].text.empty()) {
     word.pop_back();
@@ -115,7 +111,7 @@ std::string lookupWordAt(const std::vector<PageWordHit>& words, const size_t foc
   return stripSurroundingPunctuation(word);
 }
 
-}  // namespace
+}
 
 EpubDictionaryUi::EpubDictionaryUi() = default;
 
@@ -123,7 +119,6 @@ void EpubDictionaryUi::tryChordEnter(EpubActivity& act) {
   if (!act.epub || !act.section || mode_) {
     return;
   }
-  // DOWN+LEFT (annotations already owns DOWN+RIGHT) so the two live overlays never collide.
   const bool down = act.mappedInput.rawHalIsPressed(HalGPIO::BTN_DOWN);
   const bool left = act.mappedInput.rawHalIsPressed(HalGPIO::BTN_LEFT);
   if (down && left) {
@@ -144,9 +139,6 @@ void EpubDictionaryUi::enter(EpubActivity& act) {
   if (!act.section || !act.epub) {
     return;
   }
-  // The Down+Left entry chord (and a plain long-press Down) leave the button held while
-  // handleInput() is about to stop running for the whole overlay session - reset its per-button
-  // state now so it doesn't misfire a stale long-press the instant this overlay exits.
   act.btnBindings_.reset();
   mode_ = true;
   controlsVisible_ = true;
@@ -179,6 +171,7 @@ bool EpubDictionaryUi::lookupAt(EpubActivity& act, const int x, const int y) {
     }
     return false;
   }
+  performLookup(act);
   return true;
 }
 
@@ -192,10 +185,6 @@ void EpubDictionaryUi::exit(EpubActivity& act) {
   lookedUpWord_.clear();
   releaseDefinitionMemory();
   wordLookup_.clear();
-  // Keep the dictionary's compact RAM checkpoint index and open files for this reading session.
-  // Rebuilding the .idx directory for every word lookup makes the first lookup after each overlay
-  // exit needlessly slow. The StarDictLookup member releases both automatically when this book's
-  // EpubActivity is destroyed.
   act.updateRequired = true;
 }
 
@@ -347,10 +336,6 @@ void EpubDictionaryUi::performLookup(EpubActivity& act) {
   } else if (READER_SETTINGS.dictionaryFolder[0] == '\0') {
     currentDefinition_ = "No dictionary selected. Pick one in Settings > Reader > Choose dictionary.";
   } else {
-    // Show the status popup FIRST, before any blocking work - opening the dictionary (first lookup
-    // only) and the SD scan itself can together take several seconds on a large dictionary, and both
-    // must happen after the popup is on screen for it to actually look instant. readerPopup() forces
-    // an immediate flush, same pattern as its other callers (e.g. "Deleting book...").
     act.readerPopup("Looking up...");
     ensureDictionaryOpen();
     if (!dict_.isOpen()) {
@@ -363,29 +348,24 @@ void EpubDictionaryUi::performLookup(EpubActivity& act) {
                   static_cast<unsigned>(currentDefinition_.size()));
   }
   if (truncated) {
-    // Back off from a cut that landed mid-UTF-8-codepoint (dictionaries are full of accented
-    // letters, IPA symbols, en/em dashes) so we never hand a malformed byte sequence to the parser.
     while (!currentDefinition_.empty()) {
       const auto last = static_cast<unsigned char>(currentDefinition_.back());
       if ((last & 0xC0) == 0x80) {
-        currentDefinition_.pop_back();  // continuation byte - still mid-sequence
+        currentDefinition_.pop_back();
         continue;
       }
       if (last >= 0xC0) {
-        currentDefinition_.pop_back();  // orphaned lead byte - its continuation got cut off
+        currentDefinition_.pop_back();
       }
       break;
     }
     currentDefinition_ += " \xE2\x80\xA6";
   }
-  // Plain fallback messages above have no tags, so this is a no-op for them - it only does real work
-  // for an actual HTML definition. Keeps drawDefinitionPanel() dealing with a single block list always.
   INX_SERIAL.printf("[%lu] [DICT] performLookup: parsing definition bytes=%u\n", millis(),
                 static_cast<unsigned>(currentDefinition_.size()));
   definitionBlocks_ = parseHtmlToBlocks(currentDefinition_);
   INX_SERIAL.printf("[%lu] [DICT] performLookup: parsed blocks=%u\n", millis(),
                 static_cast<unsigned>(definitionBlocks_.size()));
-  // Laid out once here (not per-frame in drawDefinitionPanel) - see kMaxDefinitionRawBytes comment.
   const int textWidth =
       (act.renderer.getScreenWidth() - kDefinitionPanelMargin * 2) - kDefinitionPanelPad * 2;
   definitionLines_ = layoutDefinitionBlocks(act.renderer, definitionBlocks_, textWidth);
@@ -452,7 +432,6 @@ void EpubDictionaryUi::handleInput(EpubActivity& act) {
           saveCurrentWord(act);
           return;
         }
-        // Keep a 40px touch target even though the visible X is deliberately compact.
         constexpr int hitPadding = 12;
         if (x >= closeX_ - hitPadding && x < closeX_ + closeSize_ + hitPadding && y >= closeY_ - hitPadding &&
             y < closeY_ + closeSize_ + hitPadding) {
@@ -537,8 +516,6 @@ void EpubDictionaryUi::handleInput(EpubActivity& act) {
     return;
   }
   if (showingDefinition_) {
-    // Word navigation is frozen while a definition is on screen; Up/Down instead scroll long
-    // definitions that don't fully fit (drawDefinitionPanel clamps the range each frame).
     constexpr size_t kScrollLinesPerPress = 3;
     if (m.wasPressed(MappedInputManager::Button::Up)) {
       definitionScrollLine_ = (definitionScrollLine_ > kScrollLinesPerPress) ? definitionScrollLine_ - kScrollLinesPerPress : 0;
@@ -602,14 +579,13 @@ void EpubDictionaryUi::drawDefinitionPanel(EpubActivity& act) {
   const int panelX = margin;
   const int panelW = screenW - margin * 2;
   const int panelBottom = screenH - margin;
-  const int defaultPanelTop = screenH * 2 / 5;    // panel height used for short definitions
-  const int minPanelTop = margin;                 // panel can grow up to near the top of the screen
+  const int defaultPanelTop = screenH * 2 / 5;
+  const int minPanelTop = margin;
 
   const int titleFontId = MONTSERRAT_12_FONT_ID;
   const int titleH = act.renderer.text.getLineHeight(titleFontId);
   constexpr int closeSize = 40;
   const int headerH = std::max(titleH, closeSize);
-  // definitionLines_ is computed once per lookup (performLookup()), not recomputed here every frame.
   const auto& styledLines = definitionLines_;
 
   int contentH = 0;
@@ -617,9 +593,7 @@ void EpubDictionaryUi::drawDefinitionPanel(EpubActivity& act) {
     contentH += act.renderer.text.getLineHeight(sl.fontId) + sl.extraGapBeforePx;
   }
 
-  // Grow the panel to fit the content (up to minPanelTop), instead of always using the default size
-  // and truncating - only falls back to scrolling if the content doesn't fit even at max height.
-  constexpr int kTitleGapPx = 8;  // gap above and below the separator line under the title
+  constexpr int kTitleGapPx = 8;
   constexpr int kButtonGapPx = 12;
   const int buttonFont = systemFontId();
   const char* saveLabel = wordAlreadySaved_ ? "Saved" : "Save";
@@ -635,8 +609,6 @@ void EpubDictionaryUi::drawDefinitionPanel(EpubActivity& act) {
   panelW_ = panelW;
   panelH_ = panelH;
 
-  // Same sharp-corner white-fill + black-border panel style as the menu/settings drawers
-  // (SettingsDrawer background), not a rounded popup box.
   act.renderer.rectangle.fill(panelX, panelTop, panelW, panelH, false);
   act.renderer.rectangle.render(panelX, panelTop, panelW, panelH, true);
 
@@ -644,7 +616,6 @@ void EpubDictionaryUi::drawDefinitionPanel(EpubActivity& act) {
   const int titleY = panelTop + pad + (headerH - titleH) / 2;
   closeSize_ = closeSize;
   closeX_ = panelX + panelW - pad - closeSize;
-  // Keep a clear gap between the X and the header's dotted divider below it.
   closeY_ = panelTop + pad + (headerH - closeSize) / 2 - 8;
   const std::string title = act.renderer.text.truncate(titleFontId, lookedUpWord_.c_str(),
                                                         closeX_ - (panelX + pad) - 8, EpdFontFamily::BOLD);
@@ -652,7 +623,7 @@ void EpubDictionaryUi::drawDefinitionPanel(EpubActivity& act) {
   act.renderer.bitmap.icon(Close, closeX_, closeY_, closeSize, closeSize);
   if (wordAlreadySaved_) {
     const int tagFontId = MONTSERRAT_8_FONT_ID;
-    const char* tag = "\xE2\x98\x85 Saved";  // "* Saved"
+    const char* tag = "\xE2\x98\x85 Saved";
     const int tagW = act.renderer.text.getWidth(tagFontId, tag);
     const int tagY = titleY + (titleH - act.renderer.text.getLineHeight(tagFontId)) / 2;
     act.renderer.text.render(tagFontId, closeX_ - 8 - tagW, tagY, tag, true);

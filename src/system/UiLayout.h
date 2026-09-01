@@ -22,4 +22,4 @@ constexpr int CONTENT_TOP = 36;            ///< first usable y below the status 
 constexpr int CONTENT_BOTTOM_PADDING = 5;  ///< gap between content and the tab bar
 constexpr int LIST_BOTTOM_PADDING = 12;
 
-}  // namespace UiLayout
+}

@@ -163,7 +163,7 @@ void drawReadingButton(const GfxRenderer& renderer, const int x, const int y, co
   renderer.text.render(subtitleFont, x + (width - textWidth) / 2, subtitleY, truncated.c_str(), false);
 }
 
-}  // namespace
+}
 
 void TodaysReading::render(const int x, const int y, const int width, const int height) const {
   renderContent(x, y, width, height, false);

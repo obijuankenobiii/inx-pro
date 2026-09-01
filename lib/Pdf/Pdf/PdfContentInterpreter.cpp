@@ -155,9 +155,6 @@ void PdfContentInterpreter::showText(const std::string& bytes, const std::functi
   const double devX = normX * scale_;
   const double devY = (pageHeightPts_ - normY) * scale_;
 
-  // Declared-width advance: what the *original* PDF font's metrics say this text should occupy. Used as-is
-  // when nothing can be measured (e.g. every codepoint was unrenderable, so there's no rendered width to
-  // measure), and as the sole fallback when no measurer is available at all.
   std::string utf8;
   utf8.reserve(bytes.size());
   double declaredAdvance = 0.0;
@@ -165,8 +162,6 @@ void PdfContentInterpreter::showText(const std::string& bytes, const std::functi
   size_t charCount = 0;
 
   if (currentFont_->isCID) {
-    // Identity-H/V: two bytes (big-endian) per character code, and word spacing never applies (PDF32000
-    // 9.3.3 - Tw is defined only for the single-byte code 32 in simple/mixed-width composite fonts).
     for (size_t i = 0; i + 1 < bytes.size(); i += 2) {
       const uint32_t cid = (static_cast<unsigned char>(bytes[i]) << 8) | static_cast<unsigned char>(bytes[i + 1]);
       PdfFont::appendUtf8(utf8, PdfFont::unicodeForCid(*currentFont_, cid));
@@ -191,18 +186,12 @@ void PdfContentInterpreter::showText(const std::string& bytes, const std::functi
   double totalAdvanceTextSpace = declaredAdvance;
 
   if (!utf8.empty()) {
-    // trm's transformed Y basis vector length already folds in fontSize * (Tm/CTM scale), so it's the glyph
-    // size in PDF user-space units after all transforms except our own page-points -> device-pixels scale.
     const double userSpaceFontSize = std::hypot(trm.b, trm.d);
     const double devicePixelSize = userSpaceFontSize * scale_;
     const int fontId = PdfFont::nearestBuiltinFontId(devicePixelSize);
     const EpdFontFamily::Style style = currentFont_->style;
 
     if (measureTextWidthPx_) {
-      // Advance by what our substitute font actually rendered, not by the original (possibly narrower/wider)
-      // font's declared widths - otherwise each subsequent run drifts out of sync with the glyphs actually
-      // drawn and text overlaps/interleaves within a line. Tz (hScale_) isn't applied here since it isn't
-      // applied to the actual drawn glyphs either - staying consistent with what's really on screen.
       const int measuredPx = measureTextWidthPx_(fontId, utf8.c_str(), style);
       totalAdvanceTextSpace = (static_cast<double>(measuredPx) / scale_) +
                               static_cast<double>(charCount) * charSpace_ +
@@ -248,8 +237,6 @@ void PdfContentInterpreter::applyOperator(const std::string& op, std::vector<Pdf
     path_.push_back(transformPoint(num(0), num(1)));
   } else if ((op == "c" && operands.size() >= 6) || (op == "v" && operands.size() >= 4) ||
              (op == "y" && operands.size() >= 4)) {
-    // Curves are approximated by their endpoint. This preserves the visible geometry of common diagrams while
-    // keeping the interpreter small enough for the device.
     const size_t xIndex = op == "c" ? 4 : 2;
     const size_t yIndex = op == "c" ? 5 : 3;
     path_.push_back(transformPoint(num(xIndex), num(yIndex)));
@@ -286,7 +273,6 @@ void PdfContentInterpreter::applyOperator(const std::string& op, std::vector<Pdf
     tm_ = Mat2D();
     tlm_ = Mat2D();
   } else if (op == "ET") {
-    // no state to clean up in Phase 1
   } else if (op == "Tf" && operands.size() >= 2) {
     const std::string fontName = operands[0].isName() ? operands[0].strValue : "";
     fontSizePts_ = num(1);
@@ -342,13 +328,9 @@ void PdfContentInterpreter::applyOperator(const std::string& op, std::vector<Pdf
       }
     }
   }
-  // Clipping, shading, XObject, and marked-content operators remain recognized no-ops. Raster image support is
-  // added separately because it needs a decoder and a bounded framebuffer path on the device.
 }
 
 void PdfContentInterpreter::skipInlineImage(PdfLexer& lexer) {
-  // Best-effort resync: inline image binary data isn't parsed as content-stream syntax, so just scan forward
-  // for the "EI" operator. Rare edge case where binary bytes happen to false-positive on "EI" is accepted.
   while (true) {
     const PdfToken t = lexer.next();
     if (t.type == PdfTokenType::Eof) return;
@@ -365,8 +347,6 @@ void PdfContentInterpreter::run(const std::vector<uint8_t>& contentBytes,
   std::vector<PdfObject> operands;
   int tokensSinceYield = 0;
   long totalTokens = 0;
-  // A real page's content stream is at most a few thousand operators; this is purely a backstop against an
-  // unforeseen lexer edge case looping without terminating, not a limit expected to matter in practice.
   constexpr long kMaxTokens = 2000000;
 
   while (true) {
@@ -374,7 +354,7 @@ void PdfContentInterpreter::run(const std::vector<uint8_t>& contentBytes,
     const PdfToken tok = lexer.next();
     if (tok.type == PdfTokenType::Eof) break;
 
-    if (++tokensSinceYield >= 512) {  // feed the watchdog on token-dense pages
+    if (++tokensSinceYield >= 512) {
       tokensSinceYield = 0;
       vTaskDelay(1);
     }
@@ -395,6 +375,6 @@ void PdfContentInterpreter::run(const std::vector<uint8_t>& contentBytes,
     }
 
     operands.push_back(parsePdfValue(lexer, tok));
-    if (operands.size() > 64) operands.erase(operands.begin());  // guard against malformed/runaway streams
+    if (operands.size() > 64) operands.erase(operands.begin());
   }
 }

@@ -21,9 +21,6 @@
 
 namespace {
 
-// This is a temporary full-frame copy used only while rendering a grayscale
-// image. It is copied once before and once after the render, so PSRAM avoids a
-// 48 KB internal-heap spike without sitting on a display hot path.
 uint8_t* allocateBwSnapshotChunk(const size_t bytes) {
 #if defined(ARDUINO_ARCH_ESP32)
   if (void* memory = heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)) {
@@ -44,7 +41,7 @@ void freeBwSnapshotChunk(void* memory) {
 #endif
 }
 
-}  // namespace
+}
 
 GfxRenderer::GfxRenderer(HalDisplay& halDisplay)
     : display(halDisplay),
@@ -94,9 +91,6 @@ ExternalFont* GfxRenderer::findStreamingFont(const EpdFontData* data) const {
   return it == streamingFontSlots.end() ? nullptr : it->stream.get();
 }
 
-// Called once per pixel from every image/text/shape draw; opted into -O2 (the firmware otherwise builds
-// with -Os for flash size - see JpegRender.cpp for the fuller rationale). Function-scoped rather than a
-// whole-file pragma since most of this file isn't in a per-pixel hot path.
 __attribute__((optimize("O2"))) void GfxRenderer::rotateCoordinates(const int x, const int y, int* rotatedX,
                                                                     int* rotatedY) const {
   switch (orientation) {
@@ -131,9 +125,6 @@ __attribute__((optimize("O2"))) void GfxRenderer::drawPixel(const int x, const i
     return;
   }
 
-  // Image zooming and panning commonly render a rectangle that extends beyond
-  // the logical viewport. Clipping here avoids rotating invalid coordinates and,
-  // more importantly, avoids emitting one serial log line per clipped pixel.
   if (x < 0 || x >= getScreenWidth() || y < 0 || y >= getScreenHeight()) {
     return;
   }
@@ -253,6 +244,8 @@ void GfxRenderer::displayBuffer(const HalDisplay::RefreshMode refreshMode) const
 void GfxRenderer::displayBufferAsync(const HalDisplay::RefreshMode refreshMode) const {
   display.displayBufferAsync(refreshMode);
 }
+
+bool GfxRenderer::isRefreshBusy() const { return display.refreshBusy(); }
 
 void GfxRenderer::syncWriteBufferFromActive() const { display.syncWriteBufferFromActive(); }
 
@@ -461,9 +454,9 @@ void GfxRenderer::renderGrayscalePasses(const bool quality, const bool preserveT
   setRenderMode(BW);
 
   if (preserveText) {
-    restoreBwBuffer();  // rebase the BW baseline from the stored text frame (text-preserving reader)
+    restoreBwBuffer();
   } else {
-    clearScreen(0xFF);  // clean baseline so the next BW refresh isn't rebased from the leftover MSB plane
+    clearScreen(0xFF);
     cleanupGrayscaleWithFrameBuffer();
   }
 }
@@ -471,6 +464,11 @@ void GfxRenderer::renderGrayscalePasses(const bool quality, const bool preserveT
 void GfxRenderer::resetTransientReaderState() {
   freeBwBufferChunks();
   renderMode = BW;
+  // Dual-buffer panels swap on every refresh, so getFrameBuffer() here is the WRITE
+  // buffer - a stale frame, not what the panel is showing. Seeding the driver's OLD
+  // plane from it leaves the next refresh diffing against garbage. Pull the displayed
+  // frame in first.
+  syncWriteBufferFromActive();
   cleanupGrayscaleWithFrameBuffer();
 }
 

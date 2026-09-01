@@ -6,7 +6,7 @@
 
 int SearchText::top() { return 80; }
 
-void SearchText::render(const GfxRenderer& renderer, const std::string& value) {
+void SearchText::render(const GfxRenderer& renderer, const std::string& value, const char* placeholder) {
   constexpr int margin = 20;
   constexpr int button = 40;
   constexpr int gap = 10;
@@ -17,7 +17,7 @@ void SearchText::render(const GfxRenderer& renderer, const std::string& value) {
   renderer.rectangle.fill(x, y, width, height, false, true);
   renderer.rectangle.render(x, y, width, height, true, true);
 
-  const std::string shown = value.empty() ? "Search books" : value;
+  const std::string shown = value.empty() ? (placeholder ? placeholder : "Search books") : value;
   const bool hint = value.empty();
   const int font = systemFontId();
   const int textY = y + (height - renderer.text.getLineHeight(font)) / 2;

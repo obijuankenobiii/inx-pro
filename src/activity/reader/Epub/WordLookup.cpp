@@ -22,7 +22,7 @@ constexpr int kHitPadding = 8;
 constexpr unsigned long kNavEdgeDebounceMs = 130;
 constexpr unsigned long kNavRepeatInitialMs = 700;
 constexpr unsigned long kNavRepeatIntervalMs = 95;
-}  // namespace
+}
 
 void WordLookup::CaptureBufferDeleter::operator()(uint8_t* buffer) const {
   if (!buffer) return;

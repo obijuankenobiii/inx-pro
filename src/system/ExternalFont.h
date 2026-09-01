@@ -49,8 +49,6 @@ class ExternalFont {
   /** Return whether the given offset/length is eligible for bitmap caching. */
   bool bitmapCacheCanStore(uint32_t offset, uint32_t length) const;
 
-  // Sticky has 8 MB PSRAM and can retain a much larger working set of the
-  // reader's external-font glyphs without repeatedly seeking the SD card.
   static constexpr size_t kGlyphMetaCacheSlots = 512;
   static constexpr size_t kGlyphBitmapCacheSlots = 128;
   struct GlyphMetaCacheSlot {

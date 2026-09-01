@@ -7,7 +7,7 @@
 HomeWidgetLayout::HomeWidgetLayout(GfxRenderer& renderer)
     : renderer_(renderer), carousel_(renderer), clock_(renderer), calendar_(renderer), recent_(renderer),
       shortcut_(renderer), shortcutList_(renderer), temperature_(renderer), humidity_(renderer), todaysReading_(renderer),
-      favorites_(renderer) {}
+      favorites_(renderer), heatmap_(renderer) {}
 
 void HomeWidgetLayout::render(const HomeTheme::Theme& theme, const int carouselIndex, const int favoriteIndex) const {
   switch (theme.layout) {
@@ -48,6 +48,8 @@ bool HomeWidgetLayout::needsRefresh(const HomeTheme::Theme& theme) const {
     if (theme.widgets[slot] == HomeTheme::Widget::Humidity && humidity_.needsRefresh()) return true;
 #endif
     if (theme.widgets[slot] == HomeTheme::Widget::TodaysReading && todaysReading_.needsRefresh()) return true;
+    if (theme.widgets[slot] == HomeTheme::Widget::Heatmap &&
+        heatmap_.needsRefresh(theme.heatmapViews[slot])) return true;
   }
   return false;
 }
@@ -62,10 +64,6 @@ HomeWidgetLayout::Grid HomeWidgetLayout::grid(const HomeTheme::Layout layout, co
   constexpr int gap = 0;
   const int baseColumns = layout == HomeTheme::Layout::TwoByTwo ? 2 : 1;
   constexpr int baseRows = 2;
-  // The widget layout is designed for the same content band as Home: below
-  // the header and above the bottom navigation area. Sleep does not draw the
-  // menus itself, but its widgets still need to use that geometry so their
-  // visual center matches the layout they were built for.
   const int areaY = navigation::Menu::height;
   const int fullWidth = renderer_.getScreenWidth();
   const int fullHeight = renderer_.getScreenHeight() - areaY - navigation::Menu::bottomHeight;
@@ -79,9 +77,6 @@ HomeWidgetLayout::Grid HomeWidgetLayout::grid(const HomeTheme::Layout layout, co
   int centeredWidth = fullWidth;
   int centeredHeight = fullHeight;
 
-  // Sleep screens should center the configured widget group. A single widget
-  // in the default first slot must not remain in the upper half of the panel;
-  // when several widgets are present, keep their grid relationship intact.
   if (sleep && theme != nullptr) {
     int minColumn = baseColumns;
     int minRow = baseRows;
@@ -175,6 +170,10 @@ void HomeWidgetLayout::renderGrid(const HomeTheme::Theme& theme, const int carou
                           theme.backgrounds[slot] != 0, theme.carouselStyles[slot], theme.carouselLabels[slot] != 0,
                           theme.carouselLabelColors[slot], theme.carouselShadowStyles[slot]);
         break;
+      case HomeTheme::Widget::Heatmap:
+        heatmap_.render(bounds.x, bounds.y, bounds.width, bounds.height, theme.heatmapViews[slot],
+                        theme.carouselLabels[slot] != 0, theme.carouselLabelColors[slot]);
+        break;
       case HomeTheme::Widget::Empty:
       default:
         break;
@@ -261,6 +260,9 @@ HomeWidgetLayout::HitResult HomeWidgetLayout::hitTest(const HomeTheme::Theme& th
   const int todaysReading = todaysReadingAt(theme, x, y);
   if (todaysReading >= 0) return {HitType::TodaysReading, todaysReading};
 
+  const int heatmap = heatmapAt(theme, x, y);
+  if (heatmap >= 0) return {HitType::Heatmap, heatmap};
+
   const int shortcut = shortcutAt(theme, x, y);
   if (shortcut >= 0) return {HitType::Shortcut, shortcut};
   return {HitType::None, -1};
@@ -323,6 +325,17 @@ int HomeWidgetLayout::todaysReadingAt(const HomeTheme::Theme& theme, const int x
     if (theme.widgets[slot] != HomeTheme::Widget::TodaysReading) continue;
     const Bounds bounds = slotBounds(layout, slot);
     if (todaysReading_.buttonHitTest(x, y, bounds.x, bounds.y, bounds.width, bounds.height)) return slot;
+  }
+  return -1;
+}
+
+int HomeWidgetLayout::heatmapAt(const HomeTheme::Theme& theme, const int x, const int y) const {
+  if (theme.layout == HomeTheme::Layout::Classic) return -1;
+  const Grid layout = grid(theme.layout);
+  for (int slot = 0; slot < HomeTheme::slotCount(theme.layout); ++slot) {
+    if (theme.widgets[slot] != HomeTheme::Widget::Heatmap) continue;
+    const Bounds bounds = slotBounds(layout, slot);
+    if (x >= bounds.x && x < bounds.x + bounds.width && y >= bounds.y && y < bounds.y + bounds.height) return slot;
   }
   return -1;
 }

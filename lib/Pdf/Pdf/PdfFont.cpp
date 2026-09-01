@@ -17,20 +17,17 @@
 
 namespace {
 
-// PDF WinAnsiEncoding (PDF32000 Appendix D.2, identical to Windows code page 1252): ASCII range and the
-// Latin-1 supplement (0xA0-0xFF) map directly to their code value; only the 0x80-0x9F block differs from
-// Latin-1 (curly quotes, dashes, etc.). Undefined slots map to 0 (not renderable).
 uint32_t winAnsiToUnicode(const uint8_t code) {
   static const uint32_t kHighBlock[32] = {
-      0x20AC, 0,      0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021,  // 80-87
-      0x02C6, 0x2030, 0x0160, 0x2039, 0x0152, 0,      0x017D, 0,       // 88-8F
-      0,      0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014,  // 90-97
-      0x02DC, 0x2122, 0x0161, 0x203A, 0x0153, 0,      0x017E, 0x0178,  // 98-9F
+      0x20AC, 0,      0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021,
+      0x02C6, 0x2030, 0x0160, 0x2039, 0x0152, 0,      0x017D, 0,
+      0,      0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014,
+      0x02DC, 0x2122, 0x0161, 0x203A, 0x0153, 0,      0x017E, 0x0178,
   };
-  if (code < 0x20) return 0;                     // control chars, not rendered
-  if (code == 0x7F) return 0;                    // DEL
+  if (code < 0x20) return 0;
+  if (code == 0x7F) return 0;
   if (code >= 0x80 && code <= 0x9F) return kHighBlock[code - 0x80];
-  return code;  // 0x20-0x7E ASCII and 0xA0-0xFF Latin-1 supplement both map 1:1
+  return code;
 }
 
 uint32_t glyphNameToUnicode(const std::string& name) {
@@ -70,9 +67,6 @@ uint32_t bytesToUint(const std::string& bytes) {
   return v;
 }
 
-// Decodes the first UTF-16BE codepoint (handling one surrogate pair) from a /ToUnicode destination string.
-// Multi-codepoint ligature mappings (e.g. "ffi" -> 3 codepoints) collapse to their first codepoint - an
-// acceptable approximation given we're substituting a system font's glyphs anyway, not the original ones.
 uint32_t firstUtf16BECodepoint(const std::string& bytes) {
   if (bytes.size() < 2) return 0;
   const uint32_t unit0 = (static_cast<unsigned char>(bytes[0]) << 8) | static_cast<unsigned char>(bytes[1]);
@@ -85,8 +79,6 @@ uint32_t firstUtf16BECodepoint(const std::string& bytes) {
   return unit0;
 }
 
-// Parses a /ToUnicode CMap stream (PostScript-ish syntax: bfchar/bfrange sections of hex strings) using the
-// same lexer as PDF object syntax - CMap hex strings/numbers/keywords are byte-for-byte the same grammar.
 void parseToUnicodeCMap(const std::vector<uint8_t>& bytes, std::map<uint32_t, uint32_t>& out) {
   if (bytes.empty()) return;
   PdfLexer lexer(bytes.data(), bytes.size());
@@ -118,7 +110,7 @@ void parseToUnicodeCMap(const std::vector<uint8_t>& bytes, std::map<uint32_t, ui
 
         const uint32_t loCode = bytesToUint(lo.text);
         const uint32_t hiCode = bytesToUint(hi.text);
-        if (hiCode < loCode || hiCode - loCode > 65536) continue;  // malformed/runaway guard
+        if (hiCode < loCode || hiCode - loCode > 65536) continue;
 
         if (dst.type == PdfTokenType::StringLiteral) {
           const uint32_t base = firstUtf16BECodepoint(dst.text);
@@ -139,8 +131,6 @@ void parseToUnicodeCMap(const std::vector<uint8_t>& bytes, std::map<uint32_t, ui
   }
 }
 
-// Parses a CIDFont /W array: entries are `cidFirst [w0 w1 w2 ...]` (consecutive CIDs from cidFirst) or
-// `cidFirst cidLast w` (every CID in the inclusive range gets width w).
 void parseCidWidths(const PdfDocument& doc, const PdfObject& wArray, std::map<uint32_t, int>& out) {
   const auto& items = wArray.arrValue;
   size_t i = 0;
@@ -162,7 +152,7 @@ void parseCidWidths(const PdfDocument& doc, const PdfObject& wArray, std::map<ui
       }
       i += 3;
     } else {
-      break;  // malformed
+      break;
     }
   }
 }
@@ -175,7 +165,7 @@ PdfFontInfo resolveType0(const PdfDocument& doc, const PdfObject& fontDict) {
   if (!encodingObj) return info;
   const PdfObject encoding = doc.resolve(*encodingObj);
   if (!encoding.isName() || (encoding.strValue != "Identity-H" && encoding.strValue != "Identity-V")) {
-    return info;  // other CMaps (non-Identity) are out of scope
+    return info;
   }
 
   std::string baseFont;
@@ -209,14 +199,12 @@ PdfFontInfo resolveType0(const PdfDocument& doc, const PdfObject& fontDict) {
       }
     }
   }
-  // No /ToUnicode: cidToUnicode stays empty, and unicodeForCid() falls back to treating the CID itself as
-  // the codepoint - correct for the common case of a Latin-subset CIDFont built with CID == Unicode.
 
   info.supported = true;
   return info;
 }
 
-}  // namespace
+}
 
 PdfFontInfo PdfFont::resolve(const PdfDocument& doc, const PdfObject& fontDict) {
   PdfFontInfo info;
@@ -227,17 +215,14 @@ PdfFontInfo PdfFont::resolve(const PdfDocument& doc, const PdfObject& fontDict) 
     return resolveType0(doc, fontDict);
   }
   if (subtype && subtype->isName() && subtype->strValue == "Type3") {
-    return info;  // procedural glyphs, not applicable to a system-font fallback
+    return info;
   }
 
-  // Simple font (Type1/TrueType/MMType1). We never decode the PDF's own outlines (embedded or not) - only
-  // its text metadata - so /FontFile*, if present, doesn't affect whether the font is supported.
   std::string baseFont;
   if (const PdfObject* baseFontObj = fontDict.find("BaseFont")) {
     const PdfObject resolved = doc.resolve(*baseFontObj);
     if (resolved.isName()) baseFont = resolved.strValue;
   }
-  // Strip a subset tag prefix like "ABCDEF+Helvetica-Bold".
   if (baseFont.size() > 7 && baseFont[6] == '+') {
     bool allUpper = true;
     for (int i = 0; i < 6; i++) {
@@ -309,9 +294,8 @@ uint32_t PdfFont::unicodeForCid(const PdfFontInfo& font, const uint32_t cid) {
 
 int PdfFont::nearestBuiltinFontId(const double devicePixelSize) {
   static const std::pair<int, int> kSizes[] = {
-      {8, ATKINSON_HYPERLEGIBLE_8_FONT_ID},   {10, ATKINSON_HYPERLEGIBLE_10_FONT_ID},
-      {12, ATKINSON_HYPERLEGIBLE_12_FONT_ID}, {14, ATKINSON_HYPERLEGIBLE_14_FONT_ID},
-      {16, ATKINSON_HYPERLEGIBLE_16_FONT_ID}, {18, ATKINSON_HYPERLEGIBLE_18_FONT_ID},
+      {8, CHAREINK_10_FONT_ID},  {10, CHAREINK_10_FONT_ID}, {12, CHAREINK_12_FONT_ID},
+      {14, CHAREINK_14_FONT_ID}, {16, CHAREINK_16_FONT_ID}, {18, CHAREINK_18_FONT_ID},
   };
   int best = kSizes[0].second;
   double bestDelta = 1e9;

@@ -10,13 +10,14 @@
 #include "../widget/Humidity.h"
 #include "../widget/TodaysReading.h"
 #include "../widget/Favorites.h"
+#include "../widget/Heatmap.h"
 #include "state/HomeTheme.h"
 
 class GfxRenderer;
 
 class HomeWidgetLayout final {
  public:
-  enum class HitType { None, Carousel, Recent, Favorites, TodaysReading, Shortcut };
+  enum class HitType { None, Carousel, Recent, Favorites, TodaysReading, Heatmap, Shortcut };
   enum class SwipeTarget { None, Carousel, Favorites };
 
   struct HitResult {
@@ -68,6 +69,7 @@ class HomeWidgetLayout final {
   int recentAt(const HomeTheme::Theme& theme, int x, int y) const;
   int favoritesAt(const HomeTheme::Theme& theme, int carouselIndex, int x, int y) const;
   int todaysReadingAt(const HomeTheme::Theme& theme, int x, int y) const;
+  int heatmapAt(const HomeTheme::Theme& theme, int x, int y) const;
   int shortcutAt(const HomeTheme::Theme& theme, int x, int y) const;
 
   GfxRenderer& renderer_;
@@ -81,4 +83,5 @@ class HomeWidgetLayout final {
   Humidity humidity_;
   TodaysReading todaysReading_;
   Favorites favorites_;
+  Heatmap heatmap_;
 };

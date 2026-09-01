@@ -44,4 +44,4 @@ std::string buildUrl(const std::string& serverUrl, const std::string& path) {
   return urlWithProtocol + "/" + path;
 }
 
-}  // namespace UrlUtils
+}

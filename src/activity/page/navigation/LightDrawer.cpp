@@ -30,33 +30,64 @@ constexpr int lightCaretTouchWidth = 60;
 constexpr int lightCaretTouchHeight = 72;
 constexpr int lightTrackX = 56;
 constexpr int lightTrackWidth = 368;
-constexpr int lightKnobRadius = 12;
+constexpr int lightKnobRadius = 15;
 constexpr int lightKnobBorder = 2;
 constexpr int lightBrightnessLabelY = 120;
 constexpr int lightBrightnessY = 176;
 constexpr int lightTemperatureLabelY = 220;
 constexpr int lightTemperatureY = 266;
 
-int lightPercentFromTap(const int tapX) {
+int lightValueFromTrack(const int tapX, const bool brightness) {
   const int clamped = std::max(lightTrackX, std::min(lightTrackX + lightTrackWidth, tapX));
   const float fraction = static_cast<float>(clamped - lightTrackX) / static_cast<float>(lightTrackWidth);
-  // Square-law, so the dim end of the range gets real travel on the track instead of a
-  // couple of pixels — see frontlight_ui in system/Frontlight.h.
-  return frontlight_ui::percentFromFraction(fraction);
+  return brightness ? frontlight_ui::percentFromFraction(fraction)
+                    : static_cast<int>(fraction * 100.0f + 0.5f);
 }
 
-void drawLightTrack(const GfxRenderer& renderer, const int y, const int value) {
+void drawLightCarets(const GfxRenderer& renderer, const int y) {
   const int caretY = y - lightCaretSize / 2;
   renderer.bitmap.icon(LibraryFilterLeft, lightTrackX - lightCaretGap - lightCaretSize, caretY, lightCaretSize,
                        lightCaretSize);
   renderer.bitmap.icon(LibraryFilterRight, lightTrackX + lightTrackWidth + lightCaretGap, caretY, lightCaretSize,
                        lightCaretSize);
-  constexpr int lightTrackHeight = 4;
-  renderer.rectangle.fill(lightTrackX, y - lightTrackHeight / 2, lightTrackWidth, lightTrackHeight, true, true);
-  // Marker uses the inverse curve so it sits under the finger that set it.
+}
+
+void drawLightTrackBody(const GfxRenderer& renderer, const int y, const int value) {
   const int markerX = lightTrackX + static_cast<int>(lightTrackWidth * frontlight_ui::fractionFromPercent(value));
+  constexpr int activeTrackHeight = 8;
+  constexpr int inactiveTrackHeight = 4;
+  if (markerX > lightTrackX) {
+    renderer.rectangle.fill(lightTrackX, y - activeTrackHeight / 2, markerX - lightTrackX, activeTrackHeight,
+                            static_cast<int>(GfxRenderer::FillTone::Ink), true);
+  }
+  if (markerX < lightTrackX + lightTrackWidth) {
+    renderer.rectangle.fill(markerX, y - inactiveTrackHeight / 2,
+                            lightTrackX + lightTrackWidth - markerX, inactiveTrackHeight,
+                            static_cast<int>(GfxRenderer::FillTone::Gray), true);
+  }
   renderer.circle.render(markerX, y, lightKnobRadius, true);
   renderer.circle.render(markerX, y, lightKnobRadius - lightKnobBorder, false);
+}
+
+void drawLightTrack(const GfxRenderer& renderer, const int y, const int value) {
+  drawLightCarets(renderer, y);
+  drawLightTrackBody(renderer, y, value);
+}
+
+/**
+ * Band holding both carets, the whole track, and the knob at any position along it. It is
+ * blanked before the drag's frame is stored, so the stored frame carries every pixel of
+ * the screen except the throbber.
+ */
+constexpr int lightSliderStripX = lightTrackX - lightCaretGap - lightCaretSize;
+constexpr int lightSliderStripWidth = lightTrackWidth + 2 * (lightCaretGap + lightCaretSize);
+constexpr int lightSliderStripHalfHeight = lightKnobRadius + 2;
+constexpr int lightSliderStripHeight = lightSliderStripHalfHeight * 2;
+
+void clearLightSliderRow(const GfxRenderer& renderer, const int trackY) {
+  renderer.rectangle.fill(lightSliderStripX, trackY - lightSliderStripHalfHeight, lightSliderStripWidth,
+                          lightSliderStripHeight, static_cast<int>(GfxRenderer::FillTone::Paper));
+  drawLightCarets(renderer, trackY);
 }
 
 bool isInCaret(const int tapX, const int tapY, const int trackY, const bool right) {
@@ -77,21 +108,87 @@ void saveLightPreferences() {
   settings.warmPercent = frontlight.colorTemperature();
   frontlight_preferences::save(settings);
 }
-}  // namespace
+}
 
 LightDrawer::LightDrawer(GfxRenderer& renderer) : drawerRenderer(renderer) {}
+
+void LightDrawer::refreshAfterSliderChange() const {
+  drawerRenderer.syncWriteBufferFromActive();
+  render();
+  drawerRenderer.displayBufferAsync(HalDisplay::FAST_REFRESH);
+  drawerRenderer.syncWriteBufferFromActive();
+}
+
+/**
+ * Stores the whole frame for the duration of a slider drag.
+ *
+ * The dragged row is blanked back to paper and carets first, so what gets stored is the
+ * entire screen minus the throbber: drawer chrome, both labels, the other slider, and the
+ * page underneath. Each drag step then restores that frame and stamps the knob on top,
+ * which is what keeps a live drag off the full render path.
+ */
+void LightDrawer::storeSliderFrame() const {
+  sliderStripTrackY = sliderControl == 0 ? lightBrightnessY : lightTemperatureY;
+  // Order matters. This panel is dual-buffer, so after the drawer's own refresh the write
+  // buffer holds a stale frame and syncWriteBufferFromActive() has to run FIRST to pull
+  // the displayed frame in. Running it after the blank would copy the on-screen knob right
+  // back over the cleared row and store it.
+  drawerRenderer.syncWriteBufferFromActive();
+  clearLightSliderRow(drawerRenderer, sliderStripTrackY);
+  sliderFrameStored = drawerRenderer.storeBwBuffer();
+}
+
+void LightDrawer::releaseSliderFrame() const {
+  if (!sliderFrameStored) return;
+  drawerRenderer.freeBwBufferChunks();
+  sliderFrameStored = false;
+}
+
+/**
+ * Restores the stored frame over the old throbber, draws the knob at the new value, and
+ * pushes it. displayBufferAsync() drains any still-running refresh before starting the
+ * next one, so this self-throttles to the panel's refresh rate and always shows the newest
+ * knob position rather than queueing intermediate ones.
+ */
+void LightDrawer::renderSliderRowLive() const {
+  if (!open || !frontlight.present()) return;
+
+  // A FAST refresh on this panel is a ~460 ms full-screen DRF, and displayBufferAsync()
+  // drains a pending one before starting the next. Calling it every time the value moves
+  // therefore parks the whole input loop in that drain, so the frontlight itself only
+  // tracks the finger twice a second. Skip instead: the drag keeps sampling touch and
+  // driving the light live, and the knob repaints from the newest value once the panel
+  // frees up.
+  if (drawerRenderer.isRefreshBusy()) {
+    sliderRepaintPending = true;
+    return;
+  }
+  sliderRepaintPending = false;
+
+  const bool brightness = sliderControl == 0;
+  const int trackY = brightness ? lightBrightnessY : lightTemperatureY;
+  const int value = brightness ? frontlight.brightness() : frontlight.colorTemperature();
+
+  if (!sliderFrameStored || sliderStripTrackY != trackY || !drawerRenderer.copyStoredBwToFramebuffer()) {
+    // No stored frame (allocation failed): pull the displayed frame in instead, or the
+    // dual-buffer swap would leave the knob being drawn onto a stale frame.
+    drawerRenderer.syncWriteBufferFromActive();
+  }
+
+  // Rebuild the row rather than trusting whatever the restore brought back: paper over any
+  // knob still in the frame, carets and both track bars behind where it sat, then the knob
+  // at its new position. Cheap next to the refresh, and it cannot leave a stuck throbber.
+  clearLightSliderRow(drawerRenderer, trackY);
+  drawLightTrackBody(drawerRenderer, trackY, value);
+
+  drawerRenderer.displayBufferAsync(HalDisplay::FAST_REFRESH);
+}
 
 void LightDrawer::render() const {
   if (!open || !frontlight.present()) return;
 
   const int width = drawerRenderer.getScreenWidth();
-  // Scrim: 50% dither over the page below the drawer, so the drawer reads as a modal layer
-  // rather than as content that happens to be drawn on top of the page.
   const int screenHeight = drawerRenderer.getScreenHeight();
-  // if (screenHeight > lightDrawerHeight) {
-  //   drawerRenderer.rectangle.fill(0, lightDrawerHeight, width, screenHeight - lightDrawerHeight,
-  //                                 static_cast<int>(GfxRenderer::FillTone::Dither));
-  // }
 
   drawerRenderer.rectangle.fill(0, 0, width, lightDrawerHeight,
                                 static_cast<int>(GfxRenderer::FillTone::Paper));
@@ -116,16 +213,79 @@ void LightDrawer::render() const {
   drawLightTrack(drawerRenderer, lightTemperatureY, frontlight.colorTemperature());
 }
 
-// A down-swipe only opens the drawer if it STARTS within this fraction of the screen
-// height from the top. Confirmed against hardware: a top-edge swipe reports
-// native=(0.008, ...) and the renderer maps screen ny = nativeNx, so the top really is
-// ny ~ 0. Mid-screen swipes fall through to the page underneath (library pagination).
 constexpr float kOpenFromTopMaxNy = 0.15f;
 
 LightDrawer::Action LightDrawer::handleInput(MappedInputManager& input) const {
-  // While the drawer is open the edge bands adjust the light, exactly as they do in the
-  // reader: left = colour temperature, right = brightness. Checked before the close gesture
-  // so an edge swipe adjusts instead of dismissing; a middle swipe still closes.
+  if (open && sliderDragging) {
+    if (input.isTouchPressed()) {
+      float nx = 0.0f;
+      float ny = 0.0f;
+      if (input.isTouchHeldInScreen(drawerRenderer, nx, ny)) {
+        const int value = lightValueFromTrack(static_cast<int>(nx * drawerRenderer.getScreenWidth()),
+                                              sliderControl == 0);
+        const int current = sliderControl == 0 ? frontlight.brightness() : frontlight.colorTemperature();
+        if (value != current) {
+          if (sliderControl == 0) {
+            frontlight.setBrightness(static_cast<uint8_t>(value));
+          } else {
+            frontlight.setColorTemperature(static_cast<uint8_t>(value));
+          }
+          sliderDragChanged = true;
+          sliderRepaintPending = true;
+        }
+      }
+      // Retry every pass, not just on a change: a move made while the panel was busy still
+      // owes a repaint once it goes idle.
+      if (sliderRepaintPending) renderSliderRowLive();
+      return Action::Adjusted;
+    }
+
+    sliderDragging = false;
+    sliderRepaintPending = false;
+    releaseSliderFrame();
+    if (sliderDragChanged) {
+      saveLightPreferences();
+      refreshAfterSliderChange();
+    }
+    sliderDragChanged = false;
+    return Action::Adjusted;
+  }
+
+  if (open) {
+    float nx = 0.0f;
+    float ny = 0.0f;
+    if (input.wasTouchPressedInScreen(drawerRenderer, nx, ny)) {
+      const int x = static_cast<int>(nx * drawerRenderer.getScreenWidth());
+      const int y = static_cast<int>(ny * drawerRenderer.getScreenHeight());
+      const bool inBrightnessTrack = y >= lightBrightnessY - 24 && y <= lightBrightnessY + 24 &&
+                                     x >= lightTrackX - lightKnobRadius &&
+                                     x <= lightTrackX + lightTrackWidth + lightKnobRadius;
+      const bool inTemperatureTrack = y >= lightTemperatureY - 24 && y <= lightTemperatureY + 24 &&
+                                      x >= lightTrackX - lightKnobRadius &&
+                                      x <= lightTrackX + lightTrackWidth + lightKnobRadius;
+      if (inBrightnessTrack || inTemperatureTrack) {
+        sliderControl = inBrightnessTrack ? 0 : 1;
+        sliderDragging = true;
+        sliderDragChanged = false;
+        storeSliderFrame();
+        const int value = lightValueFromTrack(x, sliderControl == 0);
+        const int current = sliderControl == 0 ? frontlight.brightness() : frontlight.colorTemperature();
+        if (value != current) {
+          if (sliderControl == 0) {
+            frontlight.setBrightness(static_cast<uint8_t>(value));
+          } else {
+            frontlight.setColorTemperature(static_cast<uint8_t>(value));
+          }
+          sliderDragChanged = true;
+        }
+        // Always repaint: storing the frame cleared the row, so the knob has to be put
+        // back even when the press landed on the value the slider already held.
+        renderSliderRowLive();
+        return Action::Adjusted;
+      }
+    }
+  }
+
   if (open && frontlight_ui::handleEdgeSwipe(input, drawerRenderer)) {
     return Action::Adjusted;
   }
@@ -134,11 +294,6 @@ LightDrawer::Action LightDrawer::handleInput(MappedInputManager& input) const {
     return Action::Closed;
   }
   if (!open) {
-    // Goal: only open from the top edge, so a mid-screen down-swipe stays available to the
-    // page underneath (library pagination). The band is not gated yet — the swipe start is
-    // reported in the renderer's logical frame, and after the X4 Pro's 90-degree touch
-    // rotation it is not obvious which end of that axis is the physical top. Log the real
-    // value first, then set the threshold from it rather than guessing.
     float startNx = 0.0f;
     float startNy = 0.0f;
     if (input.wasTouchSwipeDownInScreen(drawerRenderer, startNx, startNy)) {
@@ -149,7 +304,6 @@ LightDrawer::Action LightDrawer::handleInput(MappedInputManager& input) const {
         return Action::Opened;
       }
     } else if (input.wasTouchSwipeDownForRenderer(drawerRenderer)) {
-      // Direction matched but no start position — open anyway rather than be unopenable.
       INX_SERIAL.printf("[LIGHTDRAWER] swipe-down with NO start position available\n");
       open = true;
       return Action::Opened;
@@ -201,16 +355,13 @@ LightDrawer::Action LightDrawer::handleTap(const int tapX, const int tapY) const
   }
 
   if (tapY >= lightBrightnessY - 24 && tapY <= lightBrightnessY + 24) {
-    frontlight.setBrightness(static_cast<uint8_t>(lightPercentFromTap(tapX)));
+    frontlight.setBrightness(static_cast<uint8_t>(lightValueFromTrack(tapX, true)));
     saveLightPreferences();
     return Action::Opened;
   }
 
   if (tapY >= lightTemperatureY - 24 && tapY <= lightTemperatureY + 24) {
-    // Linear: colour temperature has no perceptual crowding at either end.
-    const int clampedX = std::max(lightTrackX, std::min(lightTrackX + lightTrackWidth, tapX));
-    frontlight.setColorTemperature(
-        static_cast<uint8_t>((clampedX - lightTrackX) * 100 / lightTrackWidth));
+    frontlight.setColorTemperature(static_cast<uint8_t>(lightValueFromTrack(tapX, false)));
     saveLightPreferences();
     return Action::Opened;
   }
@@ -218,6 +369,6 @@ LightDrawer::Action LightDrawer::handleTap(const int tapX, const int tapY) const
   return Action::Opened;
 }
 
-}  // namespace navigation
+}
 
 #endif

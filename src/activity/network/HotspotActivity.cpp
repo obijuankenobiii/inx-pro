@@ -61,7 +61,7 @@ std::string truncateString(const std::string& str, int maxLength) {
   result.replace(maxLength - 3, result.length() - (maxLength - 3), "...");
   return result;
 }
-}  // namespace
+}
 
 /**
  * @brief Static trampoline function for FreeRTOS task creation
@@ -323,8 +323,6 @@ void HotspotActivity::renderServerRunning() const {
   const int textX = CONTENT_MARGIN + 2;
   const int qrX = screenWidth - QR_SIZE - CONTENT_MARGIN;
   const int stepStride = QR_SIZE + 92;
-  // Center the two-step block (each step is QR_SIZE tall) in the space between the header and the
-  // footer button labels, instead of pinning it just under the header.
   const int contentHeight = stepStride + QR_SIZE;
   const int availableBottom = screenHeight - BOTTOM_AREA_HEIGHT;
   const int verticalOffset = std::max(0, (availableBottom - contentStart - contentHeight) / 2);

@@ -60,10 +60,6 @@ class EpubDictionaryUi {
   bool wordAlreadySaved_ = false;
   std::string currentDefinition_;
   std::vector<DefinitionBlock> definitionBlocks_;
-  // Wrapped/styled once per lookup in performLookup() (not per-frame in drawDefinitionPanel) - a
-  // large HTML definition (a big scholarly dictionary entry can be 10+KB of markup) produces
-  // thousands of small string/vector allocations, which was crashing on repeated re-layout (e.g. one
-  // extra full re-parse+re-layout per scroll press) under heap pressure on the ESP32-C3.
   std::vector<DefinitionStyledLine> definitionLines_;
   size_t definitionScrollLine_ = 0;
   size_t definitionMaxScrollLine_ = 0;

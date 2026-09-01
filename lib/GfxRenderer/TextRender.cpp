@@ -52,20 +52,19 @@ int scaleMetricRound(const int value, const uint8_t scalePct) {
 }
 
 uint8_t mediumTextCodeForLevel(const uint8_t level) {
-  // Per-device; see mediumTextCodeTable() in lib/hal_<device>/ImageToneMap.cpp.
   return mediumTextCodeTable()[level & 3u];
 }
 
 uint8_t imageLevelFromFontBmpVal(const uint8_t bmpVal) {
   switch (bmpVal & 3u) {
     case 0:
-      return 3;  // solid black
+      return 3;
     case 1:
-      return 1;  // dark gray
+      return 1;
     case 2:
-      return 2;  // light gray
+      return 2;
     default:
-      return 0;  // white
+      return 0;
   }
 }
 
@@ -138,7 +137,7 @@ bool embeddedGlyphBitmapIsValid(const EpdFontData* fontData, const EpdGlyph* gly
   return offset <= fontData->bitmapSize && requiredBytes <= fontData->bitmapSize - offset && length >= requiredBytes;
 }
 
-}  // namespace
+}
 
 int TextRender::getWidth(const int fontId, const char* text, const EpdFontFamily::Style style) const {
   if (findFontFamily(gfx, fontId) == nullptr) {
@@ -530,7 +529,6 @@ int TextRender::renderSmallCaps(const int fontId, const int x, const int y, cons
   const auto font = (*findFontFamily(gfx, fontId));
   const std::string upper = toUpperUtf8(text);
   const char* ptr = upper.c_str();
-  // Sit the small caps on the same baseline as the surrounding full-size text.
   const int yPos = y + getFontAscenderSize(fontId);
   int xpos = x;
   int yCursor = yPos;
@@ -751,7 +749,6 @@ void TextRender::renderScaledChar(const EpdFontFamily& fontFamily, const uint32_
           if (sx1 <= sx0) sx1 = sx0 + 1;
           sx1 = std::min<int>(sx1, width);
           const int screenX = *x + scaledLeft + outX;
-          // Keep the darkest source pixel in the horizontal footprint so vertical strokes survive.
           if (is2Bit) {
             uint8_t rawMax = 0;
             for (int sx = sx0; sx < sx1; ++sx) {
@@ -798,7 +795,6 @@ void TextRender::renderScaledChar(const EpdFontFamily& fontFamily, const uint32_
         if (sx1 <= sx0) sx1 = sx0 + 1;
         sx1 = std::min<int>(sx1, width);
         const int screenX = *x + scaledLeft + outX;
-        // Keep the darkest source pixel in the footprint so thin strokes survive downscaling.
         if (is2Bit) {
           uint8_t rawMax = 0;
           for (int sy = sy0; sy < sy1; ++sy) {

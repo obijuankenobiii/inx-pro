@@ -94,8 +94,6 @@ class EpubAnnotationUi {
    *  after (clearAllStoredHighlightsOnCurrentPage() recapture). */
   bool suppressOverlayDraw_ = false;
   WordLookup wordLookup_;
-  // Compatibility aliases keep annotation-specific range code compact while
-  // WordLookup owns the actual geometry, cursor, navigation and snapshot.
   std::vector<PageWordHit>& words_ = wordLookup_.words();
   std::vector<size_t>& lineFirst_ = wordLookup_.lineFirst();
   size_t& focus_ = wordLookup_.focus();

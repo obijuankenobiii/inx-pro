@@ -1,7 +1,6 @@
 #pragma once
 #include <cstdint>
 
-// 30x30 1-bit alignment icon, white background / black glyph.
 static const uint8_t Txt24[] = {
   0xe0, 0x7f, 0xff, 
   0x80, 0x1f, 0xff, 

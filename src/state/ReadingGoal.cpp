@@ -7,13 +7,14 @@
 #include <cstdint>
 
 #include "state/ReaderSetting.h"
+#include "state/Statistics.h"
 
 extern HalGPIO gpio;
 
 namespace ReadingGoal {
 namespace {
 
-constexpr uint32_t kMagic = 0x52474F41;  // RGOA
+constexpr uint32_t kMagic = 0x52474F41;
 constexpr uint8_t kVersion = 1;
 constexpr char kPath[] = "/.system/reading_goal.bin";
 constexpr char kTempPath[] = "/.system/reading_goal.bin.tmp";
@@ -76,7 +77,7 @@ void syncDate() {
   dirty = true;
 }
 
-}  // namespace
+}
 
 Status status() {
   load();
@@ -100,32 +101,47 @@ void recordReadingMs(const uint32_t elapsedMs) {
   if (!readRtcDate(today) || storedDateKey != today) return;
   const uint32_t room = UINT32_MAX - storedReadingTimeMs;
   storedReadingTimeMs += std::min(room, elapsedMs);
+  recordReadingHistoryMs(elapsedMs);
+  dirty = true;
+}
+
+void recordReadingMs(const uint32_t elapsedMs, const std::string& bookPath) {
+  if (elapsedMs == 0) return;
+  syncDate();
+
+  uint32_t today = 0;
+  if (!readRtcDate(today) || storedDateKey != today) return;
+  const uint32_t room = UINT32_MAX - storedReadingTimeMs;
+  storedReadingTimeMs += std::min(room, elapsedMs);
+  recordReadingHistoryMs(elapsedMs, bookPath);
   dirty = true;
 }
 
 void save() {
   load();
-  if (!dirty) return;
-  SdMan.mkdir("/.system");
+  if (dirty) {
+    SdMan.mkdir("/.system");
 
-  FsFile file;
-  if (!SdMan.openFileForWrite("RGOAL", kTempPath, file)) return;
-  const uint32_t magic = kMagic;
-  const uint8_t version = kVersion;
-  const uint8_t reserved[3] = {};
-  const bool ok = file.write(&magic, sizeof(magic)) == sizeof(magic) &&
-                  file.write(&version, sizeof(version)) == sizeof(version) &&
-                  file.write(reserved, sizeof(reserved)) == sizeof(reserved) &&
-                  file.write(&storedDateKey, sizeof(storedDateKey)) == sizeof(storedDateKey) &&
-                  file.write(&storedReadingTimeMs, sizeof(storedReadingTimeMs)) == sizeof(storedReadingTimeMs);
-  file.close();
-  if (!ok) {
-    SdMan.remove(kTempPath);
-    return;
+    FsFile file;
+    if (SdMan.openFileForWrite("RGOAL", kTempPath, file)) {
+      const uint32_t magic = kMagic;
+      const uint8_t version = kVersion;
+      const uint8_t reserved[3] = {};
+      const bool ok = file.write(&magic, sizeof(magic)) == sizeof(magic) &&
+                      file.write(&version, sizeof(version)) == sizeof(version) &&
+                      file.write(reserved, sizeof(reserved)) == sizeof(reserved) &&
+                      file.write(&storedDateKey, sizeof(storedDateKey)) == sizeof(storedDateKey) &&
+                      file.write(&storedReadingTimeMs, sizeof(storedReadingTimeMs)) == sizeof(storedReadingTimeMs);
+      file.close();
+      if (ok) {
+        SdMan.remove(kPath);
+        if (SdMan.rename(kTempPath, kPath)) dirty = false;
+      } else {
+        SdMan.remove(kTempPath);
+      }
+    }
   }
-
-  SdMan.remove(kPath);
-  if (SdMan.rename(kTempPath, kPath)) dirty = false;
+  saveReadingHistory();
 }
 
 void clear() {
@@ -137,4 +153,4 @@ void clear() {
   SdMan.remove(kPath);
 }
 
-}  // namespace ReadingGoal
+}

@@ -19,13 +19,12 @@ class PdfObject {
   bool boolValue = false;
   int64_t intValue = 0;
   double realValue = 0.0;
-  std::string strValue;  // Name text, or decoded (raw) String bytes
+  std::string strValue;
   std::vector<PdfObject> arrValue;
-  std::map<std::string, PdfObject> dictValue;  // used by Dictionary and Stream (the stream's own dict)
+  std::map<std::string, PdfObject> dictValue;
   uint32_t refNum = 0;
   uint16_t refGen = 0;
 
-  // Stream-only: location of the raw (still filter-encoded) bytes within the document's in-memory buffer.
   size_t streamOffset = 0;
   size_t streamLength = 0;
 
@@ -90,8 +89,6 @@ class PdfObject {
     return defaultValue;
   }
 
-  // Direct (unresolved) dictionary lookup - does not follow indirect references. Returns nullptr if absent
-  // or this object isn't a dictionary/stream.
   const PdfObject* find(const std::string& key) const {
     if (!isDict()) return nullptr;
     const auto it = dictValue.find(key);

@@ -100,4 +100,4 @@ class XtcParser {
   XtcError readChapters();
 };
 
-}  // namespace xtc
+}

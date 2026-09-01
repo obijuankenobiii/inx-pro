@@ -26,13 +26,7 @@ static void* stbiTransientRealloc(void* pointer, const size_t bytes) {
 static void stbiTransientFree(void* pointer) { heap_caps_free(pointer); }
 
 #define STBI_ONLY_JPEG
-// GIF rides the same stb decoder: stbi_load_from_callbacks() sniffs the format itself and the decode
-// path below is not JPEG-specific, so enabling it here adds GIF support without a second
-// STB_IMAGE_IMPLEMENTATION (which would duplicate symbols) and without any new buffers.
 #define STBI_ONLY_GIF
-// GIF rides the same stb decoder: stbi_load_from_callbacks() sniffs the format itself and the decode
-// path below is not JPEG-specific, so enabling it here adds GIF support without a second
-// STB_IMAGE_IMPLEMENTATION (which would duplicate symbols) and without any new buffers.
 #define STBI_ONLY_GIF
 #define STBI_NO_STDIO
 #define STBI_MALLOC(bytes) stbiTransientAlloc(bytes)
@@ -54,20 +48,11 @@ static void stbiTransientFree(void* pointer) { heap_caps_free(pointer); }
 #include "GfxRenderer.h"
 #include "../../src/system/EpubPerf.h"
 
-// The whole firmware builds with -Os (flash-size priority), which leaves real speed on the table for
-// this file's per-pixel tone-curve/dither/scale math - the hot loop in every JPEG render. Opting just
-// this translation unit's own code into -O2 trades a small amount of flash for meaningfully faster
-// decode, without touching the global build flags (and their flash-size risk) for the rest of the
-// firmware. Placed after all includes so it doesn't also retroactively apply to inlined header code
-// (e.g. SdFat) pulled in above - that caused an attribute-mismatch warning with no benefit.
 #pragma GCC optimize("O2")
 
 namespace {
 constexpr uint32_t kImageServiceTimeBudgetMs = 16;
 
-// A full-resolution image can run long enough to trip the watchdog. Service
-// it by elapsed CPU time, not every eight scanlines: the old cadence injected
-// roughly 100 one-millisecond sleeps into an 800px page image.
 class ImageServiceBudget {
  public:
   void service() {
@@ -94,11 +79,6 @@ void freeJpegIoBuffer(uint8_t* buffer) {
   heap_caps_free(buffer);
 }
 
-// picojpeg pulls bytes through this callback in small, decoder-driven chunks; without buffering here
-// that means one FsFile::read() (a real SD/SPI transaction, tens of ms on a slow card) per chunk. A
-// bigger buffer means far fewer of those round trips for the same file. `bufferSize` lets callers pick
-// the size: a small stack buffer is enough for getDimensions() (which only reads the header before
-// bailing out), while the full decode in render() uses a larger heap buffer (see kJpegDecodeBufferSize).
 struct JpegReadContext {
   FsFile& file;
   uint8_t* buffer;
@@ -140,9 +120,6 @@ unsigned char jpegReadCallback(unsigned char* pBuf, unsigned char bufSize, unsig
   return 0;
 }
 
-// Scans JPEG marker segments up to SOF. This keeps format probing independent from the decoder, so
-// progressive files can be routed to the streaming fallback and dimensions can still be read
-// without allocating a decoder workspace.
 bool scanJpegHeader(FsFile& file, int* outWidth = nullptr, int* outHeight = nullptr,
                     bool* outProgressive = nullptr) {
   const uint32_t originalPos = file.position();
@@ -226,19 +203,19 @@ inline uint8_t grayFromRgb(uint8_t r, uint8_t g, uint8_t b) {
 }
 
 constexpr int kJpegDitherSolidBlackMax = 20;
-constexpr int kJpegDitherSolidWhiteMin = 255;    // Changed from 255 - more light grays
-constexpr int kJpegTwoBitSolidBlackMax = 10;     // Snap dark tones to clean black instead of dithering them to gray
-constexpr int kJpegTwoBitSolidWhiteMin = 224;    // Keep upper mids from blowing out to white too early
-constexpr int kJpegTwoBitContrastPercent = 120;  // Keep medium shadows from collapsing into one dark-gray slab
+constexpr int kJpegDitherSolidWhiteMin = 255;
+constexpr int kJpegTwoBitSolidBlackMax = 10;
+constexpr int kJpegTwoBitSolidWhiteMin = 224;
+constexpr int kJpegTwoBitContrastPercent = 120;
 constexpr int kJpegTwoBitSharpenThreshold = 18;
 constexpr int kJpegTwoBitSharpenPercent = 80;
 constexpr int kJpegTwoBitSharpenMax = 130;
 constexpr int kJpegTwoBitEdgeThreshold = 0;
-constexpr int kJpegTwoBitEdgeMaxDarken = 0;       // Reduced from 36
-constexpr int kJpegTwoBitHighlightThreshold = 5;  // Reduced from 8 - detect more highlights
-constexpr int kJpegTwoBitHighlightMaxLift = 50;   // Reduced from 100 - less over-lifting
-constexpr int kJpegTwoBitShadowStart = 1;         // Increased from 10
-constexpr int kJpegTwoBitShadowMaxDarken = 0;     // Keep at 0 (already is)
+constexpr int kJpegTwoBitEdgeMaxDarken = 0;
+constexpr int kJpegTwoBitHighlightThreshold = 5;
+constexpr int kJpegTwoBitHighlightMaxLift = 50;
+constexpr int kJpegTwoBitShadowStart = 1;
+constexpr int kJpegTwoBitShadowMaxDarken = 0;
 constexpr int kJpegTwoBitShadowTextureLiftMin = 42;
 constexpr int kJpegTwoBitShadowTextureLiftMax = 126;
 constexpr int kJpegTwoBitShadowTextureLift = 10;
@@ -307,8 +284,6 @@ int jpegTwoBitDetailTone(const int gray, const int leftGray, const int rightGray
   return std::max(0, std::min(255, tone));
 }
 
-// Shared quality (GRAY2) curve. `shadowLiftPerKnee` is applied across the shadow knee: positive
-// lifts shadows, negative darkens them for the Sticky panel.
 int jpegQualityToneCommon(const int gray, const int leftGray, const int rightGray, const int x, const int y,
                           const int shadowLiftPerKnee) {
   if (gray <= kJpegTwoBitQualitySolidBlackMax) {
@@ -347,7 +322,6 @@ int jpegQualityToneCommon(const int gray, const int leftGray, const int rightGra
   }
 
   if (gray > kJpegTwoBitQualitySolidBlackMax + 10 && gray < kJpegTwoBitQualitySolidWhiteMin - 10) {
-    // Tiny ordered bias keeps soft art texture from collapsing into a single flat gray band.
     const int latticeA = ((x * 13 + y * 7 + ((x ^ y) * 3)) & 15) - 8;
     const int latticeB = (((x + y * 3) * 5) & 7) - 4;
     tone += ((latticeA + latticeB) * kJpegTwoBitQualityMicroDither) / 12;
@@ -356,34 +330,15 @@ int jpegQualityToneCommon(const int gray, const int leftGray, const int rightGra
   return std::max(0, std::min(255, tone));
 }
 
-// ============================================================================================
-// Sticky JPEG tone curve. Panel-specific response is handled by the SSD1677 waveform tables,
-// not by another device branch in the renderer.
-//   quality == true  -> GRAY2 quality curve
-//   quality == false -> medium (GRAYSCALE) detail curve
-// ============================================================================================
 int jpegTone(const int gray, const int leftGray, const int rightGray, const int x, const int y, const bool quality) {
   const int tone = quality ? jpegQualityToneCommon(gray, leftGray, rightGray, x, y,
                                                    -kJpegTwoBitQualityShadowDarkenMax)
                            : jpegTwoBitDetailTone(gray, leftGray, rightGray, x, y);
-  // Per-device tone correction, applied to the finished tone rather than to the inputs so
-  // the edge/local-contrast logic above still sees the original neighbourhood, and so it
-  // costs one operation per pixel instead of three. Identity on Sticky; see
-  // lib/hal_<device>/ImageToneMap.cpp.
-  // UC8179 quality already uses its panel-specific quality curve; applying
-  // the generic X4 curve again clips its middle tones.
   if (quality && BoardConfig::ACTIVE.displayController == BoardConfig::DisplayController::UC8179) {
     return tone;
   }
   return applyDeviceToneCurve(tone);
 }
-
-// MEDIUM grayscale image-level -> lut_grayscale entry (code). Bit0 = LSB plane (BW RAM, cmd 0x24),
-// Bit1 = MSB plane (RED RAM, cmd 0x26); the 2-bit value is the LUT entry index (0b00..0b11).
-// Image levels: 0 = white (lightest), 2 = light gray, 1 = dark gray, 3 = black (darkest).
-// Your lut_grayscale: 0b00 = black, 0b01 = light gray, 0b10 = medium gray, 0b11 = dark gray.
-// Tone order is per-device — see grayscaleCodeTable() in BitmapUtil.h and the
-// lib/hal_<device>/ImageToneMap.cpp that defines it.
 
 int darkenOneBitJpegGray(const int gray) { return std::max(0, gray - 22); }
 
@@ -394,9 +349,6 @@ int quantizeGray(const int corrected, const ImageRenderMode mode) {
   return corrected < 128 ? 0 : 255;
 }
 
-// Two-bit-mode plane decision from an already-resolved dither level (0-3). Split out from
-// drawQuantizedPixel() so a captured/replayed render (which stores level directly - see
-// JpegLevelCapture) doesn't have to redo the q->level conversion.
 void drawPixelForLevel(const GfxRenderer& renderer, const int x, const int y, const uint8_t level) {
   const GfxRenderer::RenderMode renderMode = renderer.getRenderMode();
   const uint8_t grayscaleCode = grayscaleCodeTable()[level & 3];
@@ -409,9 +361,6 @@ void drawPixelForLevel(const GfxRenderer& renderer, const int x, const int y, co
   } else if (renderMode == GfxRenderer::GRAYSCALE_LSB && ((grayscaleCode & 0b01) != 0)) {
     renderer.drawPixel(x, y, false);
   } else if (renderMode == GfxRenderer::GRAY2_LSB || renderMode == GfxRenderer::GRAY2_MSB) {
-    // UC8179 stores the INVERSE of the mask bit, so it draws when the bit is 1. Every other
-    // panel stores it directly and draws when the bit is 0 - which is what this did before the
-    // flip. Guarded so only UC8179 takes the inverted branch.
     const uint8_t bit = (renderMode == GfxRenderer::GRAY2_LSB) ? 0b01 : 0b10;
     const bool bitSet = (mapQualityGray2Level(level) & bit) != 0;
     const bool invert =
@@ -433,11 +382,6 @@ void drawQuantizedPixel(const GfxRenderer& renderer, const int x, const int y, c
   drawPixelForLevel(renderer, x, y, adjustTwoBitImageLevelForDisplay(FourToneImageDitherer::levelFromValue(q)));
 }
 
-// PicoJPEG is intentionally small, but it only accepts baseline JPEGs. Progressive JPEGs are
-// common in EPUB covers and image-heavy books, so use a bounded DC-scan decoder for those files.
-// The first progressive scan contains one DC coefficient per 8x8 block; that is enough to create
-// a clean low-resolution grayscale image which is then streamed through the same scaler/ditherer
-// as baseline JPEGs. No full-image or coefficient buffer is retained.
 struct ProgressiveHuffman {
   uint8_t counts[17] = {};
   uint16_t firstCode[17] = {};
@@ -675,7 +619,6 @@ struct ProgressiveDecodeJob {
   bool ok = false;
 };
 
-// Must clear stb's largest stack frame - see the xTaskCreatePinnedToCore call below.
 constexpr uint32_t kStbDecodeTaskStackBytes = 48 * 1024;
 
 void decodeProgressiveJpegTask(void* argument) {
@@ -697,8 +640,6 @@ int stbiRead(void* user, char* data, const int size) {
   auto* context = static_cast<StbiFileContext*>(user);
   if (!context || size <= 0) return 0;
   const int bytesRead = static_cast<int>(context->file.read(reinterpret_cast<uint8_t*>(data), static_cast<size_t>(size)));
-  // Progressive JPEG decoding can spend several seconds in the foreground loop on a large EPUB
-  // image. Keep the ESP32-S3 watchdog and the other core serviced while stb_image pulls data.
   esp_task_wdt_reset();
   yield();
   return bytesRead;
@@ -724,15 +665,7 @@ bool renderProgressiveJpegFull(FsFile& file, GfxRenderer& renderer, int x, int y
   job.file = &file;
   job.waiter = xTaskGetCurrentTaskHandle();
   TaskHandle_t worker = nullptr;
-  // This task reads the image source through the same SD path as the reader, so
-  // keep it on the Arduino/reader core. Its idle priority lets the core's idle
-  // task run while stb_image is in a decoder loop that cannot call back often.
   const BaseType_t created =
-      // 12KB was sized for stb's JPEG decoder. stb's GIF path needs far more: stbi__gif is a stack
-      // local holding codes[8192] (~32KB) plus two 256x4 palettes, which blew the canary
-      // ("Stack canary watchpoint triggered (JpegDecode)") the moment a GIF came through here. Size for
-      // the largest decoder this task can run. Nothing is reserved permanently - the task is created per
-      // decode and vTaskDelete()s itself, returning the stack to the heap.
       xTaskCreatePinnedToCore(decodeProgressiveJpegTask, "StbDecode", kStbDecodeTaskStackBytes, &job, 0, &worker,
                               ARDUINO_RUNNING_CORE);
   if (created != pdPASS) {
@@ -812,13 +745,6 @@ bool renderProgressiveJpegFull(FsFile& file, GfxRenderer& renderer, int x, int y
     }
   }
 
-  // The whole source image is already decoded into `decoded`, so unlike the streaming DC-scan fallback
-  // below, this has full random-access to every source row - resample with a proper box filter on
-  // downscale (matches the baseline/picojpeg path's buildScaledRow) instead of always doing 2-tap
-  // bilinear like the old ProgressiveResampler did. For a large downscale (the common case - an
-  // embedded photo is usually bigger than the page it's shown on) 2-tap bilinear only samples 2 of
-  // every many source pixels and throws the rest away, which is why progressive JPEGs looked
-  // noticeably blurrier/softer than baseline ones at the same output size.
   const bool horizontalUpscale = outputWidth > cropWidth;
   const bool verticalUpscale = outputHeight > cropHeight;
   const uint32_t scaleX_fp =
@@ -856,8 +782,6 @@ bool renderProgressiveJpegFull(FsFile& file, GfxRenderer& renderer, int x, int y
     }
   };
 
-  // Small 2-slot cache for the vertical-upscale path, where consecutive output rows repeatedly need
-  // the same pair of horizontally-scaled source rows.
   int cachedIndex0 = -1;
   int cachedIndex1 = -1;
   auto horizontallyScaledRow = [&](const int srcY) -> uint8_t* {
@@ -1040,8 +964,6 @@ bool renderProgressiveJpegDc(FsFile& file, GfxRenderer* renderer, int x, int y, 
       }
       uint8_t progressiveParams[3];
       if (!readBytes(progressiveParams, sizeof(progressiveParams))) return false;
-      // Only the first DC scan is decoded. Later AC scans require retaining every coefficient;
-      // refusing those is deliberate because it keeps memory bounded on the ESP32.
       if (progressiveParams[0] != 0 || progressiveParams[1] != 0 || (progressiveParams[2] >> 4) != 0) return false;
       successiveLow = progressiveParams[2] & 0x0F;
       break;
@@ -1271,7 +1193,7 @@ void writeProgressiveThumbnailByte(unsigned char byte) {
   if (gProgressiveThumbnailOut) gProgressiveThumbnailOut->write(static_cast<uint8_t>(byte));
 }
 
-}  // namespace
+}
 
 bool JpegRender::writeProgressiveThumbnailJpeg(FsFile& jpegFile, Print& jpegOut, const int targetMaxWidth,
                                                const int targetMaxHeight, uint8_t quality) {
@@ -1320,9 +1242,6 @@ bool JpegRender::render(FsFile& jpegFile, int x, int y, int targetWidth, int tar
     return false;
   }
   if (isUnsupportedJpeg(jpegFile)) {
-    // stb_image performs a complete progressive JPEG decode, including AC scans, using the
-    // Sticky's transient PSRAM allocator. If a pathological image cannot fit, retain the bounded
-    // DC-scan fallback so it still renders instead of leaving a blank page.
     const bool usedFull = renderProgressiveJpegFull(jpegFile, renderer_, x, y, targetWidth, targetHeight, cropToFill,
                                                     mode, quality, capture, cropAnchorX);
     bool ok = usedFull;
@@ -1388,18 +1307,16 @@ bool JpegRender::render(FsFile& jpegFile, int x, int y, int targetWidth, int tar
   const bool captureRequested = capture != nullptr && mode == ImageRenderMode::TwoBit;
   if (captureRequested) {
     const size_t pixelCount = static_cast<size_t>(outWidth) * static_cast<size_t>(outHeight);
-    const size_t needed = (pixelCount + 3) / 4;  // 2 bits/pixel, 4 pixels/byte
+    const size_t needed = (pixelCount + 3) / 4;
     if (needed > 0 && needed <= capture->capacity) {
       capture->width = outWidth;
       capture->height = outHeight;
       capture->drawOffsetX = drawOffsetX;
       capture->drawOffsetY = drawOffsetY;
       capture->captured = true;
-      // Bits are OR'd in below (4 pixels/byte), so start from a clean slate - matters if the decode
-      // fails partway (stale bits from an earlier, larger capture) or the buffer is being reused.
       memset(capture->values, 0, needed);
     } else {
-      capture = nullptr;  // doesn't fit the caller's buffer - render normally, just skip capturing
+      capture = nullptr;
     }
   } else {
     capture = nullptr;
@@ -1528,9 +1445,6 @@ bool JpegRender::render(FsFile& jpegFile, int x, int y, int targetWidth, int tar
   for (int mcuY = 0; mcuY < imageInfo.m_MCUSPerCol && decodeComplete; mcuY++) {
     const uint32_t tMcuStart = millis();
     for (int mcuX = 0; mcuX < imageInfo.m_MCUSPerRow; mcuX++) {
-      // A wide JPEG can spend several seconds in the MCU loop before an output row is
-      // emitted.  Service both the watchdog and the idle task while decoding instead of
-      // waiting for the end of an eight-row MCU band.
       imageService.service();
       if (pjpeg_decode_mcu() != 0) {
         decodeComplete = false;
@@ -1643,8 +1557,6 @@ bool JpegRender::render(FsFile& jpegFile, int x, int y, int targetWidth, int tar
     return true;
   }
 
-  // Never accept a partially decoded framebuffer. This is especially visible on thumbnails where
-  // the lower half otherwise remains the paper fill and then gets persisted as a bad display cache.
   picoJpegGuard.release();
   jpegFile.seek(0);
   const bool fallbackOk = renderProgressiveJpegFull(jpegFile, renderer_, x, y, targetWidth, targetHeight, cropToFill,
@@ -1709,10 +1621,6 @@ bool JpegRender::getDimensions(const std::string& path, int* outW, int* outH) {
   return ok;
 }
 
-// Renders any single-frame image stb can decode (here: GIF) through the same streaming, PSRAM-backed
-// path progressive JPEGs use. Nothing is retained: stbi_load_from_callbacks() reads through FsFile
-// rather than slurping the file, its buffer comes from stbiTransientAlloc (MALLOC_CAP_SPIRAM) and is
-// released by stbi_image_free before this returns.
 namespace StbImageDecode {
 
 bool render(FsFile& file, GfxRenderer& renderer, int x, int y, int targetWidth, int targetHeight, bool cropToFill,
@@ -1730,4 +1638,4 @@ bool getDimensions(FsFile& file, int* outW, int* outH) {
   return ok != 0 && *outW > 0 && *outH > 0;
 }
 
-}  // namespace StbImageDecode
+}

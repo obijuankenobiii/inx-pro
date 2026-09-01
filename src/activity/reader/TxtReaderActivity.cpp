@@ -29,7 +29,7 @@ constexpr size_t CHUNK_SIZE = 8 * 1024;
 
 constexpr uint32_t CACHE_MAGIC = 0x54585449;
 constexpr uint8_t CACHE_VERSION = 2;
-}  // namespace
+}
 
 void TxtReaderActivity::taskTrampoline(void* param) {
   auto* self = static_cast<TxtReaderActivity*>(param);
@@ -120,28 +120,31 @@ void TxtReaderActivity::loop() {
     return;
   }
 
-  // On the touch reader, an upward swipe from the reading view closes the book - same gesture EPUB's and
-  // PDF's readers use.
   if (mappedInput.hasTouch() && mappedInput.wasTouchSwipeUpForRenderer(renderer)) {
     onGoBack();
     return;
   }
 
-  // Tap left half of the screen = previous page, right half = next page - same zones as
-  // ReaderButtonBindings::handleInput() uses for EPUB and PdfReaderActivity::loop().
   bool tapPrevTriggered = false;
   bool tapNextTriggered = false;
   if (mappedInput.hasTouch()) {
     float tapNx = 0.0f, tapNy = 0.0f;
-    if (mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy)) {
+    if (READER_SETTINGS.pageTurnMode == ReaderSetting::PAGE_TURN_TAP &&
+        mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy)) {
       (tapNx < 0.5f ? tapPrevTriggered : tapNextTriggered) = true;
     }
   }
 
+  const bool swipePrevTriggered = READER_SETTINGS.pageTurnMode == ReaderSetting::PAGE_TURN_SWIPE &&
+                                  mappedInput.hasTouch() && mappedInput.wasTouchSwipeRightForRenderer(renderer);
+  const bool swipeNextTriggered = READER_SETTINGS.pageTurnMode == ReaderSetting::PAGE_TURN_SWIPE &&
+                                  mappedInput.hasTouch() && mappedInput.wasTouchSwipeLeftForRenderer(renderer);
+
   const bool usePressForPageTurn = READER_SETTINGS.longPressChapterSkip == SystemSetting::LONG_PRESS_OFF;
   const MappedInputManager::MotionGesture motionGesture = mappedInput.readMotionGesture(
       static_cast<uint8_t>(renderer.getOrientation()), SETTINGS.shakePageTurn, SETTINGS.shakePageTurnSensitivity);
-  const bool prevTriggered = tapPrevTriggered || motionGesture == MappedInputManager::MotionGesture::Previous ||
+  const bool prevTriggered = tapPrevTriggered || swipePrevTriggered ||
+                             motionGesture == MappedInputManager::MotionGesture::Previous ||
                              (usePressForPageTurn ? (mappedInput.wasPressed(MappedInputManager::Button::PageBack) ||
                                                      mappedInput.wasPressed(MappedInputManager::Button::Left))
                                                   : (mappedInput.wasReleased(MappedInputManager::Button::PageBack) ||
@@ -149,7 +152,7 @@ void TxtReaderActivity::loop() {
   const bool powerPageTurn = READER_SETTINGS.btnPowerShortAction == SystemSetting::BTN_ACTION_PAGE_NEXT &&
                              mappedInput.wasReleased(MappedInputManager::Button::Power);
   const bool nextTriggered =
-      tapNextTriggered || motionGesture == MappedInputManager::MotionGesture::Next ||
+      tapNextTriggered || swipeNextTriggered || motionGesture == MappedInputManager::MotionGesture::Next ||
       (usePressForPageTurn ? (mappedInput.wasPressed(MappedInputManager::Button::PageForward) || powerPageTurn ||
                               mappedInput.wasPressed(MappedInputManager::Button::Right))
                            : (mappedInput.wasReleased(MappedInputManager::Button::PageForward) || powerPageTurn ||
@@ -463,9 +466,6 @@ void TxtReaderActivity::renderPage() {
   renderLines();
   renderStatusBar(orientedMarginRight, orientedMarginBottom, orientedMarginLeft);
 
-  // Async: the AA grayscale pass below already blocks on this refresh finishing before it touches the
-  // panel again (every StickyDisplay call starts with finish()), so this only stops blocking a plain
-  // turn (AA off, or unsupported for this font) on the ~600ms e-ink refresh.
   if (pagesUntilFullRefresh <= 1) {
     renderer.displayBufferAsync(HalDisplay::HALF_REFRESH);
     pagesUntilFullRefresh = READER_SETTINGS.getRefreshFrequency();

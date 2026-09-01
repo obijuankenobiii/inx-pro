@@ -44,7 +44,9 @@ class ReaderButtonBindings {
 
   PressState upState_;
   PressState downState_;
-  // Matches the existing chapter-skip long-press threshold (EpubActivity's skipChapterMs) for a
-  // consistent feel with the button this replaces.
+  bool pendingDoubleTap_ = false;
+  bool pendingDoubleTapForward_ = false;
+  unsigned long pendingDoubleTapAtMs_ = 0;
   static constexpr unsigned long kLongPressMs = 700;
+  static constexpr unsigned long kDoubleTapWindowMs = 400;
 };

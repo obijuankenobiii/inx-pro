@@ -1,7 +1,6 @@
 #pragma once
 #include <cstdint>
 
-// 30x30 1-bit bitmap converted from the supplied library filter paging icon.
 static const uint8_t LibraryFilterLeft[] = {
     0xff, 0xff, 0xff, 0xff,
     0xff, 0xff, 0xff, 0xff,

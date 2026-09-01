@@ -21,7 +21,20 @@ constexpr int closeHitSize = 40;
 constexpr int dividerWidth = 1;
 constexpr int footerPadding = 0;
 constexpr int syncIconSize = 40;
-}  // namespace
+
+void drawScrollBar(const GfxRenderer& renderer, const int x, const int y, const int height, const int total,
+                   const int visible, const int offset) {
+  if (total <= visible || height <= 0) return;
+
+  constexpr int width = 3;
+  const int maxOffset = std::max(1, total - visible);
+  const int thumbHeight = std::max(14, height * visible / total);
+  const int thumbTravel = std::max(1, height - thumbHeight);
+  const int thumbY = y + offset * thumbTravel / maxOffset;
+  renderer.rectangle.fill(x, y, width, height, static_cast<int>(GfxRenderer::FillTone::Gray), true);
+  renderer.rectangle.fill(x, thumbY, width, thumbHeight, static_cast<int>(GfxRenderer::FillTone::Ink), true);
+}
+}
 
 TocSidebar::TocSidebar(GfxRenderer& renderer, Select onSelect, Dismiss onDismiss, Sync onSync)
     : renderer(renderer), onSelect(std::move(onSelect)), onDismiss(std::move(onDismiss)), onSync(std::move(onSync)) {}
@@ -188,6 +201,9 @@ void TocSidebar::render() {
     }
   }
 
+  drawScrollBar(renderer, panelWidth - 8, headerHeight(), rows * rowHeight(),
+                static_cast<int>(visibleItems.size()), rows, scroll);
+
   const ButtonBounds syncButton = syncButtonBounds();
   constexpr int font = MONTSERRAT_10_FONT_ID;
   const int syncIconY = syncButton.y + (syncButton.height - syncIconSize) / 2;
@@ -205,18 +221,17 @@ void TocSidebar::render() {
 void TocSidebar::handleInput(MappedInputManager& input) {
   if (!visible) return;
 
-  // Handle the rotated logical swipe before the panel's native edge-back
-  // synthesis: in landscape a vertical TOC scroll can be a physical edge
-  // swipe and must not be mistaken for Back.
   if (input.wasTouchSwipeLeftForRenderer(renderer)) {
     hide();
     return;
   }
-  if (input.wasTouchSwipeUpForRenderer(renderer)) {
+  const bool swipeUp = input.wasTouchSwipeUpForRenderer(renderer);
+  const bool swipeDown = input.wasTouchSwipeDownForRenderer(renderer);
+  if (swipeUp) {
     scrollBy(visibleRows());
     return;
   }
-  if (input.wasTouchSwipeDownForRenderer(renderer)) {
+  if (swipeDown) {
     scrollBy(-visibleRows());
     return;
   }

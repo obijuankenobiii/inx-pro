@@ -42,8 +42,6 @@ class CssParser {
   CssParser();
   ~CssParser();
 
-  // minFreeHeapBytes > 0: stop adding rules once free heap would drop below it, reserving heap for rendering
-  // (image decode etc.) so a large stylesheet can't exhaust memory and abort.
   void parse(const std::string& cssContent, const std::string& sourcePath = "", uint32_t minFreeHeapBytes = 0,
              const UsageFilter* usageFilter = nullptr);
   void clear();
@@ -195,8 +193,8 @@ class CssParser {
    */
   struct MatchedRule {
     const CssRule* rule;
-    uint8_t tier;     // 2 = id selector, 1 = class selector, 0 = type selector
-    bool contextual;  // selector had an unverifiable combinator; ranks below a plain selector of the same tier
+    uint8_t tier;
+    bool contextual;
   };
   mutable std::string mcTag_;
   mutable std::string mcClass_;
@@ -208,16 +206,9 @@ class CssParser {
     std::string key;
     std::vector<uint16_t> rules;
   };
-  // Selector matching is based on the selector's final compound.  Index its
-  // concrete tag/class/id keys so normal EPUB CSS no longer needs a full-rule
-  // scan for each parsed element; final matching still verifies exact CSS
-  // semantics and cascade order.
   mutable std::vector<SelectorIndexEntry> tagRuleIndex_;
   mutable std::vector<SelectorIndexEntry> classRuleIndex_;
   mutable std::vector<SelectorIndexEntry> idRuleIndex_;
-  // Rules whose final selector compound is universal/attribute-only must be
-  // checked for every element.  Keeping this small fallback list preserves
-  // CSS correctness without returning to a full stylesheet scan.
   mutable std::vector<uint16_t> fallbackRuleIndexes_;
   mutable bool selectorIndexValid_ = false;
   void rebuildSelectorIndex() const;
@@ -227,10 +218,6 @@ class CssParser {
   const std::vector<MatchedRule>& matchedRulesFor(const std::string& elementTagLower, const std::string& className,
                                                   const std::string& id) const;
 
-  // Winning stylesheet rule that defines propName for this element, by cascade tier (id>class>type, last match
-  // wins). Returns nullptr if no matched rule sets it. Inline styles are handled by the callers, not here.
-  // ignoreContextual: skip combinator selectors (e.g. ".box p") we cannot verify — used for text-align so an
-  // unverifiable scoped rule never forces an alignment; the element inherits instead.
   const CssRule* winningRuleForProperty(const std::string& propName, const std::string& className,
                                         const std::string& id, const std::string& elementTagLower,
                                         bool ignoreContextual = false) const;

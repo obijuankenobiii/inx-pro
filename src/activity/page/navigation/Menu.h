@@ -18,8 +18,7 @@ class Menu {
  public:
   enum class Action { None, Opened, Closed, Refresh, Search, View, Sort, Filter, Home, Library, Settings, Stats, Sync };
 
-
-  static constexpr int topPadding = FREEINK_DEVICE_X4PRO ? 20 : 10;
+  static constexpr int topPadding = FREEINK_DEVICE_X4PRO ? 25 : 15;
   static constexpr int iconSize = 40;
   static constexpr int leftMargin = 20;
   static constexpr int bottomPadding = 10;
@@ -38,6 +37,7 @@ class Menu {
   bool isOpen() const { return open; }
 #if FREEINK_DEVICE_X4PRO
   bool isLightDrawerOpen() const { return lightDrawer.isOpen(); }
+  bool isLightDrawerSliderDragging() const { return lightDrawer.isSliderDragging(); }
 #endif
   void render() const;
   Action handleInput(MappedInputManager& input) const;
@@ -82,4 +82,4 @@ class Menu {
   Action choose() const;
 };
 
-}  // namespace navigation
+}

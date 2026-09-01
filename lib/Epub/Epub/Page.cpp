@@ -253,7 +253,7 @@ void drawRoundedBorder(GfxRenderer& renderer, const int x, const int y, const in
   }
 }
 
-}  // namespace
+}
 
 void PagePsramDeleter::operator()(uint8_t* pointer) const {
 #if defined(ARDUINO_ARCH_ESP32)
@@ -293,9 +293,6 @@ bool PageImage::ensureSourceCached() const {
   const std::shared_ptr<Epub> book = epub.lock();
   if (!book || sourcePath.empty()) return false;
 
-  // SD access remains serialized through Epub's I/O lock. This is deliberately
-  // synchronous for a visible image: a cache miss must render the real image,
-  // never a placeholder that relies on a background prewarm race.
   const bool ok = isRawBodyImage(sourcePath)
                       ? book->extractItemToPath(sourcePath, cachePath, 16 * 1024)
                       : book->extractAndConvertImage(sourcePath, cachePath, width, height);
@@ -420,8 +417,6 @@ std::unique_ptr<PageHeader> PageHeader::deserialize(FsFile& file) {
  */
 void PageDropCap::render(GfxRenderer& renderer, const int fontId, const int xOffset, const int yOffset,
                          ImageRenderMode) {
-  // The drop cap and the first body line both start at yPos, but their fonts have different space above the
-  // caps (ascender - glyph.top). Align the drop cap's cap-top with the body cap-top by that inset difference.
   const uint8_t* p = reinterpret_cast<const uint8_t*>(text.c_str());
   const uint32_t dropCp = utf8NextCodepoint(&p);
   int alignY = yPos + yOffset - 2;
@@ -478,9 +473,6 @@ std::unique_ptr<PageDropCap> PageDropCap::deserialize(FsFile& file) {
 
 void PageListMarker::render(GfxRenderer& renderer, const int fontId, const int xOffset, const int yOffset,
                             ImageRenderMode) {
-  // Drawn as a plain filled circle rather than a font glyph - some fonts render "." or "•" too small, too
-  // faint, or positioned oddly (this reader has no dedicated bullet glyph), so a drawn shape sized off the
-  // item's own font metrics is the only way to guarantee a clearly visible, correctly placed marker.
   const int ascender = renderer.text.getFontAscenderSize(markerFontId);
   const int radius = std::max(3, ascender / 4);
   const int bodyBaseline = yPos + yOffset + renderer.text.getFontAscenderSize(fontId);
@@ -538,9 +530,6 @@ void PageImage::renderImage(GfxRenderer& renderer, const int fontId, const int x
   const uint32_t tImageStart = millis();
   const int screenW = renderer.getScreenWidth();
   int renderX = (screenW - width) / 2;
-  // The viewport top margin is reduced by the font's glyph top inset so text starts at the visual margin
-  // (glyphs carry that whitespace themselves). Images have no such whitespace, so add the inset back here —
-  // otherwise an image at the top of a page sits flush against the margin with no gap above it.
   int renderY = yPos + yOffset;
   if (renderX < 0) renderX = 0;
   if (renderY < 0) renderY = 0;
@@ -554,22 +543,13 @@ void PageImage::renderImage(GfxRenderer& renderer, const int fontId, const int x
   options.mode = effectiveImageMode;
   options.quality = quality;
   options.fastQuality = quality;
-  // Capture rendered planes into PSRAM and persist them only from the idle
-  // cache writer. A cold image must not make the visible page wait on SD cache
-  // writes after it has already been decoded.
   options.asyncDisplayCache = true;
   const ImageRender image = ImageRender::create(renderer, cachePath);
 
-  // High-quality grayscale images are drawn over the previous page's framebuffer in two planes.
-  // Clear this image's exact paint rectangle immediately before each plane draw so stale pixels
-  // cannot survive where the new image is lighter or has changed dimensions.
   if (quality) {
     renderer.rectangle.fill(renderX, renderY, width, height, false);
   }
 
-  // Two-pass grayscale composites call this once per plane. JPEG and PNG both
-  // capture their LSB dither output and replay it for MSB, so a cold image
-  // needs one decode rather than two. BMP/oversized images fall through.
   const GfxRenderer::RenderMode renderMode = renderer.getRenderMode();
   const bool isLsbPass = renderMode == GfxRenderer::GRAY2_LSB || renderMode == GfxRenderer::GRAYSCALE_LSB;
   const bool isMsbPass = renderMode == GfxRenderer::GRAY2_MSB || renderMode == GfxRenderer::GRAYSCALE_MSB;
@@ -583,7 +563,7 @@ void PageImage::renderImage(GfxRenderer& renderer, const int fontId, const int x
     capture.drawOffsetX = grayscaleCaptureOffsetX_;
     capture.drawOffsetY = grayscaleCaptureOffsetY_;
     capture.captured = true;
-    grayscaleCaptureValid_ = false;  // one-shot: consumed by this MSB pass
+    grayscaleCaptureValid_ = false;
     if (!image.render(renderX, renderY, width, height, options, &capture)) {
       INX_SERIAL.printf("[PAGEIMG] Failed to draw image: %s\n", cachePath.c_str());
     }
@@ -593,8 +573,6 @@ void PageImage::renderImage(GfxRenderer& renderer, const int fontId, const int x
   }
 
   if (effectiveImageMode == ImageRenderMode::TwoBit && isLsbPass) {
-    // Packed 2 bits/pixel (4 pixels/byte - see JpegLevelCapture), so this pixel-count cap covers a
-    // full-page image (e.g. 480x720) in a bounded, page-lifetime buffer instead of never fitting one.
     constexpr size_t kMaxGrayscaleCapturePixels = 400000;
     const size_t pixelCount = static_cast<size_t>(width) * static_cast<size_t>(height);
     const size_t needed = (pixelCount + 3) / 4;
@@ -669,7 +647,6 @@ bool PageImage::warmDisplayCache(GfxRenderer& renderer, const int xOffset, const
     }
     const bool baseInk = !quality;
 
-    // JPEG and PNG both share packed dither capture for their second plane.
     constexpr size_t kMaxJpegCapturePixels = 400000;
     const bool isCapturableRaster = StringUtils::checkFileExtension(cachePath, ".jpg") ||
                                    StringUtils::checkFileExtension(cachePath, ".jpeg") ||
@@ -705,8 +682,6 @@ bool PageImage::warmDisplayCache(GfxRenderer& renderer, const int xOffset, const
 void PageTable::render(GfxRenderer& renderer, const int fontId, const int xOffset, const int yOffset, ImageRenderMode) {
   const int originX = xPos + xOffset;
   const int originY = yPos + yOffset;
-  // Use the effective line height baked at layout time (respects the line-spacing setting); fall back
-  // to the raw font line height for older caches that didn't store it.
   const int lineHeight = this->lineHeight > 0 ? this->lineHeight : renderer.text.getLineHeight(fontId);
   constexpr int kCellPadX = 4;
   constexpr int kCellPadY = 3;
@@ -908,14 +883,13 @@ void PageCssBorderLine::render(GfxRenderer& renderer, const int fontId, const in
   const int right = left + std::max<int>(1, width) - 1;
   const int drawThickness = std::max<int>(1, thickness);
 
-  // Draws one horizontal rule row honoring the CSS border-style (dotted/dashed pattern the run).
   auto drawStyledRow = [&](const int rowY) {
     if (style == DOTTED) {
-      for (int xx = left; xx <= right; xx += 3) {  // 1px on, 2px off
+      for (int xx = left; xx <= right; xx += 3) {
         renderer.drawPixel(xx, rowY, true);
       }
     } else if (style == DASHED) {
-      for (int xx = left; xx <= right; xx += 9) {  // 6px dash, 3px gap
+      for (int xx = left; xx <= right; xx += 9) {
         renderer.line.render(xx, rowY, std::min(right, xx + 5), rowY, true);
       }
     } else {
@@ -924,8 +898,6 @@ void PageCssBorderLine::render(GfxRenderer& renderer, const int fontId, const in
   };
 
   if (style == DOUBLE) {
-    // Two thin rules separated by a gap (classic CSS double). Needs >=3px total or the two lines touch and
-    // look solid (CSS "medium" is only ~2px), so enforce a minimum height with a 1px gap between the rules.
     const int total = std::max(3, drawThickness);
     const int lineW = std::max(1, total / 3);
     for (int i = 0; i < lineW; ++i) drawStyledRow(top + i);
@@ -1065,13 +1037,13 @@ bool Page::hasNonPngImages() const {
  */
 void Page::fillImageRects(GfxRenderer& renderer, const int xOffset, const int yOffset, const bool value,
                           const bool onlyGrayscale) const {
-  (void)xOffset;  // images are horizontally centered, not offset by the left margin
+  (void)xOffset;
   const int screenW = renderer.getScreenWidth();
   for (const auto& element : elements) {
     if (element->getTag() != TAG_PageImage) {
       continue;
     }
-    const auto& img = static_cast<const PageImage&>(*element);  // match PageImage::render geometry
+    const auto& img = static_cast<const PageImage&>(*element);
     if (onlyGrayscale && !needsGrayscalePass(img)) {
       continue;
     }
@@ -1091,7 +1063,7 @@ void Page::fillImageRects(GfxRenderer& renderer, const int xOffset, const int yO
 
 bool Page::getImageBoundingBox(const GfxRenderer& renderer, const int xOffset, const int yOffset, int16_t& outX,
                                int16_t& outY, int16_t& outW, int16_t& outH) const {
-  (void)xOffset;  // images are horizontally centered, not offset by the left margin
+  (void)xOffset;
   const int screenW = renderer.getScreenWidth();
   bool found = false;
   int minX = INT_MAX;
@@ -1102,7 +1074,6 @@ bool Page::getImageBoundingBox(const GfxRenderer& renderer, const int xOffset, c
     if (element->getTag() != TAG_PageImage) {
       continue;
     }
-    // Match PageImage::render: centered horizontally, placed at yPos + yOffset, at the stored size.
     const auto& img = static_cast<const PageImage&>(*element);
     const int rx = std::max(0, (screenW - img.getWidth()) / 2);
     const int ry = std::max(0, img.yPos + yOffset);
@@ -1125,7 +1096,7 @@ bool Page::getImageBoundingBox(const GfxRenderer& renderer, const int xOffset, c
 bool Page::imageAt(const GfxRenderer& renderer, const int x, const int y, const int xOffset, const int yOffset,
                    std::string& path, int* imageXOut, int* imageYOut, int* imageWidthOut,
                    int* imageHeightOut) const {
-  (void)xOffset;  // images are horizontally centered, not offset by the left margin
+  (void)xOffset;
   const int screenW = renderer.getScreenWidth();
   for (auto it = elements.rbegin(); it != elements.rend(); ++it) {
     if ((*it)->getTag() != TAG_PageImage) {
@@ -1188,7 +1159,6 @@ void Page::render(GfxRenderer& renderer, const int fontId, const int headerFontI
       line->getTextBlock().render(renderer, fontId, textX, textY, !isInvertedText(textX, textY, fontId));
     } else if (tag == TAG_PageHeader) {
       const auto* header = static_cast<const PageHeader*>(element.get());
-      // Use the element's own font id (header font for headings, or a per-block large-font override).
       const int feId = header->getHeaderFontId() > 0 ? header->getHeaderFontId() : headerFontId;
       const int textX = header->xPos + xOffset;
       const int textY = header->yPos + yOffset;

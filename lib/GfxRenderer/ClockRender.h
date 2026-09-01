@@ -20,4 +20,4 @@ uint8_t styleCount();
 void render(GfxRenderer& renderer, uint8_t style, const DateTimeView& dateTime, bool available, int x, int y, int w,
             int h);
 
-}  // namespace ClockRender
+}

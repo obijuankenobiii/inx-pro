@@ -18,4 +18,4 @@ bool saveApiKey(const std::string& apiKey);
 bool clearApiKey();
 std::string apiKeyLast4();
 
-}  // namespace GeminiTranscription
+}

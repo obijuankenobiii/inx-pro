@@ -34,7 +34,7 @@ int rowHeight(const int height, const int lineHeight) {
                   (height - kTopPadding - kInnerPadding - kRowGap * (kItemCount - 1)) / kItemCount);
 }
 
-}  // namespace
+}
 
 void ShortcutList::render(const int x, const int y, const int width, const int height,
                           const int rowHeightOverride) const {

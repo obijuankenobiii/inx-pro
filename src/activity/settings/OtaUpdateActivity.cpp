@@ -22,7 +22,6 @@
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
 
-// cppcheck-suppress missingInclude
 #include "esp_task_wdt.h"
 
 namespace {
@@ -136,7 +135,7 @@ ButtonBounds updateButtonBounds(const GfxRenderer& renderer, const int y) {
   const int width = Button::width(renderer, "Update", font);
   return {(renderer.getScreenWidth() - width) / 2, y, width, Button::height};
 }
-}  // namespace
+}
 
 void OtaUpdateActivity::taskTrampoline(void* param) {
   auto* self = static_cast<OtaUpdateActivity*>(param);
@@ -161,6 +160,14 @@ void OtaUpdateActivity::onWifiSelectionComplete(const bool success) {
   vTaskDelay(pdMS_TO_TICKS(450));
 
   const auto res = updater.checkForUpdate();
+  if (res == OtaUpdater::NO_UPDATE) {
+    INX_SERIAL.printf("[%lu] [OTA] No stable update available\n", millis());
+    xSemaphoreTake(renderingMutex, portMAX_DELAY);
+    state = NO_UPDATE;
+    xSemaphoreGive(renderingMutex);
+    updateRequired = true;
+    return;
+  }
   if (res != OtaUpdater::OK) {
     INX_SERIAL.printf("[%lu] [OTA] Update check failed: %d\n", millis(), res);
     xSemaphoreTake(renderingMutex, portMAX_DELAY);
@@ -500,11 +507,12 @@ void OtaUpdateActivity::loop() {
       if (state == SOURCE_SELECTION && tapY >= bodyTop && tapY < bodyTop + 2 * kSourceItemHeight) {
         sourceSelectedIndex = (tapY - bodyTop) / kSourceItemHeight;
         if (sourceSelectedIndex == 0) {
+          xSemaphoreTake(renderingMutex, portMAX_DELAY);
           state = WIFI_SELECTION;
-          updateRequired = true;
-          WiFi.mode(WIFI_STA);
+          updateRequired = false;
           enterNewActivity(new WifiSelectionActivity(
               renderer, mappedInput, [this](const bool connected) { onWifiSelectionComplete(connected); }));
+          xSemaphoreGive(renderingMutex);
         } else {
           scanSdFirmwareFiles();
           state = WAITING_SD_SELECTION;
@@ -571,13 +579,11 @@ void OtaUpdateActivity::loop() {
       if (sourceSelectedIndex == 0) {
         xSemaphoreTake(renderingMutex, portMAX_DELAY);
         state = WIFI_SELECTION;
-        xSemaphoreGive(renderingMutex);
-        updateRequired = true;
-        INX_SERIAL.printf("[%lu] [OTA] Turning on WiFi...\n", millis());
-        WiFi.mode(WIFI_STA);
+        updateRequired = false;
         INX_SERIAL.printf("[%lu] [OTA] Launching WifiSelectionActivity...\n", millis());
         enterNewActivity(new WifiSelectionActivity(
             renderer, mappedInput, [this](const bool connected) { onWifiSelectionComplete(connected); }));
+        xSemaphoreGive(renderingMutex);
       } else {
         scanSdFirmwareFiles();
         xSemaphoreTake(renderingMutex, portMAX_DELAY);

@@ -56,8 +56,6 @@ int matchScore(const std::string& query, const LibraryIndex::Book& book) {
   if (folder.find(needle) != std::string::npos) return 40;
   if (path.find(needle) != std::string::npos) return 60;
 
-  // Basic fuzzy matching: all query characters must occur in order. Lower gap
-  // count ranks the result higher without requiring a heavyweight search index.
   size_t at = 0;
   int gaps = 0;
   for (const char c : needle) {
@@ -292,7 +290,7 @@ bool scanIndex(FsFile& file, const uint8_t version, const std::string& query, st
   return true;
 }
 
-}  // namespace
+}
 
 bool LibraryIndex::hasIndex() { return SdMan.exists(indexPath); }
 
@@ -340,9 +338,6 @@ void LibraryIndex::indexAll(const std::function<void(int, int, const char*)>& pr
   if (!SdMan.exists("/.metadata/library")) {
     SdMan.mkdir("/.metadata/library");
   }
-  // Start from a clean catalog. Some SD/FAT combinations can leave the previous index contents
-  // visible when a file is reopened with O_TRUNC after an interrupted rebuild; deleting it first
-  // matches the manual recovery path and prevents stale entries from surviving this rebuild.
   SdMan.remove(indexPath);
   removeSearchIndex();
 
@@ -407,9 +402,6 @@ bool LibraryIndex::search(const std::string& query, std::vector<Book>& results, 
     return false;
   }
 
-  // The library screen asks for every entry with an empty query. Avoid building a second full
-  // Match vector in that case: on large libraries the temporary vector used to nearly double the
-  // catalog's peak heap usage before its Books were moved into results.
   if (query.empty()) {
     file.seek(5);
     while (file.available()) {

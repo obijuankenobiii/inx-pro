@@ -86,7 +86,14 @@ void drawValueStepper(GfxRenderer& renderer, const char* value, int left, int ri
   renderer.bitmap.icon(LibraryFilterRight, x + iconSize + gap + valueWidth + gap, iconY, iconSize, iconSize);
 }
 
-}  // namespace
+void markManualTimezoneSelection(uint8_t SystemSetting::* valuePtr) {
+  if (valuePtr == &SystemSetting::timeZoneQuarterOffset) {
+    SETTINGS.timeZoneAutoDetectEnabled = 0;
+    SETTINGS.timeZoneId[0] = '\0';
+  }
+}
+
+}
 
 /**
  * @brief Static trampoline function for task creation
@@ -115,10 +122,6 @@ void CategorySettingsActivity::onEnter() {
 
   setupMenu();
 
-  // Embedded settings are rendered inside the owning Page. Paint the first
-  // frame before the owner displays its shared shell; otherwise the shell can
-  // push the previous activity's framebuffer to the panel while this task is
-  // still waiting for its first 10 ms iteration.
   if (embedded) {
     render();
     updateRequired = false;
@@ -135,10 +138,6 @@ void CategorySettingsActivity::onEnter() {
 void CategorySettingsActivity::onExit() {
   ActivityWithSubactivity::onExit();
 
-  // The display task holds renderingMutex across the whole render() — including the long displayBuffer() SPI/panel
-  // transaction. Deleting it mid-render aborts that transaction, leaving the panel stuck on the half-written
-  // settings frame (which then ghosts onto later screens). Take the mutex first so we block until the task has
-  // finished its current frame and is idle, then delete it safely between frames.
   if (renderingMutex) {
     xSemaphoreTake(renderingMutex, portMAX_DELAY);
   }
@@ -489,12 +488,14 @@ void CategorySettingsActivity::setupMenu() {
                 if (newIndex < 0) newIndex = static_cast<int>(settingPtr->enumOptionValues.size()) - 1;
                 if (newIndex >= static_cast<int>(settingPtr->enumOptionValues.size())) newIndex = 0;
                 SETTINGS.*(settingPtr->valuePtr) = settingPtr->enumOptionValues[static_cast<size_t>(newIndex)];
+                markManualTimezoneSelection(settingPtr->valuePtr);
               } else {
                 int current = SETTINGS.*(settingPtr->valuePtr);
                 int newVal = current + delta;
                 if (newVal < 0) newVal = settingPtr->enumValues.size() - 1;
                 if (newVal >= (int)settingPtr->enumValues.size()) newVal = 0;
                 SETTINGS.*(settingPtr->valuePtr) = newVal;
+                markManualTimezoneSelection(settingPtr->valuePtr);
               }
               SETTINGS.saveToFile();
               updateRequired = true;
@@ -651,6 +652,7 @@ void CategorySettingsActivity::applySelectedOption(MenuEntry& entry, const int o
   } else {
     SETTINGS.*(entry.valuePtr) = static_cast<uint8_t>(optionIndex);
   }
+  markManualTimezoneSelection(entry.valuePtr);
   SETTINGS.saveToFile();
 }
 
@@ -871,10 +873,6 @@ void CategorySettingsActivity::loop() {
   }
 
   if (selectorOpen) {
-    // Touch swipes must page the selector before they reach the mapped button
-    // handling below. On the Sticky, an upward swipe also reports as the
-    // configured Down button, which previously selected the next item (often
-    // Date Time) instead of revealing the next page.
     if (mappedInput.hasTouch() && (mappedInput.wasTouchSwipeUp() || mappedInput.wasTouchSwipeDown())) {
       const int visibleRows =
           embedded && !groupOpen
@@ -947,7 +945,6 @@ void CategorySettingsActivity::loop() {
             return;
           }
         }
-        // A tap outside the popup dismisses it without changing the value.
         closeSelector(false);
         return;
       }
@@ -984,7 +981,6 @@ void CategorySettingsActivity::loop() {
     return;
   }
 
-  // Tab vs item nav buttons depend on the main-menu nav setting (front: L/R tabs, U/D items; side: swapped).
   const bool upPressed = mappedInput.wasPressed(itemPrevButton());
   const bool downPressed = mappedInput.wasPressed(itemNextButton());
   const bool leftPressed = mappedInput.wasPressed(tabPrevButton());
@@ -993,10 +989,6 @@ void CategorySettingsActivity::loop() {
   const bool backPressed = mappedInput.wasPressed(MappedInputManager::Button::Back);
   bool touchItem = false;
 
-  // Tap-to-select: hit-test against the same uniform-list geometry render()
-  // draws with (see the constructor's itemsPerPage computation for startY).
-  // A hit moves the selection there and opens/toggles it in one step, same
-  // as Up/Down + Confirm.
   if (mappedInput.hasTouch()) {
     if (mappedInput.wasTouchSwipeUp()) {
       const int maxScroll = std::max(0, static_cast<int>(menuItems.size()) - itemsPerPage);

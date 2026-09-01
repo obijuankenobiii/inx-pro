@@ -17,6 +17,7 @@
 #include "state/SystemSetting.h"
 #include "images/Back.h"
 #include "images/Battery.h"
+#include "images/Charging.h"
 #include "images/Library.h"
 #include "images/Recent.h"
 #include "images/Setting.h"
@@ -52,7 +53,7 @@ bool formatMenuClock(char* out, const size_t outSize) {
   return true;
 }
 
-}  // namespace
+}
 
 void ScreenComponents::drawBattery(const GfxRenderer& renderer, const int left, const int top,
                                    const bool showPercentage) {
@@ -61,27 +62,30 @@ void ScreenComponents::drawBattery(const GfxRenderer& renderer, const int left, 
   const bool charging = false;
 #else
   const uint16_t percentage = gpio.getBatteryPercentage();
-  const bool charging = gpio.isUsbConnected();
+  const bool charging = gpio.isCharging();
 #endif
   const auto percentageText = showPercentage ? std::to_string(percentage) + "%" : "";
   renderer.text.render(MONTSERRAT_8_FONT_ID, left + BATTERY_ICON_WIDTH + BATTERY_TEXT_GAP, top,
                        percentageText.c_str());
 
-  const uint8_t* icon = charging ? BatteryChargingIcon : BatteryIcon;
-  renderer.bitmap.icon(icon, left, top + BATTERY_ICON_TOP_OFFSET, BATTERY_ICON_WIDTH, BATTERY_ICON_HEIGHT);
+  renderer.bitmap.icon(BatteryIcon, left, top + BATTERY_ICON_TOP_OFFSET, BATTERY_ICON_WIDTH, BATTERY_ICON_HEIGHT);
 
-  // Keep the supplied outline and charging mark intact; the four bars sit in
-  // the clear battery body. At least one bar remains visible for a non-error
-  // battery reading, with the remaining bars added at 25%, 50%, and 75%.
   const int bars = percentage >= 75 ? 4 : percentage >= 50 ? 3 : percentage >= 25 ? 2 : 1;
-  // Leave a one-pixel inset on every side of the battery body so the icon
-  // outline remains visible around the percentage fill.
   constexpr int barHeight = 6;
   constexpr int firstBarX = 4;
   constexpr int fillWidth = 17;
   const int barY = top + BATTERY_ICON_TOP_OFFSET + 4;
   const int filledWidth = (fillWidth * bars + 3) / 4;
   renderer.rectangle.fill(left + firstBarX, barY, filledWidth, barHeight, true);
+
+  if (charging) {
+    constexpr int chargingIconW = 40;
+    constexpr int chargingIconH = 40;
+    constexpr int chargingIconGap = 30;
+    renderer.bitmap.icon(Charging, left - chargingIconGap,
+                         top + BATTERY_ICON_TOP_OFFSET + (BATTERY_ICON_HEIGHT - chargingIconH) / 2,
+                         chargingIconW, chargingIconH, BitmapRender::Orientation::None);
+  }
 }
 
 bool ScreenComponents::drawMenuClock(const GfxRenderer& renderer, const int left, const int top) {
@@ -111,9 +115,6 @@ void ScreenComponents::drawMenuClockAndBattery(const GfxRenderer& renderer, cons
 ScreenComponents::PopupLayout ScreenComponents::drawPopup(const GfxRenderer& renderer, const char* message) {
   constexpr int margin = 15;
 
-  // Popup callers do not all render from a freshly composed full-screen frame.
-  // Start from the displayed framebuffer so X4's dual-buffer path cannot expose
-  // the stale frame that was in the writable buffer two refreshes ago.
   renderer.syncWriteBufferFromActive();
 
   const int textWidth = renderer.text.getWidth(systemFontId(), message);
@@ -168,7 +169,7 @@ void paintLoadingProgressBarRow(const GfxRenderer& renderer, const ScreenCompone
   renderer.rectangle.render(L.barX, L.barY, L.barW, L.barH, false);
 }
 
-}  // namespace
+}
 
 ScreenComponents::LoadingProgressLayout ScreenComponents::LoadingProgress::show(const GfxRenderer& renderer,
                                                                                 const char* message,
@@ -318,7 +319,6 @@ void ScreenComponents::drawProgressBar(const GfxRenderer& renderer, const int x,
   renderer.text.centered(systemFontId(), y + height + 15, percentText.c_str());
 }
 
-// --- Main tab bar + page-header back button (moved from UiTheme) -------------------------
 namespace {
 constexpr int kMainTabCount = 5;
 constexpr int kMainTabIconSize = 38;
@@ -334,7 +334,7 @@ bool gBackVisible = false;
 int gBackX = 0;
 int gBackY = 0;
 int gBackSize = 0;
-}  // namespace
+}
 
 void ScreenComponents::drawPageHeaderBackButton(const GfxRenderer& renderer, const int startY,
                                                 const int headerHeight) {

@@ -39,7 +39,7 @@ uint32_t toLowerCyrillicImpl(const uint32_t cp) {
   return cp;
 }
 
-}  // namespace
+}
 
 uint32_t toLowerLatin(const uint32_t cp) { return toLowerLatinImpl(cp); }
 

@@ -46,8 +46,6 @@ class StarDictLookup {
   bool lookup(const std::string& queryWord, std::string& outDefinition, bool* outTruncated = nullptr);
 
  private:
-  // Field named entryText, not "word" - Arduino.h #defines a function-like macro `word(...)`
-  // that silently breaks member-initializer syntax like `word(std::move(w))`.
   struct Checkpoint {
     Checkpoint(uint32_t offset, std::string w) : idxOffset(offset), entryText(std::move(w)) {}
     uint32_t idxOffset = 0;
@@ -86,9 +84,6 @@ class StarDictLookup {
   std::string sameTypeSequence_;
   uint32_t wordCount_ = 0;
   uint32_t idxFileSize_ = 0;
-  // Whether .idx dict-offset fields are 8 bytes (idxoffsetbits=64 in .ifo) instead of the default 4.
-  // Large dictionaries (multi-GB .dict files) need this; getting it wrong misaligns every entry
-  // after the first, since the offset/size fields are fixed-width but the preceding word isn't.
   bool use64BitOffsets_ = false;
   bool sorted_ = true;
   bool foldedSorted_ = true;

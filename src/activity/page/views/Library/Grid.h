@@ -27,7 +27,6 @@ class Grid final {
   static constexpr int itemsPerPage = 12;
   static constexpr int columns = 3;
   static constexpr int rows = 4;
-  // These are the legacy folder-grid dimensions.
   static constexpr int margin = 8;
   static constexpr int gapX = 8;
   static constexpr int minGapY = 6;
@@ -51,5 +50,5 @@ class Grid final {
   int itemAt(int x, int y) const;
 };
 
-}  // namespace library
-}  // namespace views
+}
+}

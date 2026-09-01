@@ -14,7 +14,7 @@
 namespace {
 constexpr unsigned long kStatsSaveIntervalMs = 30000;
 constexpr uint32_t kReadingSessionCountMinMs = 45000;
-}  // namespace
+}
 
 void EpubReadingStats::init(const Epub& epub, const Section* section, const int currentSpineIndex) {
   activeSessionTimeMs_ = 0;
@@ -71,7 +71,7 @@ void EpubReadingStats::pausePageTimer(const Epub& epub, const Section* section, 
   }
 
   activeSessionTimeMs_ += timeSpent;
-  ReadingGoal::recordReadingMs(timeSpent);
+  ReadingGoal::recordReadingMs(timeSpent, epub.getCachePath());
 
   if (section) {
     stats_.totalReadingTimeMs += timeSpent;
@@ -108,7 +108,7 @@ void EpubReadingStats::endPageTimer(const Epub& epub, const Section* section, co
   }
 
   activeSessionTimeMs_ += timeSpent;
-  ReadingGoal::recordReadingMs(timeSpent);
+  ReadingGoal::recordReadingMs(timeSpent, epub.getCachePath());
 
   if (section) {
     stats_.totalReadingTimeMs += timeSpent;
@@ -174,9 +174,6 @@ std::string EpubReadingStats::bookTimeLeftString() const {
     return "-";
   }
 
-  // Calculate remaining time based on overall book progress
-  // remainingTime = avgPageTime * (totalPages * (100 - progress) / 100)
-  // We estimate totalPages from pagesRead and progress
   const float progressFraction = stats_.progressPercent / 100.0f;
   if (progressFraction <= 0.0f) {
     return "-";

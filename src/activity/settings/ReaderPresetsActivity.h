@@ -55,7 +55,7 @@ class ReaderPresetsActivity final : public ActivityWithSubactivity, public navig
   int presetRowsStart() const;
   int presetIndexForRow(int row) const;  ///< store index for a preset row, or -1 for the Add-new row
   bool isButtonMappingRow(int row) const;
-  bool isQuickActionsRow(int row) const;
+  bool isFontManagerRow(int row) const;
   void activateSelectedRow();
   void openEditor(int presetIndex);
   void openRenameKeyboard(int presetIndex);
@@ -64,9 +64,6 @@ class ReaderPresetsActivity final : public ActivityWithSubactivity, public navig
   void finishSubActivity();
   void clampSelectionToRowCount();
 
-  // Generic popup selector - every multi-option System/XTC row (everything except the plain
-  // Text-Anti-Aliasing toggle) opens this via Confirm instead of cycling with Left/Right, same shape
-  // as the preset Edit/Rename/Delete overlay. onCommit is called with the chosen option index.
   void openGenericSelector(std::string title, std::vector<std::string> options, int currentIndex,
                            std::function<void(int)> onCommit);
   void handleActionSelectorInput();
@@ -86,6 +83,7 @@ class ReaderPresetsActivity final : public ActivityWithSubactivity, public navig
   int selectedRow_ = -1;
   int scrollOffset_ = 0;
   int itemsPerPage_ = 1;
+  int listItemHeight_ = kListItemHeight;
 
   bool overlayOpen_ = false;
   int overlayPresetIndex_ = -1;
@@ -98,7 +96,6 @@ class ReaderPresetsActivity final : public ActivityWithSubactivity, public navig
   int actionSelectorSel_ = 0;
   int actionSelectorScroll_ = 0;
 
-  // Deferred sub-activity teardown (editor / rename keyboard) to avoid reentrant deletion.
   bool subFinished_ = false;
   bool updateRequired_ = false;
   int pendingRenameIndex_ = -1;

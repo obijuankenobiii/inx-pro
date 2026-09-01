@@ -27,7 +27,7 @@ bool supportedImage(const std::string& filename) {
          StringUtils::checkFileExtension(filename, ".jpeg") || StringUtils::checkFileExtension(filename, ".png");
 }
 
-}  // namespace
+}
 
 ImageViewerActivity::ImageViewerActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, std::string path,
                                          const std::function<void()>& onGoBack)

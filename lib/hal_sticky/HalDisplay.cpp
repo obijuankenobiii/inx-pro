@@ -10,7 +10,7 @@
 
 namespace {
 const BoardConfig::DisplayPins& stickyDisplayPins() { return BoardConfig::ACTIVE.display; }
-}  // namespace
+}
 
 HalDisplay::HalDisplay()
     : display(stickyDisplayPins().sclk, stickyDisplayPins().mosi, stickyDisplayPins().cs, stickyDisplayPins().dc,
@@ -18,21 +18,10 @@ HalDisplay::HalDisplay()
 
 HalDisplay::~HalDisplay() {}
 
-// FreeInkDisplay::begin() reads BoardConfig::ACTIVE.display.powerEnable (Sticky's
-// EP_PWR_EN, GPIO47) itself, so no manual pin handling is needed here.
 void HalDisplay::begin() {
-  // Belt-and-suspenders: SdMan.begin() (main.cpp calls it before this) already
-  // sets the shared bus's real MISO via SDCardManager's own SPI.begin() call —
-  // matching upstream crosspoint-reader's boot order, which is what actually
-  // makes the shared SCLK13/MOSI14 bus work. This call is a no-op by the time
-  // it runs (Arduino's SPI.begin() only applies pins on the first call), kept
-  // only as a defensive fallback if SD ever fails before display.begin() runs.
   SPI.begin(stickyDisplayPins().sclk, BoardConfig::ACTIVE.sd.miso, stickyDisplayPins().mosi, -1);
   display.begin();
 
-  // Matches crosspoint-reader's real HalDisplay::begin(): force a clean,
-  // non-differential first paint on boot/wake so stale panel content (or the
-  // vendor sleep screen) doesn't ghost through the app's first FAST_REFRESH.
   const auto wakeupReason = gpio.getWakeupReason();
   if (wakeupReason == HalGPIO::WakeupReason::PowerButton || wakeupReason == HalGPIO::WakeupReason::AfterFlash ||
       wakeupReason == HalGPIO::WakeupReason::Other) {
@@ -56,8 +45,6 @@ StickyDisplay::RefreshMode convertRefreshMode(HalDisplay::RefreshMode mode) {
     case HalDisplay::MANUAL_REFRESH:
       return EInkDisplay::HALF_REFRESH;
     case HalDisplay::STRONG_FAST_REFRESH:
-      // freeink-sdk's RefreshMode has no STRONG_FAST_REFRESH tier (only
-      // FULL/HALF/FAST) — collapses to FAST_REFRESH.
       return EInkDisplay::FAST_REFRESH;
     case HalDisplay::FAST_REFRESH:
     default:
@@ -72,6 +59,8 @@ void HalDisplay::displayBufferAsync(HalDisplay::RefreshMode mode) {
 }
 
 void HalDisplay::syncWriteBufferFromActive() const { display.syncWriteBufferFromActive(); }
+
+bool HalDisplay::refreshBusy() { return display.refreshBusy(); }
 
 void HalDisplay::refreshDisplay(HalDisplay::RefreshMode mode, bool turnOffScreen) {
   display.refreshDisplay(convertRefreshMode(mode), turnOffScreen);
@@ -89,8 +78,6 @@ void HalDisplay::copyGrayscaleLsbBuffers(const uint8_t* lsbBuffer) { display.cop
 
 void HalDisplay::copyGrayscaleMsbBuffers(const uint8_t* msbBuffer) { display.copyGrayscaleMsbBuffers(msbBuffer); }
 
-// freeink-sdk's cleanupGrayscaleBuffers() is available in both buffer modes
-// (unlike the original EInkDisplay, where it was single-buffer-only).
 void HalDisplay::cleanupGrayscaleBuffers(const uint8_t* bwBuffer) { display.cleanupGrayscaleBuffers(bwBuffer); }
 
 void HalDisplay::displayGrayBuffer(const bool quality, const bool trackForRevert) {

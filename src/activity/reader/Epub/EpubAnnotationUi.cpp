@@ -27,7 +27,7 @@ ButtonBounds caretBounds(const GfxRenderer& renderer) {
   return {kOverlayMargin, renderer.getScreenHeight() - kOverlayMargin - kCaretSize, kCaretSize, kCaretSize};
 }
 
-}  // namespace
+}
 
 EpubAnnotationUi::EpubAnnotationUi() = default;
 
@@ -109,12 +109,7 @@ void EpubAnnotationUi::clearAllStoredHighlightsOnCurrentPage(EpubActivity& act) 
   selectingStarted_ = false;
   wordLookup_.clear();
   anchor_ = 0;
-  // Force full word-index rebuild so merge/geometry cannot reuse state tied to the deleted highlights.
   clearWordIndexCache();
-  // Full redraw clears lattice from the framebuffer; then re-capture for annotation repaint path.
-  // Suppress drawUiOverlay() during this specific render - otherwise it redraws a cursor box at
-  // focus_ (word 0) before the capture, baking a stale highlight permanently into the "clean"
-  // snapshot that every later repaint() restores from, regardless of where focus_ moves next.
   suppressOverlayDraw_ = true;
   act.renderScreen(true);
   suppressOverlayDraw_ = false;
@@ -145,9 +140,6 @@ void EpubAnnotationUi::enter(EpubActivity& act) {
   if (!act.section || !act.epub) {
     return;
   }
-  // The Down+Right entry chord (and a plain long-press Down) leave the button held while
-  // handleInput() is about to stop running for the whole overlay session - reset its per-button
-  // state now so it doesn't misfire a stale long-press the instant this overlay exits.
   act.btnBindings_.reset();
   mode_ = true;
   controlsVisible_ = true;
@@ -157,8 +149,6 @@ void EpubAnnotationUi::enter(EpubActivity& act) {
   pendingSpans_.clear();
   wordLookup_.clear();
   anchor_ = 0;
-  // Build word index first, then capture the framebuffer. Allocating the 48k capture before the word index
-  // (many strings + PageWordHit) spikes heap usage and can abort() on OOM on ESP32.
   prepareWordGeometry(act);
   if (words_.empty()) {
     act.readerPopup("No text to highlight");
@@ -200,9 +190,6 @@ void EpubAnnotationUi::exit(EpubActivity& act) {
   pendingNoteAudioPath_.clear();
   pendingNoteText_.clear();
   selectingStarted_ = false;
-  // swap, not .clear() - .clear() empties the contents but keeps the heap capacity reserved for
-  // reuse; a page with many highlights/words can grow these well past what's needed once the UI
-  // closes (same fix as EpubDictionaryUi's releaseDefinitionMemory()).
   std::vector<std::pair<size_t, size_t>>().swap(pendingSpans_);
   std::vector<std::pair<size_t, size_t>>().swap(storedRanges_);
   wordLookup_.clear();
@@ -324,8 +311,6 @@ void EpubAnnotationUi::prepareWordGeometry(EpubActivity& act) {
   const bool anyWordText =
       std::any_of(words_.begin(), words_.end(), [](const PageWordHit& w) { return !w.text.empty(); });
 
-  // Reading mode may build the index with omitStoredWordStrings (no per-word strings). Annotation needs strings for
-  // extractRangeText / save — force rebuild when the cache has words but no text.
   if (wordIndexCacheHit && !words_.empty() && anyWordText) {
     storedRanges_.clear();
     focus_ = std::min(focus_, words_.size() - 1);
@@ -511,11 +496,9 @@ void EpubAnnotationUi::handleInput(EpubActivity& act) {
           const size_t first = std::min(oldAnchor, oldFocus);
           const size_t last = std::max(oldAnchor, oldFocus);
           if (tapped < first) {
-            // A tap to the left replaces the first word while keeping the end.
             anchor_ = tapped;
             focus_ = last;
           } else {
-            // A tap on or to the right of the selected text sets its end word.
             anchor_ = first;
             focus_ = tapped;
           }
@@ -637,8 +620,5 @@ void EpubAnnotationUi::saveToStorage(EpubActivity& act) {
                 act.section ? act.section->currentPage : -1,
                 static_cast<unsigned>(annotations_.records().size()));
 
-  // Saving leaves annotation mode and the activity loop fully redraws this same reader page.
-  // Do not draw a transient popup here: its later dismiss tap is handled by the reader and can
-  // be interpreted as a page turn, while its pixels can remain in the annotation overlay.
   exit(act);
 }

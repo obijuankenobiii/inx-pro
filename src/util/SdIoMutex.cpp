@@ -18,7 +18,7 @@ void ensureMutex() {
   }
   portEXIT_CRITICAL(&gInitMux);
 }
-}  // namespace
+}
 
 namespace SdIoMutex {
 void lock() {
@@ -29,13 +29,13 @@ void lock() {
 void unlock() {
   if (gMutex != nullptr) xSemaphoreGiveRecursive(gMutex);
 }
-}  // namespace SdIoMutex
+}
 
 #else
 
 namespace SdIoMutex {
 void lock() {}
 void unlock() {}
-}  // namespace SdIoMutex
+}
 
 #endif

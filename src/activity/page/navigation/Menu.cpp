@@ -55,8 +55,6 @@ int hidden(const navigation::Menu& menu) {
   if (page && (std::strcmp(page, "Sync") == 0 || std::strcmp(page, "Device Management") == 0 ||
                std::strcmp(page, "Network Settings") == 0))
     return 3;
-  // Home/Recent and pages without a dedicated navigation tile (for example Search)
-  // keep the popup at exactly four items by omitting Recent.
   return 0;
 }
 
@@ -127,7 +125,7 @@ bool current(const navigation::Menu& menu, const navigation::Menu::Action action
   }
 }
 
-}  // namespace
+}
 
 namespace navigation {
 
@@ -222,7 +220,6 @@ void Menu::title() const {
 }
 
 void Menu::navigation() const {
-  // Use the full bottom row for page navigation.
   constexpr int count = 5;
   const int left = leftMargin + iconSize / 2;
   const int right = menuRenderer.getScreenWidth() - leftMargin - iconSize / 2;
@@ -296,9 +293,6 @@ Menu::Action Menu::handleInput(MappedInputManager& input) const {
     return Action::Opened;
   }
   if (lightAction == LightDrawer::Action::Closed) return Action::Closed;
-  // Adjusted: an edge swipe changed brightness/temperature. The drawer stays open and needs
-  // a repaint for the moved slider, but this must NOT fall through to the swipe handling
-  // below or the same gesture would also drive page navigation.
   if (lightAction == LightDrawer::Action::Adjusted) return Action::Opened;
 #endif
   const bool touchSwipe = input.wasTouchSwipeUpForRenderer(menuRenderer) ||
@@ -390,14 +384,9 @@ Menu::Action Menu::handleTap(const int tapX, const int tapY) const {
   const int left = leftMargin + iconSize / 2;
   const int right = menuRenderer.getScreenWidth() - leftMargin - iconSize / 2;
   const int step = count > 1 ? (right - left) / (count - 1) : 0;
-  // The visual icons are 40px, but each owns a full bottom-row band with an
-  // extra 10px above and below it. This is a touch-only expansion: layout and
-  // content bounds stay unchanged.
   const int navigationY = menuRenderer.getScreenHeight() - bottomHeight - 10;
   if (tapY < navigationY || tapY >= menuRenderer.getScreenHeight() || step <= 0) return Action::None;
 
-  // Divide the complete bottom row into five bands. This keeps the touch target responsive even
-  // when a tap lands beside a 40px icon and prevents gaps between adjacent navigation items.
   int slot = (tapX - left + step / 2) / step;
   if (slot < 0) slot = 0;
   if (slot >= count) slot = count - 1;
@@ -419,4 +408,4 @@ Menu::Action Menu::handleTap(const int tapX, const int tapY) const {
   return Action::None;
 }
 
-}  // namespace navigation
+}

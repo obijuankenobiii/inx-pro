@@ -30,15 +30,10 @@ class ParsedText {
   /** True when this token was split only by an inline style boundary and should not get an inter-word gap. */
   std::list<uint8_t> wordJoinPrevious;
   bool hasJoinedWords_ = false;
-  // Inline images flow as atomic "words": for an image slot the `words` entry is empty and these hold the
-  // cached path + on-line display size. These lists stay EMPTY (zero overhead) until the block actually
-  // contains an inline image — see hasInlineImages_ — so plain text blocks pay nothing.
   std::list<std::string> wordImagePaths;
   std::list<uint16_t> wordImageW;
   std::list<uint16_t> wordImageH;
   bool hasInlineImages_ = false;
-  // Footnote/endnote link target per word (empty = not a footnote marker). Same lazy-backfill shape as the
-  // image lists above - stays empty until the first footnote-marker word is added.
   std::list<std::string> wordFootnoteTargets;
   bool hasFootnoteLinks_ = false;
   /** Widest natural (pre-alignment) line content width seen during layout; used to size CSS border rules. */

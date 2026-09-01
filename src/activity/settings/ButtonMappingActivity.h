@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "activity/ActivityWithSubactivity.h"
+#include "system/UiLayout.h"
 
 class ButtonMappingActivity final : public ActivityWithSubactivity {
  public:
@@ -21,7 +22,18 @@ class ButtonMappingActivity final : public ActivityWithSubactivity {
 
  private:
   static constexpr int kButtonCount = 5;
-  static constexpr int kRowHeight = 60;
+  static constexpr int kGestureCount = 3;
+  static constexpr int kQuickActionRow = 0;
+  static constexpr int kButtonStartRow = kQuickActionRow + 1;
+  static constexpr int kGestureStartRow = kButtonStartRow + kButtonCount;
+  static constexpr int kItemCount = kGestureStartRow + kGestureCount;
+  static constexpr int kSectionHeaderHeight = 24;
+  static constexpr int kRowHeight = UiLayout::LIST_ITEM_HEIGHT;
+  static constexpr int kDisableLightRow = kGestureStartRow;
+  static constexpr int kPageTurnRow = kGestureStartRow + 1;
+  static constexpr int kDoubleTapRow = kGestureStartRow + 2;
+  static constexpr int kQuickActionToButtonGap = 20;
+  static constexpr int kButtonToGesturesGap = 20;
 
   void render();
   void openSelector(int row);
@@ -29,13 +41,17 @@ class ButtonMappingActivity final : public ActivityWithSubactivity {
   void commitSelector();
   void handleSelectorInput();
   void handleListInput();
+  void handleGestureInput(int row);
   void renderSelector();
   uint8_t* actionSlot(int row);
   const uint8_t* actionSlot(int row) const;
+  int itemRowAtY(int tapY) const;
+  int itemY(int row) const;
 
   std::function<void()> onDone_;
   int selectedRow_ = 0;
   bool selectorOpen_ = false;
+  bool subFinished_ = false;
   int selectorRow_ = -1;
   int selectorSelected_ = 0;
   int selectorScroll_ = 0;

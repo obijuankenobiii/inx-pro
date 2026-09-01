@@ -20,7 +20,6 @@ uint32_t be32(const uint8_t* p) {
          (static_cast<uint32_t>(p[2]) << 8) | p[3];
 }
 
-// Escapes the handful of characters that would otherwise break the XML we embed titles/paths into.
 std::string xmlEscape(const std::string& s) {
   std::string out;
   out.reserve(s.size());
@@ -67,7 +66,7 @@ void depalmdocAppend(const uint8_t* data, const size_t len, std::vector<uint8_t>
       const uint16_t m = (static_cast<uint16_t>(c) << 8) | c2;
       const uint16_t distance = (m >> 3) & 0x7ff;
       const uint16_t length = (m & 0x7) + 3;
-      if (distance == 0 || distance > out.size()) break;  // corrupt record - stop rather than misread memory
+      if (distance == 0 || distance > out.size()) break;
       const size_t start = out.size() - distance;
       for (uint16_t j = 0; j < length; j++) {
         out.push_back(out[start + j]);
@@ -110,8 +109,8 @@ size_t stripTrailingSize(const uint8_t* data, size_t size, const uint16_t extraF
 }
 
 struct MobiHeader {
-  uint16_t compression = 0;   // 1 = none, 2 = PalmDOC/LZ77
-  uint16_t recordCount = 0;   // number of text records: records[1..recordCount]
+  uint16_t compression = 0;
+  uint16_t recordCount = 0;
   uint32_t firstImageIndex = 0;
   uint16_t extraFlags = 0;
   std::string title;
@@ -125,7 +124,7 @@ struct MobiHeader {
  */
 std::string readExthAuthor(const std::vector<uint8_t>& rec0) {
   const uint32_t exthFlags = be32(&rec0[128]);
-  if ((exthFlags & 0x40) == 0) return "";  // no EXTH block present
+  if ((exthFlags & 0x40) == 0) return "";
 
   const uint32_t mobiHeaderLength = be32(&rec0[20]);
   const size_t exthStart = 16 + mobiHeaderLength;
@@ -136,8 +135,8 @@ std::string readExthAuthor(const std::vector<uint8_t>& rec0) {
   for (uint32_t i = 0; i < recordCount && pos + 8 <= rec0.size(); i++) {
     const uint32_t type = be32(&rec0[pos]);
     const uint32_t len = be32(&rec0[pos + 4]);
-    if (len < 8 || pos + len > rec0.size()) break;  // corrupt/truncated - stop rather than misread
-    if (type == 100) {  // 100 = author (EXTH spec)
+    if (len < 8 || pos + len > rec0.size()) break;
+    if (type == 100) {
       return std::string(reinterpret_cast<const char*>(&rec0[pos + 8]), len - 8);
     }
     pos += len;
@@ -182,8 +181,6 @@ bool parseMobiHeader(FsFile& file, const std::vector<uint8_t>& rec0, const uint3
       out->title.assign(reinterpret_cast<const char*>(nameBuf.data()), fullNameLength);
     }
   }
-  // Trim trailing NULs/whitespace some encoders pad the name field with, which would otherwise end up
-  // embedded (and escaped oddly, or worse - truncate XML parsing) inside the generated content.opf.
   while (!out->title.empty() && (out->title.back() == '\0' || isspace(static_cast<unsigned char>(out->title.back())))) {
     out->title.pop_back();
   }
@@ -271,10 +268,10 @@ class ZipStoreWriter {
     pendingOffset_ = static_cast<uint32_t>(file_.position());
     uint8_t hdr[30] = {0};
     putU32(hdr + 0, 0x04034b50);
-    putU16(hdr + 4, 20);  // version needed to extract
-    putU16(hdr + 8, 0);   // compression method = stored
+    putU16(hdr + 4, 20);
+    putU16(hdr + 8, 0);
     putU32(hdr + 14, crc);
-    putU32(hdr + 18, size);  // compressed size == uncompressed size (stored)
+    putU32(hdr + 18, size);
     putU32(hdr + 22, size);
     putU16(hdr + 26, static_cast<uint16_t>(name.size()));
     if (file_.write(hdr, sizeof(hdr)) != sizeof(hdr)) return false;
@@ -316,10 +313,10 @@ const char* imageExtensionFor(const uint8_t* data, const size_t len, const char*
     *mediaType = "image/gif";
     return "gif";
   }
-  return nullptr;  // not a recognized image record (FLIS/FCIS/EOF/index records etc.) - skip it
+  return nullptr;
 }
 
-}  // namespace
+}
 
 namespace Mobi {
 
@@ -373,8 +370,6 @@ bool convertToEpub(const std::string& mobiPath, const std::string& outEpubPath) 
                 header.author.empty() ? "Unknown" : header.author.c_str(), header.compression, header.recordCount,
                 header.firstImageIndex);
 
-  // --- Pass 1: decompress every text record into a scratch file on disk (bounded memory; never holds the
-  // whole book in RAM), so its final size/CRC are known before we write the zip's local header for it. ---
   const std::string scratchPath = outEpubPath + ".tmp_text";
   {
     FsFile scratch;
@@ -406,7 +401,6 @@ bool convertToEpub(const std::string& mobiPath, const std::string& outEpubPath) 
     scratch.close();
   }
 
-  // --- CRC + size of the scratch file, now that its content is finalized. ---
   uint32_t textCrc = MZ_CRC32_INIT;
   uint32_t textSize = 0;
   {
@@ -424,7 +418,6 @@ bool convertToEpub(const std::string& mobiPath, const std::string& outEpubPath) 
     scratch.close();
   }
 
-  // --- Collect embedded images (best-effort; unrecognized trailing records like FLIS/FCIS/EOF are skipped). ---
   struct ImageInfo {
     std::string entryName;
     std::string mediaType;
@@ -437,7 +430,7 @@ bool convertToEpub(const std::string& mobiPath, const std::string& outEpubPath) 
     std::vector<uint8_t> imgBuf;
     for (uint32_t i = header.firstImageIndex; i < numRecords; i++) {
       const uint32_t recLen = records[i + 1] - records[i];
-      if (recLen == 0 || recLen > 2 * 1024 * 1024) continue;  // sanity bound
+      if (recLen == 0 || recLen > 2 * 1024 * 1024) continue;
       imgBuf.resize(recLen);
       src.seek(records[i]);
       if (src.read(imgBuf.data(), recLen) != static_cast<int>(recLen)) continue;
@@ -454,7 +447,6 @@ bool convertToEpub(const std::string& mobiPath, const std::string& outEpubPath) 
     }
   }
 
-  // --- Assemble the minimal EPUB zip. ---
   ZipStoreWriter zip;
   if (!zip.begin(outEpubPath)) {
     INX_SERIAL.printf("[MOBI] Could not open output epub %s for write\n", outEpubPath.c_str());
@@ -525,4 +517,4 @@ bool convertToEpub(const std::string& mobiPath, const std::string& outEpubPath) 
   return true;
 }
 
-}  // namespace Mobi
+}

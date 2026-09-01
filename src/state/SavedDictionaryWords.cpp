@@ -37,7 +37,7 @@ std::string sanitizeFilename(const std::string& word) {
   }
   return out + ".bin";
 }
-}  // namespace
+}
 
 void SavedDictionaryWordStore::load() {
   if (loaded_) {

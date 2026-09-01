@@ -46,5 +46,5 @@ void nativeToScreen(GfxRenderer::Orientation orientation, float nativeNx, float 
 /** Logical screen coordinates -> panel-native normalized tap. Inverse of nativeToScreen(). */
 void screenToNative(GfxRenderer::Orientation orientation, float screenNx, float screenNy, float& nx, float& ny);
 
-}  // namespace touch
-}  // namespace inx
+}
+}

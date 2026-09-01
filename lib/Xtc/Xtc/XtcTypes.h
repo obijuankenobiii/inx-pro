@@ -139,4 +139,4 @@ inline bool isXtcExtension(const char* filename) {
   return (strcasecmp(ext, ".xtc") == 0 || strcasecmp(ext, ".xtch") == 0);
 }
 
-}  // namespace xtc
+}

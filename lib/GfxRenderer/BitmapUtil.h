@@ -29,9 +29,6 @@ uint8_t mapQualityGray2Level(uint8_t level);
  */
 const uint8_t* grayscaleCodeTable();
 
-// Medium/text-AA plane codes. Separate from grayscaleCodeTable() because text AA is an
-// overlay whose extremes may need to be held by the B/W base rather than driven, and on some
-// controllers that differs from the image table. Defined per device in lib/hal_<device>/.
 const uint8_t* mediumTextCodeTable();
 
 /**

@@ -18,10 +18,6 @@
  */
 class Page : public Activity, public navigation::Menu {
  public:
-  // --- Shared page layout ---------------------------------------------------------------
-  // Aliases for UiLayout so page code can write Page::LIST_ITEM_HEIGHT. The values live in
-  // system/UiLayout.h — a dependency-free header the reader can also include, which Page.h
-  // cannot be because lib/Epub/Epub/Page.h declares a colliding `class Page`.
   static constexpr int LIST_ITEM_HEIGHT = UiLayout::LIST_ITEM_HEIGHT;      ///< one row in any settings/menu list
   static constexpr int HEADER_HEIGHT = UiLayout::HEADER_HEIGHT;         ///< in-page header band
   static constexpr int PAGE_HEADER_HEIGHT = UiLayout::PAGE_HEADER_HEIGHT;    ///< taller header used by drawer pages
@@ -38,7 +34,7 @@ class Page : public Activity, public navigation::Menu {
   Page(const char* name, GfxRenderer& renderer, MappedInputManager& mappedInput);
   ~Page() override = default;
 
-  bool allowGlobalPowerRefresh() override { return false; }
+  bool allowGlobalPowerRefresh() override { return true; }
   void onEnter() override;
   virtual void loop() override;
 

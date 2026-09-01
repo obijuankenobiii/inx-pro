@@ -35,7 +35,6 @@ bool folderLooksLikeDictionary(const std::string& folderPath) {
     if (!file.isDirectory()) {
       char name[160] = {};
       file.getName(name, sizeof(name));
-      // Skip macOS AppleDouble sidecar junk ("._real.idx" etc), same as StarDictLookup::open().
       if (name[0] == '.') {
         file.close();
         continue;
@@ -58,7 +57,7 @@ bool folderLooksLikeDictionary(const std::string& folderPath) {
                 hasIdx ? 1 : 0, hasDict ? 1 : 0);
   return hasIdx && hasDict;
 }
-}  // namespace
+}
 
 void DictionaryPickerActivity::onEnter() {
   INX_SERIAL.printf("[%lu] [DICT-PICKER] onEnter start\n", millis());
@@ -216,9 +215,6 @@ void DictionaryPickerActivity::render() {
     const int titleY = y + (kRowH - renderer.text.getLineHeight(font)) / 2;
     std::string label = folders_[static_cast<size_t>(i)];
     if (active) {
-      // Keep the picker label in the UI font's guaranteed ASCII set. The previous
-      // Unicode checkmark was missing from Atkinson and reset the Sticky while
-      // TextRender attempted to render its fallback glyph.
       label += "  *";
     }
     INX_SERIAL.printf("[%lu] [DICT-PICKER] before row text font=%d y=%d label='%s'\n", millis(), font, titleY,

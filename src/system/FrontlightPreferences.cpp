@@ -6,7 +6,7 @@
 namespace {
 constexpr char kPreferencesFile[] = "/.system/frontlight.bin";
 constexpr uint8_t kVersion = 1;
-}  // namespace
+}
 
 namespace frontlight_preferences {
 
@@ -49,4 +49,4 @@ bool save(const Settings& settings) {
   return true;
 }
 
-}  // namespace frontlight_preferences
+}

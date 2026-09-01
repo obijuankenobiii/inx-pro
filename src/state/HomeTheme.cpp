@@ -11,7 +11,7 @@ namespace HomeTheme {
 namespace {
 
 constexpr char kThemeFile[] = "/.system/home_themes.bin";
-constexpr uint8_t kVersion = 10;
+constexpr uint8_t kVersion = 12;
 constexpr uint8_t kLegacyCarouselShadowVersion = 8;
 constexpr uint8_t kLegacyCarouselShadowStyleVersion = 9;
 constexpr uint8_t kSleepThemeVersion = 3;
@@ -37,6 +37,7 @@ void setDefaultCarouselLabels(Theme& theme);
 CarouselLabelColor defaultCarouselLabelColor(Widget widget);
 void setDefaultCarouselLabelColors(Theme& theme);
 void setDefaultCarouselShadowStyles(Theme& theme);
+void setDefaultHeatmapViews(Theme& theme);
 
 void makeDefault() {
   themeCount = 1;
@@ -52,6 +53,7 @@ void makeDefault() {
   setDefaultCarouselLabels(themes[0]);
   setDefaultCarouselLabelColors(themes[0]);
   setDefaultCarouselShadowStyles(themes[0]);
+  setDefaultHeatmapViews(themes[0]);
   sleepTheme = {};
   setName(sleepTheme, "Sleep");
   sleepTheme.layout = Layout::OneByTwo;
@@ -70,6 +72,7 @@ bool repairEmptyHomeTheme() {
   setDefaultCarouselLabels(themes[0]);
   setDefaultCarouselLabelColors(themes[0]);
   setDefaultCarouselShadowStyles(themes[0]);
+  setDefaultHeatmapViews(themes[0]);
   return true;
 }
 
@@ -82,7 +85,7 @@ bool validLayout(const uint8_t value) {
 }
 
 bool validWidget(const uint8_t value) {
-  return value <= static_cast<uint8_t>(Widget::Favorites);
+  return value <= static_cast<uint8_t>(Widget::Heatmap);
 }
 
 bool validBorder(const uint8_t value) {
@@ -97,12 +100,14 @@ bool validCarouselShadowStyle(const uint8_t value) {
   return value <= static_cast<uint8_t>(CarouselShadowStyle::Gray);
 }
 
+bool validHeatmapView(const uint8_t value) { return value <= static_cast<uint8_t>(HeatmapView::Monthly); }
+
 bool defaultBackground(const Widget widget) {
   return widget == Widget::Carousel || widget == Widget::Recent;
 }
 
 bool defaultCarouselLabel(const Widget widget) {
-  return widget == Widget::Carousel || widget == Widget::Favorites;
+  return widget == Widget::Carousel || widget == Widget::Favorites || widget == Widget::Heatmap;
 }
 
 CarouselStyle defaultCarouselStyleForWidget(const Widget widget) {
@@ -131,7 +136,11 @@ void setDefaultCarouselShadowStyles(Theme& theme) {
   for (CarouselShadowStyle& style : theme.carouselShadowStyles) style = CarouselShadowStyle::None;
 }
 
-}  // namespace
+void setDefaultHeatmapViews(Theme& theme) {
+  for (HeatmapView& view : theme.heatmapViews) view = HeatmapView::Weekly;
+}
+
+}
 
 void load() {
   loaded = true;
@@ -148,7 +157,7 @@ void load() {
   serialization::readPod(file, storedActive);
   if ((version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != 7 &&
        version != kLegacyCarouselShadowVersion && version != kLegacyCarouselShadowStyleVersion &&
-       version != kVersion) || storedCount == 0 ||
+       version != 10 && version != 11 && version != kVersion) || storedCount == 0 ||
       storedCount > kMaxThemes) {
     file.close();
     return;
@@ -210,6 +219,7 @@ void load() {
       }
       serialization::readPod(file, theme.carouselLabels[i]);
       theme.carouselLabels[i] = theme.carouselLabels[i] != 0 ? 1 : 0;
+      if (version < kVersion && theme.widgets[i] == Widget::Heatmap) theme.carouselLabels[i] = 1;
     }
     for (int i = 0; i < 4; ++i) {
       if (version < kLegacyCarouselShadowVersion) {
@@ -223,7 +233,7 @@ void load() {
                                          : defaultCarouselLabelColor(theme.widgets[i]);
     }
     uint8_t legacyShadows[4] = {};
-    if (version >= kLegacyCarouselShadowVersion && version < kVersion) {
+    if (version == kLegacyCarouselShadowVersion || version == kLegacyCarouselShadowStyleVersion) {
       for (uint8_t& shadow : legacyShadows) serialization::readPod(file, shadow);
     }
     for (int i = 0; i < 4; ++i) {
@@ -236,8 +246,6 @@ void load() {
       serialization::readPod(file, value);
       CarouselShadowStyle style = CarouselShadowStyle::None;
       if (version == kLegacyCarouselShadowStyleVersion) {
-        // Version 9 used a separate enabled toggle and four style values.
-        // Migrate those values into the new three-state style.
         if (legacyShadows[i] != 0) {
           style = value <= 1 ? CarouselShadowStyle::Black : CarouselShadowStyle::Gray;
         }
@@ -245,6 +253,15 @@ void load() {
         style = static_cast<CarouselShadowStyle>(value);
       }
       theme.carouselShadowStyles[i] = style;
+    }
+    for (int i = 0; i < 4; ++i) {
+      if (version < kVersion) {
+        theme.heatmapViews[i] = HeatmapView::Weekly;
+        continue;
+      }
+      uint8_t value = 0;
+      serialization::readPod(file, value);
+      theme.heatmapViews[i] = validHeatmapView(value) ? static_cast<HeatmapView>(value) : HeatmapView::Weekly;
     }
     if (theme.layout == Layout::Classic) {
       theme.layout = Layout::OneByTwo;
@@ -255,6 +272,7 @@ void load() {
       for (uint8_t& label : theme.carouselLabels) label = 0;
       for (CarouselLabelColor& color : theme.carouselLabelColors) color = CarouselLabelColor::Black;
       for (CarouselShadowStyle& style : theme.carouselShadowStyles) style = CarouselShadowStyle::None;
+      for (HeatmapView& view : theme.heatmapViews) view = HeatmapView::Weekly;
     }
     return true;
   };
@@ -277,8 +295,6 @@ void load() {
   if (themeCount == 0) {
     makeDefault();
   } else {
-    // The first entry is the permanent home theme. Keep its user-facing name
-    // stable even when loading older theme files that called it Default or Classic.
     setName(themes[0], "Home");
     selectedTheme = std::min<int>(storedActive, themeCount - 1);
     if (version < kLegacyCarouselShadowVersion) {
@@ -328,6 +344,9 @@ bool save() {
     for (const CarouselShadowStyle style : theme.carouselShadowStyles) {
       serialization::writePod(file, static_cast<uint8_t>(style));
     }
+    for (const HeatmapView view : theme.heatmapViews) {
+      serialization::writePod(file, static_cast<uint8_t>(view));
+    }
   };
   for (int i = 0; i < themeCount; ++i) writeTheme(themes[i]);
   writeTheme(sleepTheme);
@@ -368,6 +387,7 @@ void activate(const int index) {
 int add(const Layout layout, const Widget* widgets, const Border* borders, const uint8_t* backgrounds,
         const CarouselStyle* carouselStyles, const uint8_t* carouselLabels,
         const CarouselLabelColor* carouselLabelColors, const CarouselShadowStyle* carouselShadowStyles,
+        const HeatmapView* heatmapViews,
         const int slotCountValue) {
   ensureLoaded();
   if (themeCount >= kMaxThemes) return -1;
@@ -397,6 +417,10 @@ int add(const Layout layout, const Widget* widgets, const Border* borders, const
                                             validCarouselShadowStyle(static_cast<uint8_t>(carouselShadowStyles[i]))
                                         ? carouselShadowStyles[i]
                                         : CarouselShadowStyle::None;
+    theme.heatmapViews[i] = layout != Layout::Classic && heatmapViews && i < slotCountValue &&
+                                   validHeatmapView(static_cast<uint8_t>(heatmapViews[i]))
+                               ? heatmapViews[i]
+                               : HeatmapView::Weekly;
   }
   ++themeCount;
   selectedTheme = themeCount - 1;
@@ -407,6 +431,7 @@ int add(const Layout layout, const Widget* widgets, const Border* borders, const
 void update(const int index, const Layout layout, const Widget* widgets, const Border* borders,
             const uint8_t* backgrounds, const CarouselStyle* carouselStyles, const uint8_t* carouselLabels,
             const CarouselLabelColor* carouselLabelColors, const CarouselShadowStyle* carouselShadowStyles,
+            const HeatmapView* heatmapViews,
             const int slotCountValue) {
   ensureLoaded();
   if (index < 0 || index >= themeCount) return;
@@ -433,6 +458,10 @@ void update(const int index, const Layout layout, const Widget* widgets, const B
                                             validCarouselShadowStyle(static_cast<uint8_t>(carouselShadowStyles[i]))
                                         ? carouselShadowStyles[i]
                                         : CarouselShadowStyle::None;
+    theme.heatmapViews[i] = layout != Layout::Classic && heatmapViews && i < slotCountValue &&
+                                   validHeatmapView(static_cast<uint8_t>(heatmapViews[i]))
+                               ? heatmapViews[i]
+                               : HeatmapView::Weekly;
   }
   selectedTheme = index;
   save();
@@ -441,6 +470,7 @@ void update(const int index, const Layout layout, const Widget* widgets, const B
 void updateSleep(const Layout layout, const Widget* widgets, const Border* borders, const uint8_t* backgrounds,
                  const CarouselStyle* carouselStyles, const uint8_t* carouselLabels,
                  const CarouselLabelColor* carouselLabelColors, const CarouselShadowStyle* carouselShadowStyles,
+                 const HeatmapView* heatmapViews,
                  const int slotCountValue) {
   ensureLoaded();
   sleepTheme.layout = layout;
@@ -465,6 +495,10 @@ void updateSleep(const Layout layout, const Widget* widgets, const Border* borde
                                                  validCarouselShadowStyle(static_cast<uint8_t>(carouselShadowStyles[i]))
                                              ? carouselShadowStyles[i]
                                              : CarouselShadowStyle::None;
+    sleepTheme.heatmapViews[i] = layout != Layout::Classic && heatmapViews && i < slotCountValue &&
+                                         validHeatmapView(static_cast<uint8_t>(heatmapViews[i]))
+                                     ? heatmapViews[i]
+                                     : HeatmapView::Weekly;
   }
   save();
 }
@@ -521,6 +555,8 @@ const char* widgetLabel(const Widget widget) {
       return "Today's Reading";
     case Widget::Favorites:
       return "Favorite Carousel";
+    case Widget::Heatmap:
+      return "Reading Heatmap";
     default:
       return "Unknown";
   }
@@ -565,6 +601,19 @@ const char* carouselShadowStyleLabel(const CarouselShadowStyle style) {
 
 CarouselStyle defaultCarouselStyle(const Widget widget) { return defaultCarouselStyleForWidget(widget); }
 
+const char* heatmapViewLabel(const HeatmapView view) {
+  switch (view) {
+    case HeatmapView::Daily:
+      return "Daily";
+    case HeatmapView::Weekly:
+      return "Weekly";
+    case HeatmapView::Monthly:
+      return "Monthly";
+    default:
+      return "Weekly";
+  }
+}
+
 int slotCount(const Layout layout) { return layout == Layout::TwoByTwo ? 4 : layout == Layout::OneByTwo ? 2 : 0; }
 
-}  // namespace HomeTheme
+}

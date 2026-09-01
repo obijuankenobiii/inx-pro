@@ -17,8 +17,6 @@ struct ImageDisplayCacheOptions {
   bool cropToFill = false;
   ImageRenderMode mode = ImageRenderMode::OneBit;
   uint8_t renderPlane = 0;
-  // Quantized so crop position becomes part of the durable/PSRAM cache key.
-  // A centered cover and an edge-cropped carousel cover cannot share pixels.
   uint8_t cropAnchor = 128;
   BitmapRender::RoundedOutside roundedOutside = BitmapRender::RoundedOutside::None;
   bool quality = false;

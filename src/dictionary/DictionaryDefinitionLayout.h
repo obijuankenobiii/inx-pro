@@ -33,7 +33,7 @@ struct DefinitionTextRun {
  *  its own bold/italic style. */
 struct DefinitionBlock {
   DefinitionBlockKind kind = DefinitionBlockKind::Paragraph;
-  int headingLevel = 1;  // 1-6, only meaningful when kind == Heading
+  int headingLevel = 1;
   std::vector<DefinitionTextRun> runs;
 };
 

@@ -1,8 +1,6 @@
 #pragma once
 #include <cstdint>
 
-// 40x40 1-bit hand icon converted from the supplied artwork.
-// Bitmap data is MSB-first; 1 bits are paper and 0 bits are ink.
 static const uint8_t Touch[] = {
     0xff, 0xff, 0xf0, 0xff, 0xff,
     0xff, 0xff, 0xe6, 0x7f, 0xff,

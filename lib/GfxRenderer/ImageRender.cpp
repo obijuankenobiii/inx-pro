@@ -42,7 +42,7 @@ class ImageRenderScope {
   bool previous_;
 };
 
-}  // namespace
+}
 
 ImageRender ImageRender::create(GfxRenderer& renderer, const std::string& path) {
   return ImageRender(renderer, path, detectFormat(path));
@@ -145,18 +145,20 @@ bool ImageRender::render(int x, int y, int width, int height, const Options& opt
   ImageRenderScope imageScope(renderer_);
   Options effectiveOptions = options;
   if (format_ == Format::Png) {
-    // PNGs are intentionally always rendered through the low/1-bit path.
-    // This keeps EPUB PNGs out of the medium/high image waveform even when
-    // the caller requests TwoBit or quality rendering for the whole page.
     effectiveOptions.mode = ImageRenderMode::OneBit;
     effectiveOptions.quality = false;
     effectiveOptions.fastQuality = false;
-    // The one-bit PNG path only writes ink pixels. Grayscale page planes may
-    // start dark, so clear just the image area without changing the caller's
-    // render mode.
     if (renderer_.getRenderMode() != GfxRenderer::BW) {
       renderer_.rectangle.fill(x, y, width, height, false);
     }
+  }
+
+  // BW image renderers write ink pixels but do not overwrite white pixels. In
+  // dark mode the page background is black, so seed only the image rectangle
+  // with white before rendering; otherwise white image pixels are captured as
+  // black and the resulting display-cache entry is unusable.
+  if (renderer_.isDarkMode() && renderer_.getRenderMode() == GfxRenderer::BW) {
+    renderer_.rectangle.fill(x, y, width, height, false);
   }
   ImageDisplayCacheOptions cacheOptions;
   cacheOptions.cropToFill = effectiveOptions.cropToFill;
@@ -169,9 +171,6 @@ bool ImageRender::render(int x, int y, int width, int height, const Options& opt
       effectiveOptions.useDisplayCache &&
       ((effectiveOptions.mode == ImageRenderMode::OneBit && renderer_.getRenderMode() == GfxRenderer::BW) ||
        effectiveOptions.mode == ImageRenderMode::TwoBit);
-  // Skip the on-disk raster cache lookup only when replaying a capture (nothing to look up for - we
-  // already have the pixels in memory). On the first (capture) call, jpegCapture->captured is still
-  // false here, so a cache hit is still preferred over decoding at all.
   if (canUseDisplayCache && !(jpegCapture && jpegCapture->captured)) {
     const bool cacheHit = ImageDisplayCache::renderIfAvailable(renderer_, path_, x, y, width, height, cacheOptions);
     if (cacheHit) {
@@ -181,12 +180,8 @@ bool ImageRender::render(int x, int y, int width, int height, const Options& opt
 
   bool ok = false;
   {
-    // Protect only the source decode. Durable cache persistence runs later at
-    // idle priority, so page rendering never waits for a cache-file write.
     SdIoMutex::Lock ioLock;
     if (jpegCapture && jpegCapture->captured) {
-      // The packed values are display levels, not JPEG-specific pixels. JPEG
-      // and PNG can both replay them for the second grayscale plane.
       JpegRender(renderer_).replayCapture(*jpegCapture, effectiveOptions.mode);
       ok = true;
     } else if (format_ == Format::Jpeg) {
@@ -298,8 +293,6 @@ bool ImageRender::displayGrayscale(int x, int y, int width, int height, const Op
                                    const bool quality, const std::function<void()>& overlay) const {
   ImageRenderScope imageScope(renderer_);
 
-  // PNGs are always rendered as low-quality 1-bit images. They do not enter the
-  // medium/high grayscale passes or create/read two-bit grayscale cache entries.
   if (format_ == Format::Png) {
     Options lowOptions = options;
     lowOptions.mode = ImageRenderMode::OneBit;
@@ -326,18 +319,14 @@ bool ImageRender::displayGrayscale(int x, int y, int width, int height, const Op
   combinedCacheOptions.roundedOutside = opt.roundedOutside;
   combinedCacheOptions.quality = effectiveQuality;
 
-  // A combined entry holds both bit-planes in one file - one hash, one SD open - the same shape XTC uses
-  // for its own page reads, instead of the old two-separately-hashed-file lookup.
   if (!overlay && options.useDisplayCache &&
       ImageDisplayCache::renderCombinedTwoBit(renderer_, path_, x, y, width, height, combinedCacheOptions,
                                               effectiveQuality, opt.fastQuality)) {
-    return true;  // served from cache (handles both planes + refresh + cleanup)
+    return true;
   }
 
   const bool captureForCombinedCache = options.useDisplayCache;
   Options renderOpt = opt;
-  // The combined-cache capture below replaces the old per-plane cache read/store, so render() should
-  // neither look up nor persist a legacy single-plane entry for these two passes.
   renderOpt.useDisplayCache = false;
 
   auto captureCurrentPlane = [&] {
@@ -349,12 +338,6 @@ bool ImageRender::displayGrayscale(int x, int y, int width, int height, const Op
     ImageDisplayCache::captureTwoBitPlane(renderer_, x, y, width, height, isMsbPlane);
   };
 
-  // JPEGs decode via a slow SD read + DCT pass; renderGrayscalePasses below calls its drawPlane lambda
-  // once per plane (LSB, then MSB), and a plain render() re-decodes the whole file each time. Capture the
-  // first pass's per-pixel dither level and replay it for the second pass instead - same visual result,
-  // no second decode. The capture is packed 2 bits/pixel (4 pixels/byte - see JpegLevelCapture), so this
-  // covers a full screen-sized image in a bounded, freed-before-return buffer; oversized images just fall
-  // through to the normal double-decode path below.
   constexpr size_t kMaxCapturePixels = 400000;
   const size_t capturePixelCount = static_cast<size_t>(width) * static_cast<size_t>(height);
   bool rendered = false;
@@ -386,7 +369,7 @@ bool ImageRender::displayGrayscale(int x, int y, int width, int height, const Op
         effectiveQuality, /*preserveText=*/false,
         [&] {
           renderer_.clearScreen(effectiveQuality ? 0xFF : 0x00);
-          render(x, y, width, height, renderOpt);  // renders into the current plane's render mode
+          render(x, y, width, height, renderOpt);
           captureCurrentPlane();
           if (overlay) {
             overlay();
@@ -396,7 +379,6 @@ bool ImageRender::displayGrayscale(int x, int y, int width, int height, const Op
   }
 
   if (captureForCombinedCache) {
-    // Persists whatever both passes just captured (decode -> cache to raster -> display, one file).
     ImageDisplayCache::commitTwoBitCombined(renderer_, path_, x, y, width, height, combinedCacheOptions);
   }
 

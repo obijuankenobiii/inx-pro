@@ -2,8 +2,6 @@
 
 #include <cstdint>
 
-// 40x40 1-bit dark-mode icon converted from the supplied artwork.
-// The bitmap format uses 1 for paper and 0 for the black glyph.
 static const uint8_t DarkMode[] = {
   0xff, 0xff, 0xff, 0xff, 0xff, 
   0xff, 0xff, 0xff, 0xff, 0xff, 

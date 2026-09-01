@@ -36,7 +36,7 @@ constexpr int RANDOM_BUTTON_W = 178;
 constexpr int RANDOM_BUTTON_H = 28;
 constexpr int FOOTER_SIDE_PAD = 20;
 
-}  // namespace
+}
 
 void SleepImagePickerActivity::taskTrampoline(void* param) {
   static_cast<SleepImagePickerActivity*>(param)->displayTaskLoop();

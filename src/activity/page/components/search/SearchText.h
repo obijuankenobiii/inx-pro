@@ -9,5 +9,5 @@ class SearchText {
   static constexpr int height = 56;
 
   static int top();
-  static void render(const GfxRenderer& renderer, const std::string& value);
+  static void render(const GfxRenderer& renderer, const std::string& value, const char* placeholder = "Search books");
 };

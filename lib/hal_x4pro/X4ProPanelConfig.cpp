@@ -33,15 +33,12 @@
 #include "../../freeink-sdk/libs/display/FreeInkDisplay/src/driver/Uc8279X4Driver.h"
 
 #ifndef X4PRO_DU_TSSET
-#define X4PRO_DU_TSSET 0x5A  // stock; see the note above before changing
+#define X4PRO_DU_TSSET 0x5A
 #endif
 
 namespace freeink {
 
 const Uc8279X4Config& x4proPanelConfig() {
-  // Copy the stock config and change only the fast-refresh forced temperature; every other
-  // field (PSR, PWR sequencing, CDI values, geometry, gate offset) stays exactly as the
-  // driver's own default, which is hardware-validated.
   static Uc8279X4Config cfg = [] {
     Uc8279X4Config c = uc8279X4DefaultConfig();
     c.tssetFast = static_cast<uint8_t>(X4PRO_DU_TSSET);
@@ -50,4 +47,4 @@ const Uc8279X4Config& x4proPanelConfig() {
   return cfg;
 }
 
-}  // namespace freeink
+}

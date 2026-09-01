@@ -14,9 +14,6 @@
 
 extern HalGPIO gpio;
 
-// Out-of-class definition for the in-class static constexpr array declaration in StatusBar.h -
-// implicitly inline under C++17 (so this is redundant on most toolchains), but the ESP32 GCC 8.4.0
-// cross-compiler still needs it to avoid an "undefined reference" at link time.
 constexpr StatusBarItem StatusBar::kFullBarStyles[4];
 
 static const int STATUS_BAR_LEFT = 0;
@@ -167,11 +164,9 @@ void StatusBar::renderFullBar(const int barHeight, const Section* section, const
 
   const int x0 = oL;
   const int x1 = screenWidth - oR;
-  const int barBottom = screenHeight - oB;  // hugs the panel's bottom edge, not vertically centered in barHeight
+  const int barBottom = screenHeight - oB;
 
   if (style == StatusBarItem::PAGE_BARS) {
-    // renderPageBars() draws barHeight=5 bars at (textY + 10); back-solve textY so the bars
-    // themselves hug the bottom edge instead of floating with padding above it.
     constexpr int kPageBarsYOffset = 10;
     const int textY = barBottom - kFullPageBarsHeight - kPageBarsYOffset;
     renderPageBars(x0, (x0 + x1) / 2, x1 - x0, textY, section);

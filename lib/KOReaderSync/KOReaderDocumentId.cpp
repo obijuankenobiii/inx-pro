@@ -18,7 +18,7 @@ std::string getFilename(const std::string& path) {
   }
   return path.substr(pos + 1);
 }
-}  // namespace
+}
 
 std::string KOReaderDocumentId::calculateFromFilename(const std::string& filePath) {
   const std::string filename = getFilename(filePath);

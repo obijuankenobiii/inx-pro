@@ -54,7 +54,7 @@ class EpubFootnoteBody {
   void releaseBodyMemory();
 
   bool mode_ = false;
-  WordLookup capture_;  // only used for captureFramebuffer()/restoreFramebuffer()
+  WordLookup capture_;
 
   std::string markerText_;
   std::vector<DefinitionBlock> bodyBlocks_;

@@ -30,7 +30,6 @@ class HalGPIO {
     uint8_t hour = 0;
     uint8_t minute = 0;
     uint8_t second = 0;
-    // UI convention: 1=Monday .. 7=Sunday. The FreeInk RTC uses 0=Sunday.
     uint8_t weekday = 0;
   };
 
@@ -59,14 +58,6 @@ class HalGPIO {
    *  so that gesture belongs to the activity that started it. */
   void ignoreCurrentTouchUntilRelease();
 
-
-
-
-  // Raw touch passthrough, for activities that want to hit-test a tap against
-  // their own on-screen layout (e.g. "open the book cover that was tapped")
-  // rather than the touch-to-button gesture synthesis in update(). nx/ny are
-  // normalized 0..1 in the panel's native (unrotated) frame — callers are
-  // responsible for mapping to their own screen orientation if it differs.
   bool hasTouch() const;
   bool isTouchPressed() const;
   bool wasTouchPressedAt(float& nx, float& ny) const;
@@ -80,12 +71,12 @@ class HalGPIO {
   bool touchSwipeStart(float& nx, float& ny) const;
 
   enum class MotionGesture : uint8_t { None, Previous, Next };
-  // No IMU on this board — always returns MotionGesture::None.
   MotionGesture readMotionGesture(uint8_t orientation, uint8_t mode, uint8_t sensitivity);
 
   void startDeepSleep();
 
   int getBatteryPercentage() const;
+  bool isCharging() const;
 
   bool isUsbConnected() const;
 
@@ -97,8 +88,6 @@ class HalGPIO {
 
   WakeupReason getWakeupReason() const;
 
-  // No environment sensor on this board — always returns false and leaves the
-  // outputs unchanged. Kept so shared src/ code compiles against one interface.
   bool getTemperatureAndHumidity(float& outTempC, float& outHumidityPct) const;
 
   static constexpr uint8_t BTN_BACK = 0;
@@ -112,8 +101,6 @@ class HalGPIO {
  private:
   InputManager inputMgr;
 
-  // Touch-gesture-synthesized button edges for this update() cycle, layered on
-  // top of inputMgr's real button edges (see update()).
   uint8_t touchPressedEvents = 0;
   uint8_t touchReleasedEvents = 0;
   TouchSwipe touchSwipeDirection = TouchSwipe::None;
@@ -124,7 +111,6 @@ class HalGPIO {
   mutable unsigned long batteryLastPollMs = 0;
   static constexpr unsigned long BATTERY_POLL_MS = 1500;
 
-  // Motion-gesture debounce state.
   bool motionSensorInitialized = false;
   bool motionGestureInProgress = false;
   unsigned long motionLastPollMs = 0;
@@ -133,12 +119,10 @@ class HalGPIO {
 
   void serviceTouchGestures();
 
-  // Set while a touch that began before an activity transition is being swallowed.
   bool suppressTouchUntilRelease = false;
 };
 
 extern HalGPIO gpio;
-
 
 /**
  * Whether a tap should be discarded because it is really the tail of a bottom-edge swipe.

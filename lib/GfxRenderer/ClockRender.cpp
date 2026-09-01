@@ -232,7 +232,7 @@ void renderHorizontalCard(GfxRenderer& renderer, const ClockRender::DateTimeView
   }
 }
 
-}  // namespace
+}
 
 namespace ClockRender {
 
@@ -271,4 +271,4 @@ void render(GfxRenderer& renderer, uint8_t style, const DateTimeView& dateTime, 
   }
 }
 
-}  // namespace ClockRender
+}

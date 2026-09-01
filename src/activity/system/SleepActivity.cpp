@@ -80,8 +80,6 @@ void runSleepImageTwoBitPasses(GfxRenderer& renderer, const std::string& imagePa
   ImageRender::Options options = baseOptions;
   options.mode = ImageRenderMode::TwoBit;
   options.useDisplayCache = true;
-  // Transparent overlays cap at MEDIUM (allowQuality=false): the HIGH quality LUT can't composite over existing
-  // content, so HIGH transparent removes the background instead (see renderTransparentSleepScreen).
   const bool quality = allowQuality && sleepImageQualityEnabled();
   options.quality = quality;
   options.fastQuality = false;
@@ -282,7 +280,7 @@ std::string resolveLastReadCoverPathForSleep(const std::string& path) {
   return coverPath;
 }
 
-}  // namespace
+}
 
 /**
  * @brief Initializes and renders the sleep screen when activity becomes active.
@@ -293,18 +291,12 @@ std::string resolveLastReadCoverPathForSleep(const std::string& path) {
 void SleepActivity::onEnter() {
   Activity::onEnter();
 
-  // Clear the active framebuffer before building the sleep screen. The sleep
-  // image is rendered afterward; LOW mode bypasses the display cache so cache
-  // generation cannot reuse this pre-clear buffer as image data.
   const bool renderDateTime =
       SETTINGS.sleepScreen == SystemSetting::SLEEP_SCREEN_MODE::DATETIME && dateTimeSleepScreenAvailable();
 
   if (SETTINGS.sleepScreen != SystemSetting::SLEEP_SCREEN_MODE::TRANSPARENT && !renderDateTime &&
       SETTINGS.sleepScreen != SystemSetting::SLEEP_SCREEN_MODE::WIDGET) {
     renderer.clearScreen(0Xff);
-    // Home can leave a dark differential frame in the panel. The quality sleep
-    // pass is absolute, but it still needs this clean white base when entering
-    // from a normal B/W screen.
     renderer.displayBuffer(HalDisplay::HALF_REFRESH);
   }
 
@@ -351,9 +343,6 @@ void SleepActivity::renderCustomSleepScreen() const {
     }
 
     if (isSleepImagePathJpeg(imagePath)) {
-      // displayBuffer() swaps the dual buffers. Clear the newly active buffer
-      // too; otherwise one-bit JPEG rendering only paints dark pixels and the
-      // previous home screen remains underneath the image's white pixels.
       renderer.clearScreen();
       ImageRender::Options options = sleepImageOptions();
       if (ImageRender::create(renderer, imagePath)
@@ -395,8 +384,6 @@ void SleepActivity::renderTransparentSleepScreen() const {
     if (randomSleepImageEnabled()) {
       recordSleepImageUsed();
     }
-    // Transparent overlays only work at LOW/MEDIUM. At HIGH the quality LUT can't composite over the existing
-    // screen, so remove the background (clear to white) and render the image opaque instead.
     const bool removeBackground = sleepImageQualityEnabled();
     if (isSleepImagePathJpeg(imagePath)) {
       ImageRender::Options options = sleepImageOptions(/*allowQuality=*/false);
@@ -499,8 +486,6 @@ void SleepActivity::renderFill(const Bitmap& bitmap) const {
 
   const bool hasTwoBit = bitmap.hasGreyscale() && sleepTwoBitEnabled();
 
-  // Use drawSleepScreen (not drawBitmap) so 2-bit off matches Crop mode: sleep uses a
-  // stricter BW map; drawBitmap would still dither 2bpp and look grey when Fill is selected.
   constexpr bool kCoverFill = true;
   renderer.bitmap.sleepScreen(bitmap, x, y, pageWidth, pageHeight, cropX, cropY, kCoverFill, sleepImageRenderMode());
 
@@ -508,8 +493,6 @@ void SleepActivity::renderFill(const Bitmap& bitmap) const {
     renderer.invertScreen();
   }
 
-  // The quality waveform needs this BW image already on the panel as its base. Without it, the first sleep
-  // render after entering the screen has no valid previous frame and the grayscale result is wrong.
   renderer.displayBuffer();
 
   if (hasTwoBit) {
@@ -593,8 +576,6 @@ void SleepActivity::renderBitmapSleepScreen(const Bitmap& bitmap, const bool pre
     renderer.invertScreen();
   }
 
-  // The quality waveform needs this BW image already on the panel as its base. Without it, the first sleep
-  // render after entering the screen has no valid previous frame and the grayscale result is wrong.
   renderer.displayBuffer();
 
   if (hasTwoBit) {

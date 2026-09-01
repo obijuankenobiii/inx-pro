@@ -25,6 +25,14 @@ constexpr int kVisibleRows = 6;
 constexpr int kRowHeight = UiLayout::LIST_ITEM_HEIGHT - 4;
 constexpr int kOverlayHeaderHeight = UiLayout::LIST_ITEM_HEIGHT - 4;
 
+bool isSupportedReaderAction(const int action) {
+#if FREEINK_DEVICE_X4PRO
+  return true;
+#else
+  return action != SystemSetting::BTN_ACTION_TOGGLE_LIGHT;
+#endif
+}
+
 struct QuickActionsBounds {
   int x;
   int y;
@@ -56,11 +64,11 @@ void QuickActionsMenuUi::enter(EpubActivity& act) {
         i == SystemSetting::BTN_ACTION_TABLE_OF_CONTENTS || i == SystemSetting::BTN_ACTION_OPEN_SETTINGS) {
       continue;
     }
+    if (!isSupportedReaderAction(i)) continue;
     if (READER_SETTINGS.quickActionsMask & (1u << i)) {
       actions_.push_back(static_cast<uint8_t>(i));
     }
   }
-  // A-Z by label, same order as the QuickActionsSettingsActivity checklist this is built from.
   std::sort(actions_.begin(), actions_.end(), [](const uint8_t a, const uint8_t b) {
     return strcmp(SystemSetting::readerButtonActionLabel(a), SystemSetting::readerButtonActionLabel(b)) < 0;
   });
@@ -171,8 +179,6 @@ void QuickActionsMenuUi::clampScroll() {
 
 void QuickActionsMenuUi::render(EpubActivity& act) {
   GfxRenderer& renderer = act.renderer;
-  // The menu is an overlay over the page currently on the panel. Rebase the
-  // writable buffer before painting so X4 Pro cannot swap the prior page in.
   renderer.syncWriteBufferFromActive();
   const int count = static_cast<int>(actions_.size());
   const QuickActionsBounds box = popupBounds(renderer, count);

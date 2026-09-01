@@ -13,7 +13,7 @@
 
 namespace {
 constexpr int kListItemHeight = Page::LIST_ITEM_HEIGHT;
-}  // namespace
+}
 
 /** Static trampoline that dispatches to the instance's displayTaskLoop. */
 void OpdsServerListActivity::taskTrampoline(void* param) {
@@ -35,9 +35,6 @@ void OpdsServerListActivity::onEnter() {
   newServerUsername.clear();
   newServerPassword.clear();
 
-  // The previous activity may have been the Wi-Fi scanner. Rebase the writable
-  // X4 Pro framebuffer before composing this page so its search text cannot
-  // survive as ghost data on the first redraw.
   renderer.syncWriteBufferFromActive();
 
   xTaskCreate(&OpdsServerListActivity::taskTrampoline, "OpdsServerListTask", 4096, this, 1, &displayTaskHandle);
@@ -103,7 +100,7 @@ void OpdsServerListActivity::loop() {
   }
 
   {
-    const int count = OPDS_STORE.getAllServers().size() + 1;  // Add OPDS server + saved servers
+    const int count = OPDS_STORE.getAllServers().size() + 1;
     if (mappedInput.wasPressed(MappedInputManager::Button::Up) || mappedInput.wasPressed(MappedInputManager::Button::Left)) {
       if (count > 0) {
         selectedIndex = (selectedIndex - 1 + count) % count;
@@ -128,8 +125,6 @@ void OpdsServerListActivity::handleSelection() {
   const int serverIndex = selectedIndex - 1;
   if (serverIndex < 0 || serverIndex >= static_cast<int>(servers.size())) return;
 
-  // Copy these before changing activities. The browser owns its own strings and
-  // must not retain references into the mutable OPDS store vector.
   const std::string serverUrl = servers[serverIndex].url;
   const std::string serverUsername = servers[serverIndex].username;
   const std::string serverPassword = servers[serverIndex].password;

@@ -51,7 +51,7 @@ bool isTxt(const std::string& path) {
   return value.size() >= 4 && value.compare(value.size() - 4, 4, ".txt") == 0;
 }
 
-}  // namespace
+}
 
 List::List(GfxRenderer& renderer, MappedInputManager& mappedInput,
            const std::vector<LibraryIndex::Book>& items, std::function<void(int, bool)> select,
@@ -135,5 +135,5 @@ void List::render() const {
   }
 }
 
-}  // namespace library
-}  // namespace views
+}
+}

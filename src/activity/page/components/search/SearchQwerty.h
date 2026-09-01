@@ -25,5 +25,5 @@ bool tap(const GfxRenderer& renderer, int top, int bottom, int x, int y, State& 
 bool consumeGo(State& state);
 bool consumeCollapse(State& state);
 
-}  // namespace Qwerty
-}  // namespace SearchKeyboardLayout
+}
+}

@@ -28,4 +28,4 @@ namespace Mobi {
  */
 bool convertToEpub(const std::string& mobiPath, const std::string& outEpubPath);
 
-}  // namespace Mobi
+}

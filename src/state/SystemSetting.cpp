@@ -14,6 +14,7 @@
 #include <Serialization.h>
 
 #include <cstdio>
+#include <cctype>
 #include <cstring>
 #include <string>
 
@@ -40,24 +41,9 @@ void readAndValidate(FsFile& file, uint8_t& member, const uint8_t maxValue) {
 }
 
 namespace {
-constexpr uint8_t SETTINGS_FILE_VERSION = 42;
-// Reader-related fields (font/layout, status bar, refresh frequency, page auto-turn, image
-// grayscale, per-button reader actions, XTC reader settings, hyphenation, bionic reading, screen
-// margin, orientation, dictionary folder...) moved out to ReaderSetting/reader_settings.bin as of
-// this version. Files older than this used an incompatible field layout and can't be positionally
-// parsed, so loadFromFile() discards them and starts fresh instead of attempting to read them. See
-// ReaderSetting.cpp for the new reader_settings.bin format (independently versioned from 1).
-// Version 38 also removes an obsolete field, so older files are reset rather than
-// positionally parsed with a shifted layout.
+constexpr uint8_t SETTINGS_FILE_VERSION = 44;
 constexpr uint8_t MIN_SUPPORTED_SETTINGS_VERSION = 38;
-// Must equal the number of data fields read by the do-while loop in loadFromFile() (currently 46,
-// through thumbnailSize - NOT counting the version/count header fields read separately
-// before the loop). This is written into the file as its own "how many fields do I contain" header
-// and read back as fileSettingsCount; the loop's `settingsRead < fileSettingsCount` checks use it to
-// know whether the tail fields are actually present. If it's wrong, either the tail fields never get
-// read back even though they were written (undercount), or the file never triggers the self-healing
-// rewrite on old-format files (overcount, since fileSettingsCount can never reach it).
-constexpr uint8_t SETTINGS_COUNT = 46;
+constexpr uint8_t SETTINGS_COUNT = 48;
 constexpr uint8_t LEGACY_IMAGE_PRESENTATION_COUNT = 4;
 constexpr char SETTINGS_FILE[] = "/.system/settings.bin";
 constexpr char UI_THEME_FILE[] = "/.system/ui_theme.bin";
@@ -116,6 +102,20 @@ void sanitizeSleepCustomBmp(char* buf) {
   }
   for (const char* p = buf; *p != '\0'; ++p) {
     if (*p == '/' || *p == '\\' || *p == ':') {
+      buf[0] = '\0';
+      return;
+    }
+  }
+}
+
+void sanitizeTimeZoneId(char* buf) {
+  if (buf == nullptr) return;
+  if (strlen(buf) >= 64 || strstr(buf, "..") != nullptr) {
+    buf[0] = '\0';
+    return;
+  }
+  for (const char* p = buf; *p != '\0'; ++p) {
+    if (!(isalnum(static_cast<unsigned char>(*p)) || *p == '/' || *p == '_' || *p == '-' || *p == '+')) {
       buf[0] = '\0';
       return;
     }
@@ -188,6 +188,8 @@ uint32_t settingsHash(const SystemSetting& settings) {
   hashPod(hash, settings.sleepClockStyle);
   hashPod(hash, settings.sleepClockTimeFormat);
   hashPod(hash, settings.timeZoneQuarterOffset);
+  hashPod(hash, settings.timeZoneAutoDetectEnabled);
+  hashString(hash, settings.timeZoneId);
   hashPod(hash, settings.mainMenuNav);
   hashPod(hash, settings.sleepClockRefreshInterval);
   hashPod(hash, settings.shakePageTurn);
@@ -205,7 +207,7 @@ uint32_t settingsHash(const SystemSetting& settings) {
   return hash;
 }
 
-}  // namespace
+}
 
 const char* SystemSetting::readerButtonActionLabel(const uint8_t action) {
   static const char* const kLabels[] = {"None",
@@ -224,7 +226,8 @@ const char* SystemSetting::readerButtonActionLabel(const uint8_t action) {
                                         "Quick Actions",
                                         "Generate Full Data",
                                         "Generate Thumbnail",
-                                        "Go to Percent"};
+                                        "Go to Percent",
+                                        "Toggle Light"};
   if (action >= SystemSetting::READER_BUTTON_ACTION_COUNT) {
     return "None";
   }
@@ -266,8 +269,6 @@ bool SystemSetting::saveToFile() const {
     if (mut->shakePageTurnSensitivity > 2) mut->shakePageTurnSensitivity = 1;
     if (mut->keyboardLayout >= KEYBOARD_LAYOUT_COUNT) mut->keyboardLayout = KEYBOARD_QWERTY;
     if (mut->thumbnailSize >= THUMBNAIL_SIZE_COUNT) mut->thumbnailSize = THUMBNAIL_ACTUAL;
-    // The old field remains serialized so existing settings files keep their
-    // layout, but Classic is no longer a supported UI mode.
     mut->uiTheme = UI_THEME_BOTTOM_TABS;
   }
 
@@ -333,6 +334,8 @@ bool SystemSetting::saveToFile() const {
   serialization::writePod(outputFile, hideThumbnailTitles);
   serialization::writePod(outputFile, hideFinishedBooks);
   serialization::writePod(outputFile, thumbnailSize);
+  serialization::writePod(outputFile, timeZoneAutoDetectEnabled);
+  serialization::writeString(outputFile, std::string(timeZoneId));
 
   outputFile.close();
   saveUiThemeSetting(uiTheme);
@@ -552,6 +555,23 @@ bool SystemSetting::loadFromFile() {
       if (thumbnailSize >= THUMBNAIL_SIZE_COUNT) thumbnailSize = THUMBNAIL_ACTUAL;
       ++settingsRead;
     }
+    if (settingsRead < fileSettingsCount) {
+      serialization::readPod(inputFile, timeZoneAutoDetectEnabled);
+      if (timeZoneAutoDetectEnabled > 1) timeZoneAutoDetectEnabled = 1;
+      ++settingsRead;
+    }
+    if (settingsRead < fileSettingsCount) {
+      std::string loadedTimeZoneId;
+      serialization::readString(inputFile, loadedTimeZoneId);
+      if (loadedTimeZoneId.size() < sizeof(timeZoneId)) {
+        std::strncpy(timeZoneId, loadedTimeZoneId.c_str(), sizeof(timeZoneId) - 1);
+        timeZoneId[sizeof(timeZoneId) - 1] = '\0';
+      } else {
+        timeZoneId[0] = '\0';
+      }
+      sanitizeTimeZoneId(timeZoneId);
+      ++settingsRead;
+    }
 
   } while (false);
 
@@ -574,13 +594,13 @@ bool SystemSetting::loadFromFile() {
   if (sleepClockRefreshInterval >= CLOCK_REFRESH_INTERVAL_COUNT) sleepClockRefreshInterval = CLOCK_REFRESH_OFF;
   if (sleepImageQuality >= SLEEP_IMAGE_QUALITY_COUNT) sleepImageQuality = SLEEP_IMAGE_HIGH;
   if (timeZoneQuarterOffset > 104) timeZoneQuarterOffset = 80;
+  if (timeZoneAutoDetectEnabled > 1) timeZoneAutoDetectEnabled = 1;
+  sanitizeTimeZoneId(timeZoneId);
   if (libraryMode >= LIBRARY_MODE_COUNT) libraryMode = LIBRARY_GRID;
   if (libraryViewMode >= LIBRARY_VIEW_MODE_COUNT ||
       (libraryViewMode == LIBRARY_VIEW_SHELF && libraryShelfEnabled == 0)) {
     libraryViewMode = LIBRARY_VIEW_FOLDERS;
   }
-  // Ignore the legacy theme value and normalize it so a pre-bottom-tabs
-  // settings file cannot put the device back into the removed Classic layout.
   uiTheme = UI_THEME_BOTTOM_TABS;
   loadUiThemeSetting(uiTheme);
   uiTheme = UI_THEME_BOTTOM_TABS;

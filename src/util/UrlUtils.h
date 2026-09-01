@@ -26,4 +26,4 @@ std::string extractHost(const std::string& url);
  */
 std::string buildUrl(const std::string& serverUrl, const std::string& path);
 
-}  // namespace UrlUtils
+}

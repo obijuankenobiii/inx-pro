@@ -24,8 +24,6 @@ PopUpBounds PopUp::bounds(const GfxRenderer& renderer, const int count, const in
 }
 
 void PopUp::background(GfxRenderer& renderer, const PopUpBounds& box) {
-  // Keep the modal surface white, but restrict it to the popup bounds so the
-  // page underneath remains visible.
   renderer.rectangle.fill(box.x, box.y, box.width, box.height, false);
 }
 

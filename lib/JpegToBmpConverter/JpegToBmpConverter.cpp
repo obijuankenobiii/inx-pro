@@ -33,9 +33,6 @@
 
 namespace {
 
-// Cover/thumbnail conversion runs off the visible render path. Put its
-// variable-size row scratch in PSRAM so a large cover cannot fragment the
-// internal heap needed by the display and live image decoder.
 void* allocateConversionScratch(const size_t bytes) {
   if (void* memory = heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)) {
     return memory;
@@ -43,11 +40,8 @@ void* allocateConversionScratch(const size_t bytes) {
   return heap_caps_malloc(bytes, MALLOC_CAP_8BIT);
 }
 
-}  // namespace
+}
 
-// PSRAM-backed read buffer, RAII-owned so every early-return path in the functions below still frees
-// it. 4096 bytes (vs. the previous 512-byte on-stack array) cuts SD transactions ~8x for the same
-// file; kept off the stack since this struct is constructed at 7 call sites on the 8KB main-task stack.
 struct JpegReadBuffer {
   static constexpr size_t kSize = 4096;
   uint8_t* data;
@@ -99,8 +93,6 @@ static int stbiFileRead(void* user, char* data, const int size) {
   auto* context = static_cast<StbiFileContext*>(user);
   if (!context || size <= 0) return 0;
   const int bytesRead = static_cast<int>(context->file.read(reinterpret_cast<uint8_t*>(data), static_cast<size_t>(size)));
-  // Progressive covers can contain a large number of scan segments. Keep the
-  // thumbnail worker cooperative while STB consumes the source file.
   esp_task_wdt_reset();
   yield();
   return bytesRead;
@@ -132,9 +124,6 @@ static void freeThumbnailPixels(uint8_t* pixels) {
 
 static bool progressiveJpegToThumbnailJpeg(FsFile& jpegFile, Print& jpegOut, const int targetMaxWidth,
                                             const int targetMaxHeight, uint8_t quality) {
-  // Decode the complete progressive JPEG first. This preserves the AC detail from every scan and
-  // produces a sharper thumbnail than the bounded DC-only fallback. STB allocations are directed
-  // to Sticky's PSRAM and are released by stbi_image_free() before returning.
   jpegFile.seek(0);
   StbiFileContext fileContext{jpegFile};
   stbi_io_callbacks callbacks = {stbiFileRead, stbiFileSkip, stbiFileEof};
@@ -975,15 +964,10 @@ bool JpegToBmpConverter::jpegFileToThumbnailBmp(FsFile& jpegFile, Print& bmpOut,
 
 bool JpegToBmpConverter::jpegFileToThumbnailJpeg(FsFile& jpegFile, Print& jpegOut, int targetMaxWidth,
                                                  int targetMaxHeight, uint8_t quality) {
-  // PicoJPEG intentionally supports only baseline JPEGs. The reader already uses STB for
-  // progressive covers; use the same transient decoder here so progressive cover thumbnails are
-  // generated instead of being rejected before the thumbnail pipeline starts.
   if (isUnsupportedJpeg(jpegFile)) {
     return progressiveJpegToThumbnailJpeg(jpegFile, jpegOut, targetMaxWidth, targetMaxHeight, quality);
   }
 
-  // Keep the full-size thumbnail buffer in PSRAM. If that allocation is not
-  // available, retry at progressively smaller budgets instead of failing.
   static const size_t kColorBudgets[] = {0u /* default, best quality */, 65536u /* mild fragmentation */,
                                          49152u /* heavy fragmentation fallback */};
   for (size_t i = 0; i < sizeof(kColorBudgets) / sizeof(kColorBudgets[0]); ++i) {
@@ -1023,9 +1007,6 @@ bool jpegReadContextToThumbnailJpegPass(JpegReadContext& context, Print& jpegOut
   const uint32_t scaleX_fp = (static_cast<uint32_t>(imageInfo.m_width) << 16) / static_cast<uint32_t>(outWidth);
   const uint32_t scaleY_fp = (static_cast<uint32_t>(imageInfo.m_height) << 16) / static_cast<uint32_t>(outHeight);
 
-  // Precompute the source column sampled by each output column. This lets the per-MCU-row decode
-  // buffer hold only `outWidth` columns instead of the full source width, so its size scales with
-  // the (small) thumbnail rather than the (large) cover -> no ~76 KB allocation tied to source width.
   uint8_t* thumbnail =
       allocThumbnailPixels(static_cast<size_t>(outWidth) * static_cast<size_t>(outHeight) * 3u);
   uint16_t* srcColForOut =
@@ -1054,7 +1035,7 @@ bool jpegReadContextToThumbnailJpegPass(JpegReadContext& context, Print& jpegOut
   for (int mcuY = 0; mcuY < imageInfo.m_MCUSPerCol && !decodeFailed; mcuY++) {
     memset(bandBuffer, 255, static_cast<size_t>(outWidth) * static_cast<size_t>(imageInfo.m_MCUHeight) * 3u);
 
-    int outX = 0;  // monotonic cursor over sampled output columns
+    int outX = 0;
     for (int mcuX = 0; mcuX < imageInfo.m_MCUSPerRow; mcuX++) {
       if (pjpeg_decode_mcu() != 0) {
         decodeFailed = true;
@@ -1064,7 +1045,7 @@ bool jpegReadContextToThumbnailJpegPass(JpegReadContext& context, Print& jpegOut
       const int mcuColStart = mcuX * imageInfo.m_MCUWidth;
       const int mcuColEnd = mcuColStart + imageInfo.m_MCUWidth;
       while (outX < outWidth && srcColForOut[outX] < mcuColEnd) {
-        const int bX = srcColForOut[outX] - mcuColStart;  // local column within this MCU, in [0, MCUWidth)
+        const int bX = srcColForOut[outX] - mcuColStart;
         for (int bY = 0; bY < imageInfo.m_MCUHeight; bY++) {
           const int off = (bY / 8 * (imageInfo.m_MCUWidth / 8) + bX / 8) * 64 + (bY % 8) * 8 + (bX % 8);
           uint8_t r = imageInfo.m_pMCUBufR[off];
@@ -1082,8 +1063,6 @@ bool jpegReadContextToThumbnailJpegPass(JpegReadContext& context, Print& jpegOut
         }
         outX++;
       }
-      // PicoJPEG runs entirely in this task. A scheduler yield alone does not
-      // give CPU 0's idle task a run, so block for one tick at a bounded rate.
       if (millis() - lastService >= 8) {
         esp_task_wdt_reset();
         vTaskDelay(pdMS_TO_TICKS(1));

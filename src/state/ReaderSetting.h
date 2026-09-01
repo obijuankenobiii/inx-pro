@@ -122,6 +122,17 @@ class ReaderSetting {
   uint8_t btnLeftLongAction = SystemSetting::BTN_ACTION_CHAPTER_SKIP_PREVIOUS;
   uint8_t btnRightLongAction = SystemSetting::BTN_ACTION_CHAPTER_SKIP_NEXT;
 
+  /** Reader touch page-turn mode: 0 = swipe, 1 = tap. Tap preserves the existing default behavior. */
+  static constexpr uint8_t PAGE_TURN_SWIPE = 0;
+  static constexpr uint8_t PAGE_TURN_TAP = 1;
+  uint8_t pageTurnMode = PAGE_TURN_TAP;
+
+  /** When set, edge swipes in the reader do not adjust the frontlight. */
+  uint8_t disableLightControl = 0;
+
+  /** Reader double-tap action. BTN_ACTION_NONE disables the gesture. */
+  uint8_t doubleTapAction = SystemSetting::BTN_ACTION_NONE;
+
   ~ReaderSetting() = default;
 
   /**

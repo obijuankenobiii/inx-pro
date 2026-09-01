@@ -50,14 +50,9 @@ class TextBlock final : public Block {
     std::vector<uint8_t> wordSmallCaps;
     std::vector<uint8_t> wordUnderline;
     std::vector<uint8_t> wordVerticalAlign;
-    // Inline image "words": for an image slot the matching `words` entry is empty and these hold the cached
-    // image path and its on-line display size. Empty path / 0 size means a normal text word.
     std::vector<std::string> wordImagePaths;
     std::vector<uint16_t> wordImageW;
     std::vector<uint16_t> wordImageH;
-    // Footnote/endnote link target for a word inside an `<a href="...">` span, encoded as
-    // "<resolvedPath>#<fragmentId>" (empty path means same file). Empty string means the word is not a
-    // footnote marker. Present only when the block contains at least one footnote-marker word.
     std::vector<std::string> wordFootnoteTargets;
   };
 

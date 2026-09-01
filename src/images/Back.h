@@ -1,8 +1,6 @@
 #pragma once
 #include <cstdint>
 
-// 40x40 1-bit bitmap converted from the supplied exit/back icon.
-// White background, black glyph; rows are packed MSB-first.
 static const uint8_t Back[] = {
     0xff, 0xff, 0xff, 0xff, 0xff,
     0xff, 0xff, 0xff, 0xff, 0xff,

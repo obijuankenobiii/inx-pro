@@ -222,9 +222,6 @@ bool ExternalFont::detectAntiAliasData() {
 
   static constexpr uint32_t kMaxFallbackGlyphs = 96;
   const uint32_t limit = m_glyphCount < kMaxFallbackGlyphs ? m_glyphCount : kMaxFallbackGlyphs;
-  // cppcheck-suppress knownConditionTrueFalse ; m_glyphCount is populated by ExternalFont::load() via
-  // m_file.read(&m_glyphCount, 4), an opaque library call cppcheck's ValueFlow can't see through, so it
-  // wrongly assumes m_glyphCount is still its default 0 here.
   for (uint32_t i = 0; i < limit; ++i) {
     uint8_t entry[24];
     EpdGlyph glyph{};

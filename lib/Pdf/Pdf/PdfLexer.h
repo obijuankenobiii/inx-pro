@@ -12,14 +12,13 @@
 enum class PdfTokenType {
   Eof,
   Number,
-  Name,          // text holds the name without the leading '/'
-  StringLiteral, // text holds the decoded (unescaped) bytes of a (...) or <...> string
+  Name,
+  StringLiteral,
   ArrayStart,
   ArrayEnd,
-  DictStart,   // <<
-  DictEnd,     // >>
-  Keyword,     // bare identifier: obj, endobj, stream, endstream, xref, trailer, startxref, R, true, false, null,
-               // or a content-stream operator (Tj, Td, cm, q, Q, Do, ...)
+  DictStart,
+  DictEnd,
+  Keyword,
 };
 
 struct PdfToken {
@@ -49,9 +48,9 @@ class PdfLexer {
 
   uint8_t peekByte(size_t ahead = 0) const;
   void skipWhitespaceAndComments();
-  PdfToken nextToken(uint8_t firstByte);  // dispatches on the already-peeked, non-whitespace, non-')' byte
+  PdfToken nextToken(uint8_t firstByte);
   PdfToken readNumberOrKeyword();
   PdfToken readName();
   PdfToken readLiteralString();
-  PdfToken readAngleBracketToken();  // dispatches to hex string or << dict start
+  PdfToken readAngleBracketToken();
 };

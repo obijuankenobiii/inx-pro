@@ -54,4 +54,4 @@ void render(GfxRenderer& renderer, const Page& page, const int mode, const int o
   renderer.line.render(x2, lineTop, x2, lineBottom, true, LineRender::Style::Dotted);
 }
 
-}  // namespace ReadingGuideLines
+}

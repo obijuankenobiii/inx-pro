@@ -20,7 +20,7 @@
 namespace {
 
 struct MediaBox {
-  double llx = 0, lly = 0, urx = 612, ury = 792;  // US Letter default, used when /MediaBox is missing/malformed
+  double llx = 0, lly = 0, urx = 612, ury = 792;
   double width() const { return urx - llx; }
   double height() const { return ury - lly; }
 };
@@ -93,7 +93,7 @@ void drawRawPdfImage(GfxRenderer& renderer, const PdfDrawCommand& command, const
   }
 }
 
-}  // namespace
+}
 
 bool Pdf::load() {
   INX_SERIAL.printf("[%lu] [PDF] Loading PDF: %s\n", millis(), filepath.c_str());
@@ -141,29 +141,20 @@ std::string Pdf::extractPlainText() const {
   if (!loaded) return "";
 
   std::string out;
-  size_t lineLen = 0;  // chars since the last '\n', tracked across the whole document (not just this page)
-  // TxtReaderActivity's word-wrap does a shrink-to-fit search (re-measuring the line's rendered width while
-  // trimming it character by character) that's cheap for normal-length lines but grows expensive for very
-  // long ones - and unlike a hand-authored .txt file, our own paragraph-break heuristic below could
-  // occasionally misjudge a stretch of unusual line-height and merge several paragraphs into one line. Force
-  // a break at the nearest word boundary well before that becomes pathological, regardless of the cause.
+  size_t lineLen = 0;
   constexpr size_t kMaxLineLen = 600;
 
   const int pageCount = doc.getPageCount();
   for (int i = 0; i < pageCount; i++) {
     bool firstRunOnPage = true;
     double lastY = 0.0;
-    // scale=1.0 keeps run.y directly in PDF point units, which is what the fixed thresholds below are
-    // calibrated against (typical body text is ~9-14pt with ~1.0-1.6x line-height leading).
     renderPage(i, 1.0, [&](const PdfTextRun& run) {
       if (!firstRunOnPage) {
         const double deltaY = run.y - lastY;
         if (deltaY > 24.0 || deltaY < -2.0) {
-          out += "\n\n";  // paragraph/section break (or an upward jump - a new column/footnote/etc.)
+          out += "\n\n";
           lineLen = 0;
         } else if (deltaY > 2.0) {
-          // Wrapped continuation of the same paragraph - normally just a space, but forced onto a new line
-          // if the current one has grown too long (see kMaxLineLen above).
           if (lineLen > kMaxLineLen) {
             out += '\n';
             lineLen = 0;
@@ -172,33 +163,29 @@ std::string Pdf::extractPlainText() const {
             lineLen++;
           }
         }
-        // else: same line (e.g. split by a TJ kerning adjustment) - concatenate directly, no separator
       }
       out += run.utf8Text;
       lineLen += run.utf8Text.size();
       lastY = run.y;
       firstRunOnPage = false;
     });
-    out += "\n\n";  // page boundary
+    out += "\n\n";
     lineLen = 0;
-    if (i % 10 == 0) vTaskDelay(1);  // feed the watchdog across a long book
+    if (i % 10 == 0) vTaskDelay(1);
   }
   return out;
 }
 
 namespace {
-// A paragraph is "empty" (safe to drop/never worth keeping as a standalone entry) only if it has neither
-// words nor image data - a freshly-opened paragraph right after an image, for instance, is empty but real
-// image paragraphs themselves must never be swept up by that same check.
 bool isDroppableEmpty(const PdfParagraph& p) { return p.words.empty() && !p.isImage(); }
-}  // namespace
+}
 
 std::vector<PdfParagraph> Pdf::extractStyledParagraphs(const int startPage, const int endPage) const {
   std::vector<PdfParagraph> paragraphs;
   if (!loaded) return paragraphs;
 
   paragraphs.emplace_back();
-  std::map<int, int> fontIdHistogram;  // built-in size-tier id -> word count, to find the body-text tier
+  std::map<int, int> fontIdHistogram;
 
   const int pageCount = std::clamp(endPage, 0, doc.getPageCount());
   for (int i = std::max(0, startPage); i < pageCount; i++) {
@@ -212,17 +199,12 @@ std::vector<PdfParagraph> Pdf::extractStyledParagraphs(const int startPage, cons
           bool lineBreak = false;
           if (!firstRunOnPage) {
             const double deltaY = run.y - lastY;
-            // PDF content streams do not carry HTML tags. Recover the useful block structure from baseline
-            // movement: ordinary leading is a line break, while a larger gap is a paragraph break. The old
-            // fixed 24pt threshold was too high for typical 10-14pt book typography and collapsed adjacent
-            // paragraph/list items into one text stream.
             const double paragraphGap = std::max(18.0, std::max(run.sourceFontSizePts, lastFontSizePts) * 1.45);
             paragraphBreak = (deltaY > paragraphGap || deltaY < -2.0) && !paragraphs.back().words.empty();
             lineBreak = deltaY > 2.0 || deltaY < -2.0;
             if (paragraphBreak) {
-              paragraphs.emplace_back();  // paragraph/section break, or an upward jump (new column/footnote/etc.)
+              paragraphs.emplace_back();
             }
-            // else: same line, or a wrapped continuation - keep appending words to this paragraph
           }
 
           std::string word;
@@ -263,7 +245,7 @@ std::vector<PdfParagraph> Pdf::extractStyledParagraphs(const int startPage, cons
           imagePara.imageIntrinsicWidth = command.imageWidth;
           imagePara.imageIntrinsicHeight = command.imageHeight;
           paragraphs.push_back(std::move(imagePara));
-          paragraphs.emplace_back();  // fresh paragraph so text after the image doesn't merge into it
+          paragraphs.emplace_back();
         });
     if (!paragraphs.back().words.empty()) paragraphs.emplace_back();
     if (i % 10 == 0) vTaskDelay(1);
@@ -285,7 +267,7 @@ std::vector<PdfParagraph> Pdf::extractStyledParagraphs(const int startPage, cons
     for (const auto& word : paragraph.words) {
       if (word.sourceFontId > bodyFontId) largerCount++;
     }
-    paragraph.heading = largerCount * 2 > paragraph.words.size();  // majority of the paragraph is larger
+    paragraph.heading = largerCount * 2 > paragraph.words.size();
   }
 
   return paragraphs;
@@ -297,10 +279,6 @@ double Pdf::getPageScale(const int index, const int targetWidthPx, const int tar
   if (!doc.getPage(index, pageDict)) return 1.0;
   const MediaBox box = getMediaBox(doc, pageDict);
   const double widthScale = static_cast<double>(targetWidthPx) / box.width();
-  // Fit-width is the standard default for e-readers - it maximizes text size, which matters far more for
-  // legibility than avoiding vertical overflow. Only back off toward fit-height for pages so disproportionately
-  // tall that fit-width would push most of the page's content off the bottom of the screen (there's no
-  // within-page vertical scrolling in Phase 1, so severely overflowing content would simply be unreachable).
   const double heightScale = static_cast<double>(targetHeightPx) / box.height();
   if (box.height() * widthScale > static_cast<double>(targetHeightPx) * 1.6) {
     return heightScale;
@@ -334,7 +312,7 @@ bool Pdf::renderPage(const int index, const double scale, const std::function<vo
   INX_SERIAL.printf("[%lu] [PDF-DBG] renderPage(%d): resources resolved, resolving contents...\n", millis(), index);
 
   const PdfObject* contentsObj = pageDict.find("Contents");
-  if (!contentsObj) return true;  // valid, blank page
+  if (!contentsObj) return true;
 
   std::vector<uint8_t> contentBytes;
   const PdfObject contents = doc.resolve(*contentsObj);
@@ -344,7 +322,6 @@ bool Pdf::renderPage(const int index, const double scale, const std::function<vo
       return false;
     }
   } else if (contents.isArray()) {
-    // Multiple content streams are logically concatenated (with a space so tokens across the seam never merge).
     for (const auto& item : contents.arrValue) {
       const PdfObject streamObj = doc.resolve(item);
       std::vector<uint8_t> part;
@@ -370,12 +347,6 @@ bool Pdf::renderPageToRenderer(const int index, GfxRenderer& renderer, const int
   return renderPage(
       index, scale,
       [&](const PdfTextRun& run) {
-        // run.y is PDF's text-baseline Y (that's what the content-stream matrices track), but
-        // TextRender::render() treats its y parameter as the line's TOP and adds the font's ascender
-        // internally to find the baseline. Passing the baseline straight through double-counts that
-        // ascender - pushing text down further than intended, and inconsistently across runs that end up
-        // on different built-in font sizes (each with a different ascender), which reads as misaligned/
-        // jumbled lines. Subtract it back out so what we hand in is the line-top render() expects.
         const int lineTopY =
             offsetY + static_cast<int>(run.y) - renderer.text.getFontAscenderSize(run.fontId);
         renderer.text.render(run.fontId, offsetX + static_cast<int>(run.x), lineTopY, run.utf8Text.c_str(), true,
@@ -436,9 +407,6 @@ std::string Pdf::getThumbBmpPath() const { return cachePath + "/thumb.bmp"; }
 
 namespace {
 
-// Shared 1bpp BMP writer for a GfxRenderer framebuffer region, matching Xtc's cover.bmp format (BITMAPINFOHEADER,
-// 1bpp, palette[0]=black/palette[1]=white). GfxRenderer::readPackedRow1bpp packs ink(black)=1/paper(white)=0,
-// the opposite of the BMP palette selection below, so each row byte is bit-inverted on the way out.
 bool writeFramebufferBmp(const GfxRenderer& renderer, const std::string& path, const int width, const int height) {
   FsFile bmp;
   if (!SdMan.openFileForWrite("PDF", path, bmp)) return false;
@@ -459,7 +427,7 @@ bool writeFramebufferBmp(const GfxRenderer& renderer, const std::string& path, c
   bmp.write(reinterpret_cast<const uint8_t*>(&dibHeaderSize), 4);
   int32_t w = width;
   bmp.write(reinterpret_cast<const uint8_t*>(&w), 4);
-  int32_t h = -height;  // top-down row order, matching GfxRenderer's y-down coordinate space
+  int32_t h = -height;
   bmp.write(reinterpret_cast<const uint8_t*>(&h), 4);
   uint16_t planes = 1;
   bmp.write(reinterpret_cast<const uint8_t*>(&planes), 2);
@@ -493,7 +461,7 @@ bool writeFramebufferBmp(const GfxRenderer& renderer, const std::string& path, c
   return true;
 }
 
-}  // namespace
+}
 
 bool Pdf::generateCoverBmp(GfxRenderer& renderer) const {
   if (SdMan.exists(getCoverBmpPath().c_str())) return true;
@@ -515,8 +483,6 @@ bool Pdf::generateThumbBmp(GfxRenderer& renderer) const {
   if (SdMan.exists(getThumbBmpPath().c_str())) return true;
   if (!generateCoverBmp(renderer)) return false;
 
-  // Phase 1: the thumbnail is just the full cover re-encoded at the same resolution (no downscaling library
-  // is wired into lib/Pdf yet - JpegToBmpConverter::resizeBitmap, used by Epub, operates on JPEG-sourced BMPs).
   FsFile src;
   FsFile dst;
   if (!SdMan.openFileForRead("PDF", getCoverBmpPath(), src) || !SdMan.openFileForWrite("PDF", getThumbBmpPath(), dst)) {

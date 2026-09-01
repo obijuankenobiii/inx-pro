@@ -12,4 +12,4 @@ void unlockIo() {
   SdIoMutex::unlock();
 }
 
-}  // namespace EpubImagePrefetch
+}

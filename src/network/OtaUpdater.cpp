@@ -111,7 +111,7 @@ esp_err_t event_handler(esp_http_client_event_t* event) {
 
   return ESP_OK;
 }
-}  // namespace
+}
 
 struct OtaGithubCheckCtx {
   OtaUpdater* updater;
@@ -158,9 +158,8 @@ OtaUpdater::OtaUpdaterError OtaUpdater::checkForUpdate() {
   return out;
 }
 
-/** Fetch and parse the latest GitHub release JSON to find a firmware.bin asset. */
+/** Fetch and parse the latest GitHub release JSON to find this device's firmware asset. */
 OtaUpdater::OtaUpdaterError OtaUpdater::checkForUpdateWorker() {
-  JsonDocument filter;
   esp_err_t esp_err;
   JsonDocument doc;
 
@@ -218,22 +217,30 @@ OtaUpdater::OtaUpdaterError OtaUpdater::checkForUpdateWorker() {
     return HTTP_ERROR;
   }
 
+  const int httpStatus = esp_http_client_get_status_code(client_handle);
+  if (httpStatus == 404) {
+    INX_SERIAL.printf("[%lu] [OTA] No stable GitHub release found\n", millis());
+    esp_http_client_cleanup(client_handle);
+    return NO_UPDATE;
+  }
+  if (httpStatus < 200 || httpStatus >= 300) {
+    INX_SERIAL.printf("[%lu] [OTA] GitHub release request returned HTTP %d\n", millis(), httpStatus);
+    esp_http_client_cleanup(client_handle);
+    return HTTP_ERROR;
+  }
+
   esp_err = esp_http_client_cleanup(client_handle);
   if (esp_err != ESP_OK) {
     INX_SERIAL.printf("[%lu] [OTA] esp_http_client_cleanupp Failed : %s\n", millis(), esp_err_to_name(esp_err));
     return INTERNAL_UPDATE_ERROR;
   }
 
-  filter["tag_name"] = true;
-  filter["assets"][0]["name"] = true;
-  filter["assets"][0]["browser_download_url"] = true;
-  filter["assets"][0]["size"] = true;
   if (local_buf == nullptr || output_len <= 0) {
     INX_SERIAL.printf("[%lu] [OTA] Empty HTTP body (len=%d)\n", millis(), output_len);
     return HTTP_ERROR;
   }
 
-  const DeserializationError error = deserializeJson(doc, local_buf, DeserializationOption::Filter(filter));
+  const DeserializationError error = deserializeJson(doc, local_buf);
   if (error) {
     INX_SERIAL.printf("[%lu] [OTA] JSON parse failed: %s\n", millis(), error.c_str());
     return JSON_PARSE_ERROR;
@@ -251,8 +258,15 @@ OtaUpdater::OtaUpdaterError OtaUpdater::checkForUpdateWorker() {
 
   latestVersion = doc["tag_name"].as<std::string>();
 
+  constexpr const char* expectedAssetName =
+#if FREEINK_DEVICE_STICKY
+      "sticky.bin";
+#else
+      "x4pro.bin";
+#endif
+
   for (int i = 0; i < doc["assets"].size(); i++) {
-    if (doc["assets"][i]["name"] == "firmware.bin") {
+    if (doc["assets"][i]["name"] == expectedAssetName) {
       otaUrl = doc["assets"][i]["browser_download_url"].as<std::string>();
       otaSize = doc["assets"][i]["size"].as<size_t>();
       totalSize = otaSize;
@@ -262,7 +276,7 @@ OtaUpdater::OtaUpdaterError OtaUpdater::checkForUpdateWorker() {
   }
 
   if (!updateAvailable) {
-    INX_SERIAL.printf("[%lu] [OTA] No firmware.bin asset found\n", millis());
+    INX_SERIAL.printf("[%lu] [OTA] No %s asset found\n", millis(), expectedAssetName);
     return NO_UPDATE;
   }
 

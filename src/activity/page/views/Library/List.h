@@ -26,7 +26,6 @@ class List final {
   void render() const;
 
  private:
-  // Match the legacy library list: 66 px rows and 24 px leading icons.
   static constexpr int rowHeight = UiLayout::LIST_ITEM_HEIGHT;
   static constexpr int itemsPerPage = 10;
 
@@ -45,5 +44,5 @@ class List final {
   int itemAt(int x, int y) const;
 };
 
-}  // namespace library
-}  // namespace views
+}
+}

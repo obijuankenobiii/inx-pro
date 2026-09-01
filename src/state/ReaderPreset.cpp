@@ -12,7 +12,7 @@
 namespace {
 constexpr size_t kMaxNameLen = 40;
 constexpr size_t kMaxUserPresets = 32;
-}  // namespace
+}
 
 void ReaderPresetStore::load() {
   if (loaded_) {
@@ -20,6 +20,7 @@ void ReaderPresetStore::load() {
   }
   loaded_ = true;
   userPresets_.clear();
+  defaultPresetIndex_ = 0;
 
   FsFile f;
   if (!SdMan.openFileForRead("RPS", kPath, f)) {
@@ -32,6 +33,12 @@ void ReaderPresetStore::load() {
   if (f.read(&magic, sizeof(magic)) != sizeof(magic) || magic != kMagic ||
       f.read(&version, sizeof(version)) != sizeof(version) || version == 0 || version > kVersion ||
       f.read(&presetCount, sizeof(presetCount)) != sizeof(presetCount)) {
+    f.close();
+    return;
+  }
+
+  if (version >= 7 && f.read(&defaultPresetIndex_, sizeof(defaultPresetIndex_)) != sizeof(defaultPresetIndex_)) {
+    defaultPresetIndex_ = 0;
     f.close();
     return;
   }
@@ -74,6 +81,9 @@ void ReaderPresetStore::load() {
   }
 
   f.close();
+  if (defaultPresetIndex_ > userPresets_.size()) {
+    defaultPresetIndex_ = 0;
+  }
 }
 
 void ReaderPresetStore::reload() {
@@ -92,9 +102,13 @@ bool ReaderPresetStore::save() {
   uint32_t magic = kMagic;
   uint8_t version = kVersion;
   uint8_t presetCount = static_cast<uint8_t>(std::min(userPresets_.size(), kMaxUserPresets));
+  if (defaultPresetIndex_ > presetCount) {
+    defaultPresetIndex_ = 0;
+  }
   f.write(&magic, sizeof(magic));
   f.write(&version, sizeof(version));
   f.write(&presetCount, sizeof(presetCount));
+  f.write(&defaultPresetIndex_, sizeof(defaultPresetIndex_));
 
   for (uint8_t i = 0; i < presetCount; i++) {
     const ReaderPreset& preset = userPresets_[i];
@@ -116,6 +130,28 @@ bool ReaderPresetStore::save() {
 int ReaderPresetStore::count() {
   load();
   return 1 + static_cast<int>(userPresets_.size());
+}
+
+int ReaderPresetStore::defaultPresetIndex() {
+  load();
+  return defaultPresetIndex_;
+}
+
+bool ReaderPresetStore::isPresetDefault(const int index) {
+  return index > 0 && index == defaultPresetIndex();
+}
+
+bool ReaderPresetStore::setDefaultPreset(const int index) {
+  load();
+  if (index < 0 || index > static_cast<int>(userPresets_.size())) {
+    return false;
+  }
+  const uint8_t next = static_cast<uint8_t>(index);
+  if (defaultPresetIndex_ == next) {
+    return true;
+  }
+  defaultPresetIndex_ = next;
+  return save();
 }
 
 std::string ReaderPresetStore::nameOf(int index) {
@@ -160,13 +196,12 @@ int ReaderPresetStore::add(const std::string& name, const BookSettings& settings
   preset.settings.readerPresetIndex = BookSettings::kNoReaderPreset;
   userPresets_.push_back(std::move(preset));
   save();
-  return static_cast<int>(userPresets_.size());  // store index of the new preset
+  return static_cast<int>(userPresets_.size());
 }
 
 bool ReaderPresetStore::update(int index, const std::string& name, const BookSettings& settings) {
   load();
   if (index <= 0) {
-    // Default: write the settings back to the global reader fields.
     settings.applyToGlobalSettings();
     return READER_SETTINGS.saveToFile();
   }
@@ -196,6 +231,11 @@ bool ReaderPresetStore::remove(int index) {
     return false;
   }
   userPresets_.erase(userPresets_.begin() + (index - 1));
+  if (defaultPresetIndex_ == index) {
+    defaultPresetIndex_ = 0;
+  } else if (defaultPresetIndex_ > index) {
+    --defaultPresetIndex_;
+  }
   return save();
 }
 

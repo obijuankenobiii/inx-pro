@@ -6,6 +6,10 @@
 #include "Epub.h"
 
 #include <Arduino.h>
+#include <freertos/task.h>
+#include <freertos/semphr.h>
+#include <freertos/FreeRTOS.h>
+#include <functional>
 #include <FsHelpers.h>
 #include <HardwareSerial.h>
 #include <JpegToBmpConverter.h>
@@ -63,8 +67,6 @@ constexpr const char* kBookMetadataCacheFile = "/book.bin";
 constexpr int kThumbnailMaxWidth = 360;
 constexpr int kThumbnailMaxHeight = 540;
 constexpr uint8_t kThumbnailJpegQuality = 96;
-// Keep this deliberately below the 8 MB PSRAM budget: thumbnail conversion
-// also needs its own scaled output buffer, plus reader fonts/layout memory.
 constexpr size_t kSlowPathCoverPsramMaxBytes = 1024 * 1024;
 constexpr size_t kImageMetadataProbeBytes = 64 * 1024;
 const std::string kEmptyString;
@@ -170,7 +172,7 @@ bool probeImageHeader(const uint8_t* data, const size_t size, int* width, int* h
   return false;
 }
 
-}  // namespace
+}
 
 Epub::Epub(std::string filepath, const std::string& oldCacheDir) : filepath(std::move(filepath)) {
   (void)oldCacheDir;
@@ -365,8 +367,6 @@ bool Epub::readItemContentsToStream(const std::string& itemHref, Print& out, con
 
   EPUB_PERF_LOG("[EBP] Zip Request: %s\n", path.c_str());
 
-  // Select before increasing depth: the outer chapter stream owns the primary
-  // ZIP handle; a SAX callback uses the independent nested handle.
   ZipFile& reader = zipForNestedOperation();
   struct StreamDepthScope {
     explicit StreamDepthScope(const Epub& epub) : epub_(epub) { ++epub_.zipStreamDepth_; }
@@ -400,9 +400,6 @@ Epub::ItemStream::Result Epub::ItemStream::pump(Print& out, const size_t maxOutp
     return Result::Error;
   }
 
-  // Do not keep the recursive SD mutex across reader-loop slices. The stream
-  // owns only its ZipFile cursor; nested EPUB operations use the secondary
-  // handle while this scope serializes the actual SPI transaction.
   EpubImagePrefetch::IoLock ioLock;
   switch (impl_->stream->pump(out, maxOutputBytes)) {
     case ZipFile::Stream::Result::More:
@@ -457,8 +454,6 @@ bool Epub::extractAndConvertImage(const std::string& itemHref, const std::string
     return false;
   }
 
-  // Preparation is serialized with all other EPUB SD work. The temporary name
-  // still remains unique so a failed write can never publish a partial image.
   const std::string tempPath = cachePath + "/.extract_" +
                                std::to_string(std::hash<std::string>{}(itemHref + outBmpPath)) + ".tmp";
   FsFile tempFile;
@@ -498,9 +493,6 @@ bool Epub::extractAndConvertImage(const std::string& itemHref, const std::string
   bool success = false;
 
   if (isBmpFile(itemHref) || isGifFile(itemHref)) {
-    // GIF is cached raw, exactly like JPEG/PNG: getImagePath() keeps the .gif extension and
-    // ImageRender decodes it at render time (stb, streamed, PSRAM-transient). No conversion here, so
-    // nothing extra is written to the card and no decode buffer outlives this call.
     EPUB_PERF_LOG("[%lu] [EBP-IMG] raw copy: %s\n", static_cast<unsigned long>(millis()), itemHref.c_str());
     std::unique_ptr<uint8_t[]> buf(new (std::nothrow) uint8_t[16 * 1024]);
     if (!buf) {
@@ -679,6 +671,39 @@ bool Epub::generateCoverBmp(bool cropped) const {
  * @brief Builds cache thumbnails: prefers a packaged `META-INF/thumbnail.jpg` from the EPUB, else generates a
  * resized `thumb.jpg` or `thumb.bmp` from the cover.
  */
+namespace {
+
+struct PngThumbJob {
+  std::function<bool()> work;
+  bool result = false;
+  SemaphoreHandle_t done = nullptr;
+};
+
+void pngThumbTask(void* arg) {
+  auto* job = static_cast<PngThumbJob*>(arg);
+  job->result = job->work();
+  xSemaphoreGive(job->done);
+  vTaskDelete(nullptr);
+}
+
+bool runWithDecodeStack(const std::function<bool()>& work) {
+  PngThumbJob job;
+  job.work = work;
+  job.done = xSemaphoreCreateBinary();
+  if (job.done == nullptr) {
+    return work();
+  }
+  if (xTaskCreate(pngThumbTask, "pngThumb", 16384, &job, tskIDLE_PRIORITY + 1, nullptr) != pdPASS) {
+    vSemaphoreDelete(job.done);
+    return work();
+  }
+  xSemaphoreTake(job.done, portMAX_DELAY);
+  vSemaphoreDelete(job.done);
+  return job.result;
+}
+
+}
+
 bool Epub::generateThumbBmp(const bool skipCoverFallback) const {
   INX_SERIAL.printf("[%lu] [THUMB-GEN] ENTER book=%s cache=%s skipFallback=%d\n", millis(), filepath.c_str(),
                  cachePath.c_str(), skipCoverFallback ? 1 : 0);
@@ -712,15 +737,13 @@ bool Epub::generateThumbBmp(const bool skipCoverFallback) const {
       INX_SERIAL.printf("[%lu] [THUMB-DEBUG] EPUB bitmap thumb already exists: %s\n", millis(), thumbBmpPath.c_str());
       return true;
     }
-    // The slow path has already converted the PNG/BMP cover to cover.bmp. Resize that cached BMP
-    // directly so thumbnail generation uses the same successful conversion instead of decoding the EPUB entry again.
     bool success = false;
     const std::string cachedCoverBmpPath = getCoverBmpPath(false);
     if (isPngFile(coverHref)) {
-      // Re-decode PNG so the thumbnail gets the same improved 1-bit Atkinson treatment,
-      // even when an older, darker cover.bmp is already cached.
-      success = extractAndConvertImageFullScreen(coverHref, thumbBmpPath, kThumbnailMaxWidth, kThumbnailMaxHeight,
-                                                 false);
+      success = runWithDecodeStack([&] {
+        return extractAndConvertImageFullScreen(coverHref, thumbBmpPath, kThumbnailMaxWidth,
+                                                kThumbnailMaxHeight, false);
+      });
     } else {
       FsFile cachedCoverFile;
       FsFile thumbFile;
@@ -805,8 +828,6 @@ bool Epub::generateThumbBmp(const bool skipCoverFallback) const {
     return false;
   }
 
-  // generateCoverBmp() already extracted this exact JPEG entry as a raw copy at getCoverJpegPath() when it
-  // succeeded - reuse it instead of extracting the same zip entry a second time.
   const std::string cachedCoverJpegPath = getCoverJpegPath(false);
   const bool haveCachedCover = SdMan.exists(cachedCoverJpegPath.c_str());
   const bool usePsramCover = haveCachedCover && !coverJpegPsram_.empty();
@@ -851,9 +872,6 @@ bool Epub::generateThumbBmp(const bool skipCoverFallback) const {
                                                       kThumbnailJpegQuality);
     thumbFile.sync();
     thumbFile.close();
-    // PSRAM uses the bounded PicoJPEG path. Progressive or unusual JPEGs are
-    // intentionally retried through the established file/STB path rather than
-    // sacrificing thumbnail compatibility for the faster common case.
     if (!success && usePsramCover) {
       SdMan.remove(thumbJpegPath.c_str());
       FsFile diskCover;
@@ -998,9 +1016,6 @@ bool Epub::parseTocNavFile() const {
 bool Epub::load(const bool buildIfMissing) {
   setupCacheDir();
 
-  // A single Epub instance represents one opened book. Recreate the
-  // per-session ZIP index and image metadata when it is loaded again so no
-  // offsets or dimensions from a previous session survive.
   zipFile_.reset();
   zipIndexAttempted_ = false;
   nestedZipFile_.reset();
@@ -1254,9 +1269,6 @@ bool Epub::getImageMetadata(const std::string& path, int* width, int* height, co
     if (item.path.compare(path.c_str()) == 0 && item.format == format) {
       if (width) *width = item.width;
       if (height) *height = item.height;
-      // A false entry is still a cache hit. The caller can decide whether to
-      // remove/rebuild the file, but must not reopen it just to rediscover the
-      // same invalid dimensions on every layout pass.
       return true;
     }
   }

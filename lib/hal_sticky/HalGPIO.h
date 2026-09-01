@@ -24,7 +24,6 @@ class HalGPIO {
     uint8_t hour = 0;
     uint8_t minute = 0;
     uint8_t second = 0;
-    // UI convention: 1=Monday .. 7=Sunday. The FreeInk RTC uses 0=Sunday.
     uint8_t weekday = 0;
   };
 
@@ -40,11 +39,6 @@ class HalGPIO {
   bool wasAnyReleased() const;
   unsigned long getHeldTime() const;
 
-  // Raw touch passthrough, for activities that want to hit-test a tap against
-  // their own on-screen layout (e.g. "open the book cover that was tapped")
-  // rather than the touch-to-button gesture synthesis in update(). nx/ny are
-  // normalized 0..1 in the panel's native (unrotated) frame — callers are
-  // responsible for mapping to their own screen orientation if it differs.
   bool hasTouch() const;
   bool isTouchPressed() const;
   bool wasTouchPressedAt(float& nx, float& ny) const;
@@ -58,12 +52,12 @@ class HalGPIO {
   bool touchSwipeStart(float& nx, float& ny) const;
 
   enum class MotionGesture : uint8_t { None, Previous, Next };
-  // Tilt-to-turn-page gesture backed by Sticky's LSM6DS3TR-C IMU.
   MotionGesture readMotionGesture(uint8_t orientation, uint8_t mode, uint8_t sensitivity);
 
   void startDeepSleep();
 
   int getBatteryPercentage() const;
+  bool isCharging() const;
 
   bool isUsbConnected() const;
 
@@ -75,8 +69,6 @@ class HalGPIO {
 
   WakeupReason getWakeupReason() const;
 
-  // Sticky-specific: SHT40 temperature/humidity. Returns false (leaves
-  // outputs unchanged) on read failure or if the sensor isn't present.
   bool getTemperatureAndHumidity(float& outTempC, float& outHumidityPct) const;
 
   static constexpr uint8_t BTN_BACK = 0;
@@ -90,8 +82,6 @@ class HalGPIO {
  private:
   InputManager inputMgr;
 
-  // Touch-gesture-synthesized button edges for this update() cycle, layered on
-  // top of inputMgr's real button edges (see update()).
   uint8_t touchPressedEvents = 0;
   uint8_t touchReleasedEvents = 0;
   TouchSwipe touchSwipeDirection = TouchSwipe::None;
@@ -102,7 +92,6 @@ class HalGPIO {
   mutable unsigned long batteryLastPollMs = 0;
   static constexpr unsigned long BATTERY_POLL_MS = 1500;
 
-  // Motion-gesture debounce state.
   bool motionSensorInitialized = false;
   bool motionGestureInProgress = false;
   unsigned long motionLastPollMs = 0;

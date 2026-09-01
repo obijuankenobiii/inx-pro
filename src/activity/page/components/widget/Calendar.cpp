@@ -26,8 +26,6 @@ int daysInMonth(const int year, const int month) {
 }
 
 int firstWeekday(const int day, const int weekday) {
-  // RTC weekday is 1=Monday..7=Sunday. Derive the weekday of the first day
-  // from today's date so the calendar remains independent of a second date API.
   return ((weekday - 1 - ((day - 1) % 7) + 700) % 7);
 }
 
@@ -37,7 +35,7 @@ void centerInCell(GfxRenderer& renderer, const int font, const int x, const int 
   renderer.text.render(font, x + (width - textWidth) / 2, y, text, black);
 }
 
-}  // namespace
+}
 
 bool Calendar::readDate(int& year, int& month, int& day, int& weekday) const {
 #ifdef SIMULATOR
@@ -73,8 +71,6 @@ void Calendar::render(const int x, const int y, const int width, const int heigh
   renderedDateKey_ = year * 10000 + month * 100 + day;
   const int font = MONTSERRAT_10_FONT_ID;
   const int headerFont = MONTSERRAT_14_FONT_ID;
-  // Clear the slot as a plain paper area. The widget itself has no border or
-  // rounded card; all alignment comes from this shared content inset.
   renderer_.rectangle.fill(x, y, width, height, false);
 
   const int paddingX = 0;
@@ -99,8 +95,6 @@ void Calendar::render(const int x, const int y, const int width, const int heigh
   const int datesBottom = y + height - paddingBottom;
   const int datesHeight = std::max(1, datesBottom - datesY);
   int rowGap = height < 300 ? 2 : 5;
-  // Six calendar rows must fit in the remaining widget area. The previous
-  // minimum cell height could make the last row extend beyond the slot.
   if (datesHeight < lineHeight * 6 + rowGap * 5) {
     rowGap = std::max(0, (datesHeight - lineHeight * 6) / 5);
   }
@@ -123,8 +117,6 @@ void Calendar::render(const int x, const int y, const int width, const int heigh
     const int textWidth = renderer_.text.getWidth(font, dayText);
     const int textX = cellX + (cellWidth - textWidth) / 2;
     if (number == day) {
-      // Keep the selection circle inside the date cell so it cannot overlap
-      // adjacent days, especially in the two-column home layout.
       const int circleDiameter =
           std::min(cellWidth + columnGap - 1, cellHeight + rowGap - 1) + 5;
       const int radius = std::max(2, circleDiameter / 2);

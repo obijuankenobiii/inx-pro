@@ -15,7 +15,7 @@ namespace {
 bool inside(const int x, const int y, const int left, const int top, const int width, const int height) {
   return x >= left && x < left + width && y >= top && y < top + height;
 }
-}  // namespace
+}
 
 void BaseCarouselActivity::onEnter() { render(); }
 

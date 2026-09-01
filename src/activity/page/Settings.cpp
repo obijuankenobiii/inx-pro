@@ -6,7 +6,9 @@
 #include "Settings.h"
 
 #include <cmath>
+#include <cstdio>
 #include <GfxRenderer.h>
+#include <string>
 #include <vector>
 
 #include "activity/page/navigation/Menu.h"
@@ -44,8 +46,6 @@ int panelSystemX(const GfxRenderer& renderer) {
 
 void renderPanelTab(const GfxRenderer& renderer, const int x, const int y, const int width, const int height,
                     const char* label, const bool selected, const bool roundLeft, const bool roundRight) {
-  // Draw a square tab first, then erase only the pixels outside the requested
-  // outer corner arcs. This avoids adding a second stroke on either inner edge.
   constexpr int corner = 4;
   const int tone = selected ? static_cast<int>(GfxRenderer::FillTone::Ink)
                             : static_cast<int>(GfxRenderer::FillTone::Paper);
@@ -139,8 +139,11 @@ std::vector<SettingInfo> buildSystemSettings() {
   settings.push_back(SettingInfo::Enum("Flick sensitivity", &SystemSetting::shakePageTurnSensitivity,
                                        {"Low", "Normal", "High"}, GroupType::DEVICE_ADVANCED));
 #endif
-  settings.push_back(SettingInfo::Toggle("Short Press Power Button", &SystemSetting::shortPressPowerButton,
-                                         GroupType::DEVICE_ADVANCED));
+  settings.push_back(SettingInfo::Enum("Short Press Power Button", &SystemSetting::shortPwrBtn,
+                                       {"Sleep", "Refresh"},
+                                       {SystemSetting::SHORT_PWRBTN::SLEEP,
+                                        SystemSetting::SHORT_PWRBTN::PAGE_REFRESH},
+                                       GroupType::DEVICE_ADVANCED));
 
   settings.push_back(SettingInfo::Separator("Actions", GroupType::DEVICE_ACTIONS));
   settings.push_back(SettingInfo::Action("Delete Cache", GroupType::DEVICE_ACTIONS));
@@ -153,7 +156,7 @@ const char* panelBackLabel(const SettingsPanel panel) {
   return panel == SettingsPanel::System ? "\xC2\xAB Reader" : "\xC2\xAB System";
 }
 
-}  // namespace
+}
 
 Settings::Settings(GfxRenderer& renderer, MappedInputManager& mappedInput) : Page("Settings", renderer, mappedInput) {}
 

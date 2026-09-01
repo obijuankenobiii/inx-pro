@@ -19,7 +19,7 @@ constexpr char WIFI_FILE[] = "/.system/wifi.bin";
 
 constexpr uint8_t OBFUSCATION_KEY[] = {0x43, 0x72, 0x6F, 0x73, 0x73, 0x50, 0x6F, 0x69, 0x6E, 0x74};
 constexpr size_t KEY_LENGTH = sizeof(OBFUSCATION_KEY);
-}  // namespace
+}
 
 void WifiCredentialStore::obfuscate(std::string& data) const {
   INX_SERIAL.printf("[%lu] [WCS] Obfuscating/deobfuscating %zu bytes\n", millis(), data.size());

@@ -19,7 +19,6 @@
 
 namespace {
 
-// Finds the last occurrence of `needle` in [data, data+size). Returns size on failure.
 size_t findLastOccurrence(const uint8_t* data, size_t size, const char* needle) {
   const size_t needleLen = std::strlen(needle);
   if (needleLen == 0 || size < needleLen) return size;
@@ -32,10 +31,6 @@ size_t findLastOccurrence(const uint8_t* data, size_t size, const char* needle) 
 bool inflateBuffer(const uint8_t* src, size_t srcLen, std::vector<uint8_t>& out) {
   if (srcLen < 2) return false;
   InflateReader reader;
-  // Streaming (not one-shot) mode: readAtMost() is called repeatedly below into a small reused chunk buffer,
-  // and one-shot mode resets its back-reference base to that chunk on every call (see InflateReader.cpp),
-  // which corrupts any back-reference reaching outside the current chunk. Streaming mode's ring buffer is
-  // what makes repeated readAtMost() calls valid - the input itself is still supplied in one go via setSource().
   if (!reader.init(true)) return false;
   reader.setSource(src, srcLen);
   reader.skipZlibHeader();
@@ -51,14 +46,12 @@ bool inflateBuffer(const uint8_t* src, size_t srcLen, std::vector<uint8_t>& out)
       out.insert(out.end(), chunk, chunk + produced);
       consecutiveZeroProgress = 0;
     } else if (++consecutiveZeroProgress > 64) {
-      // Status::Ok with zero bytes produced, repeatedly: truncated/malformed compressed data can make the
-      // decompressor report "keep going" forever without actually progressing. Fail instead of hanging.
       return false;
     }
     if (status == InflateStatus::Done) return true;
     if (status == InflateStatus::Error) return false;
-    if (out.size() > 48u * 1024u * 1024u) return false;  // runaway safety valve
-    if (++chunksSinceYield >= 32) {  // feed the watchdog on large streams (~64KB decompressed per yield)
+    if (out.size() > 48u * 1024u * 1024u) return false;
+    if (++chunksSinceYield >= 32) {
       chunksSinceYield = 0;
       vTaskDelay(1);
     }
@@ -96,7 +89,7 @@ bool decodeAsciiHex(const uint8_t* src, size_t srcLen, std::vector<uint8_t>& out
 bool decodeAscii85(const uint8_t* src, size_t srcLen, std::vector<uint8_t>& out) {
   out.clear();
   size_t i = 0;
-  if (srcLen >= 2 && src[0] == '<' && src[1] == '~') i = 2;  // optional leading delimiter
+  if (srcLen >= 2 && src[0] == '<' && src[1] == '~') i = 2;
 
   uint32_t group[5];
   int groupLen = 0;
@@ -107,7 +100,7 @@ bool decodeAscii85(const uint8_t* src, size_t srcLen, std::vector<uint8_t>& out)
       out.insert(out.end(), 4, 0);
       continue;
     }
-    if (c < '!' || c > 'u') continue;  // whitespace or invalid - skip
+    if (c < '!' || c > 'u') continue;
     group[groupLen++] = c - '!';
     if (groupLen == 5) {
       uint32_t value = 0;
@@ -121,7 +114,7 @@ bool decodeAscii85(const uint8_t* src, size_t srcLen, std::vector<uint8_t>& out)
   }
   if (groupLen > 0) {
     const int missing = 5 - groupLen;
-    for (int k = groupLen; k < 5; k++) group[k] = 84;  // pad with 'u' (84)
+    for (int k = groupLen; k < 5; k++) group[k] = 84;
     uint32_t value = 0;
     for (int k = 0; k < 5; k++) value = value * 85 + group[k];
     uint8_t bytes[4] = {static_cast<uint8_t>(value >> 24), static_cast<uint8_t>(value >> 16),
@@ -131,7 +124,7 @@ bool decodeAscii85(const uint8_t* src, size_t srcLen, std::vector<uint8_t>& out)
   return true;
 }
 
-}  // namespace
+}
 
 bool PdfDocument::open(const std::string& path) {
   close();
@@ -234,8 +227,8 @@ bool PdfDocument::parseXrefChain() {
 
     PdfObject sectionTrailer;
     if (!parseXrefSectionAt(offset, visited, sectionTrailer)) {
-      if (first) return false;  // first/only section unusable -> whole document unsupported
-      break;                    // a /Prev link is broken - keep what we already parsed
+      if (first) return false;
+      break;
     }
 
     if (trailer_.isNull()) {
@@ -268,8 +261,6 @@ bool PdfDocument::parseXrefSectionAt(const uint64_t offset, std::vector<uint64_t
   const PdfToken first = lexer.next();
 
   if (first.type != PdfTokenType::Keyword || first.text != "xref") {
-    // PDF 1.5+ commonly stores the cross-reference table in a compressed stream. The stream's indirect object
-    // starts exactly at the startxref offset, so decode it through the same stream path as page content.
     return parseXrefStreamAt(offset, outSectionTrailer);
   }
 
@@ -279,7 +270,7 @@ bool PdfDocument::parseXrefSectionAt(const uint64_t offset, std::vector<uint64_t
       lexer.next();
       break;
     }
-    if (sectionTok.type != PdfTokenType::Number) break;  // malformed - stop, try to parse trailer anyway
+    if (sectionTok.type != PdfTokenType::Number) break;
 
     lexer.next();
     const uint32_t startNum = static_cast<uint32_t>(sectionTok.number);
@@ -403,7 +394,6 @@ PdfObject PdfDocument::parseIndirectObjectAt(const uint64_t offset) const {
   if (maybeStream.type == PdfTokenType::Keyword && maybeStream.text == "stream" && value.isDict()) {
     lexer.next();
     size_t dataStart = lexer.position();
-    // "stream" is followed by CRLF or LF (spec-mandated), tolerate a lone CR too.
     if (dataStart < fileData_.size() && fileData_[dataStart] == '\r') dataStart++;
     if (dataStart < fileData_.size() && fileData_[dataStart] == '\n') dataStart++;
 
@@ -418,8 +408,6 @@ PdfObject PdfDocument::parseIndirectObjectAt(const uint64_t offset) const {
       }
     }
     if (!lengthResolved) {
-      // Cross-reference streams can refer to an indirect /Length before the xref stream has populated the
-      // object table. Recover the stream extent from the required endstream marker in that case.
       const size_t remaining = fileData_.size() - dataStart;
       size_t endstream = remaining;
       for (size_t i = 0; i + 9 <= remaining; i++) {
@@ -575,7 +563,6 @@ void PdfDocument::collectPages(const PdfObject& nodeRef, const PdfObject& inheri
     }
   }
 
-  // Leaf page (Type /Page, or no /Kids array present).
   PageEntry entry;
   entry.ref = nodeRef;
   entry.inheritedAttrs = combined;

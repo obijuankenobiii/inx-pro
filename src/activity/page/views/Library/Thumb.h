@@ -44,6 +44,7 @@ class Thumb final {
     std::string first;
     std::string second;
     std::string third;
+    std::string singleBookTitle;
     std::string image;
     int imageWidth = 0;
     int imageHeight = 0;
@@ -72,11 +73,6 @@ class Thumb final {
   const std::vector<LibraryIndex::Book>& items;
   const std::vector<LibraryIndex::Book>& books;
   std::vector<Thumbnail> thumbnails;
-  // Resolved cover path(s)/dimensions keyed by item path, kept for the lifetime of this Thumb (i.e. as long
-  // as the Library activity stays open). load() clears `thumbnails` on every page/folder switch, which would
-  // otherwise force every item back through the throttled loadNext() SD lookups - and a placeholder repaint -
-  // even for a cover whose path (and very likely its rendered display cache) is already known from a moment
-  // ago. Items found here are marked loaded immediately instead of waiting on the throttle.
   std::unordered_map<std::string, Thumbnail> resolvedCache_;
   std::array<Rect, childItemsPerPage> cells;
   std::function<void(int, bool)> select;
@@ -98,5 +94,5 @@ class Thumb final {
   int itemAt(int x, int y) const;
 };
 
-}  // namespace library
-}  // namespace views
+}
+}

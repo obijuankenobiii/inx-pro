@@ -290,10 +290,6 @@ class CategorySettingsActivity final : public ActivityWithSubactivity, public na
         onTabStatistics(std::move(tabNavigateStatistics)),
         embedded(embedded) {
     tabSelectorIndex = 2;
-    // `embedded` is true at every construction site (Settings.cpp is the only caller and
-    // passes true for both panels), so the non-embedded arms were unreachable — they were
-    // the last users of Menu's mainContentTop/mainHeaderHeight/mainContentBottom, which are
-    // now gone along with the tab bar they were laying out around.
     const int contentTop =
         navigation::Menu::height + 20 + Page::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra;
     const int contentBottom = renderer.getScreenHeight() - navigation::Menu::bottomHeight - 10;

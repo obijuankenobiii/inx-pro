@@ -21,9 +21,6 @@
 #include "BitmapUtil.h"
 #include "GfxRenderer.h"
 
-// Same per-pixel hot-loop rationale as JpegRender.cpp: opt this file's own code into -O2 despite the
-// firmware's default -Os, since scanline decode + tone/dither math here runs once per pixel of every PNG
-// render. Placed after all includes so it doesn't retroactively apply to inlined header code.
 #pragma GCC optimize("O2")
 
 namespace {
@@ -573,9 +570,6 @@ bool decodeAndRender(FsFile& pngFile, RenderContext& renderCtx, int outW, int ou
         delete ctxPtr;
         return false;
       }
-      // PNG filters require every row to be inflated/reconstructed, but a
-      // downscaled nearest-neighbour render only consumes selected source
-      // rows. Avoid RGB/palette→gray conversion for rows never displayed.
       if (currentSrcY + 1 == sy) {
         convertScanlineToGray(ctx, graySrc);
       }
@@ -602,7 +596,7 @@ bool decodeAndRender(FsFile& pngFile, RenderContext& renderCtx, int outW, int ou
   delete ctxPtr;
   return true;
 }
-}  // namespace
+}
 
 bool PngRender::render(FsFile& pngFile, int x, int y, int targetWidth, int targetHeight, bool cropToFill,
                        const ImageRenderMode mode, const float cropAnchorX, JpegLevelCapture* capture) const {

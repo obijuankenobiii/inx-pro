@@ -38,7 +38,7 @@ void progressBar(const GfxRenderer& renderer, const int y, const int current, co
     if (fill > 0) renderer.rectangle.fill(x + 1, y + 1, fill, 4, true);
   }
 }
-}  // namespace
+}
 
 void AuthorGeneratorActivity::workerTaskTrampoline(void* param) {
   static_cast<AuthorGeneratorActivity*>(param)->workerTaskLoop();

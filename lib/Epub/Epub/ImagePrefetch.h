@@ -23,4 +23,4 @@ class IoLock final {
   IoLock& operator=(const IoLock&) = delete;
 };
 
-}  // namespace EpubImagePrefetch
+}

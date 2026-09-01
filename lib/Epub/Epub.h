@@ -28,8 +28,6 @@ class Epub {
   std::unique_ptr<BookMetadataCache> bookMetadataCache;
   mutable std::unique_ptr<ZipFile> zipFile_;
   mutable bool zipIndexAttempted_ = false;
-  // SAX image callbacks may read another ZIP entry while chapter XHTML is
-  // being inflated. Keep that nested seek on a separate indexed file handle.
   mutable std::unique_ptr<ZipFile> nestedZipFile_;
   mutable bool nestedZipIndexAttempted_ = false;
   mutable uint8_t zipStreamDepth_ = 0;
@@ -45,9 +43,6 @@ class Epub {
   };
   mutable std::vector<ImageMetadata, EpubPsramAllocator<ImageMetadata>> imageMetadata_;
   mutable bool imageMetadataDirty_ = false;
-  // A slow-path JPEG cover is used twice in one open: first for the cover
-  // screen, then to generate thumb.jpg. Keep a bounded raw copy in PSRAM so
-  // the thumbnail decoder does not reopen and read it from SD again.
   mutable std::vector<uint8_t, EpubPsramAllocator<uint8_t>> coverJpegPsram_;
 
   ZipFile& zip() const;

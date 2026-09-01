@@ -146,8 +146,6 @@ void EpubNavigation::onDrawerDismissed() {
 }
 
 void EpubNavigation::onTocChapterSelected(const int spineIndex) {
-  // The TOC is dismissed, but it was the active framebuffer. Restore the reader page before the
-  // loader takes its popup snapshot, so "Loading chapter..." sits over the current page.
   activity_.renderScreen(true);
   activity_.currentSpineIndex = spineIndex;
   activity_.nextPageNumber = 0;

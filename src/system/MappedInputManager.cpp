@@ -61,12 +61,10 @@ MappedInputManager::Button remapDirectional180(const MappedInputManager::Button 
       return button;
   }
 }
-}  // namespace
+}
 
 bool MappedInputManager::mapButton(const Button button, bool (HalGPIO::*fn)(uint8_t) const) const {
   const auto sideLayout = static_cast<SystemSetting::SIDE_BUTTON_LAYOUT>(SETTINGS.sideButtonLayout);
-  // Sticky has no front Left/Right/Back/Confirm button bank. Keep the default table only as a
-  // compatibility target for the semantic inputs; its unavailable pins are unassigned by HAL.
   const auto& front = kFrontLayouts[SystemSetting::BACK_CONFIRM_LEFT_RIGHT];
   const auto& side = kSideLayouts[sideLayout];
 
@@ -87,14 +85,8 @@ bool MappedInputManager::mapButton(const Button button, bool (HalGPIO::*fn)(uint
       return (gpio.*fn)(HalGPIO::BTN_DOWN);
     case Button::Power:
 #if FREEINK_DEVICE_STICKY
-      // Sticky's OK and power controls share GPIO4. The SDK exposes a quick
-      // click as Confirm and a held press as Power; keep both edges available
-      // through the Power semantic used by the page menu and readers.
       return (gpio.*fn)(HalGPIO::BTN_POWER) || (gpio.*fn)(front.confirm);
 #else
-      // X4 Pro has a separate physical power key. Its front confirm slot is
-      // unassigned, and its touch/home events must never be interpreted as a
-      // second power release (that can dispatch a mapped page action twice).
       return (gpio.*fn)(HalGPIO::BTN_POWER);
 #endif
     case Button::PageBack:
@@ -205,19 +197,7 @@ bool MappedInputManager::wasTouchTapInScreen(const GfxRenderer& renderer, float&
 
   mapNativeTouchToScreen(renderer, nativeNx, nativeNy, nx, ny);
 
-  // Swipe-only band at the bottom of the screen — see tapSuppressBottomNy() in the board
-  // HAL. Checked AFTER mapping so it follows the screen, not the panel, and therefore
-  // stays correct in every orientation.
 #if FREEINK_DEVICE_X4PRO
-  // X4 Pro only. A swipe-up begun at the very bottom edge often degrades into a phantom
-  // tap: the finger starts on the digitizer boundary and the panel's 0.5-1.3 s refreshes
-  // stall GT911 polling, so the motion never passes the SDK's 60 px slop and the release is
-  // synthesized as a tap at the touch-down point — landing on the bottom nav.
-  //
-  // Position alone cannot separate the two (the failing swipes started at ny 0.975-0.994,
-  // which overlaps the nav icons, and gating on position made those icons feel laggy).
-  // Duration is the discriminator: the phantoms were held 1081/2747/2791 ms, stuck behind
-  // those refreshes, while a deliberate icon tap is a couple of hundred ms. Require BOTH.
   {
     constexpr float kBottomBandNy = 0.97f;
     constexpr unsigned long kMinPhantomHoldMs = 600;
@@ -325,8 +305,6 @@ bool MappedInputManager::consumeHeaderBackTap(const GfxRenderer& renderer) const
     return true;
   }
 
-  // The main loop checks this before the activity. Put ordinary taps back so the activity's
-  // existing touch hit tests receive exactly the same event they would have received otherwise.
   pendingTouchTap_ = true;
   pendingTouchNx_ = nativeNx;
   pendingTouchNy_ = nativeNy;

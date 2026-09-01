@@ -173,7 +173,7 @@ int fontIdForBlock(const DefinitionBlock& block) {
   return MONTSERRAT_12_FONT_ID;
 }
 
-}  // namespace
+}
 
 std::vector<DefinitionBlock> parseHtmlToBlocks(const std::string& html) {
   std::vector<DefinitionBlock> blocks;
@@ -204,8 +204,6 @@ std::vector<DefinitionBlock> parseHtmlToBlocks(const std::string& html) {
   };
 
   auto flush = [&]() {
-    // Drop trailing empty/whitespace-only runs (find_last_not_of returns npos for both cases), then
-    // trim trailing whitespace off whatever real run is left at the end.
     while (!current.runs.empty() && current.runs.back().text.find_last_not_of(" \n") == std::string::npos) {
       current.runs.pop_back();
     }
@@ -231,7 +229,7 @@ std::vector<DefinitionBlock> parseHtmlToBlocks(const std::string& html) {
     if (html[i] == '<') {
       const size_t close = html.find('>', i);
       if (close == std::string::npos) {
-        break;  // unterminated tag - stop rather than emit garbage
+        break;
       }
       std::string tag = html.substr(i + 1, close - i - 1);
       i = close + 1;
@@ -282,7 +280,6 @@ std::vector<DefinitionBlock> parseHtmlToBlocks(const std::string& html) {
         italicDepth = closing ? std::max(0, italicDepth - 1) : italicDepth + 1;
         continue;
       }
-      // Any other tag (u, span, font, tt, sub, sup, etc.) - strip, keep inline text content.
       continue;
     }
     ensureRunStyle();

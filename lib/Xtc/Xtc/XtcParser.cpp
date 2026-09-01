@@ -432,4 +432,4 @@ bool XtcParser::isValidXtcFile(const char* filepath) {
   return (magic == XTC_MAGIC || magic == XTCH_MAGIC);
 }
 
-}  // namespace xtc
+}

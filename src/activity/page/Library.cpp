@@ -44,11 +44,8 @@
 extern void onGoToLibrary(const std::string& path);
 
 namespace {
-// Thumb page per folder path. File-scope, NOT a Library member: navigating calls onGoToLibrary(), which
-// destroys this Library and constructs a fresh one for the new path, so any member state is lost exactly
-// when it is needed. Bounded by folders actually visited.
 std::map<std::string, int> gThumbPage;
-}  // namespace
+}
 extern void openReaderFromCallback(const std::string& path, std::function<void()> returnToCaller);
 extern void openSearchFromCallback(std::function<void()> returnToCaller);
 
@@ -73,6 +70,20 @@ bool isChild(const std::string& value, const std::string& base) {
   return value.find('/', prefix.size()) == std::string::npos;
 }
 
+const LibraryIndex::Book* singleBookInFolder(const std::string& folder,
+                                             const std::vector<LibraryIndex::Book>& books) {
+  const std::string prefix = folder == "/" ? "/" : folder + "/";
+  const LibraryIndex::Book* result = nullptr;
+  for (const LibraryIndex::Book& book : books) {
+    if (book.type != LibraryIndex::Book::Type::BOOK || book.path.compare(0, prefix.size(), prefix) != 0) {
+      continue;
+    }
+    if (result != nullptr) return nullptr;
+    result = &book;
+  }
+  return result;
+}
+
 std::string lower(std::string value) {
   std::transform(value.begin(), value.end(), value.begin(), [](const unsigned char c) {
     return static_cast<char>(std::tolower(c));
@@ -92,9 +103,11 @@ bool endsWith(const std::string& value, const char* suffix) {
   return value.size() >= length && value.compare(value.size() - length, length, suffix) == 0;
 }
 
-// Groups the extensions LibraryIndex actually scans for (see LibraryIndex.cpp) into the categories shown on
-// the filter popup's Type tab - .md rides along with .txt and .xtch with .xtc since those are companion
-// files for the same reader, not formats a user would think to filter separately.
+bool isDeletableFolder(const LibraryIndex::Book& item) {
+  if (item.type != LibraryIndex::Book::Type::FOLDER || item.path.empty() || item.path == "/") return false;
+  return item.path.compare(0, std::string("/.metadata/").size(), "/.metadata/") != 0;
+}
+
 bool matchesTypeFilter(const std::string& path, const std::string& category) {
   if (category.empty()) return true;
   const std::string value = lower(path);
@@ -150,8 +163,6 @@ bool removeTree(const std::string& path, int& removed) {
   return SdMan.removeDir(path.c_str());
 }
 
-// Author metadata is not consistent across ebook sources. Group obvious variants such as
-// "Jane Austen"/"Jane G. Austen" and "Austen, Jane" without changing the stored metadata.
 std::string authorKey(const std::string& value) {
   const size_t comma = value.find(',');
   std::string ordered;
@@ -182,7 +193,7 @@ std::string authorKey(const std::string& value) {
   return tokens.front() + "|" + tokens.back();
 }
 
-}  // namespace
+}
 
 Library::Library(GfxRenderer& renderer, MappedInputManager& mappedInput, std::string path)
     : Page("Library", renderer, mappedInput),
@@ -235,6 +246,7 @@ void Library::onEnter() {
   sortOpen = false;
   filterOpen = false;
   popupBook = -1;
+  folderDeleteConfirm = false;
   sidebarOpen = false;
   stateFilter = StateFilter::None;
   authorFolder.clear();
@@ -326,7 +338,6 @@ void Library::load() {
     books.clear();
   } else if (allBooksMode) {
     if (!AllBooksLibrary::load(items)) return;
-    // All Books contains no folder rows, so Thumb never needs a second catalog for folder covers/counts.
     books.clear();
   } else {
     if (!LibraryIndex::search("", books, LibraryIndex::all)) return;
@@ -360,16 +371,12 @@ void Library::load() {
   }
 
   if (!typeFilter.empty()) {
-    // Folders are exempt - filtering to "PDF" should narrow which books show up, not strand the user unable
-    // to navigate into a subfolder that might contain PDFs further down.
     items.erase(std::remove_if(items.begin(), items.end(), [this](const LibraryIndex::Book& item) {
                   return item.type == LibraryIndex::Book::Type::BOOK && !matchesTypeFilter(item.path, typeFilter);
                 }),
                 items.end());
   }
 
-  // The secondary catalog is only needed when the visible list contains folders. Releasing it for
-  // a flat library avoids retaining a second copy of thousands of Book strings on the heap.
   if (std::none_of(items.begin(), items.end(), [](const LibraryIndex::Book& item) {
         return item.type == LibraryIndex::Book::Type::FOLDER;
       })) {
@@ -407,6 +414,13 @@ void Library::open(const int index) {
   if (index < 0 || index >= static_cast<int>(items.size())) return;
   const LibraryIndex::Book& item = items[static_cast<size_t>(index)];
   if (item.type == LibraryIndex::Book::Type::FOLDER) {
+    if (view == View::Thumb && stateFilter == StateFilter::None && !allBooksMode) {
+      if (const LibraryIndex::Book* book = singleBookInFolder(item.path, books)) {
+        const std::string libraryPath = path;
+        openReaderFromCallback(book->path, [libraryPath] { onGoToLibrary(libraryPath); });
+        return;
+      }
+    }
     if (stateFilter == StateFilter::Author && authorFolder.empty()) {
       authorFolder = item.title;
       authorFolderKey = authorKey(item.title);
@@ -415,7 +429,7 @@ void Library::open(const int index) {
       updateRequired = true;
       return;
     }
-    gThumbPage[path] = thumb.currentPage();  // remember where we were before this Library is destroyed
+    gThumbPage[path] = thumb.currentPage();
     onGoToLibrary(item.path);
   } else {
     const std::string libraryPath = path;
@@ -451,8 +465,6 @@ void Library::loop() {
 
   const bool horizontalSwipe = mappedInput.wasTouchSwipeLeft() || mappedInput.wasTouchSwipeRight();
 
-  // Horizontal swipes are library navigation only. Handle them before the shared
-  // page shell so a root-level swipe is consumed instead of reaching Home.
   if (!filterOpen && !sortOpen && !isOpen() && horizontalSwipe) {
     if (stateFilter == StateFilter::Author && !authorFolder.empty() && mappedInput.wasTouchSwipeRight()) {
       authorFolder.clear();
@@ -535,8 +547,6 @@ void Library::loop() {
   if (view == View::Thumb && thumb.loadNext()) {
     updateRequired = true;
   } else if (view == View::Thumb) {
-    // Visible page is settled - use the idle time to warm the next page's covers. Deliberately does NOT
-    // set updateRequired: nothing on screen changes, so this must not trigger a repaint/refresh.
     thumb.prefetchNextPage();
   }
   renderPage();
@@ -575,8 +585,10 @@ void Library::title() const {
 
 void Library::select(const int index, const bool longPress) {
   if (index < 0 || index >= static_cast<int>(items.size())) return;
-  if (longPress && items[static_cast<size_t>(index)].type == LibraryIndex::Book::Type::BOOK) {
+  if (longPress && (items[static_cast<size_t>(index)].type == LibraryIndex::Book::Type::BOOK ||
+                    isDeletableFolder(items[static_cast<size_t>(index)]))) {
     popupBook = index;
+    folderDeleteConfirm = false;
     sortOpen = false;
     filterOpen = false;
     updateRequired = true;
@@ -587,8 +599,31 @@ void Library::select(const int index, const bool longPress) {
 
 void Library::popup() const {
   const LibraryIndex::Book& book = items[static_cast<size_t>(popupBook)];
-  const std::vector<std::string> actions = {isFavorite(book) ? "Remove favorite" : "Mark as favorite",
-                                            "Delete Book", "Reset"};
+  if (folderDeleteConfirm) {
+    const PopUpBounds box = PopUp::bounds(renderer, 1);
+    PopUp::background(renderer, box);
+    PopUp::title(renderer, box, "Delete " + book.title + "?");
+
+    const int actionY = box.y + box.header;
+    const int halfWidth = box.width / 2;
+    const int font = systemFontId();
+    const int textY = actionY + (box.row - renderer.text.getLineHeight(font)) / 2;
+    const int yesWidth = renderer.text.getWidth(font, "Yes");
+    const int noWidth = renderer.text.getWidth(font, "No");
+    renderer.text.render(font, box.x + (halfWidth - yesWidth) / 2, textY, "Yes", true);
+    renderer.text.render(font, box.x + halfWidth + (box.width - halfWidth - noWidth) / 2, textY, "No", true);
+    renderer.line.render(box.x + halfWidth, actionY, box.x + halfWidth, actionY + box.row, true,
+                         LineRender::Style::Dotted);
+    PopUp::border(renderer, box);
+    return;
+  }
+
+  const bool folder = book.type == LibraryIndex::Book::Type::FOLDER;
+  const std::vector<std::string> actions = folder
+                                             ? std::vector<std::string>{"Delete"}
+                                             : std::vector<std::string>{
+                                                   isFavorite(book) ? "Remove favorite" : "Mark as favorite",
+                                                   "Delete Book", "Reset"};
   const PopUpBounds box = PopUp::bounds(renderer, static_cast<int>(actions.size()));
   PopUp::background(renderer, box);
   PopUp::title(renderer, box, book.title.empty() ? "Book" : book.title);
@@ -600,6 +635,7 @@ bool Library::popupInput() {
   if (mappedInput.wasPressed(MappedInputManager::Button::Back) ||
       (mappedInput.hasTouch() && mappedInput.wasTouchSwipeUp())) {
     popupBook = -1;
+    folderDeleteConfirm = false;
     updateRequired = true;
     return true;
   }
@@ -609,18 +645,52 @@ bool Library::popupInput() {
   float tapY = 0.0f;
   if (!mappedInput.wasTouchTapInScreen(renderer, tapX, tapY)) return false;
 
-  const PopUpBounds box = PopUp::bounds(renderer, 3);
+  const LibraryIndex::Book book = items[static_cast<size_t>(popupBook)];
+  if (folderDeleteConfirm) {
+    const PopUpBounds box = PopUp::bounds(renderer, 1);
+    const int x = static_cast<int>(tapX * renderer.getScreenWidth());
+    const int y = static_cast<int>(tapY * renderer.getScreenHeight());
+    if (x < box.x || x >= box.x + box.width || y < box.y || y >= box.y + box.height) {
+      popupBook = -1;
+      folderDeleteConfirm = false;
+      updateRequired = true;
+      return true;
+    }
+    if (y < box.y + box.header) return true;
+    const int actionY = box.y + box.header;
+    if (y >= actionY && y < actionY + box.row) {
+      if (x < box.x + box.width / 2) {
+        eraseFolder(book);
+      } else {
+        popupBook = -1;
+        folderDeleteConfirm = false;
+        updateRequired = true;
+      }
+    }
+    return true;
+  }
+
+  const bool folder = book.type == LibraryIndex::Book::Type::FOLDER;
+  const int actionCount = folder ? 1 : 3;
+  const PopUpBounds box = PopUp::bounds(renderer, actionCount);
   const int x = static_cast<int>(tapX * renderer.getScreenWidth());
   const int y = static_cast<int>(tapY * renderer.getScreenHeight());
   if (x < box.x || x >= box.x + box.width || y < box.y || y >= box.y + box.height) {
     popupBook = -1;
+    folderDeleteConfirm = false;
     updateRequired = true;
     return true;
   }
 
   const int action = (y - box.y - box.header) / box.row;
-  if (action < 0 || action >= 3) return true;
-  const LibraryIndex::Book book = items[static_cast<size_t>(popupBook)];
+  if (action < 0 || action >= actionCount) return true;
+  if (folder) {
+    if (action == 0) {
+      folderDeleteConfirm = true;
+      updateRequired = true;
+    }
+    return true;
+  }
   if (action == 0) {
     markFavorite(book);
   } else if (action == 1) {
@@ -691,6 +761,58 @@ void Library::erase(const LibraryIndex::Book& book) {
                 return item.path == book.path;
               }),
               books.end());
+  resetViews();
+  restoreThumbPage();
+  if (view == View::Thumb) thumb.load();
+  refreshing = true;
+  LibraryIndexRefresh::start(renderer, this);
+  updateRequired = true;
+}
+
+void Library::eraseFolder(const LibraryIndex::Book& folder) {
+  if (!isDeletableFolder(folder)) {
+    popupBook = -1;
+    folderDeleteConfirm = false;
+    updateRequired = true;
+    return;
+  }
+
+  bool deleted = false;
+  int removed = 0;
+  {
+    SdIoMutex::Lock lock;
+    deleted = removeTree(folder.path, removed);
+  }
+  if (!deleted) {
+    popupBook = -1;
+    folderDeleteConfirm = false;
+    updateRequired = true;
+    return;
+  }
+
+  const std::string prefix = folder.path + "/";
+  for (const LibraryIndex::Book& item : books) {
+    if (item.type != LibraryIndex::Book::Type::BOOK ||
+        item.path.compare(0, prefix.size(), prefix) != 0) {
+      continue;
+    }
+    BOOK_STATE.removeBook(item.path);
+    RECENT_BOOKS.removeBook(item.path);
+    favorites.erase(item.path);
+  }
+  EpubNotesIndex::invalidate();
+  gThumbPage.erase(folder.path);
+  items.erase(std::remove_if(items.begin(), items.end(), [&folder](const LibraryIndex::Book& item) {
+                return item.path == folder.path;
+              }),
+              items.end());
+  books.erase(std::remove_if(books.begin(), books.end(), [&prefix](const LibraryIndex::Book& item) {
+                return item.path.compare(0, prefix.size(), prefix) == 0;
+              }),
+              books.end());
+
+  popupBook = -1;
+  folderDeleteConfirm = false;
   resetViews();
   restoreThumbPage();
   if (view == View::Thumb) thumb.load();
@@ -811,7 +933,6 @@ bool Library::handleSidebarInput() {
       thumb.setPage(0);
       load();
     } else {
-      // Keep the currently selected List/Grid/Thumbnail layout when switching the data source.
       const View selectedView = view;
       SETTINGS.libraryMode = selectedView == View::List
                                  ? SystemSetting::LIBRARY_LIST
@@ -872,8 +993,6 @@ void Library::drawSidebar() const {
 }
 
 navigation::Menu::Action Library::centerTap(const int tapX, const int tapY) const {
-  // Keep the 40px icon unchanged, but give refresh a larger touch-only target.
-  // The extra area sits in the existing gap to the filter button.
   if (tapX >= buttonX(3) - refreshTouchPadding && tapX < buttonX(3) + buttonSize + refreshTouchPadding &&
       tapY >= buttonY() - refreshTouchPadding && tapY < buttonY() + buttonSize + refreshTouchPadding) {
     return navigation::Menu::Action::Refresh;
@@ -1089,11 +1208,10 @@ void Library::filterPopup() const {
   constexpr int titleHeight = 28;
   constexpr int tabContentGap = 20;
   constexpr int gap = 10;
-  constexpr int allRowGap = 10;       // gap between the 3x3 grid and the All row
-  constexpr int allBottomMargin = 20;  // gap between the All row and the panel's bottom border
+  constexpr int allRowGap = 10;
+  constexpr int allBottomMargin = 20;
   const int gridY = panelY + padding + titleHeight + tabContentGap;
   const int cellWidth = (panelWidth - padding * 2 - gap * 2) / 3;
-  // 4 cell-sized rows total (3 grid rows + the All row), plus the gaps between/around them.
   const int cellHeight =
       (panelHeight - padding * 2 - titleHeight - tabContentGap - gap * 2 - allRowGap - allBottomMargin) / 4;
   const int selectorSize = std::min(cellWidth, cellHeight);
@@ -1102,8 +1220,6 @@ void Library::filterPopup() const {
   renderer.rectangle.fill(panelX, panelY, panelWidth, panelHeight, false);
   renderer.rectangle.render(panelX, panelY, panelWidth, panelHeight, true);
 
-  // Title | Type | Options header, replacing the old single "Filter" label - each tab gets an equal-width
-  // column of the panel so hit-testing (handleFilterTap()) is just tapX divided by the column width.
   static constexpr const char* kTabLabels[] = {"Title", "Type", "Options"};
   const int tabAreaX = panelX + padding;
   const int tabAreaWidth = panelWidth - padding * 2;
@@ -1152,8 +1268,6 @@ void Library::filterPopup() const {
     renderer.text.render(font, panelX + (panelWidth - allWidth) / 2, allYText, "All", !allSelected,
                          EpdFontFamily::BOLD);
   } else if (filterTab == FilterTab::Type) {
-    // Same 3-column cell grid the Title tab uses (cellWidth/cellHeight/selectorSize), just with 5 type
-    // options instead of 9 letters - row 1's third cell is simply left empty.
     constexpr int typeOptionCount = 5;
     for (int index = 0; index < typeOptionCount; ++index) {
       const int column = index % 3;
@@ -1199,7 +1313,6 @@ void Library::handleFilterTap(const int tapX, const int tapY) {
       (panelHeight - padding * 2 - titleHeight - tabContentGap - gap * 2 - allRowGap - allBottomMargin) / 4;
   const int selectorSize = std::min(cellWidth, cellHeight);
 
-  // Title | Type | Options header - same equal-width columns filterPopup() draws the labels into.
   if (tapY >= panelY && tapY < gridY) {
     const int tabAreaX = panelX + padding;
     const int tabAreaWidth = panelWidth - padding * 2;
@@ -1246,7 +1359,6 @@ void Library::handleFilterTap(const int tapX, const int tapY) {
       }
     }
   } else if (filterTab == FilterTab::Type) {
-    // Same cell grid hit-test as the Title tab above, just capped to 5 real options instead of 9.
     constexpr int typeOptionCount = 5;
     const int gridBottom = gridY + 2 * (cellHeight + gap);
     if (tapX >= panelX + padding && tapX < panelX + panelWidth - padding && tapY >= gridY && tapY < gridBottom) {

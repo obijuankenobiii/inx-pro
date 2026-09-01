@@ -1,7 +1,6 @@
 #pragma once
 #include <cstdint>
 
-// 40x40 1-bit enter icon converted from the supplied artwork.
 static const uint8_t Enter[] = {
     0xff, 0xff, 0xff, 0xff, 0xff,
     0xff, 0xff, 0xff, 0xff, 0xff,

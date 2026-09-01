@@ -12,7 +12,7 @@
 namespace {
 constexpr uint8_t STATE_FILE_VERSION = 3;
 constexpr char STATE_FILE[] = "/.system/state.bin";
-}  // namespace
+}
 
 Session Session::instance;
 

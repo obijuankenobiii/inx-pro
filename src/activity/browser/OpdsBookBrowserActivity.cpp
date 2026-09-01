@@ -12,7 +12,9 @@
 #include <WiFi.h>
 
 #include "activity/page/SubPage.h"
+#include "activity/page/components/global/Button.h"
 #include "activity/network/WifiSelectionActivity.h"
+#include "images/Download.h"
 #include "network/HttpDownloader.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
@@ -24,7 +26,47 @@ namespace {
 constexpr int PAGE_ITEMS = 8;
 constexpr int SKIP_PAGE_MS = 700;
 constexpr int kListItemHeight = Page::LIST_ITEM_HEIGHT;
-}  // namespace
+constexpr int kBodyTop = FREEINK_DEVICE_X4PRO ? 80 : 70;
+
+ButtonBounds retryButtonBounds(const GfxRenderer& renderer) {
+  const int width = Button::width(renderer, "Retry", systemFontId());
+  return {renderer.getScreenWidth() - width - 20, renderer.getScreenHeight() - Button::height - 20, width,
+          Button::height};
+}
+
+constexpr int kActionIconSize = 40;
+constexpr int kActionGap = 10;
+constexpr int kActionRightMargin = 20;
+constexpr int kActionBottomMargin = 20;
+
+int actionButtonWidth(const GfxRenderer& renderer, const char* label) {
+  return renderer.text.getWidth(systemFontId(), label) + kActionIconSize + kActionGap + Button::horizontalPadding * 2;
+}
+
+ButtonBounds downloadButtonBounds(const GfxRenderer& renderer) {
+  const int width = actionButtonWidth(renderer, "Download");
+  return {renderer.getScreenWidth() - kActionRightMargin - width,
+          renderer.getScreenHeight() - kActionBottomMargin - Button::height, width, Button::height};
+}
+
+void renderDownloadButton(const GfxRenderer& renderer, const ButtonBounds& bounds) {
+  const int font = systemFontId();
+  const int labelWidth = renderer.text.getWidth(font, "Download");
+  const int contentWidth = labelWidth + kActionGap + kActionIconSize;
+  const int contentX = bounds.x + (bounds.width - contentWidth) / 2;
+  const int textY = bounds.y + (bounds.height - renderer.text.getLineHeight(font)) / 2;
+  const int iconY = bounds.y + (bounds.height - kActionIconSize) / 2;
+
+  Button::render(renderer, bounds, "", true, font);
+  renderer.text.render(font, contentX, textY, "Download", false, EpdFontFamily::REGULAR);
+  renderer.bitmap.icon(Download, contentX + labelWidth + kActionGap, iconY, kActionIconSize, kActionIconSize,
+                       BitmapRender::Orientation::None, true);
+}
+
+bool contains(const ButtonBounds& bounds, const int x, const int y) {
+  return x >= bounds.x && x < bounds.x + bounds.width && y >= bounds.y && y < bounds.y + bounds.height;
+}
+}
 
 /** Static trampoline that dispatches to the instance's displayTaskLoop. */
 void OpdsBookBrowserActivity::taskTrampoline(void* param) {
@@ -49,9 +91,6 @@ void OpdsBookBrowserActivity::onEnter() {
   const bool wifiAlreadyConnected =
       WiFi.status() == WL_CONNECTED && WiFi.localIP() != IPAddress(0, 0, 0, 0);
   if (!wifiAlreadyConnected) {
-    // Create the child before the browser renderer task. Otherwise the browser
-    // can paint one frame while the Wi-Fi selector is taking ownership of the
-    // same framebuffer, producing a zoomed/doubled transition.
     checkAndConnectWifi();
   }
 
@@ -89,6 +128,21 @@ void OpdsBookBrowserActivity::loop() {
   if (SubPage::closeInput(renderer, mappedInput, onGoToHome)) return;
 
   if (state == BrowserState::ERROR) {
+    if (mappedInput.hasTouch()) {
+      float tapNx = 0.0f;
+      float tapNy = 0.0f;
+      if (mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy)) {
+        const int tapX = static_cast<int>(tapNx * renderer.getScreenWidth());
+        const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
+        if (contains(retryButtonBounds(renderer), tapX, tapY)) {
+          state = BrowserState::LOADING;
+          statusMessage = "Loading...";
+          updateRequired = true;
+          fetchFeed(currentPath);
+        }
+        return;
+      }
+    }
     if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
       if (WiFi.status() == WL_CONNECTED && WiFi.localIP() != IPAddress(0, 0, 0, 0)) {
         INX_SERIAL.printf("[%lu] [OPDS] Retry: WiFi connected, retrying fetch\n", millis());
@@ -125,6 +179,36 @@ void OpdsBookBrowserActivity::loop() {
   }
 
   if (state == BrowserState::BROWSING) {
+    if (mappedInput.hasTouch()) {
+      float tapNx = 0.0f;
+      float tapNy = 0.0f;
+      if (mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy)) {
+        if (!entries.empty() && entries[static_cast<size_t>(selectorIndex)].type == OpdsEntryType::BOOK) {
+          const int tapX = static_cast<int>(tapNx * renderer.getScreenWidth());
+          const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
+          if (contains(downloadButtonBounds(renderer), tapX, tapY)) {
+            downloadBook(entries[static_cast<size_t>(selectorIndex)]);
+            return;
+          }
+        }
+
+        const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
+        const int pageStartIndex = selectorIndex / PAGE_ITEMS * PAGE_ITEMS;
+        const int visibleIndex = (tapY - kBodyTop) / kListItemHeight;
+        const int tappedIndex = pageStartIndex + visibleIndex;
+        if (tapY >= kBodyTop && visibleIndex >= 0 && visibleIndex < PAGE_ITEMS &&
+            tappedIndex >= 0 && tappedIndex < static_cast<int>(entries.size())) {
+          selectorIndex = tappedIndex;
+          const auto& entry = entries[static_cast<size_t>(tappedIndex)];
+          if (entry.type == OpdsEntryType::BOOK) {
+            downloadBook(entry);
+          } else {
+            navigateToEntry(entry);
+          }
+        }
+        return;
+      }
+    }
     const bool prevReleased = mappedInput.wasReleased(MappedInputManager::Button::Up) ||
                               mappedInput.wasReleased(MappedInputManager::Button::Left);
     const bool nextReleased = mappedInput.wasReleased(MappedInputManager::Button::Down) ||
@@ -163,9 +247,6 @@ void OpdsBookBrowserActivity::loop() {
 /** Background task loop that renders the screen when an update is required. */
 void OpdsBookBrowserActivity::displayTaskLoop() {
   while (true) {
-    // The Wi-Fi selector owns the renderer while it is open. Rendering the
-    // browser underneath it races the selector's display task and can leave
-    // its "Searching for connections..." frame ghosted over the next page.
     if (subActivity) {
       vTaskDelay(10 / portTICK_PERIOD_MS);
       continue;
@@ -208,6 +289,7 @@ void OpdsBookBrowserActivity::render() const {
   if (state == BrowserState::ERROR) {
     renderer.text.centered(systemFontId(), pageHeight / 2 - 20, "Error:");
     renderer.text.centered(systemFontId(), pageHeight / 2 + 10, errorMessage.c_str());
+    Button::render(renderer, retryButtonBounds(renderer), "Retry", true, systemFontId());
     const auto labels = mappedInput.mapLabels("« Back", "Retry", "", "");
     renderer.displayBuffer();
     return;
@@ -267,6 +349,10 @@ void OpdsBookBrowserActivity::render() const {
     renderer.text.render(systemFontId(), 20, textY, item.c_str(), !isSelected);
     renderer.line.render(0, itemY + kListItemHeight - 1, pageWidth, itemY + kListItemHeight - 1, true,
                          LineRender::Style::Dotted);
+  }
+
+  if (entries[static_cast<size_t>(selectorIndex)].type == OpdsEntryType::BOOK) {
+    renderDownloadButton(renderer, downloadButtonBounds(renderer));
   }
 
   renderer.displayBuffer();

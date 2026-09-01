@@ -2,13 +2,13 @@
 
 Reimagined. Improved. Simplified.
 
-Inx Pro is a community firmware for Seeed Studio's reTerminal Sticky e-paper reader. It is focused on a cleaner reading experience, better EPUB support, native image rendering, SD-card fonts, and practical device tools.
+Inx Pro is a community firmware for Seeed Studio's reTerminal Sticky and Xteink X4 Pro e-paper reader. It is focused on a cleaner reading experience, better EPUB support, native image rendering, SD-card fonts, and practical device tools.
 
-*This project is a fork of CrossPoint and is not affiliated with Seeed Studio.*
+*This project was a fork of CrossPoint and is no longer pulling changes from it*
 
 ---
 
-![](./docs/images/cover.jpg)
+![](./docs/images/cover.png)
 
 ## What You Can Do
 
@@ -86,7 +86,7 @@ Inx Pro is a community firmware for Seeed Studio's reTerminal Sticky e-paper rea
 
 - Join Wi-Fi networks.
 - Create a hotspot.
-- Connect to Calibre.
+- Calibre File Transfer.
 - Browse OPDS catalogs.
 - Use KOReader sync.
 - Upload files through the local web interface.
@@ -206,6 +206,8 @@ You can also install fonts on the SD card:
 ```
 
 The web font manager converts TTF/OTF files into the `.bin` format used by the reader. Regular is required; bold, italic, and bold italic are optional.
+
+The device **Settings -> Reader -> Font Manager** lists the static ZIP catalog from the [`inx-font`](https://github.com/obijuankenobiii/inx-font) repository. Each font is available as a `1-bit` and `2-bit` pack. Select a pack to download it; the compiled files are extracted into `/fonts/<family> <variant>/` and become available in Reader presets. Packs are limited to 5 MB.
 
 ## Custom Sleep Images
 

@@ -47,17 +47,15 @@ int pageNoteCenterY(const GfxRenderer& renderer) {
 }
 
 void pageNotePopupBounds(const GfxRenderer& renderer, int& x, int& y, int& width, int& height) {
-  // Page notes use a bottom sheet so the reader page remains the visual context.
   width = renderer.getScreenWidth();
   height = 240;
   x = 0;
   y = renderer.getScreenHeight() - height;
 }
-}  // namespace
+}
 
 void EpubActivity::startVoiceNoteForPage() {
 #if !FREEINK_CAP_MIC
-  // X4 Pro has no microphone. Use the shared keyboard entry for page notes.
   enterNewActivity(new KeyboardEntryActivity(
       renderer, mappedInput, "Add note", "", 10, 256, false,
       [this](const std::string& note) {
@@ -85,8 +83,6 @@ void EpubActivity::startVoiceNoteForPage() {
       [this](const std::string& audioPath, const bool success) {
         INX_SERIAL.printf("[%lu] [VOICE-NOTE] page captured path=%s success=%d\n", millis(), audioPath.c_str(),
                           success ? 1 : 0);
-        // Do not destroy VoiceNoteActivity from inside its own finish()/loop()
-        // call. The parent consumes this completion after the child returns.
         pageNoteVoicePath_ = audioPath;
         pageNoteVoiceSuccess_ = success;
         pageNoteVoiceCompletionPending_ = true;
@@ -96,7 +92,7 @@ void EpubActivity::startVoiceNoteForPage() {
         pageNoteVoiceSuccess_ = false;
         pageNoteVoiceCompletionPending_ = true;
       }));
-#endif  // FREEINK_CAP_MIC
+#endif
 }
 
 void EpubActivity::savePageNoteAudio(const std::string& audioPath) {
@@ -162,8 +158,6 @@ bool EpubActivity::consumePageNoteVoiceCompletion() {
   pageNoteVoiceSuccess_ = false;
   pageNoteVoicePath_.clear();
 
-  // VoiceNoteActivity has returned from its loop at this point, so it is now
-  // safe to destroy it and continue the page-note workflow.
   exitActivity();
   if (success) {
     savePageNoteAudio(audioPath);
@@ -273,8 +267,6 @@ void EpubActivity::pollPageNoteTranscription() {
     if (EpubAnnotationStorage::update(pageNoteCachePath_, pageNoteRecord_, updated)) {
       pageNoteRecord_ = updated;
       if (section) {
-        // ensurePageLoaded() intentionally skips the read when the same shard
-        // is cached, so invalidate that in-memory shard after updating it.
         annUi_.annotations().clearSession();
         annUi_.annotations().ensurePageLoaded(pageNoteCachePath_, currentSpineIndex, section->currentPage);
       }
@@ -403,7 +395,6 @@ void EpubActivity::drawPageNoteIndicator() {
   const int centerX = pageNoteCenterX(renderer);
   const int centerY = pageNoteCenterY(renderer);
 
-  // Use the supplied notes artwork directly at 20x20, flush with the bottom-right edge.
   const int iconX = centerX - kPageNoteIconSize / 2;
   const int iconY = centerY - kPageNoteIconSize / 2;
   renderer.bitmap.icon(PageNoteIcon, iconX, iconY, kPageNoteIconSize, kPageNoteIconSize,

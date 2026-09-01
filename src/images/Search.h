@@ -1,9 +1,6 @@
 #pragma once
 #include <cstdint>
 
-// Search icon converted from the supplied artwork to a 40x40 1-bit bitmap.
-// The bitmap has a white background and a black outline; Menu draws it
-// inverted over the black circular search button.
 static const uint8_t Search[] = {
     0xff, 0xff, 0xff, 0xff, 0xff,
     0xff, 0xff, 0xff, 0xff, 0xff,

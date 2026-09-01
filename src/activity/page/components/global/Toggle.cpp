@@ -27,7 +27,7 @@ void fillPill(const GfxRenderer& renderer, const ToggleBounds& bounds, const Gfx
   fillCircleTone(renderer, leftCenter, bounds.y + radius, radius, tone);
   fillCircleTone(renderer, rightCenter, bounds.y + radius, radius, tone);
 }
-}  // namespace
+}
 
 ToggleBounds Toggle::bounds(const int valueColumnRight, const int itemY, const int itemHeight) {
   return {valueColumnRight - width, itemY + (itemHeight - height) / 2, width, height};
@@ -43,8 +43,6 @@ void Toggle::render(const GfxRenderer& renderer, const ToggleBounds& toggleBound
                        : toggleBounds.x + toggleBounds.height / 2;
   renderer.circle.render(knobX, toggleBounds.y + toggleBounds.height / 2, radius, false);
 
-  // Selected rows use an ink background. Keep the enabled black track legible without changing
-  // the normal on/off colors by adding only a paper outline in that case.
   if (rowSelected && on) {
     renderer.rectangle.render(toggleBounds.x, toggleBounds.y, toggleBounds.width, toggleBounds.height, false, true);
   }

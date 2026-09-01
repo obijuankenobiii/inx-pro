@@ -11,8 +11,6 @@ PdfObject parsePdfValue(PdfLexer& lexer, const PdfToken& tok) {
   switch (tok.type) {
     case PdfTokenType::Number: {
       if (tok.isInteger && tok.number >= 0) {
-        // Could be the start of "N G R" (indirect reference) or "N G obj" (handled by the caller, not here).
-        // Look ahead without consuming unless it really is "N G R".
         const size_t save = lexer.position();
         const PdfToken second = lexer.next();
         if (second.type == PdfTokenType::Number && second.isInteger && second.number >= 0) {
@@ -48,7 +46,6 @@ PdfObject parsePdfValue(PdfLexer& lexer, const PdfToken& tok) {
         const PdfToken keyTok = lexer.next();
         if (keyTok.type == PdfTokenType::DictEnd || keyTok.type == PdfTokenType::Eof) break;
         if (keyTok.type != PdfTokenType::Name) {
-          // Malformed - skip one token and keep trying to resync on the next '/' or '>>'.
           continue;
         }
         PdfObject value = parseNextPdfValue(lexer);
@@ -59,7 +56,7 @@ PdfObject parsePdfValue(PdfLexer& lexer, const PdfToken& tok) {
     case PdfTokenType::Keyword: {
       if (tok.text == "true") return PdfObject::makeBool(true);
       if (tok.text == "false") return PdfObject::makeBool(false);
-      return PdfObject::makeNull();  // "null" and anything unrecognized
+      return PdfObject::makeNull();
     }
     default:
       return PdfObject::makeNull();

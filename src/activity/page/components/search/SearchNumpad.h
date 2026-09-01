@@ -21,5 +21,5 @@ void render(const GfxRenderer& renderer, int top, int bottom, const State& state
 bool tap(const GfxRenderer& renderer, int top, int bottom, int x, int y, State& state, std::string& value);
 bool consumeCollapse(State& state);
 
-}  // namespace Numpad
-}  // namespace SearchKeyboardLayout
+}
+}

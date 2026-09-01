@@ -19,9 +19,9 @@
 
 namespace {
 
-constexpr uint32_t kAnnMagicV3 = 0x334E4E41;  // "ANN3"
-constexpr uint32_t kAnnMagicV4 = 0x344E4E41;  // "ANN4" (adds note text)
-constexpr uint32_t kAnnMagicV5 = 0x354E4E41;  // "ANN5" (adds recorded note audio path)
+constexpr uint32_t kAnnMagicV3 = 0x334E4E41;
+constexpr uint32_t kAnnMagicV4 = 0x344E4E41;
+constexpr uint32_t kAnnMagicV5 = 0x354E4E41;
 
 std::vector<std::string> splitAnnotationWords(const std::string& text) {
   std::vector<std::string> words;
@@ -360,7 +360,7 @@ bool sameRecord(const EpubAnnotationRecord& left, const EpubAnnotationRecord& ri
          left.noteAudioPath == right.noteAudioPath && left.note == right.note;
 }
 
-}  // namespace
+}
 
 void EpubAnnotations::clearSession() {
   records_.clear();
@@ -549,8 +549,6 @@ bool EpubAnnotations::tryAppendPreciseHighlightRanges(const EpubAnnotationRecord
       const size_t lo = static_cast<size_t>(r.pageWordLo);
       const size_t hi = static_cast<size_t>(r.pageWordHi);
       if (!wordRangeMatchesStoredText(annWords, lo, hi, r.text)) {
-        // Stale index from a repagination (e.g. a font change) - let the caller fall back to searching
-        // for the stored phrase text instead of highlighting whatever now sits at that old position.
         return false;
       }
       appendRange(lo, hi);
@@ -617,10 +615,6 @@ void EpubAnnotations::mergeStoredRangesForPage(const std::vector<EpubAnnotationR
           pos += consumed;
           ++k;
         }
-        // Only trust a run that reaches the end of the stored phrase (a full or tail match) or the end of
-        // this page's words (a match that continues onto the next page, for a highlight spanning pages) -
-        // a run that stops partway through both is coincidental (e.g. a common short word like "a"
-        // recurring elsewhere on the page), not the highlighted phrase.
         if (a + k == aw.size() || pos == n) {
           raw.emplace_back(i, pos - 1);
         }
@@ -666,8 +660,6 @@ void EpubAnnotations::migrateSpineAnnotations(const std::string& cachePath, cons
     return;
   }
 
-  // A multi-page record was written into every shard it touches, so gathering from all of this spine's
-  // shards can yield duplicates of the same logical record - collapse those before relocating anything.
   std::vector<EpubAnnotationRecord> allRecords;
   {
     std::vector<std::string> seenKeys;
@@ -718,8 +710,6 @@ void EpubAnnotations::migrateSpineAnnotations(const std::string& cachePath, cons
         continue;
       }
       EpubAnnotationRecord& r = allRecords[idx];
-      // Only single-page-within-this-spine records get relocated by phrase search; a multi-page span keeps
-      // its stored position below rather than risk mis-splitting it across the new pagination.
       if (r.startSpine != spineIndex || r.endSpine != spineIndex || r.startPage != r.endPage) {
         continue;
       }
@@ -743,9 +733,6 @@ void EpubAnnotations::migrateSpineAnnotations(const std::string& cachePath, cons
     }
   }
 
-  // Anything not relocated (phrase not found anywhere, or a multi-page span) keeps its stored position so
-  // the highlight isn't lost outright, clamped into range and with its index marked unknown so a future
-  // render falls back to a same-page phrase search rather than trusting a now-unverifiable range.
   std::map<int, std::vector<EpubAnnotationRecord>> byNewPage;
   for (size_t idx = 0; idx < allRecords.size(); ++idx) {
     EpubAnnotationRecord& r = allRecords[idx];

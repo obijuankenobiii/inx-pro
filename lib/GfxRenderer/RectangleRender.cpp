@@ -28,7 +28,7 @@ int CornerSpanFromRy(const int r, const int ry) {
   }
   return static_cast<int>(std::sqrt(static_cast<double>(inner)));
 }
-}  // namespace
+}
 
 void RectangleRender::render(const int x, const int y, const int width, const int height, const bool state,
                              const bool rounded, const bool subtle) const {

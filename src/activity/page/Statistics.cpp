@@ -424,7 +424,7 @@ int drawFourColumnStats2x2(const GfxRenderer& renderer, int innerLeft, int y, in
   return drawFourColumnStatsNx2(renderer, innerLeft, y, innerW, vals, labs, 2, cellH, row0LiftPx, 0);
 }
 
-}  // namespace
+}
 
 void Statistics::loadStats() {
   ScreenComponents::LoadingProgressLayout layout =
@@ -988,9 +988,6 @@ void Statistics::loop() {
         updateRequired = true;
         return;
       }
-      // Statistics is a sub-page. Ordinary taps belong to this screen and
-      // must not be returned to Page's shared navigation input on a later
-      // loop, where a lower-right tap can be interpreted as Search.
       renderPage();
       return;
     }

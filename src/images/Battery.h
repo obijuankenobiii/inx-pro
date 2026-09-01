@@ -2,9 +2,6 @@
 
 #include <cstdint>
 
-// The supplied portrait battery artwork, rotated for the horizontal status-bar
-// layout and mirrored so the terminal is on the right. Both icons are 28x14,
-// 1-bit, MSB-first.
 static const uint8_t BatteryIcon[] = {
     0x00, 0x00, 0x00, 0x7f, 0x00, 0x00, 0x00, 0x7f,
     0x00, 0x00, 0x00, 0x7f, 0x1f, 0xff, 0xfc, 0x7f,

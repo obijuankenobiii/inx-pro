@@ -20,7 +20,7 @@
 namespace {
 constexpr const char* kOrientationLabels[] = {"Portrait", "Landscape CW", "Inverted", "Landscape CCW"};
 constexpr int kOrientationCount = 4;
-}  // namespace
+}
 
 void OrientationPickerUi::enter(EpubActivity& act) {
   mode_ = true;
@@ -65,7 +65,7 @@ void OrientationPickerUi::handleInput(EpubActivity& act) {
 
   if (m.wasReleased(MappedInputManager::Button::Back)) {
     mode_ = false;
-    act.renderScreen(true);  // redraw the clean reader page, erasing the popup
+    act.renderScreen(true);
     return;
   }
   if (m.wasReleased(MappedInputManager::Button::Confirm)) {
@@ -73,8 +73,6 @@ void OrientationPickerUi::handleInput(EpubActivity& act) {
     act.bookSettings.orientation = static_cast<uint8_t>(selected_);
     act.bookSettings.markCustomSettings();
     act.saveBookSettings();
-    // Same deferred relayout path the Book Settings drawer uses when orientation changes - the next
-    // loop() picks up bookSettings.orientation != bookLayoutAppliedOrientation_ and rebuilds the page.
     act.isToggleClosed = true;
     act.updateRequired = true;
     return;

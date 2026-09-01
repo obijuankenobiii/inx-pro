@@ -94,7 +94,7 @@ void renderThumbnail(GfxRenderer& renderer, const RecentBook& book, const int x,
                            SETTINGS.bitmapRoundedCorners == 2);
 }
 
-}  // namespace
+}
 
 void Recent::render(const int x, const int y, const int width, const int height, const bool background,
                     const HomeTheme::CarouselStyle style, const bool showLabel,

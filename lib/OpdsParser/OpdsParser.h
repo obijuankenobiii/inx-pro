@@ -38,9 +38,9 @@ using OpdsBook = OpdsEntry;
  *   if (parser.parse(xmlData, xmlLength)) {
  *     for (const auto& entry : parser.getEntries()) {
  *       if (entry.type == OpdsEntryType::BOOK) {
- *         // Downloadable book
+ *
  *       } else {
- *         // Navigation link to another catalog
+ *
  *       }
  *     }
  *   }

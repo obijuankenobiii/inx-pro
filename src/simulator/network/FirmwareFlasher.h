@@ -30,7 +30,7 @@ Result flashFromSdPath(const char* path, ProgressCb onProgress, void* ctx, bool 
 Result validateImageFile(const char* path, size_t maxBytes);
 const char* resultName(Result result);
 
-}  // namespace firmware_flash
+}
 
 #else
 #error "src/simulator/network/FirmwareFlasher.h is only for simulator builds"

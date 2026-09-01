@@ -64,8 +64,6 @@ std::string authorForBook(const std::string& path) {
 
   if (lowerPath.size() >= 5 && lowerPath.compare(lowerPath.size() - 5, 5, ".epub") == 0) {
     Epub epub(path, "/.metadata/epub");
-    // Prefer the existing metadata cache. Generate it only when this explicit action is asked to
-    // populate authors, so opening the library never becomes an EPUB parsing operation.
     if (!epub.load(false) && !epub.load(true)) return {};
     return epub.getAuthor();
   }
@@ -125,7 +123,7 @@ bool scanPath(const std::string& path, FsFile& output, int& current, const int t
   directory.close();
   return !(shouldCancel && shouldCancel());
 }
-}  // namespace
+}
 
 bool AuthorIndex::hasIndex() { return SdMan.exists(kIndexPath); }
 

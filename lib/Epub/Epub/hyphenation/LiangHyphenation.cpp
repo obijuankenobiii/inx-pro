@@ -249,7 +249,7 @@ std::vector<size_t> collectBreakIndexes(const std::vector<CodepointInfo>& cps, c
   return indexes;
 }
 
-}  // namespace
+}
 
 std::vector<size_t> liangBreakIndexes(const std::vector<CodepointInfo>& cps,
                                       const SerializedHyphenationPatterns& patterns, const LiangWordConfig& config) {

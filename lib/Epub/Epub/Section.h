@@ -41,10 +41,6 @@ class Section {
     uint32_t usedAt = 0;
     std::unique_ptr<Page> page;
   };
-  // The page data is mostly text/layout objects. Keep the previous, current,
-  // rendered-next, and layout-only next+1 objects in PSRAM. This removes the
-  // SD deserialize before the next compositor pass without caching pixels or
-  // an unbounded chapter.
   std::array<CachedPage, 4> pageCache{};
   uint32_t pageCacheClock = 0;
   std::unique_ptr<ChapterHtmlSlimParser> incrementalParser_;

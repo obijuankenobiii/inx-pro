@@ -78,7 +78,7 @@ CenteredCarouselLayout centeredBounds(const int areaX, const int areaY, const in
   const int sideY = centerY + (centerHeight - sideHeight) / 2;
   return {centerX, centerY, centerWidth, centerHeight, centerX - sideWidth - gap, sideY, sideWidth, sideHeight, gap};
 }
-}  // namespace
+}
 
 void Favorites::load() const {
   books_ = BOOK_STATE.getFavoriteBooks();
@@ -148,8 +148,6 @@ int Favorites::cardWidth(const BookState::Book& book, const int width, const int
   sourceDimensions(book, sourceWidth, sourceHeight);
   const int naturalWidth = std::max(24, static_cast<int>(std::lround(
                                              static_cast<float>(contentHeight) * sourceWidth / sourceHeight)));
-  // Keep two full covers and both 20 px gaps inside the widget while reserving
-  // the remaining right-hand space for the next full-height cropped cover.
   const int maxCardWidth = std::max(24, (width - kHorizontalPadding - kCardGap * 2) * 9 / 20);
   return std::min(naturalWidth, maxCardWidth);
 }
@@ -253,8 +251,6 @@ void Favorites::render(const int index, const int x, const int y, const int widt
     CardBounds visibleCard = card;
     visibleCard.width = std::min(card.width, x + width - card.x);
     if (visibleCard.width <= 0) break;
-    // The renderer has no widget clip stack. Truncate the last card's bounds
-    // before drawing so it cannot spill into the neighboring home cell.
     renderCover(books_[static_cast<size_t>(bookIndex)], visibleCard,
                 visibleCard.width < card.width || SETTINGS.thumbnailSize == SystemSetting::THUMBNAIL_EVEN,
                 shadowStyle);

@@ -47,9 +47,6 @@ PdfToken PdfLexer::peek() {
 }
 
 PdfToken PdfLexer::next() {
-  // Loops (rather than recursing) past stray ')' bytes: a mis-located or corrupted content stream can
-  // contain long runs of arbitrary binary data, and recursing once per stray byte risked unbounded stack
-  // growth on this embedded target instead of just skipping forward.
   while (true) {
     skipWhitespaceAndComments();
 
@@ -61,7 +58,6 @@ PdfToken PdfLexer::next() {
 
     const uint8_t c = data_[pos_];
     if (c == ')') {
-      // Unbalanced ')' outside of readLiteralString - skip defensively and keep scanning.
       pos_++;
       continue;
     }
@@ -88,7 +84,6 @@ PdfToken PdfLexer::nextToken(const uint8_t c) {
       tok.type = PdfTokenType::DictEnd;
       return tok;
     }
-    // Stray '>' - treat as a single-char keyword so callers can recover instead of looping.
     pos_++;
     tok.type = PdfTokenType::Keyword;
     tok.text = ">";
@@ -105,7 +100,6 @@ PdfToken PdfLexer::nextToken(const uint8_t c) {
     return tok;
   }
   if (c == '{' || c == '}') {
-    // PostScript calculator braces (Type 4 functions) - not evaluated in Phase 1, surface as a keyword.
     pos_++;
     tok.type = PdfTokenType::Keyword;
     tok.text = std::string(1, static_cast<char>(c));
@@ -142,7 +136,6 @@ PdfToken PdfLexer::readNumberOrKeyword() {
   }
 
   if (isNumeric && sawDigit) {
-    // Confirm nothing keyword-like directly follows (defensive; PDF numbers are delimiter/whitespace terminated).
     pos_ = p;
     PdfToken tok;
     tok.type = PdfTokenType::Number;
@@ -151,13 +144,11 @@ PdfToken PdfLexer::readNumberOrKeyword() {
     return tok;
   }
 
-  // Fall back to keyword: read until whitespace or delimiter.
   pos_ = start;
   while (pos_ < size_ && !isWhitespace(data_[pos_]) && !isDelimiter(data_[pos_])) {
     pos_++;
   }
   if (pos_ == start) {
-    // Single delimiter-ish byte we don't otherwise handle - consume one byte to guarantee forward progress.
     pos_++;
   }
 
@@ -188,7 +179,6 @@ PdfToken PdfLexer::readName() {
 }
 
 PdfToken PdfLexer::readLiteralString() {
-  // Assumes data_[pos_] == '('.
   pos_++;
   std::string out;
   int depth = 1;
@@ -255,7 +245,6 @@ PdfToken PdfLexer::readLiteralString() {
 }
 
 PdfToken PdfLexer::readAngleBracketToken() {
-  // data_[pos_] == '<'.
   if (peekByte(1) == '<') {
     pos_ += 2;
     PdfToken tok;
@@ -263,7 +252,7 @@ PdfToken PdfLexer::readAngleBracketToken() {
     return tok;
   }
 
-  pos_++;  // consume '<'
+  pos_++;
   std::string out;
   int hi = -1;
   while (pos_ < size_ && data_[pos_] != '>') {

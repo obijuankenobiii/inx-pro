@@ -34,5 +34,5 @@ namespace x4pro {
 /** The scaled bank, built once on first use. Returns 5 tables of 49 bytes. */
 const uint8_t (*scaledGrayBank())[49];
 
-}  // namespace x4pro
-}  // namespace inx
+}
+}
