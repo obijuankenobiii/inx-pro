@@ -158,7 +158,7 @@ OtaUpdater::OtaUpdaterError OtaUpdater::checkForUpdate() {
   return out;
 }
 
-/** Fetch and parse the latest GitHub release JSON to find a firmware.bin asset. */
+/** Fetch and parse the latest GitHub release JSON to find this device's firmware asset. */
 OtaUpdater::OtaUpdaterError OtaUpdater::checkForUpdateWorker() {
   JsonDocument filter;
   esp_err_t esp_err;
@@ -251,8 +251,15 @@ OtaUpdater::OtaUpdaterError OtaUpdater::checkForUpdateWorker() {
 
   latestVersion = doc["tag_name"].as<std::string>();
 
+  constexpr const char* expectedAssetName =
+#if FREEINK_DEVICE_STICKY
+      "sticky.bin";
+#else
+      "x4pro.bin";
+#endif
+
   for (int i = 0; i < doc["assets"].size(); i++) {
-    if (doc["assets"][i]["name"] == "firmware.bin") {
+    if (doc["assets"][i]["name"] == expectedAssetName) {
       otaUrl = doc["assets"][i]["browser_download_url"].as<std::string>();
       otaSize = doc["assets"][i]["size"].as<size_t>();
       totalSize = otaSize;
@@ -262,7 +269,7 @@ OtaUpdater::OtaUpdaterError OtaUpdater::checkForUpdateWorker() {
   }
 
   if (!updateAvailable) {
-    INX_SERIAL.printf("[%lu] [OTA] No firmware.bin asset found\n", millis());
+    INX_SERIAL.printf("[%lu] [OTA] No %s asset found\n", millis(), expectedAssetName);
     return NO_UPDATE;
   }
 
