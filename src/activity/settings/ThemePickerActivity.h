@@ -51,6 +51,7 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
   bool borderPopup_ = false;
   bool carouselSettingsFinished_ = false;
   bool heatmapSettingsFinished_ = false;
+  bool temperatureSettingsFinished_ = false;
   int popupSelected_ = 0;
   int widgetPopupScroll_ = 0;
   int borderPopupSelected_ = 0;
@@ -83,6 +84,7 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
   void openBorderPopup(int slot);
   void openCarouselSettings(int slot);
   void openHeatmapSettings(int slot);
+  void openTemperatureSettings(int slot);
   void renderBorderPopup();
   void moveWidgetPopupSelection(int delta);
   void pageWidgetPopup(int delta);

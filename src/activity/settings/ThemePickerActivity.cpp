@@ -10,11 +10,13 @@
 #include "activity/page/components/global/PopUp.h"
 #include "activity/settings/BaseCarouselActivity.h"
 #include "activity/settings/BaseHeatmapActivity.h"
+#include "activity/settings/BaseTemperatureActivity.h"
 #include "images/ThemeBorder.h"
 #include "images/Setting.h"
 #include "state/HomeTheme.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
+#include "system/TemperaturePreferences.h"
 
 namespace {
 
@@ -44,6 +46,12 @@ bool supportsCarouselSettings(const HomeTheme::Widget widget) {
 }
 
 bool supportsHeatmapSettings(const HomeTheme::Widget widget) { return widget == HomeTheme::Widget::Heatmap; }
+
+#if FREEINK_DEVICE_STICKY
+bool supportsTemperatureSettings(const HomeTheme::Widget widget) {
+  return widget == HomeTheme::Widget::Temperature;
+}
+#endif
 
 struct CarouselSettingsBounds {
   int x;
@@ -257,6 +265,14 @@ void ThemePickerActivity::renderWidgetPicker() {
       renderer.rectangle.render(settings.x - 4, settings.y - 4, settings.size + 8, settings.size + 8, true);
       renderer.bitmap.icon(Setting, settings.x, settings.y, settings.size, settings.size);
     }
+#if FREEINK_DEVICE_STICKY
+    if (supportsTemperatureSettings(widgets_[slot])) {
+      const CarouselSettingsBounds settings = carouselSettingsBounds(cellX, cellY, cellW, cellH);
+      renderer.rectangle.fill(settings.x - 4, settings.y - 4, settings.size + 8, settings.size + 8, false);
+      renderer.rectangle.render(settings.x - 4, settings.y - 4, settings.size + 8, settings.size + 8, true);
+      renderer.bitmap.icon(Setting, settings.x, settings.y, settings.size, settings.size);
+    }
+#endif
   }
 }
 
@@ -484,6 +500,21 @@ void ThemePickerActivity::openHeatmapSettings(const int slot) {
       [] {}));
 }
 
+void ThemePickerActivity::openTemperatureSettings(const int slot) {
+  (void)slot;
+  temperatureSettingsFinished_ = false;
+  bool fahrenheit = false;
+  temperature_preferences::loadFahrenheit(fahrenheit);
+  enterNewActivity(new BaseTemperatureActivity(
+      renderer, mappedInput, fahrenheit,
+      [this](const bool selectedFahrenheit) {
+        temperature_preferences::saveFahrenheit(selectedFahrenheit);
+        temperature_.reloadPreferences();
+        temperatureSettingsFinished_ = true;
+      },
+      [] {}));
+}
+
 void ThemePickerActivity::moveWidgetPopupSelection(const int delta) {
   const int options = widgetOptionCount(layout_, editingSleep_);
   if (options <= 0) return;
@@ -601,6 +632,15 @@ void ThemePickerActivity::handleTouch(const int x, const int y) {
           return;
         }
       }
+#if FREEINK_DEVICE_STICKY
+      if (supportsTemperatureSettings(widgets_[slot])) {
+        const CarouselSettingsBounds settings = carouselSettingsBounds(cellX, cellY, cellW, cellH);
+        if (inside(x, y, settings.x - 8, settings.y - 8, settings.size + 16, settings.size + 16)) {
+          openTemperatureSettings(slot);
+          return;
+        }
+      }
+#endif
     }
     if (inside(x, y, previewX, previewY, previewW, previewH)) {
       const int column = std::min(columns - 1, (x - previewX) / cellW);
@@ -630,6 +670,11 @@ void ThemePickerActivity::loop() {
     if (heatmapSettingsFinished_) {
       exitActivity();
       heatmapSettingsFinished_ = false;
+      render();
+    }
+    if (temperatureSettingsFinished_) {
+      exitActivity();
+      temperatureSettingsFinished_ = false;
       render();
     }
     return;

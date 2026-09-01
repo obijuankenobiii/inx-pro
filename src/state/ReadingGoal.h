@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 namespace ReadingGoal {
 
@@ -16,6 +17,9 @@ Status status();
 
 /** Adds a completed reading interval to today's RTC bucket. */
 void recordReadingMs(uint32_t elapsedMs);
+
+/** Adds a reading interval and attributes it to the active book cache path. */
+void recordReadingMs(uint32_t elapsedMs, const std::string& bookPath);
 
 /** Persists any accumulated reading time that has not yet been flushed. */
 void save();

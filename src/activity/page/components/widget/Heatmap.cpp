@@ -72,6 +72,77 @@ void Heatmap::preview(const int x, const int y, const int width, const int heigh
   renderContent(x, y, width, height, view, true, showLabel, labelColor);
 }
 
+uint32_t Heatmap::hitTestDateKey(const int px, const int py, const int x, const int y, const int width,
+                                  const int height, const HomeTheme::HeatmapView view, const bool showLabel) const {
+  if (width <= 0 || height <= 0) return 0;
+  uint32_t today = 0;
+  if (!currentRtcDateKey(today)) return 0;
+
+  const int titleFont = MONTSERRAT_10_FONT_ID;
+  const int smallFont = MONTSERRAT_8_FONT_ID;
+  const int titleLine = renderer_.text.getLineHeight(titleFont);
+  const int smallLine = renderer_.text.getLineHeight(smallFont);
+  constexpr int paddingX = 20;
+  const int paddingY = std::max(8, std::min(14, width / 24));
+  const int titleY = y + paddingY;
+  const int legendHeight = smallLine + 4;
+  const int headerLine = showLabel ? titleLine : smallLine + 2;
+  const int gridTop = titleY + headerLine + 7;
+  const int gridBottom = y + height - paddingY - legendHeight;
+  if (gridBottom <= gridTop) return 0;
+
+  int columns = 14;
+  int rows = 1;
+  int labelWidth = 0;
+  if (view == HomeTheme::HeatmapView::Weekly) {
+    columns = 8;
+    rows = 7;
+    labelWidth = renderer_.text.getWidth(smallFont, "W") + 10;
+  } else if (view == HomeTheme::HeatmapView::Monthly) {
+    columns = 7;
+    rows = 6;
+    labelWidth = renderer_.text.getWidth(smallFont, "W") + 10;
+  }
+
+  const int gridX = x + paddingX + labelWidth;
+  const int gridWidth = std::max(1, width - paddingX * 2 - labelWidth);
+  const int gap = width >= 300 ? 3 : 2;
+  const int cellWidth = std::max(2, (gridWidth - gap * (columns - 1)) / columns);
+  const int cellHeight = std::max(2, (gridBottom - gridTop - gap * (rows - 1)) / rows);
+  const int actualGridHeight = cellHeight * rows + gap * (rows - 1);
+  const int actualGridTop = gridTop + std::max(0, (gridBottom - gridTop - actualGridHeight) / 2);
+  if (px < gridX || py < actualGridTop || px >= gridX + cellWidth * columns + gap * (columns - 1) ||
+      py >= actualGridTop + actualGridHeight) {
+    return 0;
+  }
+
+  const int column = (px - gridX) / (cellWidth + gap);
+  const int row = (py - actualGridTop) / (cellHeight + gap);
+  if (column < 0 || column >= columns || row < 0 || row >= rows ||
+      (px - gridX) % (cellWidth + gap) >= cellWidth ||
+      (py - actualGridTop) % (cellHeight + gap) >= cellHeight) {
+    return 0;
+  }
+
+  const int64_t todayDay = readingDateToDay(today);
+  if (view == HomeTheme::HeatmapView::Daily) {
+    return readingDayToDate(todayDay - (columns - 1 - column));
+  }
+  if (view == HomeTheme::HeatmapView::Weekly) {
+    const int64_t weekStart = todayDay - mondayBasedWeekday(todayDay);
+    const int64_t date = weekStart - (columns - 1 - column) * 7 + row;
+    return date <= todayDay ? readingDayToDate(date) : 0;
+  }
+
+  const int year = static_cast<int>(today / 10000UL);
+  const int month = static_cast<int>((today / 100UL) % 100UL);
+  const uint32_t firstDateKey = static_cast<uint32_t>(year) * 10000UL + static_cast<uint32_t>(month) * 100UL + 1U;
+  const int monthDay = row * columns + column - mondayBasedWeekday(readingDateToDay(firstDateKey)) + 1;
+  if (monthDay < 1 || monthDay > daysInMonth(year, month)) return 0;
+  return static_cast<uint32_t>(year) * 10000UL + static_cast<uint32_t>(month) * 100UL +
+         static_cast<uint32_t>(monthDay);
+}
+
 bool Heatmap::needsRefresh(const HomeTheme::HeatmapView view) const {
   uint32_t today = 0;
   if (!currentRtcDateKey(today)) return false;

@@ -11,6 +11,7 @@
 #include "images/TemperatureDown.h"
 #include "images/TemperatureUp.h"
 #include "system/Fonts.h"
+#include "system/TemperaturePreferences.h"
 
 extern HalGPIO gpio;
 
@@ -47,15 +48,16 @@ void Temperature::renderCard(const int x, const int y, const int width, const in
   const int labelY = dateY + dateLineHeight + 6;
   renderer_.text.renderGray(labelFont, x + padding, labelY, "Temperature", true, EpdFontFamily::BOLD);
 
+  const float displayedTemperature = fahrenheit_ ? temperature * 9.0f / 5.0f + 32.0f : temperature;
   char temperatureValue[20];
-  std::snprintf(temperatureValue, sizeof(temperatureValue), "%.1f", static_cast<double>(temperature));
+  std::snprintf(temperatureValue, sizeof(temperatureValue), "%.1f", static_cast<double>(displayedTemperature));
 
   const int valueTop = labelY + labelLineHeight + 30;
 
   if (wideCard) {
     // Montserrat Clock intentionally contains only clock glyphs (0-9 and :).
     // Render its digits for the large value, then draw the decimal point and
-    // Celsius unit separately so the decimal remains visible.
+    // Keep the unit separate so the decimal remains visible.
     char integerValue[16] = {};
     char fractionalValue[4] = {};
     const char* decimal = std::strchr(temperatureValue, '.');
@@ -83,7 +85,7 @@ void Temperature::renderCard(const int x, const int y, const int width, const in
     const int unitFont = MONTSERRAT_14_FONT_ID;
     const int unitY = clockBottom - renderer_.text.getLineHeight(unitFont) + 3;
     valueX += renderer_.text.getWidth(valueFont, fractionalValue, EpdFontFamily::BOLD) + 8;
-    renderer_.text.renderGray(unitFont, valueX, unitY, "°C", true, EpdFontFamily::BOLD);
+    renderer_.text.renderGray(unitFont, valueX, unitY, fahrenheit_ ? "°F" : "°C", true, EpdFontFamily::BOLD);
   } else {
     char temperatureNumber[16];
     std::snprintf(temperatureNumber, sizeof(temperatureNumber), "%.1f", static_cast<double>(temperature));
@@ -91,7 +93,8 @@ void Temperature::renderCard(const int x, const int y, const int width, const in
     const int numberWidth = renderer_.text.getWidth(valueFont, temperatureNumber, EpdFontFamily::BOLD);
     const int unitFont = MONTSERRAT_14_FONT_ID;
     const int unitY = valueTop + renderer_.text.getLineHeight(valueFont) - renderer_.text.getLineHeight(unitFont);
-    renderer_.text.renderGray(unitFont, x + padding + numberWidth + 6, unitY, "°C", true, EpdFontFamily::BOLD);
+    renderer_.text.renderGray(unitFont, x + padding + numberWidth + 6, unitY, fahrenheit_ ? "°F" : "°C", true,
+                              EpdFontFamily::BOLD);
   }
 
   const int iconSize = std::max(40, std::min(92, std::min(width / 3, height - padding * 2)));
@@ -101,6 +104,12 @@ void Temperature::renderCard(const int x, const int y, const int width, const in
 }
 
 void Temperature::render(const int x, const int y, const int width, const int height) const {
+  if (!preferencesLoaded_) {
+    bool storedFahrenheit = false;
+    fahrenheit_ = temperature_preferences::loadFahrenheit(storedFahrenheit) && storedFahrenheit;
+    preferencesLoaded_ = true;
+  }
+
   float temperature = 0.0f;
   float humidity = 0.0f;
   bool available = false;
@@ -138,6 +147,11 @@ void Temperature::render(const int x, const int y, const int width, const int he
 }
 
 void Temperature::preview(const int x, const int y, const int width, const int height) const {
+  if (!preferencesLoaded_) {
+    bool storedFahrenheit = false;
+    fahrenheit_ = temperature_preferences::loadFahrenheit(storedFahrenheit) && storedFahrenheit;
+    preferencesLoaded_ = true;
+  }
   renderCard(x, y, width, height, 18.0f, "04 August 2024", true);
 }
 

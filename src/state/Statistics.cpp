@@ -23,11 +23,19 @@ constexpr uint32_t STATS_FILE_VERSION = 2;
 constexpr uint32_t STATS_MAGIC_NUMBER = 0x53544154;
 constexpr uint32_t GLOBAL_STATS_FILE_VERSION = 3;
 constexpr size_t MAX_READING_HISTORY_ENTRIES = 370;
+constexpr uint32_t READING_HISTORY_BOOKS_MAGIC = 0x5248424B;  // RHBK
+constexpr uint8_t READING_HISTORY_BOOKS_VERSION = 1;
+constexpr size_t MAX_READING_HISTORY_BOOK_ENTRIES = 2048;
+constexpr char readingHistoryBooksFile[] = "/.system/reading_history_books.bin";
+constexpr char readingHistoryBooksTempFile[] = "/.system/reading_history_books.bin.tmp";
 
 GlobalReadingStats cachedGlobalStats;
 std::vector<ReadingHistoryEntry> readingHistory;
 bool globalStatsLoaded = false;
 bool readingHistoryDirty = false;
+std::vector<ReadingHistoryBookEntry> readingHistoryBooks;
+bool readingHistoryBooksLoaded = false;
+bool readingHistoryBooksDirty = false;
 
 /**
  * RAII wrapper for FsFile that ensures file is closed when object goes out of scope.
@@ -128,6 +136,91 @@ bool loadGlobalFile(GlobalReadingStats& stats) {
   memcpy(&stats, &firstWord, sizeof(firstWord));
   return file.read(reinterpret_cast<uint8_t*>(&stats) + sizeof(firstWord), sizeof(stats) - sizeof(firstWord)) ==
          sizeof(stats) - sizeof(firstWord);
+}
+
+void loadReadingHistoryBooks() {
+  if (readingHistoryBooksLoaded) return;
+  readingHistoryBooksLoaded = true;
+  readingHistoryBooks.clear();
+
+  FsFile file;
+  FileGuard guard(file);
+  if (!SdMan.openFileForRead("RHBK", readingHistoryBooksFile, file)) return;
+
+  uint32_t magic = 0;
+  uint8_t version = 0;
+  uint8_t reserved[3] = {};
+  uint32_t entryCount = 0;
+  if (file.read(&magic, sizeof(magic)) != sizeof(magic) ||
+      file.read(&version, sizeof(version)) != sizeof(version) ||
+      file.read(reserved, sizeof(reserved)) != sizeof(reserved) ||
+      file.read(&entryCount, sizeof(entryCount)) != sizeof(entryCount) || magic != READING_HISTORY_BOOKS_MAGIC ||
+      version != READING_HISTORY_BOOKS_VERSION || entryCount > MAX_READING_HISTORY_BOOK_ENTRIES) {
+    readingHistoryBooks.clear();
+    return;
+  }
+
+  for (uint32_t i = 0; i < entryCount; ++i) {
+    ReadingHistoryBookEntry entry;
+    uint32_t pathLength = 0;
+    if (file.read(&entry.dateKey, sizeof(entry.dateKey)) != sizeof(entry.dateKey) ||
+        file.read(&entry.readingTimeMs, sizeof(entry.readingTimeMs)) != sizeof(entry.readingTimeMs) ||
+        file.read(&pathLength, sizeof(pathLength)) != sizeof(pathLength) || pathLength > 1024) {
+      readingHistoryBooks.clear();
+      return;
+    }
+    if (pathLength > 0) {
+      entry.bookPath.resize(pathLength);
+      if (file.read(entry.bookPath.data(), pathLength) != pathLength) {
+        readingHistoryBooks.clear();
+        return;
+      }
+    }
+    if (entry.dateKey != 0 && entry.readingTimeMs != 0 && !entry.bookPath.empty()) {
+      readingHistoryBooks.push_back(std::move(entry));
+    }
+  }
+}
+
+void saveReadingHistoryBooks() {
+  if (!readingHistoryBooksDirty) return;
+  SdMan.mkdir(STATS_DIR);
+
+  FsFile file;
+  bool writeOk = false;
+  {
+    FileGuard guard(file);
+    if (SdMan.openFileForWrite("RHBK", readingHistoryBooksTempFile, file)) {
+      const uint32_t magic = READING_HISTORY_BOOKS_MAGIC;
+      const uint8_t version = READING_HISTORY_BOOKS_VERSION;
+      const uint8_t reserved[3] = {};
+      const uint32_t entryCount = static_cast<uint32_t>(readingHistoryBooks.size());
+      writeOk = file.write(&magic, sizeof(magic)) == sizeof(magic) &&
+                file.write(&version, sizeof(version)) == sizeof(version) &&
+                file.write(reserved, sizeof(reserved)) == sizeof(reserved) &&
+                file.write(&entryCount, sizeof(entryCount)) == sizeof(entryCount);
+      for (const ReadingHistoryBookEntry& entry : readingHistoryBooks) {
+        const uint32_t pathLength = static_cast<uint32_t>(entry.bookPath.size());
+        if (!writeOk || file.write(&entry.dateKey, sizeof(entry.dateKey)) != sizeof(entry.dateKey) ||
+            file.write(&entry.readingTimeMs, sizeof(entry.readingTimeMs)) != sizeof(entry.readingTimeMs) ||
+            file.write(&pathLength, sizeof(pathLength)) != sizeof(pathLength) ||
+            (pathLength > 0 && file.write(entry.bookPath.data(), pathLength) != pathLength)) {
+          writeOk = false;
+          break;
+        }
+      }
+    }
+  }
+  if (writeOk) {
+    SdMan.remove(readingHistoryBooksFile);
+    if (SdMan.rename(readingHistoryBooksTempFile, readingHistoryBooksFile)) {
+      readingHistoryBooksDirty = false;
+    } else {
+      SdMan.remove(readingHistoryBooksTempFile);
+    }
+  } else {
+    SdMan.remove(readingHistoryBooksTempFile);
+  }
 }
 
 /**
@@ -427,7 +520,9 @@ GlobalReadingStats aggregateGlobalStatsFromBooks(const std::vector<BookReadingSt
 
 GlobalReadingStats generateGlobalStats() { return aggregateGlobalStatsFromBooks(getAllBooksStats()); }
 
-void recordReadingHistoryMs(const uint32_t elapsedMs) {
+void recordReadingHistoryMs(const uint32_t elapsedMs) { recordReadingHistoryMs(elapsedMs, std::string()); }
+
+void recordReadingHistoryMs(const uint32_t elapsedMs, const std::string& bookPath) {
   if (elapsedMs == 0) return;
 
   uint32_t today = 0;
@@ -456,15 +551,41 @@ void recordReadingHistoryMs(const uint32_t elapsedMs) {
                          readingHistory.begin() + (readingHistory.size() - MAX_READING_HISTORY_ENTRIES));
   }
   readingHistoryDirty = true;
+
+  if (bookPath.empty()) return;
+  loadReadingHistoryBooks();
+  auto bookIt = std::find_if(readingHistoryBooks.begin(), readingHistoryBooks.end(),
+                             [today, &bookPath](const ReadingHistoryBookEntry& entry) {
+                               return entry.dateKey == today && entry.bookPath == bookPath;
+                             });
+  if (bookIt == readingHistoryBooks.end()) {
+    readingHistoryBooks.push_back({today, elapsedMs, bookPath});
+  } else {
+    const uint32_t room = UINT32_MAX - bookIt->readingTimeMs;
+    bookIt->readingTimeMs += std::min(room, elapsedMs);
+  }
+  std::sort(readingHistoryBooks.begin(), readingHistoryBooks.end(),
+            [](const ReadingHistoryBookEntry& lhs, const ReadingHistoryBookEntry& rhs) {
+              if (lhs.dateKey != rhs.dateKey) return readingDateToDay(lhs.dateKey) < readingDateToDay(rhs.dateKey);
+              return lhs.bookPath < rhs.bookPath;
+            });
+  if (readingHistoryBooks.size() > MAX_READING_HISTORY_BOOK_ENTRIES) {
+    readingHistoryBooks.erase(readingHistoryBooks.begin(),
+                              readingHistoryBooks.begin() +
+                                  (readingHistoryBooks.size() - MAX_READING_HISTORY_BOOK_ENTRIES));
+  }
+  readingHistoryBooksDirty = true;
 }
 
 void saveReadingHistory() {
-  if (!readingHistoryDirty) return;
-  if (!globalStatsLoaded) {
-    GlobalReadingStats ignored;
-    loadGlobalStats(ignored);
+  if (readingHistoryDirty) {
+    if (!globalStatsLoaded) {
+      GlobalReadingStats ignored;
+      loadGlobalStats(ignored);
+    }
+    saveGlobalStats(cachedGlobalStats);
   }
-  saveGlobalStats(cachedGlobalStats);
+  saveReadingHistoryBooks();
 }
 
 const std::vector<ReadingHistoryEntry>& getReadingHistory() {
@@ -473,6 +594,11 @@ const std::vector<ReadingHistoryEntry>& getReadingHistory() {
     loadGlobalStats(ignored);
   }
   return readingHistory;
+}
+
+const std::vector<ReadingHistoryBookEntry>& getReadingHistoryBooks() {
+  loadReadingHistoryBooks();
+  return readingHistoryBooks;
 }
 
 int64_t readingDateToDay(const uint32_t dateKey) {

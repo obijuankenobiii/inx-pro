@@ -267,6 +267,9 @@ HomeWidgetLayout::HitResult HomeWidgetLayout::hitTest(const HomeTheme::Theme& th
   const int todaysReading = todaysReadingAt(theme, x, y);
   if (todaysReading >= 0) return {HitType::TodaysReading, todaysReading};
 
+  const int heatmap = heatmapAt(theme, x, y);
+  if (heatmap >= 0) return {HitType::Heatmap, heatmap};
+
   const int shortcut = shortcutAt(theme, x, y);
   if (shortcut >= 0) return {HitType::Shortcut, shortcut};
   return {HitType::None, -1};
@@ -329,6 +332,17 @@ int HomeWidgetLayout::todaysReadingAt(const HomeTheme::Theme& theme, const int x
     if (theme.widgets[slot] != HomeTheme::Widget::TodaysReading) continue;
     const Bounds bounds = slotBounds(layout, slot);
     if (todaysReading_.buttonHitTest(x, y, bounds.x, bounds.y, bounds.width, bounds.height)) return slot;
+  }
+  return -1;
+}
+
+int HomeWidgetLayout::heatmapAt(const HomeTheme::Theme& theme, const int x, const int y) const {
+  if (theme.layout == HomeTheme::Layout::Classic) return -1;
+  const Grid layout = grid(theme.layout);
+  for (int slot = 0; slot < HomeTheme::slotCount(theme.layout); ++slot) {
+    if (theme.widgets[slot] != HomeTheme::Widget::Heatmap) continue;
+    const Bounds bounds = slotBounds(layout, slot);
+    if (x >= bounds.x && x < bounds.x + bounds.width && y >= bounds.y && y < bounds.y + bounds.height) return slot;
   }
   return -1;
 }

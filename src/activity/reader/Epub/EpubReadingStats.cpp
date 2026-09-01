@@ -71,7 +71,7 @@ void EpubReadingStats::pausePageTimer(const Epub& epub, const Section* section, 
   }
 
   activeSessionTimeMs_ += timeSpent;
-  ReadingGoal::recordReadingMs(timeSpent);
+  ReadingGoal::recordReadingMs(timeSpent, epub.getCachePath());
 
   if (section) {
     stats_.totalReadingTimeMs += timeSpent;
@@ -108,7 +108,7 @@ void EpubReadingStats::endPageTimer(const Epub& epub, const Section* section, co
   }
 
   activeSessionTimeMs_ += timeSpent;
-  ReadingGoal::recordReadingMs(timeSpent);
+  ReadingGoal::recordReadingMs(timeSpent, epub.getCachePath());
 
   if (section) {
     stats_.totalReadingTimeMs += timeSpent;

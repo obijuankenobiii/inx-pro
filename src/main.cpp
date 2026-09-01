@@ -35,6 +35,7 @@
 #include "activity/page/Search.h"
 #include "activity/page/Settings.h"
 #include "activity/page/Statistics.h"
+#include "activity/page/HeatmapReport.h"
 #include "activity/page/SyncActivity.h"
 #include "activity/reader/ImageViewerActivity.h"
 #include "activity/reader/ReaderActivity.h"
@@ -82,6 +83,7 @@ void onGoToHome();
 void openSearchFromCallback(std::function<void()> returnToCaller);
 void onSelectBook(const std::string& path);
 void onGoToStatistics();
+void onGoToHeatmapReport(HomeTheme::HeatmapView view);
 void openHomeSubPage(HomeSubPage::Section section);
 void openDictionaryLookupKeyboard();
 void openDictionaryLookup(const std::string& word);
@@ -227,6 +229,10 @@ void onSelectBook(const std::string& path) {
  */
 void onGoToStatistics() {
   switchTo<Statistics>(render, input, [] { onGoToHome(); });
+}
+
+void onGoToHeatmapReport(const HomeTheme::HeatmapView view) {
+  switchTo<HeatmapReport>(render, input, view, [] { onGoToHome(); });
 }
 
 void openHomeSubPage(const HomeSubPage::Section section) {

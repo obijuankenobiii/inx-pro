@@ -78,6 +78,13 @@ struct ReadingHistoryEntry {
   uint32_t readingTimeMs = 0;
 };
 
+/** Reading time attributed to one cached book on one local RTC date. */
+struct ReadingHistoryBookEntry {
+  uint32_t dateKey = 0;
+  uint32_t readingTimeMs = 0;
+  std::string bookPath;
+};
+
 /**
  * Saves reading statistics for a book to its cache directory.
  *
@@ -140,11 +147,17 @@ GlobalReadingStats generateGlobalStats();
 /** Adds elapsed reading time to the current RTC date bucket. */
 void recordReadingHistoryMs(uint32_t elapsedMs);
 
+/** Adds elapsed reading time and attributes it to the active book cache path. */
+void recordReadingHistoryMs(uint32_t elapsedMs, const std::string& bookPath);
+
 /** Flushes pending RTC history changes to /.system/statistics.bin. */
 void saveReadingHistory();
 
 /** Returns all retained daily RTC buckets, oldest first. */
 const std::vector<ReadingHistoryEntry>& getReadingHistory();
+
+/** Returns daily per-book reading records, oldest first. */
+const std::vector<ReadingHistoryBookEntry>& getReadingHistoryBooks();
 
 /** Returns the current local RTC date as YYYYMMDD, or false when unavailable. */
 bool currentRtcDateKey(uint32_t& dateKey);

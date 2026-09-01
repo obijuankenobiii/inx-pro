@@ -8,6 +8,7 @@
 #include "Page.h"
 #include "components/home/HomeWidgetLayout.h"
 #include "components/widget/ShortcutList.h"
+#include "state/HomeTheme.h"
 
 #include <string>
 
@@ -46,6 +47,8 @@ class Home final : public Page {
   bool carouselThumbnailsPreloaded = false;
   int popupBook = -1;
   bool favoritePopupOpen = false;
+  bool heatmapPopupOpen = false;
+  HomeTheme::HeatmapView heatmapPopupView = HomeTheme::HeatmapView::Weekly;
   std::string popupFavoritePath;
   bool shortcutDrawerOpen = false;
 };

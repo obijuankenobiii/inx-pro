@@ -12,6 +12,9 @@ class Heatmap final {
               HomeTheme::CarouselLabelColor labelColor = HomeTheme::CarouselLabelColor::Black) const;
   void preview(int x, int y, int width, int height, HomeTheme::HeatmapView view, bool showLabel = true,
                HomeTheme::CarouselLabelColor labelColor = HomeTheme::CarouselLabelColor::Black) const;
+  /** Returns the RTC date represented by a touched cell, or 0 outside the grid. */
+  uint32_t hitTestDateKey(int px, int py, int x, int y, int width, int height, HomeTheme::HeatmapView view,
+                          bool showLabel = true) const;
   bool needsRefresh(HomeTheme::HeatmapView view) const;
 
  private:

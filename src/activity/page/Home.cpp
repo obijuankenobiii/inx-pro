@@ -33,6 +33,7 @@ extern void onGoToHome();
 extern void onGoToLibrary(const std::string& path);
 extern void openHomeSubPage(HomeSubPage::Section section);
 extern void onGoToStatistics();
+extern void onGoToHeatmapReport(HomeTheme::HeatmapView view);
 
 namespace {
 
@@ -85,6 +86,7 @@ void Home::onEnter() {
   carouselThumbnailsPreloaded = false;
   popupBook = -1;
   favoritePopupOpen = false;
+  heatmapPopupOpen = false;
   popupFavoritePath.clear();
   shortcutDrawerOpen = false;
 }
@@ -118,7 +120,7 @@ ButtonBounds Home::libraryButton() const {
 
 void Home::loop() {
   if (shortcutDrawerOpen && handleShortcutDrawerInput()) return;
-  if ((popupBook >= 0 || favoritePopupOpen) && handlePopup()) return;
+  if ((popupBook >= 0 || favoritePopupOpen || heatmapPopupOpen) && handlePopup()) return;
   if (menuInput()) return;
   if (isOpen()) {
     renderPage();
@@ -134,10 +136,15 @@ void Home::loop() {
 
 void Home::content() {
   widgetLayout.render(HomeTheme::active(), carouselIndex, favoriteIndex);
-  if (popupBook >= 0 || favoritePopupOpen) popup();
+  if (popupBook >= 0 || favoritePopupOpen || heatmapPopupOpen) popup();
 }
 
 bool Home::handlePopup() {
+  if (heatmapPopupOpen) {
+    if (popupInput()) return true;
+    renderPage();
+    return true;
+  }
   if (favoritePopupOpen) {
     BookState::Book book;
     if (popupFavoritePath.empty() || !BOOK_STATE.findBook(popupFavoritePath, book) || !book.isFavorite) {
@@ -233,6 +240,14 @@ bool Home::handleTap() {
   const int bookCount = RECENT_BOOKS.getCount();
   const HomeWidgetLayout::HitResult favoriteHit =
       widgetLayout.hitTest(HomeTheme::active(), carouselIndex, favoriteIndex, bookCount, tapX, tapY);
+  if (favoriteHit.type == HomeWidgetLayout::HitType::Heatmap) {
+    if (mappedInput.lastTouchHeldMs() >= longPressMs) {
+      heatmapPopupOpen = true;
+      heatmapPopupView = HomeTheme::active().heatmapViews[favoriteHit.index];
+      updateRequired = true;
+    }
+    return true;
+  }
   if (favoriteHit.type == HomeWidgetLayout::HitType::Favorites) {
     const std::string& path = widgetLayout.favoritePath(favoriteHit.index);
     if (mappedInput.lastTouchHeldMs() >= longPressMs) {
@@ -355,11 +370,13 @@ bool Home::handleShortcut(const int item) {
 }
 
 void Home::popup() const {
-  const std::vector<std::string> items = favoritePopupOpen ? std::vector<std::string>{"Remove favorite"}
-                                                            : std::vector<std::string>{"Remove Recent", "Delete cache"};
+  const std::vector<std::string> items = heatmapPopupOpen
+                                             ? std::vector<std::string>{"View Report"}
+                                             : (favoritePopupOpen ? std::vector<std::string>{"Remove favorite"}
+                                                                   : std::vector<std::string>{"Remove Recent", "Delete cache"});
   const PopUpBounds box = PopUp::bounds(renderer, static_cast<int>(items.size()));
   PopUp::background(renderer, box);
-  PopUp::title(renderer, box, favoritePopupOpen ? "Favorite" : "Book");
+  PopUp::title(renderer, box, heatmapPopupOpen ? "Heatmap" : (favoritePopupOpen ? "Favorite" : "Book"));
   PopUp::list(renderer, box, items, -1, 0);
   PopUp::border(renderer, box);
 }
@@ -368,6 +385,7 @@ bool Home::popupInput() {
   if (mappedInput.wasPressed(MappedInputManager::Button::Back) ||
       (mappedInput.hasTouch() && mappedInput.wasTouchSwipeUp())) {
     favoritePopupOpen = false;
+    heatmapPopupOpen = false;
     popupFavoritePath.clear();
     popupBook = -1;
     updateRequired = true;
@@ -379,11 +397,12 @@ bool Home::popupInput() {
   float tapY = 0.0f;
   if (!mappedInput.wasTouchTapInScreen(renderer, tapX, tapY)) return false;
 
-  const PopUpBounds box = PopUp::bounds(renderer, favoritePopupOpen ? 1 : 2);
+  const PopUpBounds box = PopUp::bounds(renderer, heatmapPopupOpen || favoritePopupOpen ? 1 : 2);
   const int x = static_cast<int>(tapX * renderer.getScreenWidth());
   const int y = static_cast<int>(tapY * renderer.getScreenHeight());
   if (x < box.x || x >= box.x + box.width || y < box.y || y >= box.y + box.height) {
     favoritePopupOpen = false;
+    heatmapPopupOpen = false;
     popupFavoritePath.clear();
     popupBook = -1;
     updateRequired = true;
@@ -391,7 +410,13 @@ bool Home::popupInput() {
   }
 
   const int item = (y - box.y - box.header) / box.row;
-  if (favoritePopupOpen) {
+  if (heatmapPopupOpen) {
+    if (item == 0) {
+      heatmapPopupOpen = false;
+      updateRequired = true;
+      onGoToHeatmapReport(heatmapPopupView);
+    }
+  } else if (favoritePopupOpen) {
     if (item == 0) {
       BOOK_STATE.toggleFavorite(popupFavoritePath);
       widgetLayout.invalidateFavorites();

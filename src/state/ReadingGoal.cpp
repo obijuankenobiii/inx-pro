@@ -105,6 +105,18 @@ void recordReadingMs(const uint32_t elapsedMs) {
   dirty = true;
 }
 
+void recordReadingMs(const uint32_t elapsedMs, const std::string& bookPath) {
+  if (elapsedMs == 0) return;
+  syncDate();
+
+  uint32_t today = 0;
+  if (!readRtcDate(today) || storedDateKey != today) return;
+  const uint32_t room = UINT32_MAX - storedReadingTimeMs;
+  storedReadingTimeMs += std::min(room, elapsedMs);
+  recordReadingHistoryMs(elapsedMs, bookPath);
+  dirty = true;
+}
+
 void save() {
   load();
   if (dirty) {
