@@ -14,6 +14,7 @@
 
 #include "../util/KeyboardEntryActivity.h"
 #include "GfxRenderer.h"
+#include "activity/page/components/global/Button.h"
 #include "activity/page/components/global/PopUp.h"
 #include "activity/page/components/global/Toggle.h"
 #include "images/Close.h"
@@ -31,6 +32,23 @@
 namespace {
 constexpr int kRowValueRightInset = 30;
 constexpr int kEmbeddedListTopExtra = 30;
+constexpr int kPresetVisibleCount = 7;  // Six requested rows plus one additional row using the spare space.
+constexpr int kAddPresetButtonRaise = 30;
+constexpr int kPresetListGap = 20;
+constexpr const char* kAddPresetButtonLabel = "New preset +";
+
+void drawScrollBar(const GfxRenderer& renderer, const int x, const int y, const int height, const int total,
+                   const int visible, const int offset) {
+  if (total <= visible || height <= 0) return;
+
+  constexpr int width = 3;
+  const int maxOffset = std::max(1, total - visible);
+  const int thumbHeight = std::max(14, height * visible / total);
+  const int thumbTravel = std::max(1, height - thumbHeight);
+  const int thumbY = y + offset * thumbTravel / maxOffset;
+  renderer.rectangle.fill(x, y, width, height, static_cast<int>(GfxRenderer::FillTone::Gray), true);
+  renderer.rectangle.fill(x, thumbY, width, thumbHeight, static_cast<int>(GfxRenderer::FillTone::Ink), true);
+}
 
 struct SettingsTabLayout {
   int systemX;
@@ -155,7 +173,8 @@ void ReaderPresetsActivity::onEnter() {
     }
   } else {
     listItemHeight_ = kListItemHeight;
-    itemsPerPage_ = std::max(1, (contentBottom - listTop) / listItemHeight_);
+    const int presetListTop = listTop - kAddPresetButtonRaise + listItemHeight_ + kPresetListGap;
+    itemsPerPage_ = std::min(kPresetVisibleCount, std::max(1, (contentBottom - presetListTop) / listItemHeight_));
   }
   selectedRow_ = -1;
   scrollOffset_ = 0;
@@ -188,12 +207,12 @@ void ReaderPresetsActivity::changeSystemSetting(const int row, const int delta) 
   READER_SETTINGS.saveToFile();
 }
 
-int ReaderPresetsActivity::addPresetRow() const { return presetsOnly_ ? 0 : -1; }
+int ReaderPresetsActivity::addPresetRow() const { return -1; }
 
-int ReaderPresetsActivity::presetRowsStart() const { return presetsOnly_ ? 1 : 0; }
+int ReaderPresetsActivity::presetRowsStart() const { return 0; }
 
 int ReaderPresetsActivity::rowCount() const {
-  return presetsOnly_ ? presetRowsStart() + READER_PRESETS.count() : kSystemFixedRowCount + 2;
+  return presetsOnly_ ? READER_PRESETS.count() : kSystemFixedRowCount + 2;
 }
 
 int ReaderPresetsActivity::presetIndexForRow(int row) const {
@@ -227,12 +246,20 @@ void ReaderPresetsActivity::render() {
   renderer.clearScreen(0xFF);
 
   const int listTop = navigation::Menu::height + 20 + Page::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra;
+  const int presetListTop = listTop - kAddPresetButtonRaise + listItemHeight_ + kPresetListGap;
+
+  if (presetsOnly_) {
+    const int buttonWidth = Button::width(renderer, kAddPresetButtonLabel, systemFontId());
+    const ButtonBounds button{screenW - kRowValueRightInset - buttonWidth, listTop - kAddPresetButtonRaise,
+                              buttonWidth, listItemHeight_};
+    Button::render(renderer, button, kAddPresetButtonLabel, false, systemFontId());
+  }
 
   const int rows = rowCount();
   for (int i = 0; i < itemsPerPage_ && (i + scrollOffset_) < rows; i++) {
     const int rowIndex = i + scrollOffset_;
-    const int itemY = listTop + i * listItemHeight_;
-    const bool isSelected = (rowIndex == selectedRow_);
+    const int itemY = (presetsOnly_ ? presetListTop : listTop) + i * listItemHeight_;
+    const bool isSelected = !presetsOnly_ && (rowIndex == selectedRow_);
     const bool hasNextItem = i + 1 < itemsPerPage_ && rowIndex + 1 < rows;
     const int textY = itemY + (listItemHeight_ - renderer.text.getLineHeight(systemFontId())) / 2;
 
@@ -306,14 +333,12 @@ void ReaderPresetsActivity::render() {
       continue;
     }
 
-    if (rowIndex == addPresetRow()) {
-      if (isSelected) {
-        renderer.rectangle.fill(0, itemY, screenW, listItemHeight_, static_cast<int>(GfxRenderer::FillTone::Ink));
-      } else {
-        renderer.rectangle.fill(0, itemY, screenW, listItemHeight_, static_cast<int>(GfxRenderer::FillTone::Paper));
-      }
-      renderer.text.render(systemFontId(), 20, textY, "+ Add new preset", !isSelected,
-                           EpdFontFamily::REGULAR);
+    if (!presetsOnly_ && rowIndex == addPresetRow()) {
+      renderer.rectangle.fill(0, itemY, screenW, listItemHeight_, static_cast<int>(GfxRenderer::FillTone::Paper));
+      const int buttonWidth = Button::width(renderer, kAddPresetButtonLabel, systemFontId());
+      const ButtonBounds button{screenW - kRowValueRightInset - buttonWidth, itemY - kAddPresetButtonRaise,
+                                buttonWidth, listItemHeight_};
+      Button::render(renderer, button, kAddPresetButtonLabel, false, systemFontId());
 
       if (hasNextItem) {
         renderer.line.render(0, itemY + listItemHeight_ - 1, screenW, itemY + listItemHeight_ - 1, true,
@@ -341,6 +366,9 @@ void ReaderPresetsActivity::render() {
       renderer.line.render(0, itemY + listItemHeight_ - 1, screenW, itemY + listItemHeight_ - 1, true,
                            LineRender::Style::Dotted);
     }
+  }
+  if (presetsOnly_) {
+    drawScrollBar(renderer, screenW - 8, presetListTop, itemsPerPage_ * listItemHeight_, rows, itemsPerPage_, scrollOffset_);
   }
   if (overlayOpen_) {
     renderOverlay();
@@ -672,37 +700,41 @@ void ReaderPresetsActivity::handleListInput() {
     return;
   }
 
-  if (mappedInput.wasPressed(readerSettingsItemPrevButton())) {
+  const bool previousPressed = mappedInput.wasPressed(readerSettingsItemPrevButton());
+  const bool nextPressed = mappedInput.wasPressed(readerSettingsItemNextButton());
+  if (previousPressed || nextPressed) {
     const int rows = rowCount();
     if (rows > 0) {
-      selectedRow_ = (selectedRow_ - 1 + rows) % rows;
-      if (selectedRow_ < scrollOffset_) scrollOffset_ = selectedRow_;
-      if (selectedRow_ >= scrollOffset_ + itemsPerPage_) scrollOffset_ = selectedRow_ - itemsPerPage_ + 1;
-      scrollOffset_ = std::max(0, std::min(scrollOffset_, std::max(0, rows - itemsPerPage_)));
-      render();
-    }
-    return;
-  }
-  if (mappedInput.wasPressed(readerSettingsItemNextButton())) {
-    const int rows = rowCount();
-    if (rows > 0) {
-      selectedRow_ = (selectedRow_ + 1) % rows;
-      if (selectedRow_ < scrollOffset_) scrollOffset_ = selectedRow_;
-      if (selectedRow_ >= scrollOffset_ + itemsPerPage_) scrollOffset_ = selectedRow_ - itemsPerPage_ + 1;
-      scrollOffset_ = std::max(0, std::min(scrollOffset_, std::max(0, rows - itemsPerPage_)));
+      if (presetsOnly_) {
+        const int maxScroll = std::max(0, rows - itemsPerPage_);
+        const int pageSize = std::max(1, itemsPerPage_);
+        if (previousPressed) {
+          scrollOffset_ = std::max(0, scrollOffset_ - pageSize);
+        } else {
+          scrollOffset_ = std::min(maxScroll, scrollOffset_ + pageSize);
+        }
+      } else {
+        selectedRow_ = previousPressed ? (selectedRow_ - 1 + rows) % rows : (selectedRow_ + 1) % rows;
+        if (selectedRow_ < scrollOffset_) scrollOffset_ = selectedRow_;
+        if (selectedRow_ >= scrollOffset_ + itemsPerPage_) scrollOffset_ = selectedRow_ - itemsPerPage_ + 1;
+        scrollOffset_ = std::max(0, std::min(scrollOffset_, std::max(0, rows - itemsPerPage_)));
+      }
       render();
     }
     return;
   }
 
   if (mappedInput.hasTouch()) {
-    if (mappedInput.wasTouchSwipeUp() || mappedInput.wasTouchSwipeDown()) {
+    const bool swipeUp = mappedInput.wasTouchSwipeUpForRenderer(renderer);
+    const bool swipeDown = mappedInput.wasTouchSwipeDownForRenderer(renderer);
+    if (swipeUp || swipeDown) {
       const int rows = rowCount();
       const int maxScroll = std::max(0, rows - itemsPerPage_);
-      if (mappedInput.wasTouchSwipeUp()) {
-        scrollOffset_ = std::min(maxScroll, scrollOffset_ + 1);
+      const int pageSize = std::max(1, itemsPerPage_);
+      if (swipeUp) {
+        scrollOffset_ = std::min(maxScroll, scrollOffset_ + pageSize);
       } else {
-        scrollOffset_ = std::max(0, scrollOffset_ - 1);
+        scrollOffset_ = std::max(0, scrollOffset_ - pageSize);
       }
       render();
       return;
@@ -711,28 +743,44 @@ void ReaderPresetsActivity::handleListInput() {
     float tapNx = 0.0f, tapNy = 0.0f;
     if (mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy)) {
       const int screenW = renderer.getScreenWidth();
-      const int screenH = renderer.getScreenHeight();
       const int tapX = static_cast<int>(tapNx * renderer.getScreenWidth());
       const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
 
       const int listTop = navigation::Menu::height + 20 + Page::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra;
-      const int tappedRow = (tapY - listTop) / listItemHeight_;
+      const int presetListTop = listTop - kAddPresetButtonRaise + listItemHeight_ + kPresetListGap;
+      if (presetsOnly_) {
+        const int buttonWidth = Button::width(renderer, kAddPresetButtonLabel, systemFontId());
+        const ButtonBounds button{screenW - kRowValueRightInset - buttonWidth, listTop - kAddPresetButtonRaise,
+                                  buttonWidth, listItemHeight_};
+        if (tapX >= button.x && tapX < button.x + button.width && tapY >= button.y &&
+            tapY < button.y + button.height) {
+          openEditor(-1);
+          return;
+        }
+      }
+      const int tappedRowTop = presetsOnly_ ? presetListTop : listTop;
+      const int tappedRow = (tapY - tappedRowTop) / listItemHeight_;
       const int rowCountValue = rowCount();
-      if (tapX >= 0 && tapX < screenW && tapY >= listTop && tappedRow >= 0 &&
+      if (tapX >= 0 && tapX < screenW && tapY >= tappedRowTop && tappedRow >= 0 &&
           tappedRow < itemsPerPage_ && scrollOffset_ + tappedRow < rowCountValue) {
-        selectedRow_ = scrollOffset_ + tappedRow;
         if (presetsOnly_) {
-          const int presetIndex = presetIndexForRow(selectedRow_);
-          const int itemY = listTop + tappedRow * listItemHeight_;
+          const int tappedRowIndex = scrollOffset_ + tappedRow;
+          const int presetIndex = presetIndexForRow(tappedRowIndex);
+          const int itemY = presetListTop + tappedRow * listItemHeight_;
           const ToggleBounds toggle = Toggle::bounds(screenW - kRowValueRightInset, itemY, listItemHeight_);
           if (presetIndex > 0 && tapX >= toggle.x && tapX < toggle.x + toggle.width && tapY >= toggle.y &&
               tapY < toggle.y + toggle.height) {
             READER_PRESETS.setDefaultPreset(READER_PRESETS.isPresetDefault(presetIndex) ? 0 : presetIndex);
-            selectedRow_ = -1;
             render();
             return;
           }
+          overlayPresetIndex_ = presetIndex;
+          overlaySel_ = -1;
+          overlayOpen_ = true;
+          renderOverlay();
+          return;
         }
+        selectedRow_ = scrollOffset_ + tappedRow;
         activateSelectedRow();
         selectedRow_ = -1;
         return;
@@ -761,10 +809,6 @@ void ReaderPresetsActivity::loop() {
       subFinished_ = false;
       finishSubActivity();
     }
-    return;
-  }
-
-  if (mappedInput.hasTouch() && mappedInput.wasTouchSwipeUpForRenderer(renderer)) {
     return;
   }
 
