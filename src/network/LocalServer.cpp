@@ -27,6 +27,7 @@
 
 #include "../state/ReaderSetting.h"
 #include "../state/SystemSetting.h"
+#include "../system/LanguageManager.h"
 #ifndef INX_SIMULATOR_WEB_ONLY
 #include "activity/reader/Epub/EpubAnnotations.h"
 #include "activity/reader/Epub/EpubBookmarks.h"
@@ -38,6 +39,7 @@
 #include "html/FilesPageHtml.generated.h"
 #include "html/FilesPageJs.generated.h"
 #include "html/FontManagerPageHtml.generated.h"
+#include "html/LanguageManagerPageHtml.generated.h"
 #include "html/HomePageHtml.generated.h"
 #include "html/InxFontPackJs.generated.h"
 #include "html/JsZipMinJs.generated.h"
@@ -87,6 +89,12 @@ bool wsUploadInProgress = false;
 String wsLastCompleteName;
 size_t wsLastCompleteSize = 0;
 unsigned long wsLastCompleteAt = 0;
+
+String addLanguageManagerNavLink(const char* pageHtml) {
+  String page = pageHtml;
+  page.replace("</nav>", "<a class=nav-btn href=/language-manager>Language</a></nav>");
+  return page;
+}
 
 void copySettingString(char* dest, size_t destSize, const char* value) {
   if (destSize == 0) {
@@ -656,6 +664,7 @@ void LocalServer::begin() {
   server->on("/epub", HTTP_GET, [this] { handleEpubPage(); });
   server->on("/export", HTTP_GET, [this] { handleExportPage(); });
   server->on("/font-manager", HTTP_GET, [this] { handleFontManagerPage(); });
+  server->on("/language-manager", HTTP_GET, [this] { handleLanguageManagerPage(); });
   server->on("/tags", HTTP_GET, [this] { handleTagsPage(); });
   server->on("/js/inx_font_pack.js", HTTP_GET, [this] { handleInxFontPackJs(); });
   server->on("/js/jszip.min.js", HTTP_GET, [this] { handleJsZipMinJs(); });
@@ -687,6 +696,8 @@ void LocalServer::begin() {
   server->on("/settings", HTTP_GET, [this] { handleSettingsPage(); });
   server->on("/api/settings", HTTP_GET, [this] { handleSettingsGet(); });
   server->on("/api/settings", HTTP_POST, [this] { handleSettingsUpdate(); });
+  server->on("/api/language", HTTP_GET, [this] { handleLanguageGet(); });
+  server->on("/api/language", HTTP_POST, [this] { handleLanguageUpdate(); });
 
   server->on("/api/wifi", HTTP_GET, [this] { handleWifiGet(); });
   server->on("/api/wifi", HTTP_POST, [this] { handleWifiPost(); });
@@ -832,7 +843,7 @@ LocalServer::WsUploadStatus LocalServer::getWsUploadStatus() const {
 }
 
 void LocalServer::handleRoot() const {
-  server->send(200, "text/html", HomePageHtml);
+  server->send(200, "text/html", addLanguageManagerNavLink(HomePageHtml));
   INX_SERIAL.printf("[%lu] [WEB] Served root page\n", millis());
 }
 
@@ -990,19 +1001,23 @@ bool LocalServer::isEpubFile(const String& filename) const {
   return lower.size() >= 5 && lower.compare(lower.size() - 5, 5, ".epub") == 0;
 }
 
-void LocalServer::handleFileList() const { server->send(200, "text/html", FilesPageHtml); }
+void LocalServer::handleFileList() const { server->send(200, "text/html", addLanguageManagerNavLink(FilesPageHtml)); }
 
 void LocalServer::handleEpubPage() const {
-  server->send_P(200, PSTR("text/html; charset=utf-8"), EpubPageHtml, sizeof(EpubPageHtml) - 1);
+  server->send(200, "text/html; charset=utf-8", addLanguageManagerNavLink(EpubPageHtml));
 }
 
 void LocalServer::handleExportPage() const {
-  server->send_P(200, PSTR("text/html; charset=utf-8"), ExportPageHtml, sizeof(ExportPageHtml) - 1);
+  server->send(200, "text/html; charset=utf-8", addLanguageManagerNavLink(ExportPageHtml));
 }
 
-void LocalServer::handleFontManagerPage() const { server->send(200, "text/html", FontManagerPageHtml); }
+void LocalServer::handleFontManagerPage() const {
+  server->send(200, "text/html", addLanguageManagerNavLink(FontManagerPageHtml));
+}
 
-void LocalServer::handleTagsPage() const { server->send(200, "text/html", TagsPageHtml); }
+void LocalServer::handleLanguageManagerPage() const { server->send(200, "text/html", LanguageManagerPageHtml); }
+
+void LocalServer::handleTagsPage() const { server->send(200, "text/html", addLanguageManagerNavLink(TagsPageHtml)); }
 
 void LocalServer::handleInxFontPackJs() const {
   server->send_P(200, PSTR("text/javascript; charset=utf-8"), INX_FONT_PACK_JS, sizeof(INX_FONT_PACK_JS) - 1);
@@ -1897,7 +1912,7 @@ void LocalServer::onWebSocketEvent(uint8_t num, WStype_t type, uint8_t* payload,
 }
 
 void LocalServer::handleSettingsPage() const {
-  server->send(200, "text/html", SettingsPageHtml);
+  server->send(200, "text/html", addLanguageManagerNavLink(SettingsPageHtml));
   INX_SERIAL.printf("[%lu] [WEB] Served settings page\n", millis());
 }
 
@@ -1975,6 +1990,40 @@ void LocalServer::handleSettingsGet() const {
   String json;
   serializeJson(doc, json);
   server->send(200, "application/json", json);
+}
+
+void LocalServer::handleLanguageGet() const {
+  JsonDocument doc;
+  doc["code"] = LanguageManager::activeLanguageCode();
+  doc["name"] = LanguageManager::activeLanguageName();
+  JsonArray installed = doc["installed"].to<JsonArray>();
+  for (const LanguageManager::LanguageInfo& language : LanguageManager::installedLanguages()) {
+    JsonObject item = installed.add<JsonObject>();
+    item["code"] = language.code;
+    item["name"] = language.name;
+  }
+  String json;
+  serializeJson(doc, json);
+  server->send(200, "application/json", json);
+}
+
+void LocalServer::handleLanguageUpdate() const {
+  if (!server->hasArg("plain")) {
+    server->send(400, "text/plain", "Missing JSON body");
+    return;
+  }
+
+  JsonDocument doc;
+  if (deserializeJson(doc, server->arg("plain"))) {
+    server->send(400, "text/plain", "Invalid JSON");
+    return;
+  }
+  const char* code = doc["code"] | "";
+  if (!LanguageManager::setLanguage(code)) {
+    server->send(400, "text/plain", "Language is not installed");
+    return;
+  }
+  server->send(200, "application/json", "{\"status\":\"ok\"}");
 }
 
 void LocalServer::handleSettingsUpdate() const {

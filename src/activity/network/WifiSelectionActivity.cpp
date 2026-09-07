@@ -20,6 +20,7 @@ extern "C" {
 #include "activity/util/KeyboardEntryActivity.h"
 #include "state/NetworkCredential.h"
 #include "system/Fonts.h"
+#include "system/LanguageManager.h"
 #include "system/ScreenComponents.h"
 #include "system/MappedInputManager.h"
 
@@ -79,8 +80,8 @@ void WifiSelectionActivity::onEnter() {
   uint8_t mac[6];
   WiFi.macAddress(mac);
   char macStr[32];
-  snprintf(macStr, sizeof(macStr), "MAC address: %02x-%02x-%02x-%02x-%02x-%02x", mac[0], mac[1], mac[2], mac[3], mac[4],
-           mac[5]);
+  snprintf(macStr, sizeof(macStr), LanguageManager::translateText("MAC address: %02x-%02x-%02x-%02x-%02x-%02x"),
+           mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
   cachedMacAddress = std::string(macStr);
 
   updateRequired = true;
@@ -732,7 +733,7 @@ void WifiSelectionActivity::renderNetworkList(int screenWidth, int screenHeight,
     }
 
     char countStr[32];
-    snprintf(countStr, sizeof(countStr), "%zu networks found", networks.size());
+    snprintf(countStr, sizeof(countStr), LanguageManager::translateText("%zu networks found"), networks.size());
     renderer.text.render(MONTSERRAT_8_FONT_ID, 20, screenHeight - 90, countStr);
     renderer.text.render(MONTSERRAT_8_FONT_ID, 20, screenHeight - 105, cachedMacAddress.c_str());
   }
@@ -776,7 +777,7 @@ void WifiSelectionActivity::renderConnectionFailed(const int screenWidth, const 
   const int errorY = dividerY + 40;
   renderer.text.centered(MONTSERRAT_10_FONT_ID, errorY - 20, connectionError.c_str());
 
-  std::string ssidInfo = "Network: " + selectedSSID;
+  std::string ssidInfo = std::string(LanguageManager::translateText("Network:")) + " " + selectedSSID;
   if (ssidInfo.length() > 25) {
     ssidInfo.replace(22, ssidInfo.length() - 22, "...");
   }

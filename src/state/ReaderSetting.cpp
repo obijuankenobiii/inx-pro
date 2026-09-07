@@ -28,8 +28,8 @@ void readAndValidate(FsFile& file, uint8_t& member, uint8_t maxValue);
 ReaderSetting ReaderSetting::instance;
 
 namespace {
-constexpr uint8_t READER_SETTINGS_FILE_VERSION = 3;
-constexpr uint8_t READER_SETTINGS_COUNT = 41;
+constexpr uint8_t READER_SETTINGS_FILE_VERSION = 4;
+constexpr uint8_t READER_SETTINGS_COUNT = 42;
 constexpr uint8_t LEGACY_IMAGE_PRESENTATION_COUNT = 4;
 constexpr char READER_SETTINGS_FILE[] = "/.system/reader_settings.bin";
 constexpr uint32_t FNV1A_OFFSET = 2166136261UL;
@@ -123,6 +123,7 @@ uint32_t readerSettingsHash(const ReaderSetting& settings, const uint8_t fontFam
   hashPod(hash, settings.pageTurnMode);
   hashPod(hash, settings.disableLightControl);
   hashPod(hash, settings.doubleTapAction);
+  hashString(hash, settings.defaultLanguageCode);
   return hash;
 }
 }
@@ -206,6 +207,7 @@ bool ReaderSetting::saveToFile() const {
   serialization::writePod(outputFile, pageTurnMode);
   serialization::writePod(outputFile, disableLightControl);
   serialization::writePod(outputFile, doubleTapAction);
+  serialization::writeString(outputFile, std::string(defaultLanguageCode));
 
   outputFile.close();
 
@@ -395,6 +397,17 @@ bool ReaderSetting::loadFromFile() {
     }
     if (settingsRead < fileSettingsCount) {
       readAndValidate(inputFile, doubleTapAction, SystemSetting::READER_BUTTON_ACTION_COUNT);
+      ++settingsRead;
+    }
+    if (settingsRead < fileSettingsCount) {
+      std::string languageCode;
+      serialization::readString(inputFile, languageCode);
+      if (languageCode.size() <= sizeof(defaultLanguageCode) - 1) {
+        std::strncpy(defaultLanguageCode, languageCode.c_str(), sizeof(defaultLanguageCode) - 1);
+        defaultLanguageCode[sizeof(defaultLanguageCode) - 1] = '\0';
+      } else {
+        defaultLanguageCode[0] = '\0';
+      }
       ++settingsRead;
     }
 

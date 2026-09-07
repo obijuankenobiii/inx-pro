@@ -30,6 +30,7 @@
 #include "SleepImagePickerActivity.h"
 #include "ThumbnailGeneratorActivity.h"
 #include "ThemePickerActivity.h"
+#include "LanguageManagerActivity.h"
 #include "images/Close.h"
 #include "images/LibraryFilterLeft.h"
 #include "images/LibraryFilterRight.h"
@@ -554,6 +555,14 @@ void CategorySettingsActivity::setupMenu() {
             if (strcmp(settingPtr->name, "Choose sleep image") == 0) {
               exitActivity();
               enterNewActivity(new SleepImagePickerActivity(renderer, mappedInput, [this] {
+                exitActivity();
+                updateRequired = true;
+              }));
+              return;
+            }
+            if (strcmp(settingPtr->name, "Language") == 0) {
+              exitActivity();
+              enterNewActivity(new LanguageManagerActivity(renderer, mappedInput, [this] {
                 exitActivity();
                 updateRequired = true;
               }));

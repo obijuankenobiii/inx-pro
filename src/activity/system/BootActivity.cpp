@@ -17,6 +17,7 @@
 #include "state/ReaderSetting.h"
 #include "state/Session.h"
 #include "state/SystemSetting.h"
+#include "system/LanguageManager.h"
 #if FREEINK_DEVICE_X4PRO
 #include "system/Frontlight.h"
 #include "system/FrontlightPreferences.h"
@@ -42,6 +43,7 @@ void BootActivity::onEnter() {
 
   if (sdCardAvailable) {
     SETTINGS.loadFromFile();
+    LanguageManager::initialize();
     renderer.setDarkMode(SETTINGS.darkMode != 0);
     READER_SETTINGS.loadFromFile();
     OPDS_STORE.loadOrMigrate({"Default", SETTINGS.opdsServerUrl, SETTINGS.opdsUsername, SETTINGS.opdsPassword});

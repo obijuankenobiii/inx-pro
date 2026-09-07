@@ -45,6 +45,7 @@
 #include "state/Statistics.h"
 #include "state/SystemSetting.h"
 #include "system/FontManager.h"
+#include "system/LanguageManager.h"
 #include "system/Fonts.h"
 #include "system/Frontlight.h"
 #include "system/FrontlightPreferences.h"
@@ -1008,6 +1009,7 @@ void EpubActivity::onExit() {
   }
 
   FontManager::unloadAllSDFonts();
+  LanguageManager::setBookLanguage("");
 
   ActivityWithSubactivity::onExit();
 }
@@ -2241,6 +2243,8 @@ void EpubActivity::loadBookSettings() {
     } else {
       syncSettingsFromGlobalIfNeeded();
     }
+    // Book language selection is global; use the language enabled in Language Manager.
+    LanguageManager::setBookLanguage("");
     renderer.setDarkMode(bookSettings.darkMode != 0);
     pagesUntilFullRefresh = READER_SETTINGS.getRefreshFrequency();
   }
@@ -2292,10 +2296,13 @@ void EpubActivity::applyBookSettings() {
   setupOrientation();
 
   bookSettings.normalize();
+  // Book language selection is global; use the language enabled in Language Manager.
+  LanguageManager::setBookLanguage("");
   const int targetFontId = bookSettings.getReaderFontId();
   if (!FontManager::ensureReaderLayoutFonts(targetFontId, renderer)) {
     bookSettings = rollbackSettings;
     bookSettings.normalize();
+    LanguageManager::setBookLanguage("");
     renderer.setDarkMode(bookSettings.darkMode != 0);
     setupOrientation();
     bookLayoutAppliedOrientation_ = bookSettings.orientation;

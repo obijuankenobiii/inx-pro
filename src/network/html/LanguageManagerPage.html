@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Inx — Language Manager</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #fafafa; color: #1a1a1a; font-family: "Atkinson Hyperlegible", system-ui, sans-serif; line-height: 1.45; }
+    .container { max-width: 820px; margin: 0 auto; padding: 28px 18px 42px; }
+    h1 { margin: 0 0 22px; text-align: center; font-size: 26px; color: #111; }
+    .nav-links { display: flex; justify-content: center; gap: 2px; flex-wrap: wrap; margin-bottom: 22px; padding-bottom: 8px; border-bottom: 1px solid #ebebeb; }
+    .nav-btn { padding: 6px 12px; border-radius: 6px; color: #555; text-decoration: none; font-size: 13px; font-weight: 500; }
+    .nav-btn:hover { background: #eee; color: #111; }
+    .nav-btn.active { background: #111; color: #fff; }
+    .card { margin-bottom: 18px; padding: 20px; border: 1px solid #eee; border-radius: 12px; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.05); }
+    .card h2 { margin: 0 0 5px; font-size: 18px; color: #1d1d1f; }
+    .hint { margin: 0 0 15px; color: #777; font-size: 12.5px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    label { display: block; margin-bottom: 5px; color: #555; font-size: 12px; font-weight: 650; }
+    input[type=text], input[type=file] { width: 100%; padding: 10px 11px; border: 1px solid #d9d9dd; border-radius: 8px; background: #fff; color: #111; font: inherit; }
+    input[type=file] { padding: 8px; font-size: 13px; }
+    .translation-row { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(220px, 1.5fr); gap: 12px; align-items: center; padding: 8px 0; border-bottom: 1px solid #f0f0f0; }
+    .translation-row:last-child { border-bottom: 0; }
+    .translation-label { color: #555; font-size: 13px; }
+    .translation-key { display: block; margin-top: 2px; color: #999; font-size: 10px; font-family: ui-monospace, monospace; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; margin-top: 16px; }
+    button { padding: 10px 16px; border: 0; border-radius: 999px; background: #e8e8ed; color: #222; font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; }
+    button:hover { background: #dcdce0; }
+    button.primary { background: #111; color: #fff; }
+    button.primary:hover { background: #333; }
+    button:disabled { cursor: default; opacity: .45; }
+    .check { display: flex; align-items: center; gap: 9px; margin-top: 12px; color: #333; font-size: 13px; }
+    .check input { width: 17px; height: 17px; }
+    .status { min-height: 20px; margin-top: 12px; color: #666; font-size: 12px; }
+    .status.error { color: #b3261e; }
+    .status.success { color: #287b39; }
+    .file-note { margin: 6px 0 0; color: #888; font-size: 11px; }
+    .custom-row { display: flex; gap: 8px; margin-top: 12px; }
+    .custom-row input { flex: 1; }
+    .installed-language-list { display: grid; gap: 8px; }
+    .installed-language-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid #f0f0f0; color: #333; font-size: 13px; }
+    .installed-language-row:last-child { border-bottom: 0; }
+    .installed-language-row input { width: 17px; height: 17px; }
+    @media (max-width: 650px) {
+      .grid, .translation-row { grid-template-columns: 1fr; gap: 5px; }
+      .translation-row { padding: 10px 0; }
+      .actions button { flex: 1 1 140px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <h1>Language Manager</h1>
+    <nav class="nav-links">
+      <a class="nav-btn" href="/">Dashboard</a>
+      <a class="nav-btn" href="/files">Files</a>
+      <a class="nav-btn" href="/epub">Epub</a>
+      <a class="nav-btn" href="/tags">Tags</a>
+      <a class="nav-btn" href="/font-manager">Fonts</a>
+      <a class="nav-btn active" href="/language-manager">Language</a>
+      <a class="nav-btn" href="/export">Bookmarks &amp; Annotations</a>
+      <a class="nav-btn" href="/settings">Settings</a>
+    </nav>
+
+    <section class="card">
+      <h2>Installed languages</h2>
+      <p class="hint">Languages with a translate.yml file on the device appear here. Enable one to use it for device menus, or turn it off to use English.</p>
+      <div id="installedLanguageList" class="installed-language-list"><div class="file-note">Loading languages...</div></div>
+      <div id="languageSelectionStatus" class="status"></div>
+    </section>
+
+    <section class="card">
+      <h2>Language package</h2>
+      <p class="hint">Create one package containing translations, language fonts, and optional hyphenation data.</p>
+      <div class="grid">
+        <div><label for="languageCode">Language code</label><input id="languageCode" type="text" value="cjk" placeholder="cjk or zh-CN"></div>
+        <div><label for="languageName">Display name</label><input id="languageName" type="text" value="CJK" placeholder="CJK"></div>
+      </div>
+      <div class="custom-row"><input id="translationYamlFile" type="file" accept=".yml,.yaml,text/yaml"><button type="button" onclick="loadTranslationYaml()">Load prebuilt YAML</button></div>
+      <p class="file-note">Load a YAML file translated by an AI agent or prepared elsewhere, then review it before building the package.</p>
+    </section>
+
+    <section class="card">
+      <h2>Menu translations</h2>
+      <p class="hint">English defaults are shown for reference. Edit the right-hand fields, then add any project-specific labels below.</p>
+      <div id="translationList"></div>
+      <div class="custom-row"><input id="customKey" type="text" placeholder="Custom key, e.g. menu.new_label"><input id="customLabel" type="text" placeholder="English label"><button type="button" onclick="addCustomTranslation()">Add label</button></div>
+      <div class="actions"><button type="button" onclick="downloadYamlTemplate()">Download YAML template</button></div>
+    </section>
+
+    <section class="card">
+      <h2>Language fonts</h2>
+      <p class="hint">Optional. Leave fonts empty when updating an existing translation; selected fonts are converted to the device’s compiled format at 10–18 pt.</p>
+      <div class="grid">
+        <div><label for="languageFontRegular">Regular</label><input id="languageFontRegular" type="file" accept=".ttf,.otf,.TTF,.OTF"></div>
+        <div><label for="languageFontBold">Bold</label><input id="languageFontBold" type="file" accept=".ttf,.otf,.TTF,.OTF"></div>
+        <div><label for="languageFontItalic">Italic</label><input id="languageFontItalic" type="file" accept=".ttf,.otf,.TTF,.OTF"></div>
+        <div><label for="languageFontBoldItalic">Bold italic</label><input id="languageFontBoldItalic" type="file" accept=".ttf,.otf,.TTF,.OTF"></div>
+      </div>
+      <label class="check"><input id="cjkGlyphs" type="checkbox" checked> Include CJK glyph ranges (large package; use a licensed CJK font)</label>
+      <label class="check"><input id="oneBit" type="checkbox"> Generate 1-bit glyphs instead of 2-bit grayscale</label>
+      <p class="file-note">CJK ranges include punctuation, kana, common and extension-A ideographs, compatibility ideographs, and full-width forms.</p>
+    </section>
+
+    <section class="card">
+      <h2>Optional hyphenation</h2>
+      <p class="hint">Upload a hypher-generated binary trie. The existing Python helper converts this .bin into a firmware header; it does not generate the trie on the device.</p>
+      <input id="hyphenationFile" type="file" accept=".bin,.trie.bin">
+    </section>
+
+    <section class="card">
+      <div class="actions">
+        <button id="buildButton" class="primary" type="button" onclick="buildLanguagePackage()">Build files</button>
+        <button id="saveButton" type="button" onclick="saveLanguageToDevice()" disabled>Copy to SD</button>
+        <button id="downloadButton" type="button" onclick="downloadLanguageZip()" disabled>Download ZIP</button>
+      </div>
+      <div id="status" class="status"></div>
+    </section>
+  </main>
+  <script src="/js/inx_font_pack.js"></script>
+  <script>
+    const TRANSLATIONS = [
+      ['nav.home', 'Home'], ['nav.library', 'Library'], ['nav.search', 'Search'], ['nav.settings', 'Settings'],
+      ['nav.sync', 'Sync'], ['nav.statistics', 'Statistics'], ['nav.recent', 'Recent'], ['nav.reader', 'Reader'],
+      ['nav.system', 'System'], ['nav.device', 'Device'], ['nav.device_management', 'Device Management'],
+      ['nav.language', 'Language'], ['nav.presets', 'Presets'],
+      ['menu.font_manager', 'Font Manager'], ['menu.language_manager', 'Language Manager'],
+      ['device.manage_via_wifi', 'Manage via wifi'], ['device.calibre_file_transfer', 'Calibre File Transfer'],
+      ['device.create_hotspot', 'Create hotspot'], ['device.opds_browser', 'OPDS Browser'],
+      ['device.backup_restore', 'Backup and restore'], ['device.koreader_sync', 'KOReader Sync'],
+      ['device.check_updates', 'Check for updates'], ['device.choose_dictionary', 'Choose dictionary'],
+      ['device.information', 'Device Information'],
+      ['home.shortcuts', 'Shortcuts'], ['home.bookmarks', 'Bookmarks'], ['home.highlights', 'Highlights'],
+      ['home.favorites', 'Favorites'], ['home.dictionary', 'Dictionary'], ['home.heatmap', 'Heatmap'],
+      ['home.favorite', 'Favorite'], ['home.book', 'Book'], ['home.view_report', 'View Report'],
+      ['home.remove_favorite', 'Remove favorite'], ['home.remove_recent', 'Remove Recent'],
+      ['home.delete_cache', 'Delete cache'], ['home.no_bookmarks', 'No bookmarks yet'],
+      ['home.no_highlights', 'No highlights yet'], ['home.no_favorites', 'No favorites yet'],
+      ['home.no_saved_words', 'No saved words yet'], ['home.look_up', 'Look up'],
+      ['home.transcribe_note', 'Transcribe note'], ['home.preview_unavailable', 'Preview unavailable'],
+      ['home.untitled_book', 'Untitled book'], ['home.nothing_to_look_up', 'Nothing to look up.'],
+      ['home.no_dictionary_selected', 'No dictionary selected. Pick one in Settings > Reader > Choose dictionary.'],
+      ['home.dictionary_open_failed', 'Could not open the selected dictionary.'],
+      ['home.no_definition', 'No definition found.'], ['home.looking_up', 'Looking up...'],
+      ['home.saved', 'Saved'], ['action.next', 'Next'], ['home.note', 'Note'],
+      ['library.folders', 'Folders'], ['library.all_books', 'All books'], ['library.reading', 'Reading'],
+      ['library.finished', 'Finished'], ['library.author', 'Author'], ['library.title', 'Title'],
+      ['library.folder', 'Folder'], ['library.az', 'A-Z'], ['library.za', 'Z-A'], ['library.epub', 'EPUB'],
+      ['library.pdf', 'PDF'], ['library.txt', 'TXT'], ['library.xtc', 'XTC'], ['library.all', 'All'],
+      ['library.type', 'Type'], ['library.options', 'Options'], ['library.hide_finished', 'Hide finished books'],
+      ['action.yes', 'Yes'], ['action.no', 'No'], ['library.mark_favorite', 'Mark as favorite'],
+      ['library.delete_book', 'Delete Book'], ['action.reset', 'Reset'],
+      ['wifi.networks', 'WiFi Networks'], ['wifi.searching', 'Searching for connections...'],
+      ['wifi.no_networks', 'No networks found'], ['wifi.scan_again', 'Press Connect to scan again'],
+      ['wifi.locked', '(Locked)'], ['action.connect', 'Connect'], ['wifi.connecting', 'Connecting to'],
+      ['wifi.please_wait', 'Please wait...'], ['wifi.network', 'Network:'], ['action.continue', 'Continue'],
+      ['wifi.forget_prompt', 'Forget network and remove saved password?'], ['wifi.forget', 'Forget network'],
+      ['wifi.mac_address', 'MAC address: %02x-%02x-%02x-%02x-%02x-%02x'],
+      ['wifi.networks_found', '%zu networks found'],
+      ['wifi.hotspot', 'Hotspot'], ['wifi.hotspot_start_failed', 'Could not start hotspot'],
+      ['wifi.try_again', 'Press Back to try again'], ['wifi.step_one', 'STEP 1'], ['wifi.join_wifi', 'Join WiFi'],
+      ['wifi.step_two', 'STEP 2'], ['wifi.open_transfer', 'Open Transfer'], ['wifi.local_network', 'Local Network'],
+      ['wifi.server_start_failed', 'Could not start server'], ['wifi.open_transfer_title', 'OPEN TRANSFER'],
+      ['wifi.keep_open', 'Keep this screen open while transferring'],
+      ['wifi.press_back_return', 'Press Back to return'], ['wifi.calibre', 'CALIBRE'],
+      ['wifi.download_and_install', 'Download and install'], ['wifi.crosspoint_calibre', 'CrossPoint Calibre'],
+      ['wifi.plugin', 'plugin'], ['wifi.calibre_instruction', 'Choose Send to device in Calibre'],
+      ['menu.button_gestures', 'Button & Gestures'], ['menu.font_family', 'Font Family'],
+      ['menu.text_antialiasing', 'Text Anti-Aliasing'], ['menu.sleep_screen', 'Sleep Screen'],
+      ['menu.time_to_sleep', 'Time to Sleep'], ['menu.boot_mode', 'Boot Mode'], ['menu.theme', 'Theme'],
+      ['menu.display', 'Display'], ['menu.clock', 'Clock'], ['menu.image', 'Image'], ['menu.actions', 'Actions'],
+      ['menu.quick_actions', 'Quick Actions'], ['menu.preset', 'Preset'],
+      ['menu.time_to_sleep', 'Time to Sleep'], ['menu.refresh_frequency', 'Refresh Frequency'],
+      ['menu.page_auto_turn', 'Page Auto Turn'], ['menu.image_quality', 'Image Quality'],
+      ['menu.daily_reading_goal', 'Daily Reading Goal'], ['menu.hyphenation', 'Hyphenation'],
+      ['language.loading', 'Loading languages...'], ['language.please_wait', 'Please wait'],
+      ['language.tap_to_download', 'Tap a language to download it.'], ['language.no_packages', 'No language packages found.'],
+      ['language.load_failed', 'Could not load language packages.'], ['language.downloading', 'Downloading and installing...'],
+      ['language.download_start_failed', 'Could not start download.'], ['language.downloading_title', 'DOWNLOADING LANGUAGE'],
+      ['language.installing', 'Installing language package'], ['language.installed', 'Language installed.'],
+      ['language.selected', 'Language selected.'], ['language.select_failed', 'Could not select language.'],
+      ['language.removed', 'Language removed.'], ['language.remove_failed', 'Language removal failed.'],
+      ['language.install_failed', 'Language installation failed.'], ['language.wifi_failed', 'Wi-Fi connection failed. Tap Retry.'],
+      ['settings.display', 'Display'], ['settings.device', 'Device'], ['settings.sleep_screen', 'Sleep Screen'],
+      ['settings.hide_battery', 'Hide Battery %'], ['settings.keyboard', 'Keyboard'], ['settings.text_size', 'Text size'],
+      ['settings.hide_thumbnail_titles', 'Hide title for thumbnails'], ['settings.thumbnail_size', 'Thumbnail size'],
+      ['settings.clock_face', 'Face'], ['settings.clock_format', 'Format'], ['settings.cover_mode', 'Cover Mode'],
+      ['settings.cover_filter', 'Cover Filter'], ['settings.sleep_image_quality', 'Sleep Image Quality'],
+      ['settings.thumbnail_corners', 'Thumbnail corners'], ['settings.flick_page_turn', 'Flick page turn'],
+      ['settings.flick_sensitivity', 'Flick sensitivity'], ['settings.short_power_button', 'Short Press Power Button'],
+      ['value.dark', 'Dark'], ['value.light', 'Light'], ['value.custom', 'Custom'], ['value.recent_book', 'Recent Book'],
+      ['value.transparent_cover', 'Transparent Cover'], ['value.date_time', 'Date Time'], ['value.widget', 'Widget'],
+      ['value.never', 'Never'], ['value.in_reader', 'In Reader'], ['value.always', 'Always'], ['value.small', 'Small'],
+      ['value.medium', 'Medium'], ['value.large', 'Large'], ['value.actual', 'Actual'], ['value.even', 'Even'],
+      ['value.12_hour', '12 hour'], ['value.24_hour', '24 hour'], ['value.fill', 'Fill'], ['value.crop', 'Crop'],
+      ['value.contrast', 'Contrast'], ['value.inverted', 'Inverted'], ['value.low', 'Low'], ['value.high', 'High'],
+      ['value.square', 'Square'], ['value.rounded', 'Rounded'], ['value.subtle', 'Subtle'], ['value.1_min', '1 min'],
+      ['value.5_min', '5 min'], ['value.10_min', '10 min'], ['value.15_min', '15 min'], ['value.30_min', '30 min'],
+      ['value.home_page', 'Home Page'], ['value.normal', 'Normal'], ['value.sleep', 'Sleep'], ['value.refresh', 'Refresh'],
+      ['action.delete_cache', 'Delete Cache'], ['action.generate_thumbnails', 'Generate thumbnails'],
+      ['action.generate_authors', 'Generate Authors'], ['action.new_preset', 'New preset +'],
+      ['action.choose_sleep_image', 'Choose sleep image'], ['action.save', 'Save'], ['action.cancel', 'Cancel'],
+      ['action.edit', 'Edit'], ['action.rename', 'Rename'], ['action.delete', 'Delete'], ['action.default', 'Default'],
+      ['action.retry', 'Retry'], ['action.download', 'Download'], ['action.back', 'Back'], ['action.open', 'Open'],
+      ['action.page_previous', 'Page -'], ['action.page_next', 'Page +'],
+      ['action.up', 'Up'], ['action.down', 'Down'], ['action.select', 'Select'], ['action.toggle', 'Toggle'],
+      ['action.discard', 'Discard'],
+      ['action.no_actions', 'No actions available.'],
+      ['preset.name_prompt', 'Name this preset'], ['preset.rename_prompt', 'Rename preset'],
+      ['preset.save_new', 'Save new preset?'],
+      ['settings.button', 'Button'], ['settings.gestures', 'Gestures'],
+      ['settings.quick_actions_setup', 'Set up quick actions menu'],
+      ['settings.disable_light_control', 'Disable light control'], ['settings.page_turn', 'Page turn'],
+      ['settings.double_tap', 'Double tap'],
+      ['value.swipe', 'Swipe'], ['value.tap', 'Tap'],
+      ['button.left', 'Left'], ['button.right', 'Right'], ['button.up_short', 'Up (Short)'],
+      ['button.up_long', 'Up (Long)'], ['button.down_short', 'Down (Short)'],
+      ['button.down_long', 'Down (Long)'], ['button.left_short', 'Left (Short)'],
+      ['button.left_long', 'Left (Long)'], ['button.right_short', 'Right (Short)'],
+      ['button.right_long', 'Right (Long)'], ['button.power', 'Power'],
+      ['reader_setting.style', 'Style'], ['reader_setting.size', 'Size'], ['reader_setting.alignment', 'Alignment'],
+      ['value.extra_small', 'Extra Small'], ['value.x_large', 'X Large'],
+      ['value.justify', 'Justify'], ['value.center', 'Center'], ['value.book_style', "Book's style"],
+      ['value.portrait', 'Portrait'], ['value.landscape_cw', 'Landscape CW'],
+      ['value.landscape_ccw', 'Landscape CCW'],
+      ['reader_setting.line_height', 'Line height'], ['reader_setting.word_spacing', 'Word spacing'],
+      ['reader_setting.extra_paragraph_spacing', 'Extra Paragraph Spacing'], ['reader_setting.indent', 'Indent'],
+      ['reader_setting.screen_margin', 'Screen Margin'], ['reader_setting.orientation', 'Orientation'],
+      ['reader_setting.bionic_reading', 'Bionic Reading'], ['reader_setting.dark_mode', 'Dark mode'],
+      ['reader_setting.guide_lines', 'Guide Lines'], ['value.grid', 'Grid'], ['value.notebook', 'Notebook'],
+      ['reader_setting.left_section', 'Left Section'], ['reader_setting.middle_section', 'Middle Section'],
+      ['reader_setting.right_section', 'Right Section'], ['reader_setting.full_bar', 'Full Bar'],
+      ['status.page_numbers', 'Page Numbers'], ['status.percentage', 'Percentage'],
+      ['status.chapter_title', 'Chapter Title'], ['status.battery_icon', 'Battery Icon'],
+      ['status.battery_percentage', 'Battery %'], ['status.battery_icon_percentage', 'Battery Icon+%'],
+      ['status.progress_bar', 'Progress Bar'], ['status.progress_bar_percentage', 'Progress Bar+%'],
+      ['status.page_bars', 'Page Bars'], ['status.book_title', 'Book Title'], ['status.author_name', 'Author Name'],
+      ['status.page_numbers_percentage', 'Page Num+%'], ['status.time_left_chapter', 'Time Left (Chapter)'],
+      ['status.time_left_book', 'Time Left (Book)'],
+      ['preview.paragraph_one', 'The quick brown fox jumps over the lazy dog while the printing press hums softly.'],
+      ['preview.paragraph_two', 'Good typography is invisible.'], ['preview.chapter_three', 'Chapter Three'],
+      ['preview.example_book', 'The Example Book'], ['preview.jane_author', 'Jane Author'],
+      ['preview.first_list_item', 'First list item here'], ['preview.second_list_item', 'Second list item too'],
+      ['reader_action.none', 'None'], ['reader_action.page_next', 'Page Next'],
+      ['reader_action.page_previous', 'Page Previous'], ['reader_action.open_settings', 'Open Settings'],
+      ['reader_action.annotate', 'Annotate'], ['reader_action.dictionary', 'Dictionary'],
+      ['reader_action.page_refresh', 'Page Refresh'], ['reader_action.chapter_skip_next', 'Chapter Skip Next'],
+      ['reader_action.chapter_skip_previous', 'Chapter Skip Previous'], ['reader_action.bookmark', 'Bookmark'],
+      ['reader_action.table_of_content', 'Table of Content'],
+      ['reader_action.table_of_contents', 'Table of Contents'],
+      ['reader_action.change_orientation', 'Change Orientation'], ['reader_action.apply_preset', 'Apply Preset'],
+      ['reader_action.generate_full_data', 'Generate Full Data'],
+      ['reader_action.generate_thumbnail', 'Generate Thumbnail'], ['reader_action.go_to_percent', 'Go to Percent'],
+      ['reader_action.toggle_light', 'Toggle Light'],
+      ['value.off', 'Off'], ['value.1_page', '1 page'], ['value.5_pages', '5 pages'],
+      ['value.10_pages', '10 pages'], ['value.15_pages', '15 pages'], ['value.30_pages', '30 pages'],
+      ['value.10_sec', '10 sec'], ['value.20_sec', '20 sec'], ['value.30_sec', '30 sec'],
+      ['value.40_sec', '40 sec'], ['value.50_sec', '50 sec'], ['value.60_sec', '60 sec'],
+      ['value.70_sec', '70 sec'], ['value.80_sec', '80 sec'], ['value.90_sec', '90 sec'],
+      ['value.100_sec', '100 sec'], ['value.110_sec', '110 sec'], ['value.120_sec', '120 sec'],
+      ['value.130_sec', '130 sec'], ['value.140_sec', '140 sec'], ['value.150_sec', '150 sec'],
+      ['value.160_sec', '160 sec'], ['value.170_sec', '170 sec'], ['value.180_sec', '180 sec'],
+      ['value.35_min', '35 min'], ['value.40_min', '40 min'], ['value.45_min', '45 min'],
+      ['value.50_min', '50 min'], ['value.55_min', '55 min'], ['value.60_min', '60 min'],
+      ['value.65_min', '65 min'], ['value.70_min', '70 min'], ['value.75_min', '75 min'],
+      ['value.80_min', '80 min'], ['value.85_min', '85 min'], ['value.90_min', '90 min'],
+      ['value.95_min', '95 min'], ['value.100_min', '100 min'], ['value.105_min', '105 min'],
+      ['value.110_min', '110 min'], ['value.115_min', '115 min'], ['value.120_min', '120 min'],
+      ['value.on', 'On']
+    ];
+    const CJK_RANGES = [[0x3000, 0x303f], [0x3040, 0x30ff], [0x3400, 0x4dbf], [0x4e00, 0x9fff], [0xf900, 0xfaff], [0xff00, 0xffef]];
+    const customTranslations = [];
+    let generated = null;
+
+    function esc(value) { return String(value || '').replace(/[&<>\"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c])); }
+    function renderTranslations() {
+      const rows = TRANSLATIONS.concat(customTranslations);
+      document.getElementById('translationList').innerHTML = rows.map((item, index) => {
+        const key = Array.isArray(item) ? item[0] : item.key;
+        const label = Array.isArray(item) ? item[1] : item.label;
+        return '<div class="translation-row"><div class="translation-label">' + esc(label) + '<span class="translation-key">' + esc(key) + '</span></div><input type="text" data-translation-index="' + index + '" data-translation-key="' + esc(key) + '" value="' + esc(label) + '"></div>';
+      }).join('');
+    }
+    function addCustomTranslation() {
+      const key = document.getElementById('customKey').value.trim();
+      const label = document.getElementById('customLabel').value.trim();
+      if (!key || !label) return setStatus('Enter both a custom key and label.', true);
+      if (TRANSLATIONS.some(item => item[0] === key) || customTranslations.some(item => item.key === key)) return setStatus('That translation key already exists.', true);
+      customTranslations.push({key, label});
+      document.getElementById('customKey').value = '';
+      document.getElementById('customLabel').value = '';
+      renderTranslations();
+    }
+    function yamlScalar(value) {
+      const text = value.trim();
+      if (!text) return '';
+      if (text[0] === '"') {
+        try { return JSON.parse(text); } catch (_) { return text.slice(1, text.endsWith('"') ? -1 : undefined); }
+      }
+      if (text[0] === "'" && text.endsWith("'")) return text.slice(1, -1).replace(/''/g, "'");
+      return text;
+    }
+    function parseTranslationYaml(source) {
+      const parsed = {code: '', name: '', translations: {}};
+      let inTranslations = false;
+      source.split(/\r?\n/).forEach(line => {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) return;
+        if (trimmed === 'translations:') { inTranslations = true; return; }
+        const colon = line.indexOf(':');
+        if (colon < 0) return;
+        const key = yamlScalar(line.slice(0, colon));
+        const value = yamlScalar(line.slice(colon + 1));
+        if (inTranslations) parsed.translations[key] = value;
+        else if (key === 'code') parsed.code = value;
+        else if (key === 'name') parsed.name = value;
+      });
+      return parsed;
+    }
+    async function loadTranslationYaml() {
+      const file = document.getElementById('translationYamlFile').files[0];
+      if (!file) return setStatus('Choose a .yml or .yaml file first.', true);
+      try {
+        const parsed = parseTranslationYaml(await file.text());
+        if (!parsed.code || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/.test(parsed.code)) {
+          throw new Error('The YAML must contain a valid code field.');
+        }
+        document.getElementById('languageCode').value = parsed.code;
+        document.getElementById('languageName').value = parsed.name || parsed.code;
+        customTranslations.length = 0;
+        const knownKeys = new Set(TRANSLATIONS.map(item => item[0]));
+        Object.keys(parsed.translations).forEach(key => {
+          if (key && !knownKeys.has(key)) customTranslations.push({key, label: key});
+        });
+        renderTranslations();
+        Object.entries(parsed.translations).forEach(([key, value]) => {
+          const input = Array.from(document.querySelectorAll('[data-translation-key]')).find(element => element.dataset.translationKey === key);
+          if (input) input.value = value;
+        });
+        setStatus('Loaded ' + Object.keys(parsed.translations).length + ' translations from ' + file.name + '.', false, true);
+      } catch (error) { setStatus('Could not load YAML: ' + (error.message || error), true); }
+    }
+    function setStatus(message, error, success) {
+      const status = document.getElementById('status');
+      status.textContent = message || '';
+      status.className = 'status' + (error ? ' error' : success ? ' success' : '');
+    }
+    let activeLanguageCode = '';
+    async function updateInstalledLanguages() {
+      const list = document.getElementById('installedLanguageList');
+      if (!list) return;
+      try {
+        const response = await fetch('/api/language');
+        if (!response.ok) throw new Error('Unable to read installed languages');
+        const data = await response.json();
+        activeLanguageCode = data.code || '';
+        const languages = Array.isArray(data.installed) ? data.installed : [];
+        if (!languages.some(language => !language.code)) languages.unshift({code: '', name: 'English'});
+        list.innerHTML = languages.map(language => {
+          const code = language.code || '';
+          const name = code ? (language.name || code) : 'English';
+          const marker = code ? code : 'default';
+          return '<label class="installed-language-row"><span>' + esc(name) + '<small class="translation-key">' + esc(marker) + '</small></span><input type="checkbox" data-language-code="' + esc(code) + '" ' + (code === activeLanguageCode ? 'checked' : '') + ' onchange="setActiveLanguage(this)"></label>';
+        }).join('');
+      } catch (error) {
+        list.innerHTML = '<div class="file-note">' + esc(error.message || 'Unable to load installed languages.') + '</div>';
+      }
+    }
+    async function setActiveLanguage(control) {
+      const requestedCode = control.dataset.languageCode || '';
+      const targetCode = control.checked ? requestedCode : (activeLanguageCode === requestedCode ? '' : activeLanguageCode);
+      if (targetCode === activeLanguageCode) return updateInstalledLanguages();
+      control.disabled = true;
+      try {
+        const response = await fetch('/api/language', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({code: targetCode})});
+        if (!response.ok) throw new Error(await response.text() || 'Could not select language');
+        activeLanguageCode = targetCode;
+        setLanguageSelectionStatus(targetCode ? 'Language enabled.' : 'English enabled.', false, true);
+        await updateInstalledLanguages();
+      } catch (error) {
+        setLanguageSelectionStatus(error.message || 'Could not select language.', true);
+        await updateInstalledLanguages();
+      }
+    }
+    function setLanguageSelectionStatus(message, error, success) {
+      const status = document.getElementById('languageSelectionStatus');
+      status.textContent = message || '';
+      status.className = 'status' + (error ? ' error' : success ? ' success' : '');
+    }
+    function packageCode() {
+      const code = document.getElementById('languageCode').value.trim();
+      if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/.test(code)) throw new Error('Use a 1–32 character language code: letters, numbers, - or _.');
+      return code;
+    }
+    function yamlQuote(value) { return JSON.stringify(String(value == null ? '' : value)); }
+    function buildYaml(code, includeComments = false) {
+      const name = document.getElementById('languageName').value.trim() || code;
+      const inputs = Array.from(document.querySelectorAll('[data-translation-key]'));
+      let yaml = includeComments
+        ? '# Inx language translation template.\n# Keep the translation keys unchanged and translate only the values.\n# Return valid YAML and preserve placeholders, punctuation, and newline escapes.\n\n'
+        : '';
+      yaml += 'code: ' + yamlQuote(code) + '\nname: ' + yamlQuote(name) + '\ntranslations:\n';
+      inputs.forEach(input => { yaml += '  ' + yamlQuote(input.dataset.translationKey) + ': ' + yamlQuote(input.value) + '\n'; });
+      return new Blob([yaml], {type: 'text/yaml'});
+    }
+    function downloadYamlTemplate() {
+      let code = document.getElementById('languageCode').value.trim();
+      if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/.test(code)) code = 'xx';
+      const blob = buildYaml(code, true);
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'translate-template.yml';
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+      setStatus('Downloaded translate-template.yml. You can give it to an AI agent to translate.', false, true);
+    }
+    async function buildLanguagePackage() {
+      const regular = document.getElementById('languageFontRegular').files[0];
+      let code;
+      try { code = packageCode(); } catch (error) { return setStatus(error.message, true); }
+      const button = document.getElementById('buildButton');
+      button.disabled = true;
+      setStatus(regular ? 'Rasterizing language font; CJK packages may take several minutes…' : 'Preparing translation-only package…');
+      try {
+        const bins = regular ? await InxFontPack.buildAllBins({
+            regular,
+            bold: document.getElementById('languageFontBold').files[0] || null,
+            italic: document.getElementById('languageFontItalic').files[0] || null,
+            boldItalic: document.getElementById('languageFontBoldItalic').files[0] || null,
+            oneBit: document.getElementById('oneBit').checked,
+            codepointRanges: document.getElementById('cjkGlyphs').checked ? CJK_RANGES : undefined,
+            onLog: message => setStatus(message, false, true)
+          }) : [];
+        generated = {code, yaml: buildYaml(code), bins, hyphenation: document.getElementById('hyphenationFile').files[0] || null};
+        document.getElementById('saveButton').disabled = false;
+        document.getElementById('downloadButton').disabled = false;
+        setStatus(regular ? 'Built ' + bins.length + ' font files' + (generated.hyphenation ? ' and hyphenation data.' : '.') : 'Built translation-only package.', false, true);
+      } catch (error) {
+        generated = null;
+        document.getElementById('saveButton').disabled = true;
+        document.getElementById('downloadButton').disabled = true;
+        setStatus('Build failed: ' + (error.message || error), true);
+      } finally { button.disabled = false; }
+    }
+    async function mkdirQuiet(parent, name) {
+      const form = new FormData(); form.append('path', parent); form.append('name', name);
+      const response = await fetch('/mkdir', {method: 'POST', body: form});
+      const text = await response.text();
+      if (!response.ok && !text.includes('already')) throw new Error(text || 'Could not create folder');
+    }
+    async function uploadBlob(blob, filename, path) {
+      const form = new FormData(); form.append('file', blob, filename);
+      const response = await fetch('/upload?path=' + encodeURIComponent(path), {method: 'POST', body: form});
+      if (!response.ok) throw new Error(await response.text() || 'Upload failed for ' + filename);
+    }
+    async function saveLanguageToDevice() {
+      if (!generated) return setStatus('Build the language files first.', true);
+      const saveButton = document.getElementById('saveButton'); saveButton.disabled = true;
+      try {
+        const code = generated.code;
+        await mkdirQuiet('/', 'system'); await mkdirQuiet('/system', 'lang'); await mkdirQuiet('/system/lang', code);
+        await mkdirQuiet('/', 'fonts'); await mkdirQuiet('/fonts', 'lang'); await mkdirQuiet('/fonts/lang', code);
+        await uploadBlob(generated.yaml, 'translate.yml', '/system/lang/' + code);
+        for (const bin of generated.bins) await uploadBlob(bin.blob, bin.filename, '/fonts/lang/' + code);
+        if (generated.hyphenation) await uploadBlob(generated.hyphenation, 'hyphenation.bin', '/system/lang/' + code);
+        const rescan = await fetch('/api/fonts/rescan', {method: 'POST'});
+        if (!rescan.ok) throw new Error(await rescan.text() || 'Font rescan failed');
+        const active = await fetch('/api/language', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({code})});
+        if (!active.ok) throw new Error(await active.text() || 'Could not activate language');
+        await updateInstalledLanguages();
+        setStatus('Language files copied to /system/lang/' + code + '/ and /fonts/lang/' + code + '/.', false, true);
+      } catch (error) { setStatus('Copy failed: ' + (error.message || error), true); }
+      finally { saveButton.disabled = false; }
+    }
+    async function loadZipLibrary() {
+      if (window.JSZip) return;
+      await new Promise((resolve, reject) => { const script = document.createElement('script'); script.src = '/js/jszip.min.js'; script.onload = resolve; script.onerror = () => reject(new Error('ZIP library unavailable')); document.head.appendChild(script); });
+    }
+    async function downloadLanguageZip() {
+      if (!generated) return setStatus('Build the language files first.', true);
+      const button = document.getElementById('downloadButton'); button.disabled = true;
+      try {
+        await loadZipLibrary();
+        const zip = new JSZip();
+        zip.file('lang/' + generated.code + '/translate.yml', generated.yaml);
+        for (const bin of generated.bins) zip.file('fonts/lang/' + generated.code + '/' + bin.filename, bin.blob);
+        if (generated.hyphenation) zip.file('lang/' + generated.code + '/hyphenation.bin', generated.hyphenation);
+        const blob = await zip.generateAsync({type: 'blob', compression: 'DEFLATE'});
+        const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = generated.code + '.zip'; link.click();
+        setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+        setStatus('Downloaded ' + generated.code + '.zip.', false, true);
+      } catch (error) { setStatus('ZIP export failed: ' + (error.message || error), true); }
+      finally { button.disabled = false; }
+    }
+    renderTranslations();
+    updateInstalledLanguages();
+  </script>
+</body>
+</html>

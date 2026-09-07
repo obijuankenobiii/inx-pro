@@ -456,6 +456,8 @@ class SystemSetting {
 
   uint8_t mainMenuNav = MAIN_MENU_NAV_FRONT;  ///< Main-menu tab vs item navigation buttons
   uint8_t uiTheme = UI_THEME_BOTTOM_TABS;
+  /** Active SD language package code; empty selects the built-in English UI. */
+  char languageCode[33] = "";
 
   uint8_t sleepTimeout = SLEEP_10_MIN;  ///< Sleep timeout
 

@@ -7,6 +7,7 @@
 
 #include <GfxRenderer.h>
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -50,6 +51,9 @@ class FontManager {
 
   static bool loadFontFromSD(int fontId, GfxRenderer& renderer, bool enableGlyphBitmapCache = true);
   static bool ensureFontReady(int fontId, GfxRenderer& renderer);
+  /** Find an installed language font that really contains this codepoint. */
+  static int findLanguageFontForCodepoint(uint32_t codepoint, int preferredPt, EpdFontFamily::Style style,
+                                          GfxRenderer& renderer, const char* preferredLanguageCode = nullptr);
   /** Preload body, next-larger, and max-in-family SD slots used together during EPUB layout. */
   static bool ensureReaderLayoutFonts(int bodyFontId, GfxRenderer& renderer);
   static bool unloadFont(int fontId);
@@ -88,6 +92,7 @@ class FontManager {
     EpdFont* italicFont;
     EpdFont* boldItalic;
     EpdFontFamily* fontFamily;
+    bool isLanguage;
     bool isLoaded;
     uint32_t lastUsed;
   };

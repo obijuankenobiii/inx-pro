@@ -133,6 +133,9 @@ class ReaderSetting {
   /** Reader double-tap action. BTN_ACTION_NONE disables the gesture. */
   uint8_t doubleTapAction = SystemSetting::BTN_ACTION_NONE;
 
+  /** Default language package for books. Empty means follow the system UI language. */
+  char defaultLanguageCode[33] = "";
+
   ~ReaderSetting() = default;
 
   /**

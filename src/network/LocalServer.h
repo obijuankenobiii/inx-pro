@@ -67,6 +67,7 @@ class LocalServer {
 
   void handleRoot() const;
   void handleFontManagerPage() const;
+  void handleLanguageManagerPage() const;
   void handleTagsPage() const;
   void handleInxFontPackJs() const;
   void handleJsZipMinJs() const;
@@ -97,6 +98,8 @@ class LocalServer {
   void handleSettingsPage() const;
   void handleSettingsGet() const;
   void handleSettingsUpdate() const;
+  void handleLanguageGet() const;
+  void handleLanguageUpdate() const;
 
   void handleWifiGet() const;
   void handleWifiPost() const;

@@ -7,7 +7,10 @@
 
 #include <SDCardManager.h>
 
+#include <algorithm>
+#include <cctype>
 #include <cstdint>
+#include <cstring>
 #include <string>
 
 #include "state/ReaderSetting.h"
@@ -91,6 +94,8 @@ struct StatusBarLayout {
  */
 struct BookSettings {
   uint8_t fontFamily = SystemSetting::CHAREINK;            ///< Font family
+  /** Preferred language package for this book. Empty means follow the system/default reader language. */
+  char languageCode[33] = "";
   uint8_t fontSize = SystemSetting::SMALL;                 ///< Font size
   uint8_t lineHeight = 100;                                ///< Line height, % of natural (10-200)
   uint8_t textSpace = 100;                                 ///< Word spacing, % of natural (10-200)
@@ -169,7 +174,8 @@ struct BookSettings {
   static constexpr size_t kSerializedSizeV3 = 21;
   static constexpr size_t kSerializedSizeV4 = 22;
   static constexpr size_t kSerializedSizeV5 = 23;
-  static constexpr size_t kSerializedSize = 24;
+  static constexpr size_t kSerializedSizeV6V7 = 24;
+  static constexpr size_t kSerializedSize = kSerializedSizeV6V7 + sizeof(languageCode);
 
   void markCustomSettings() {
     useCustomSettings = true;
@@ -216,6 +222,14 @@ struct BookSettings {
       readingGuideLinesEnabled = 0;
     }
     darkMode = darkMode ? 1 : 0;
+
+    const size_t languageLength = std::strlen(languageCode);
+    bool validLanguage = languageLength <= sizeof(languageCode) - 1;
+    for (size_t i = 0; validLanguage && i < languageLength; ++i) {
+      const unsigned char c = static_cast<unsigned char>(languageCode[i]);
+      if (!std::isalnum(c) && c != '-' && c != '_') validLanguage = false;
+    }
+    if (!validLanguage) languageCode[0] = '\0';
 
     auto normalizeStatus = [](StatusBarSectionConfig& section) {
       if (static_cast<uint8_t>(section.item) >= static_cast<uint8_t>(StatusBarItem::STATUS_BAR_ITEM_COUNT)) {
@@ -269,6 +283,9 @@ struct BookSettings {
     data[offset++] = readingGuideLinesEnabled;
     data[offset++] = statusBarFullStyle;
     data[offset++] = darkMode;
+    std::memset(data + offset, 0, sizeof(languageCode));
+    std::memcpy(data + offset, languageCode, std::min(sizeof(languageCode) - 1, std::strlen(languageCode)));
+    offset += sizeof(languageCode);
   }
 
   /**
@@ -380,6 +397,12 @@ struct BookSettings {
     if (bytesAvailable >= offset + 1) {
       darkMode = data[offset++] ? 1 : 0;
     }
+    languageCode[0] = '\0';
+    if (bytesAvailable >= offset + sizeof(languageCode)) {
+      std::memcpy(languageCode, data + offset, sizeof(languageCode));
+      languageCode[sizeof(languageCode) - 1] = '\0';
+      offset += sizeof(languageCode);
+    }
     normalize();
 
     return true;
@@ -426,7 +449,7 @@ struct BookSettings {
     std::string settingsPath = bookCachePath + "/settings.bin";
     FsFile f;
     if (SdMan.openFileForWrite("BST", settingsPath.c_str(), f)) {
-      uint8_t data[32];
+      uint8_t data[kSerializedSize];
       size_t offset = 0;
       serialize(data, offset);
 
@@ -447,6 +470,8 @@ struct BookSettings {
   void loadFromGlobalSettings() {
     ReaderSetting& global = ReaderSetting::getInstance();
     fontFamily = global.fontFamily;
+    std::strncpy(languageCode, global.defaultLanguageCode, sizeof(languageCode) - 1);
+    languageCode[sizeof(languageCode) - 1] = '\0';
     fontSize = global.fontSize;
     lineHeight = global.lineHeight;
     textSpace = global.textSpace;
@@ -504,6 +529,8 @@ struct BookSettings {
   void applyToGlobalSettings() const {
     ReaderSetting& global = ReaderSetting::getInstance();
     global.fontFamily = fontFamily;
+    std::strncpy(global.defaultLanguageCode, languageCode, sizeof(global.defaultLanguageCode) - 1);
+    global.defaultLanguageCode[sizeof(global.defaultLanguageCode) - 1] = '\0';
     global.fontSize = fontSize;
     global.lineHeight = lineHeight;
     global.textSpace = textSpace;
@@ -599,7 +626,8 @@ struct BookSettings {
            longPressChapterSkip == other.longPressChapterSkip && refreshFrequency == other.refreshFrequency &&
            pageAutoTurnSeconds == other.pageAutoTurnSeconds && statusBarLeft == other.statusBarLeft &&
            statusBarMiddle == other.statusBarMiddle && statusBarRight == other.statusBarRight &&
-           statusBarFullStyle == other.statusBarFullStyle && darkMode == other.darkMode;
+           statusBarFullStyle == other.statusBarFullStyle && darkMode == other.darkMode &&
+           std::strcmp(languageCode, other.languageCode) == 0;
   }
 
   /**

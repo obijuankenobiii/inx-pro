@@ -43,7 +43,8 @@ void ReaderPresetStore::load() {
     return;
   }
 
-  const size_t recordSize = version >= 6   ? BookSettings::kSerializedSize
+  const size_t recordSize = version >= 8   ? BookSettings::kSerializedSize
+                            : version >= 6 ? BookSettings::kSerializedSizeV6V7
                             : version >= 5 ? BookSettings::kSerializedSizeV5
                             : version >= 4 ? BookSettings::kSerializedSizeV4
                             : version >= 3 ? BookSettings::kSerializedSizeV3
@@ -71,7 +72,7 @@ void ReaderPresetStore::load() {
     preset.name = std::string(nameBuf);
     size_t offset = 0;
     preset.settings.deserialize(record, toRead, offset);
-    if (version < kVersion && preset.settings.fontFamily >= SystemSetting::FONT_FAMILY_BUILTIN_COUNT) {
+    if (version < 7 && preset.settings.fontFamily >= SystemSetting::FONT_FAMILY_BUILTIN_COUNT) {
       ++preset.settings.fontFamily;
     }
     preset.settings.normalize();

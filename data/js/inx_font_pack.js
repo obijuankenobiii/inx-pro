@@ -82,11 +82,12 @@
   var MAX_SIDE = 384;
   var MAX_ADVANCE = 256;
 
-  function collectCodepoints() {
+  function collectCodepoints(ranges) {
+    ranges = ranges || CP_RANGES;
     var s = new Set();
-    for (var ri = 0; ri < CP_RANGES.length; ri++) {
-      var a = CP_RANGES[ri][0];
-      var b = CP_RANGES[ri][1];
+    for (var ri = 0; ri < ranges.length; ri++) {
+      var a = ranges[ri][0];
+      var b = ranges[ri][1];
       for (var cp = a; cp <= b; cp++) {
         if (cp >= 0xd800 && cp <= 0xdfff) continue;
         if (cp < 0x20 && cp !== 0x09) continue;
@@ -428,7 +429,7 @@
 
     var token = Math.random().toString(36).slice(2, 11);
     var faces = [];
-    var cps = collectCodepoints();
+    var cps = collectCodepoints(opts.codepointRanges);
 
     try {
       var jobs = [];

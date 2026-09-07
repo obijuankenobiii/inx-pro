@@ -41,9 +41,9 @@ void readAndValidate(FsFile& file, uint8_t& member, const uint8_t maxValue) {
 }
 
 namespace {
-constexpr uint8_t SETTINGS_FILE_VERSION = 44;
+constexpr uint8_t SETTINGS_FILE_VERSION = 45;
 constexpr uint8_t MIN_SUPPORTED_SETTINGS_VERSION = 38;
-constexpr uint8_t SETTINGS_COUNT = 48;
+constexpr uint8_t SETTINGS_COUNT = 49;
 constexpr uint8_t LEGACY_IMAGE_PRESENTATION_COUNT = 4;
 constexpr char SETTINGS_FILE[] = "/.system/settings.bin";
 constexpr char UI_THEME_FILE[] = "/.system/ui_theme.bin";
@@ -204,6 +204,7 @@ uint32_t settingsHash(const SystemSetting& settings) {
   hashPod(hash, settings.hideThumbnailTitles);
   hashPod(hash, settings.hideFinishedBooks);
   hashPod(hash, settings.thumbnailSize);
+  hashString(hash, settings.languageCode);
   return hash;
 }
 
@@ -336,6 +337,7 @@ bool SystemSetting::saveToFile() const {
   serialization::writePod(outputFile, thumbnailSize);
   serialization::writePod(outputFile, timeZoneAutoDetectEnabled);
   serialization::writeString(outputFile, std::string(timeZoneId));
+  serialization::writeString(outputFile, std::string(languageCode));
 
   outputFile.close();
   saveUiThemeSetting(uiTheme);
@@ -570,6 +572,17 @@ bool SystemSetting::loadFromFile() {
         timeZoneId[0] = '\0';
       }
       sanitizeTimeZoneId(timeZoneId);
+      ++settingsRead;
+    }
+    if (settingsRead < fileSettingsCount) {
+      std::string loadedLanguageCode;
+      serialization::readString(inputFile, loadedLanguageCode);
+      if (loadedLanguageCode.size() < sizeof(languageCode)) {
+        std::strncpy(languageCode, loadedLanguageCode.c_str(), sizeof(languageCode) - 1);
+        languageCode[sizeof(languageCode) - 1] = '\0';
+      } else {
+        languageCode[0] = '\0';
+      }
       ++settingsRead;
     }
 

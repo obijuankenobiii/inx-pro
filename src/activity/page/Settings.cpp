@@ -133,6 +133,7 @@ std::vector<SettingInfo> buildSystemSettings() {
                                        GroupType::DEVICE_ADVANCED));
   settings.push_back(SettingInfo::Enum("Boot Mode", &SystemSetting::bootSetting, {"Recent Book", "Home Page"},
                                        GroupType::DEVICE_ADVANCED));
+  settings.push_back(SettingInfo::Action("Language", GroupType::DEVICE_ADVANCED));
 #if FREEINK_DEVICE_STICKY
   settings.push_back(SettingInfo::Enum("Flick page turn", &SystemSetting::shakePageTurn,
                                        {"Off", "Normal", "Inverted"}, GroupType::DEVICE_ADVANCED));
