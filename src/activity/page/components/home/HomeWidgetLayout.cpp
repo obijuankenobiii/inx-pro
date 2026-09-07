@@ -7,7 +7,7 @@
 HomeWidgetLayout::HomeWidgetLayout(GfxRenderer& renderer)
     : renderer_(renderer), carousel_(renderer), clock_(renderer), calendar_(renderer), recent_(renderer),
       shortcut_(renderer), shortcutList_(renderer), temperature_(renderer), humidity_(renderer), todaysReading_(renderer),
-      favorites_(renderer), heatmap_(renderer) {}
+      favorites_(renderer), heatmap_(renderer), library_(renderer) {}
 
 void HomeWidgetLayout::render(const HomeTheme::Theme& theme, const int carouselIndex, const int favoriteIndex) const {
   switch (theme.layout) {
@@ -63,7 +63,8 @@ HomeWidgetLayout::Grid HomeWidgetLayout::grid(const HomeTheme::Layout layout, co
                                               const HomeTheme::Theme* theme) const {
   constexpr int gap = 0;
   const int baseColumns = layout == HomeTheme::Layout::TwoByTwo ? 2 : 1;
-  constexpr int baseRows = 2;
+  const int baseRows = 2;
+  const int margin = 0;
   const int areaY = navigation::Menu::height;
   const int fullWidth = renderer_.getScreenWidth();
   const int fullHeight = renderer_.getScreenHeight() - areaY - navigation::Menu::bottomHeight;
@@ -72,7 +73,7 @@ HomeWidgetLayout::Grid HomeWidgetLayout::grid(const HomeTheme::Layout layout, co
   int rows = baseRows;
   int slotColumnOffset = 0;
   int slotRowOffset = 0;
-  int centeredX = 0;
+  int centeredX = margin;
   int centeredY = areaY;
   int centeredWidth = fullWidth;
   int centeredHeight = fullHeight;
@@ -101,7 +102,7 @@ HomeWidgetLayout::Grid HomeWidgetLayout::grid(const HomeTheme::Layout layout, co
       slotRowOffset = minRow;
       centeredWidth = baseCellWidth * columns + gap * (columns - 1);
       centeredHeight = baseCellHeight * rows + gap * (rows - 1);
-      centeredX = (fullWidth - centeredWidth) / 2;
+      centeredX = margin + (fullWidth - centeredWidth) / 2;
       centeredY = areaY + (fullHeight - centeredHeight) / 2;
     }
   }
@@ -173,6 +174,10 @@ void HomeWidgetLayout::renderGrid(const HomeTheme::Theme& theme, const int carou
       case HomeTheme::Widget::Heatmap:
         heatmap_.render(bounds.x, bounds.y, bounds.width, bounds.height, theme.heatmapViews[slot],
                         theme.carouselLabels[slot] != 0, theme.carouselLabelColors[slot]);
+        break;
+      case HomeTheme::Widget::Library:
+        library_.render(bounds.x, bounds.y, bounds.width, bounds.height, theme.libraryFolders[slot],
+                        theme.backgrounds[slot] != 0, theme.carouselLabels[slot] != 0);
         break;
       case HomeTheme::Widget::Empty:
       default:
@@ -263,6 +268,9 @@ HomeWidgetLayout::HitResult HomeWidgetLayout::hitTest(const HomeTheme::Theme& th
   const int heatmap = heatmapAt(theme, x, y);
   if (heatmap >= 0) return {HitType::Heatmap, heatmap};
 
+  const int library = libraryAt(theme, x, y);
+  if (library >= 0) return {HitType::Library, library};
+
   const int shortcut = shortcutAt(theme, x, y);
   if (shortcut >= 0) return {HitType::Shortcut, shortcut};
   return {HitType::None, -1};
@@ -338,6 +346,22 @@ int HomeWidgetLayout::heatmapAt(const HomeTheme::Theme& theme, const int x, cons
     if (x >= bounds.x && x < bounds.x + bounds.width && y >= bounds.y && y < bounds.y + bounds.height) return slot;
   }
   return -1;
+}
+
+int HomeWidgetLayout::libraryAt(const HomeTheme::Theme& theme, const int x, const int y) const {
+  if (theme.layout == HomeTheme::Layout::Classic) return -1;
+  const Grid layout = grid(theme.layout);
+  for (int slot = 0; slot < HomeTheme::slotCount(theme.layout); ++slot) {
+    if (theme.widgets[slot] != HomeTheme::Widget::Library) continue;
+    const Bounds bounds = slotBounds(layout, slot);
+    if (library_.hitTest(x, y, bounds.x, bounds.y, bounds.width, bounds.height)) return slot;
+  }
+  return -1;
+}
+
+const char* HomeWidgetLayout::libraryFolder(const HomeTheme::Theme& theme, const int slot) const {
+  if (slot < 0 || slot >= HomeTheme::slotCount(theme.layout)) return "/";
+  return theme.libraryFolders[slot][0][0] == '/' ? theme.libraryFolders[slot][0] : "/";
 }
 
 int HomeWidgetLayout::shortcutAt(const HomeTheme::Theme& theme, const int x, const int y) const {

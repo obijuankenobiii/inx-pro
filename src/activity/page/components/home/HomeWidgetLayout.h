@@ -11,13 +11,14 @@
 #include "../widget/TodaysReading.h"
 #include "../widget/Favorites.h"
 #include "../widget/Heatmap.h"
+#include "../widget/Library.h"
 #include "state/HomeTheme.h"
 
 class GfxRenderer;
 
 class HomeWidgetLayout final {
  public:
-  enum class HitType { None, Carousel, Recent, Favorites, TodaysReading, Heatmap, Shortcut };
+  enum class HitType { None, Carousel, Recent, Favorites, TodaysReading, Heatmap, Library, Shortcut };
   enum class SwipeTarget { None, Carousel, Favorites };
 
   struct HitResult {
@@ -32,6 +33,7 @@ class HomeWidgetLayout final {
   void invalidateFavorites() const;
   int favoriteCount() const;
   const std::string& favoritePath(int index) const;
+  const char* libraryFolder(const HomeTheme::Theme& theme, int slot) const;
   void renderSleep(const HomeTheme::Theme& theme) const;
   bool needsRefresh(const HomeTheme::Theme& theme) const;
   HitResult hitTest(const HomeTheme::Theme& theme, int carouselIndex, int favoriteIndex, int bookCount, int x,
@@ -70,6 +72,7 @@ class HomeWidgetLayout final {
   int favoritesAt(const HomeTheme::Theme& theme, int carouselIndex, int x, int y) const;
   int todaysReadingAt(const HomeTheme::Theme& theme, int x, int y) const;
   int heatmapAt(const HomeTheme::Theme& theme, int x, int y) const;
+  int libraryAt(const HomeTheme::Theme& theme, int x, int y) const;
   int shortcutAt(const HomeTheme::Theme& theme, int x, int y) const;
 
   GfxRenderer& renderer_;
@@ -84,4 +87,5 @@ class HomeWidgetLayout final {
   TodaysReading todaysReading_;
   Favorites favorites_;
   Heatmap heatmap_;
+  LibraryWidget library_;
 };

@@ -258,6 +258,10 @@ bool Home::handleTap() {
     if (!path.empty()) openReaderFromCallback(path, [] { onGoToHome(); });
     return true;
   }
+  if (favoriteHit.type == HomeWidgetLayout::HitType::Library) {
+    onGoToLibrary(widgetLayout.libraryFolder(HomeTheme::active(), favoriteHit.index));
+    return true;
+  }
   if (bookCount > 0) {
     const HomeWidgetLayout::HitResult hit =
         widgetLayout.hitTest(HomeTheme::active(), carouselIndex, favoriteIndex, bookCount, tapX, tapY);
@@ -300,6 +304,10 @@ bool Home::handleTap() {
   }
   if (hit.type == HomeWidgetLayout::HitType::TodaysReading) {
     onGoToLibrary("/");
+    return true;
+  }
+  if (hit.type == HomeWidgetLayout::HitType::Library) {
+    onGoToLibrary(widgetLayout.libraryFolder(HomeTheme::active(), hit.index));
     return true;
   }
   return false;

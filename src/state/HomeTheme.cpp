@@ -11,7 +11,11 @@ namespace HomeTheme {
 namespace {
 
 constexpr char kThemeFile[] = "/.system/home_themes.bin";
-constexpr uint8_t kVersion = 12;
+constexpr uint8_t kVersion = 16;
+constexpr uint8_t kLegacyLibraryFoldersVersion = 13;
+constexpr uint8_t kLegacyMultiLibraryFoldersVersion = 14;
+constexpr uint8_t kLegacySingleLibraryFoldersVersion = 15;
+constexpr uint8_t kHeatmapViewVersion = 12;
 constexpr uint8_t kLegacyCarouselShadowVersion = 8;
 constexpr uint8_t kLegacyCarouselShadowStyleVersion = 9;
 constexpr uint8_t kSleepThemeVersion = 3;
@@ -38,6 +42,7 @@ CarouselLabelColor defaultCarouselLabelColor(Widget widget);
 void setDefaultCarouselLabelColors(Theme& theme);
 void setDefaultCarouselShadowStyles(Theme& theme);
 void setDefaultHeatmapViews(Theme& theme);
+void setDefaultLibraryFolders(Theme& theme);
 
 void makeDefault() {
   themeCount = 1;
@@ -54,10 +59,12 @@ void makeDefault() {
   setDefaultCarouselLabelColors(themes[0]);
   setDefaultCarouselShadowStyles(themes[0]);
   setDefaultHeatmapViews(themes[0]);
+  setDefaultLibraryFolders(themes[0]);
   sleepTheme = {};
   setName(sleepTheme, "Sleep");
   sleepTheme.layout = Layout::OneByTwo;
   sleepTheme.widgets[0] = Widget::Clock;
+  setDefaultLibraryFolders(sleepTheme);
 }
 
 bool repairEmptyHomeTheme() {
@@ -73,6 +80,7 @@ bool repairEmptyHomeTheme() {
   setDefaultCarouselLabelColors(themes[0]);
   setDefaultCarouselShadowStyles(themes[0]);
   setDefaultHeatmapViews(themes[0]);
+  setDefaultLibraryFolders(themes[0]);
   return true;
 }
 
@@ -80,12 +88,10 @@ void ensureLoaded() {
   if (!loaded) load();
 }
 
-bool validLayout(const uint8_t value) {
-  return value <= static_cast<uint8_t>(Layout::TwoByTwo);
-}
+bool validLayout(const uint8_t value) { return value <= static_cast<uint8_t>(Layout::TwoByTwo); }
 
 bool validWidget(const uint8_t value) {
-  return value <= static_cast<uint8_t>(Widget::Heatmap);
+  return value <= static_cast<uint8_t>(Widget::Library);
 }
 
 bool validBorder(const uint8_t value) {
@@ -140,6 +146,21 @@ void setDefaultHeatmapViews(Theme& theme) {
   for (HeatmapView& view : theme.heatmapViews) view = HeatmapView::Weekly;
 }
 
+void setDefaultLibraryFolders(Theme& theme) {
+  for (auto& library : theme.libraryFolders) {
+    for (char (&folder)[128] : library) {
+      std::strncpy(folder, "/", sizeof(folder) - 1);
+      folder[sizeof(folder) - 1] = '\0';
+    }
+  }
+}
+
+void setLibraryFolder(char (&destination)[128], const char* source) {
+  const std::string value = source && source[0] == '/' ? source : "/";
+  std::strncpy(destination, value.c_str(), sizeof(destination) - 1);
+  destination[sizeof(destination) - 1] = '\0';
+}
+
 }
 
 void load() {
@@ -157,7 +178,9 @@ void load() {
   serialization::readPod(file, storedActive);
   if ((version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != 7 &&
        version != kLegacyCarouselShadowVersion && version != kLegacyCarouselShadowStyleVersion &&
-       version != 10 && version != 11 && version != kVersion) || storedCount == 0 ||
+       version != 10 && version != 11 && version != kHeatmapViewVersion && version != kLegacyLibraryFoldersVersion &&
+       version != kLegacyMultiLibraryFoldersVersion && version != kLegacySingleLibraryFoldersVersion &&
+       version != kVersion) || storedCount == 0 ||
       storedCount > kMaxThemes) {
     file.close();
     return;
@@ -169,11 +192,11 @@ void load() {
     uint8_t layout = 0;
     serialization::readString(file, name);
     serialization::readPod(file, layout);
-    if (!validLayout(layout) || name.empty()) return false;
+    if ((!validLayout(layout) && layout != 3) || name.empty()) return false;
 
     theme = {};
     setName(theme, name);
-    theme.layout = static_cast<Layout>(layout);
+    theme.layout = layout == 3 ? Layout::OneByTwo : static_cast<Layout>(layout);
     for (Widget& widget : theme.widgets) {
       uint8_t value = 0;
       serialization::readPod(file, value);
@@ -255,13 +278,40 @@ void load() {
       theme.carouselShadowStyles[i] = style;
     }
     for (int i = 0; i < 4; ++i) {
-      if (version < kVersion) {
+      if (version < kHeatmapViewVersion) {
         theme.heatmapViews[i] = HeatmapView::Weekly;
         continue;
       }
       uint8_t value = 0;
       serialization::readPod(file, value);
       theme.heatmapViews[i] = validHeatmapView(value) ? static_cast<HeatmapView>(value) : HeatmapView::Weekly;
+    }
+    if (version >= kVersion || version == kLegacyMultiLibraryFoldersVersion) {
+      for (auto& library : theme.libraryFolders) {
+        std::string value;
+        serialization::readString(file, value);
+        setLibraryFolder(library[0], value.c_str());
+        if (version >= kVersion || version == kLegacyMultiLibraryFoldersVersion) {
+          for (int extra = 1; extra < 3; ++extra) {
+            if (version >= kVersion || version == kLegacyMultiLibraryFoldersVersion) {
+              serialization::readString(file, value);
+              setLibraryFolder(library[extra], value.c_str());
+            } else {
+              setLibraryFolder(library[extra], "/");
+            }
+          }
+        }
+      }
+    } else if (version == kLegacyLibraryFoldersVersion || version == kLegacySingleLibraryFoldersVersion) {
+      for (auto& library : theme.libraryFolders) {
+        std::string value;
+        serialization::readString(file, value);
+        setLibraryFolder(library[0], value.c_str());
+        setLibraryFolder(library[1], "/");
+        setLibraryFolder(library[2], "/");
+      }
+    } else {
+      setDefaultLibraryFolders(theme);
     }
     if (theme.layout == Layout::Classic) {
       theme.layout = Layout::OneByTwo;
@@ -273,6 +323,7 @@ void load() {
       for (CarouselLabelColor& color : theme.carouselLabelColors) color = CarouselLabelColor::Black;
       for (CarouselShadowStyle& style : theme.carouselShadowStyles) style = CarouselShadowStyle::None;
       for (HeatmapView& view : theme.heatmapViews) view = HeatmapView::Weekly;
+      setDefaultLibraryFolders(theme);
     }
     return true;
   };
@@ -347,6 +398,9 @@ bool save() {
     for (const HeatmapView view : theme.heatmapViews) {
       serialization::writePod(file, static_cast<uint8_t>(view));
     }
+    for (const auto& library : theme.libraryFolders) {
+      for (const char (&folder)[128] : library) serialization::writeString(file, std::string(folder));
+    }
   };
   for (int i = 0; i < themeCount; ++i) writeTheme(themes[i]);
   writeTheme(sleepTheme);
@@ -388,6 +442,7 @@ int add(const Layout layout, const Widget* widgets, const Border* borders, const
         const CarouselStyle* carouselStyles, const uint8_t* carouselLabels,
         const CarouselLabelColor* carouselLabelColors, const CarouselShadowStyle* carouselShadowStyles,
         const HeatmapView* heatmapViews,
+        const char (*libraryFolders)[3][128],
         const int slotCountValue) {
   ensureLoaded();
   if (themeCount >= kMaxThemes) return -1;
@@ -421,6 +476,11 @@ int add(const Layout layout, const Widget* widgets, const Border* borders, const
                                    validHeatmapView(static_cast<uint8_t>(heatmapViews[i]))
                                ? heatmapViews[i]
                                : HeatmapView::Weekly;
+    for (int folder = 0; folder < 3; ++folder) {
+      setLibraryFolder(theme.libraryFolders[i][folder], layout != Layout::Classic && libraryFolders && i < slotCountValue
+                                                         ? libraryFolders[i][folder]
+                                                         : "/");
+    }
   }
   ++themeCount;
   selectedTheme = themeCount - 1;
@@ -432,6 +492,7 @@ void update(const int index, const Layout layout, const Widget* widgets, const B
             const uint8_t* backgrounds, const CarouselStyle* carouselStyles, const uint8_t* carouselLabels,
             const CarouselLabelColor* carouselLabelColors, const CarouselShadowStyle* carouselShadowStyles,
             const HeatmapView* heatmapViews,
+            const char (*libraryFolders)[3][128],
             const int slotCountValue) {
   ensureLoaded();
   if (index < 0 || index >= themeCount) return;
@@ -462,6 +523,11 @@ void update(const int index, const Layout layout, const Widget* widgets, const B
                                    validHeatmapView(static_cast<uint8_t>(heatmapViews[i]))
                                ? heatmapViews[i]
                                : HeatmapView::Weekly;
+    for (int folder = 0; folder < 3; ++folder) {
+      setLibraryFolder(theme.libraryFolders[i][folder], layout != Layout::Classic && libraryFolders && i < slotCountValue
+                                                         ? libraryFolders[i][folder]
+                                                         : "/");
+    }
   }
   selectedTheme = index;
   save();
@@ -471,6 +537,7 @@ void updateSleep(const Layout layout, const Widget* widgets, const Border* borde
                  const CarouselStyle* carouselStyles, const uint8_t* carouselLabels,
                  const CarouselLabelColor* carouselLabelColors, const CarouselShadowStyle* carouselShadowStyles,
                  const HeatmapView* heatmapViews,
+                 const char (*libraryFolders)[3][128],
                  const int slotCountValue) {
   ensureLoaded();
   sleepTheme.layout = layout;
@@ -499,6 +566,12 @@ void updateSleep(const Layout layout, const Widget* widgets, const Border* borde
                                          validHeatmapView(static_cast<uint8_t>(heatmapViews[i]))
                                      ? heatmapViews[i]
                                      : HeatmapView::Weekly;
+    for (int folder = 0; folder < 3; ++folder) {
+      setLibraryFolder(sleepTheme.libraryFolders[i][folder],
+                       layout != Layout::Classic && libraryFolders && i < slotCountValue
+                           ? libraryFolders[i][folder]
+                           : "/");
+    }
   }
   save();
 }
@@ -557,6 +630,8 @@ const char* widgetLabel(const Widget widget) {
       return "Favorite Carousel";
     case Widget::Heatmap:
       return "Reading Heatmap";
+    case Widget::Library:
+      return "Library";
     default:
       return "Unknown";
   }
@@ -614,6 +689,8 @@ const char* heatmapViewLabel(const HeatmapView view) {
   }
 }
 
-int slotCount(const Layout layout) { return layout == Layout::TwoByTwo ? 4 : layout == Layout::OneByTwo ? 2 : 0; }
+int slotCount(const Layout layout) {
+  return layout == Layout::TwoByTwo ? 4 : layout == Layout::OneByTwo ? 2 : 0;
+}
 
 }

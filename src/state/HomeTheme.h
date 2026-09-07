@@ -23,6 +23,7 @@ enum class Widget : uint8_t {
   TodaysReading = 9,
   Favorites = 10,
   Heatmap = 11,
+  Library = 12,
 };
 
 enum class HeatmapView : uint8_t {
@@ -66,6 +67,7 @@ struct Theme {
   CarouselLabelColor carouselLabelColors[4];
   CarouselShadowStyle carouselShadowStyles[4];
   HeatmapView heatmapViews[4];
+  char libraryFolders[4][3][128];
 };
 
 void load();
@@ -80,15 +82,15 @@ void activate(int index);
 int add(Layout layout, const Widget* widgets, const Border* borders, const uint8_t* backgrounds,
         const CarouselStyle* carouselStyles, const uint8_t* carouselLabels, const CarouselLabelColor* carouselLabelColors,
         const CarouselShadowStyle* carouselShadowStyles, const HeatmapView* heatmapViews,
-        int slotCount);
+        const char (*libraryFolders)[3][128], int slotCount);
 void update(int index, Layout layout, const Widget* widgets, const Border* borders, const uint8_t* backgrounds,
             const CarouselStyle* carouselStyles, const uint8_t* carouselLabels,
             const CarouselLabelColor* carouselLabelColors, const CarouselShadowStyle* carouselShadowStyles,
-            const HeatmapView* heatmapViews, int slotCount);
+            const HeatmapView* heatmapViews, const char (*libraryFolders)[3][128], int slotCount);
 void updateSleep(Layout layout, const Widget* widgets, const Border* borders, const uint8_t* backgrounds,
                  const CarouselStyle* carouselStyles, const uint8_t* carouselLabels,
                  const CarouselLabelColor* carouselLabelColors, const CarouselShadowStyle* carouselShadowStyles,
-                 const HeatmapView* heatmapViews, int slotCount);
+                 const HeatmapView* heatmapViews, const char (*libraryFolders)[3][128], int slotCount);
 bool remove(int index);
 
 const char* layoutLabel(Layout layout);
