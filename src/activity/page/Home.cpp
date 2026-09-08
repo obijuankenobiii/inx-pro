@@ -23,6 +23,7 @@
 #include "components/global/PopUp.h"
 #include "components/global/Sidebar.h"
 #include "images/Hamburger.h"
+#include "images/Store.h"
 #include "state/BookState.h"
 #include "state/RecentBooks.h"
 #include "system/Fonts.h"
@@ -34,10 +35,25 @@ extern void onGoToLibrary(const std::string& path);
 extern void openHomeSubPage(HomeSubPage::Section section);
 extern void onGoToStatistics();
 extern void onGoToHeatmapReport(HomeTheme::HeatmapView view);
+extern void onGoToStore();
 
 namespace {
 
 constexpr unsigned long longPressMs = 500;
+constexpr int kStoreIconSize = 40;
+constexpr int kStoreBottomMargin = 20;
+
+int storeIconY(const GfxRenderer& renderer) {
+  return renderer.getScreenHeight() - kStoreBottomMargin - kStoreIconSize;
+}
+
+bool storeIconHit(const GfxRenderer& renderer, const int x, const int y) {
+  const int iconY = storeIconY(renderer);
+  constexpr int rowSideMargin = 16;
+  constexpr int rowVerticalPadding = 10;
+  return x >= rowSideMargin && x < renderer.getScreenWidth() / 2 + rowSideMargin &&
+         y >= iconY - rowVerticalPadding && y < iconY + kStoreIconSize + rowVerticalPadding;
+}
 
 std::string cachePath(const RecentBook& book) {
   if (!book.cachePath.empty()) return book.cachePath;
@@ -328,6 +344,12 @@ bool Home::handleShortcutDrawerInput() {
   const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
   const int drawerWidth = Sidebar::width(renderer);
   const int listTop = Sidebar::listTop();
+  if (tapX >= 0 && tapX < drawerWidth && storeIconHit(renderer, tapX, tapY)) {
+    shortcutDrawerOpen = false;
+    updateRequired = true;
+    onGoToStore();
+    return true;
+  }
   if (tapX >= 0 && tapX < drawerWidth && tapY >= listTop) {
     const int item = shortcutList.hitTest(tapX, tapY, 0, listTop, drawerWidth,
                                           renderer.getScreenHeight() - listTop, Sidebar::rowHeight);
@@ -351,6 +373,11 @@ void Home::drawShortcutDrawer() const {
   const int listTop = Sidebar::listTop();
   Sidebar::renderFrame(renderer, "Shortcuts");
   shortcutList.render(0, listTop, drawerWidth, renderer.getScreenHeight() - listTop, Sidebar::rowHeight);
+  const int storeY = storeIconY(renderer);
+  renderer.line.render(20, storeY - 14, drawerWidth - 20, storeY - 14, true, LineRender::Style::Dotted);
+  const int storeLabelY = storeY + (kStoreIconSize - renderer.text.getLineHeight(systemFontId())) / 2;
+  renderer.bitmap.icon(Store, 24, storeY, kStoreIconSize, kStoreIconSize);
+  renderer.text.render(systemFontId(), 80, storeLabelY, "Store", true);
 }
 
 bool Home::handleShortcut(const int item) {

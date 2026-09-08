@@ -37,6 +37,7 @@
 #include "activity/page/Statistics.h"
 #include "activity/page/HeatmapReport.h"
 #include "activity/page/SyncActivity.h"
+#include "activity/settings/StoreActivity.h"
 #include "activity/reader/ImageViewerActivity.h"
 #include "activity/reader/ReaderActivity.h"
 #include "activity/system/BootActivity.h"
@@ -89,6 +90,7 @@ void openDictionaryLookupKeyboard();
 void openDictionaryLookup(const std::string& word);
 void onGoToFileTransfer();
 void onGoToSettings();
+void onGoToStore();
 void onGoToLibrary(const std::string& path = "/");
 void setupDisplayAndFonts();
 void onNetworkModeSelected(NetworkMode mode);
@@ -274,6 +276,11 @@ void onGoToFileTransfer() {
 void onGoToSettings() {
   INX_SERIAL.printf("[STICKY][NAV] Settings\n");
   switchTo<Settings>(render, input);
+}
+
+/** @brief Opens the Home drawer's software store page. */
+void onGoToStore() {
+  switchTo<StoreActivity>(render, input, [] { onGoToHome(); });
 }
 
 /**
