@@ -93,7 +93,7 @@ struct StatusBarLayout {
  * @brief Per-book reading settings
  */
 struct BookSettings {
-  uint8_t fontFamily = SystemSetting::CHAREINK;            ///< Font family
+  uint8_t fontFamily = SystemSetting::MONTSERRAT;         ///< Font family
   /** Preferred language package for this book. Empty means follow the system/default reader language. */
   char languageCode[33] = "";
   uint8_t fontSize = SystemSetting::SMALL;                 ///< Font size

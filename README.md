@@ -190,7 +190,7 @@ Only uncompressed `.dict` files are supported. Compressed `.dict.dz` dictionarie
 
 ## Fonts
 
-Inx includes built-in **Atkinson Hyperlegible** and **ChareInk** reader fonts.
+Inx includes the built-in **Montserrat** reader font.
 
 You can also install fonts on the SD card:
 

@@ -40,7 +40,7 @@ class FontManager {
 
   /**
    * Reader "Font Family" slot encoding stored in SystemSetting::fontFamily / BookSettings::fontFamily:
-   * 0 = ChareInk, 1 = Montserrat, 2+ = SD folder names (sorted),
+   * 0 = Montserrat, 1+ = SD folder names (sorted),
    * see readerFontFamilyOptionCount().
    */
   static uint32_t readerFontFamilyOptionCount();

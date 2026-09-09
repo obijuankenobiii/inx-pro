@@ -19,6 +19,8 @@ class ExternalFont {
   bool load(const char* path, bool enableGlyphBitmapCache = true, uint16_t pointSize = 0);
   /** Close the font file and release cached glyph data. */
   void unload();
+  /** Drop the persistent PSRAM cache used to reuse TTF/OTF file bytes across loads. */
+  static void clearTtfCache();
   /** Enable or disable the shared glyph bitmap cache for this font instance. */
   void setGlyphBitmapCacheEnabled(bool enabled);
   /** Look up glyph metadata for a code point, using the metadata cache when possible. */
@@ -63,6 +65,18 @@ class ExternalFont {
   static constexpr uint32_t kTtfBitmapOffsetSlotShift = 20;
   static constexpr uint32_t kTtfBitmapOffsetRelativeMask = (1u << kTtfBitmapOffsetSlotShift) - 1u;
   static constexpr size_t kTtfFontInfoBytes = 176;
+  static constexpr size_t kTtfSharedCacheSlots = 8;
+
+  struct TtfSharedCacheSlot {
+    std::string path;
+    uint8_t* data = nullptr;
+    uint32_t size = 0;
+    uint32_t lastUsed = 0;
+    uint8_t users = 0;
+    bool inPsram = false;
+  };
+  static TtfSharedCacheSlot s_ttfSharedCache[kTtfSharedCacheSlots];
+  static uint32_t s_ttfSharedCacheGeneration;
 
   static constexpr size_t kGlyphMetaCacheSlots = 512;
   static constexpr size_t kGlyphBitmapCacheSlots = 128;
@@ -100,6 +114,7 @@ class ExternalFont {
   uint8_t* m_ttfData = nullptr;
   uint32_t m_ttfDataSize = 0;
   bool m_ttfDataInPsram = false;
+  int8_t m_ttfSharedCacheSlot = -1;
   uint16_t m_ttfPointSize = 0;
   alignas(8) uint8_t m_ttfFontInfo[kTtfFontInfoBytes] = {};
   uint8_t* m_ttfBitmapBuffer = nullptr;

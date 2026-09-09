@@ -129,41 +129,6 @@ void FontManager::initialize(GfxRenderer& renderer) {
   g_loadedFontCount = 0;
   g_scannedForFonts = false;
 
-  static EpdFont chareink10RegularFont(&chareink_10_regular);
-  static EpdFont chareink10BoldFont(&chareink_10_bold);
-  static EpdFont chareink10ItalicFont(&chareink_10_italic);
-  static EpdFont chareink10BoldItalicFont(&chareink_10_bolditalic);
-  static EpdFontFamily chareink10FontFamily(&chareink10RegularFont, &chareink10BoldFont, &chareink10ItalicFont,
-                                            &chareink10BoldItalicFont);
-
-  static EpdFont chareink12RegularFont(&chareink_12_regular);
-  static EpdFont chareink12BoldFont(&chareink_12_bold);
-  static EpdFont chareink12ItalicFont(&chareink_12_italic);
-  static EpdFont chareink12BoldItalicFont(&chareink_12_bolditalic);
-  static EpdFontFamily chareink12FontFamily(&chareink12RegularFont, &chareink12BoldFont, &chareink12ItalicFont,
-                                            &chareink12BoldItalicFont);
-
-  static EpdFont chareink14RegularFont(&chareink_14_regular);
-  static EpdFont chareink14BoldFont(&chareink_14_bold);
-  static EpdFont chareink14ItalicFont(&chareink_14_italic);
-  static EpdFont chareink14BoldItalicFont(&chareink_14_bolditalic);
-  static EpdFontFamily chareink14FontFamily(&chareink14RegularFont, &chareink14BoldFont, &chareink14ItalicFont,
-                                            &chareink14BoldItalicFont);
-
-  static EpdFont chareink16RegularFont(&chareink_16_regular);
-  static EpdFont chareink16BoldFont(&chareink_16_bold);
-  static EpdFont chareink16ItalicFont(&chareink_16_italic);
-  static EpdFont chareink16BoldItalicFont(&chareink_16_bolditalic);
-  static EpdFontFamily chareink16FontFamily(&chareink16RegularFont, &chareink16BoldFont, &chareink16ItalicFont,
-                                            &chareink16BoldItalicFont);
-
-  static EpdFont chareink18RegularFont(&chareink_18_regular);
-  static EpdFont chareink18BoldFont(&chareink_18_bold);
-  static EpdFont chareink18ItalicFont(&chareink_18_italic);
-  static EpdFont chareink18BoldItalicFont(&chareink_18_bolditalic);
-  static EpdFontFamily chareink18FontFamily(&chareink18RegularFont, &chareink18BoldFont, &chareink18ItalicFont,
-                                            &chareink18BoldItalicFont);
-
   static EpdFont montserrat8RegularFont(&montserrat_8_regular);
   static EpdFontFamily montserrat8FontFamily(&montserrat8RegularFont, nullptr, nullptr, nullptr);
 
@@ -207,12 +172,6 @@ void FontManager::initialize(GfxRenderer& renderer) {
   static EpdFontFamily montserratClock70FontFamily(&montserratClock70RegularFont, &montserratClock70BoldFont, nullptr,
                                                    nullptr);
 
-  renderer.insertFont(CHAREINK_10_FONT_ID, chareink10FontFamily);
-  renderer.insertFont(CHAREINK_12_FONT_ID, chareink12FontFamily);
-  renderer.insertFont(CHAREINK_14_FONT_ID, chareink14FontFamily);
-  renderer.insertFont(CHAREINK_16_FONT_ID, chareink16FontFamily);
-  renderer.insertFont(CHAREINK_18_FONT_ID, chareink18FontFamily);
-
   renderer.insertFont(MONTSERRAT_8_FONT_ID, montserrat8FontFamily);
   renderer.insertFont(MONTSERRAT_10_FONT_ID, montserrat10FontFamily);
   renderer.insertFont(MONTSERRAT_12_FONT_ID, montserrat12FontFamily);
@@ -222,7 +181,7 @@ void FontManager::initialize(GfxRenderer& renderer) {
 
   renderer.insertFont(MONTSERRAT_CLOCK_70_FONT_ID, montserratClock70FontFamily);
 
-  INX_SERIAL.println("[FontManager] Initialized (Montserrat + ChareInk reader + Montserrat clock + SD streaming)");
+  INX_SERIAL.println("[FontManager] Initialized (Montserrat + SD streaming)");
 }
 
 /**
@@ -230,15 +189,6 @@ void FontManager::initialize(GfxRenderer& renderer) {
  */
 int FontManager::getNextFont(int currentFontId) {
   switch (currentFontId) {
-    case CHAREINK_10_FONT_ID:
-      return CHAREINK_12_FONT_ID;
-    case CHAREINK_12_FONT_ID:
-      return CHAREINK_14_FONT_ID;
-    case CHAREINK_14_FONT_ID:
-      return CHAREINK_16_FONT_ID;
-    case CHAREINK_16_FONT_ID:
-    case CHAREINK_18_FONT_ID:
-      return CHAREINK_18_FONT_ID;
     case MONTSERRAT_8_FONT_ID:
       return MONTSERRAT_10_FONT_ID;
     case MONTSERRAT_10_FONT_ID:
@@ -290,6 +240,7 @@ bool FontManager::scanSDFonts(const char* sdPath, bool forceRescan) {
 
   if (forceRescan) {
     unloadAllSDFonts();
+    ExternalFont::clearTtfCache();
   }
 
   g_sdFonts.clear();
@@ -681,9 +632,6 @@ bool FontManager::ensureReaderLayoutFonts(int bodyFontId, GfxRenderer& renderer)
  * @brief Ensures a font is ready for use, loading it if necessary
  */
 bool FontManager::ensureFontReady(int fontId, GfxRenderer& renderer) {
-  if (fontId >= CHAREINK_10_FONT_ID && fontId <= CHAREINK_18_FONT_ID) {
-    return true;
-  }
   if (fontId >= MONTSERRAT_8_FONT_ID && fontId <= MONTSERRAT_18_FONT_ID) {
     return true;
   }
@@ -843,21 +791,6 @@ const FontManager::FontInfo* FontManager::getFontInfo(int fontId) {
     case MONTSERRAT_18_FONT_ID:
       info = {"Montserrat 18", "Montserrat", fontId, 18, true};
       return &info;
-    case CHAREINK_10_FONT_ID:
-      info = {"ChareInk 10", "ChareInk", fontId, 10, true};
-      return &info;
-    case CHAREINK_12_FONT_ID:
-      info = {"ChareInk 12", "ChareInk", fontId, 12, true};
-      return &info;
-    case CHAREINK_14_FONT_ID:
-      info = {"ChareInk 14", "ChareInk", fontId, 14, true};
-      return &info;
-    case CHAREINK_16_FONT_ID:
-      info = {"ChareInk 16", "ChareInk", fontId, 16, true};
-      return &info;
-    case CHAREINK_18_FONT_ID:
-      info = {"ChareInk 18", "ChareInk", fontId, 18, true};
-      return &info;
     default:
       for (const auto& entry : g_sdFonts) {
         if (entry.id == fontId) {
@@ -886,12 +819,6 @@ std::vector<FontManager::FontInfo> FontManager::getAllAvailableFonts() {
   fonts.push_back({"Montserrat 16", "Montserrat", MONTSERRAT_16_FONT_ID, 16, true});
   fonts.push_back({"Montserrat 18", "Montserrat", MONTSERRAT_18_FONT_ID, 18, true});
 
-  fonts.push_back({"ChareInk 10", "ChareInk", CHAREINK_10_FONT_ID, 10, true});
-  fonts.push_back({"ChareInk 12", "ChareInk", CHAREINK_12_FONT_ID, 12, true});
-  fonts.push_back({"ChareInk 14", "ChareInk", CHAREINK_14_FONT_ID, 14, true});
-  fonts.push_back({"ChareInk 16", "ChareInk", CHAREINK_16_FONT_ID, 16, true});
-  fonts.push_back({"ChareInk 18", "ChareInk", CHAREINK_18_FONT_ID, 18, true});
-
   for (const auto& entry : g_sdFonts) {
     if (!entry.isLanguage) {
       fonts.push_back({entry.family + " " + std::to_string(entry.size), entry.family, entry.id, entry.size, false});
@@ -905,7 +832,7 @@ std::vector<FontManager::FontInfo> FontManager::getAllAvailableFonts() {
  * @brief Gets all fonts belonging to a specific family
  */
 std::vector<FontManager::FontInfo> FontManager::getFontsByFamily(const std::string& family) {
-  if (!g_scannedForFonts && family != "Montserrat" && family != "ChareInk") {
+  if (!g_scannedForFonts && family != "Montserrat") {
     (void)scanSDFonts("/fonts", false);
   }
 
@@ -918,14 +845,6 @@ std::vector<FontManager::FontInfo> FontManager::getFontsByFamily(const std::stri
     result.push_back({"Montserrat 14", "Montserrat", MONTSERRAT_14_FONT_ID, 14, true});
     result.push_back({"Montserrat 16", "Montserrat", MONTSERRAT_16_FONT_ID, 16, true});
     result.push_back({"Montserrat 18", "Montserrat", MONTSERRAT_18_FONT_ID, 18, true});
-  }
-
-  if (family == "ChareInk") {
-    result.push_back({"ChareInk 10", "ChareInk", CHAREINK_10_FONT_ID, 10, true});
-    result.push_back({"ChareInk 12", "ChareInk", CHAREINK_12_FONT_ID, 12, true});
-    result.push_back({"ChareInk 14", "ChareInk", CHAREINK_14_FONT_ID, 14, true});
-    result.push_back({"ChareInk 16", "ChareInk", CHAREINK_16_FONT_ID, 16, true});
-    result.push_back({"ChareInk 18", "ChareInk", CHAREINK_18_FONT_ID, 18, true});
   }
 
   for (const auto& entry : g_sdFonts) {
@@ -948,8 +867,6 @@ std::vector<std::string> FontManager::getAllFamilies() {
 
   std::vector<std::string> families;
   families.push_back("Montserrat");
-  families.push_back("ChareInk");
-
   for (const auto& entry : g_sdFonts) {
     if (!entry.isLanguage && std::find(families.begin(), families.end(), entry.family) == families.end()) {
       families.push_back(entry.family);
@@ -963,9 +880,6 @@ std::vector<std::string> FontManager::getAllFamilies() {
  */
 bool FontManager::isFontLoaded(int fontId) {
   if (fontId >= MONTSERRAT_8_FONT_ID && fontId <= MONTSERRAT_18_FONT_ID) {
-    return true;
-  }
-  if (fontId >= CHAREINK_10_FONT_ID && fontId <= CHAREINK_18_FONT_ID) {
     return true;
   }
 
@@ -982,7 +896,7 @@ bool FontManager::isFontLoaded(int fontId) {
  */
 void FontManager::printFontStats() {
   INX_SERIAL.println("=== Font Manager Stats ===");
-  INX_SERIAL.printf("Built-in fonts: Montserrat system + ChareInk reader (embedded)\n");
+  INX_SERIAL.printf("Built-in fonts: Montserrat\n");
   INX_SERIAL.printf("SD fonts discovered: %d\n", (int)g_sdFonts.size());
 
   int loadedCount = 0;
@@ -1023,38 +937,18 @@ int FontManager::getFontId(const std::string& family, int size) {
         return MONTSERRAT_12_FONT_ID;
     }
   }
-  if (family == "ChareInk") {
-    switch (size) {
-      case 10:
-        return CHAREINK_10_FONT_ID;
-      case 12:
-        return CHAREINK_12_FONT_ID;
-      case 14:
-        return CHAREINK_14_FONT_ID;
-      case 16:
-        return CHAREINK_16_FONT_ID;
-      case 18:
-        return CHAREINK_18_FONT_ID;
-      default:
-        return CHAREINK_14_FONT_ID;
-    }
-  }
-
   for (const auto& entry : g_sdFonts) {
     if (!entry.isLanguage && entry.family == family && entry.size == size) {
       return entry.id;
     }
   }
 
-  return CHAREINK_14_FONT_ID;
+  return MONTSERRAT_14_FONT_ID;
 }
 
 int FontManager::getMaxFontId(int currentFontId) {
   if (currentFontId >= MONTSERRAT_8_FONT_ID && currentFontId <= MONTSERRAT_18_FONT_ID) {
     return MONTSERRAT_18_FONT_ID;
-  }
-  if (currentFontId >= CHAREINK_10_FONT_ID && currentFontId <= CHAREINK_18_FONT_ID) {
-    return CHAREINK_18_FONT_ID;
   }
   for (const auto& entry : g_sdFonts) {
     if (entry.id == currentFontId) {
@@ -1085,7 +979,7 @@ uint32_t FontManager::readerFontFamilyOptionCount() {
   if (!g_scannedForFonts) {
     (void)scanSDFonts("/fonts", false);
   }
-  return 2u + static_cast<uint32_t>(g_sdFamiliesSorted.size());
+  return 1u + static_cast<uint32_t>(g_sdFamiliesSorted.size());
 }
 
 std::vector<std::string> FontManager::readerFontFamilyEnumLabels() {
@@ -1093,32 +987,28 @@ std::vector<std::string> FontManager::readerFontFamilyEnumLabels() {
     (void)scanSDFonts("/fonts", false);
   }
   std::vector<std::string> out;
-  out.push_back("ChareInk");
   out.push_back("Montserrat");
   out.insert(out.end(), g_sdFamiliesSorted.begin(), g_sdFamiliesSorted.end());
   return out;
 }
 
 std::string FontManager::readerFontFamilyLabel(uint8_t slot) {
-  if (!g_scannedForFonts && slot >= 2u) {
+  if (!g_scannedForFonts && slot >= 1u) {
     (void)scanSDFonts("/fonts", false);
   }
   if (slot == 0) {
-    return "ChareInk";
-  }
-  if (slot == 1) {
     return "Montserrat";
   }
-  const size_t idx = static_cast<size_t>(slot) - 2u;
+  const size_t idx = static_cast<size_t>(slot) - 1u;
   if (idx < g_sdFamiliesSorted.size()) {
     return g_sdFamiliesSorted[idx];
   }
-  return "ChareInk";
+  return "Montserrat";
 }
 
 void FontManager::clampReaderFontFamilySlot(uint8_t& slot) {
   if (!g_scannedForFonts) {
-    if (static_cast<uint32_t>(slot) < 2u) {
+    if (static_cast<uint32_t>(slot) < 1u) {
       return;
     }
     return;
@@ -1130,7 +1020,7 @@ void FontManager::clampReaderFontFamilySlot(uint8_t& slot) {
 }
 
 int FontManager::getFontIdNearestPointSize(const std::string& family, int preferredPt) {
-  if (!g_scannedForFonts && family != "ChareInk" && family != "Montserrat") {
+  if (!g_scannedForFonts && family != "Montserrat") {
     (void)scanSDFonts("/fonts", false);
   }
   int smallestGeId = -1;
@@ -1156,7 +1046,7 @@ int FontManager::getFontIdNearestPointSize(const std::string& family, int prefer
     }
   }
   if (!any) {
-    return CHAREINK_14_FONT_ID;
+    return MONTSERRAT_14_FONT_ID;
   }
   if (smallestGeId >= 0) {
     return smallestGeId;
@@ -1164,5 +1054,5 @@ int FontManager::getFontIdNearestPointSize(const std::string& family, int prefer
   if (largestLtId >= 0) {
     return largestLtId;
   }
-  return CHAREINK_14_FONT_ID;
+  return MONTSERRAT_14_FONT_ID;
 }

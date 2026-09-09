@@ -490,7 +490,7 @@ int ReaderSetting::getReaderFontIdForSettingsUi(uint8_t familySlot, uint8_t size
   if (familySlot < SystemSetting::FONT_FAMILY_BUILTIN_COUNT) {
     return getReaderFontIdForFamilyAndSize(familySlot, sizeIndex);
   }
-  return getReaderFontIdForFamilyAndSize(SystemSetting::CHAREINK, sizeIndex);
+  return getReaderFontIdForFamilyAndSize(SystemSetting::MONTSERRAT, sizeIndex);
 #endif
 }
 
@@ -508,9 +508,6 @@ int ReaderSetting::getReaderFontIdForFamilyAndSize(uint8_t family, uint8_t size)
 
   if (family >= SystemSetting::FONT_FAMILY_BUILTIN_COUNT) {
     const std::string sdName = FontManager::readerFontFamilyLabel(family);
-    if (sdName == "ChareInk") {
-      return getReaderFontIdForFamilyAndSize(SystemSetting::CHAREINK, size);
-    }
     return FontManager::getFontIdNearestPointSize(sdName, preferredPt);
   }
 
@@ -529,22 +526,8 @@ int ReaderSetting::getReaderFontIdForFamilyAndSize(uint8_t family, uint8_t size)
         case SystemSetting::EXTRA_LARGE:
           return MONTSERRAT_18_FONT_ID;
       }
-    case SystemSetting::CHAREINK:
-      switch (size) {
-        case SystemSetting::EXTRA_SMALL:
-          return CHAREINK_10_FONT_ID;
-        case SystemSetting::SMALL:
-          return CHAREINK_12_FONT_ID;
-        case SystemSetting::MEDIUM:
-        default:
-          return CHAREINK_14_FONT_ID;
-        case SystemSetting::LARGE:
-          return CHAREINK_16_FONT_ID;
-        case SystemSetting::EXTRA_LARGE:
-          return CHAREINK_18_FONT_ID;
-      }
     default:
-      return getReaderFontIdForFamilyAndSize(SystemSetting::CHAREINK, size);
+      return getReaderFontIdForFamilyAndSize(SystemSetting::MONTSERRAT, size);
   }
 #endif
 }

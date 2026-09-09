@@ -367,7 +367,7 @@ void FontManagerActivity::removeSelected() {
   }
 
   if (wasSelectedReaderFont) {
-    READER_SETTINGS.fontFamily = SystemSetting::CHAREINK;
+    READER_SETTINGS.fontFamily = SystemSetting::MONTSERRAT;
     READER_SETTINGS.saveToFile();
   }
   selectedVisible_ = false;

@@ -25,6 +25,8 @@ ExternalFont::GlyphBitmapCacheSlot* ExternalFont::s_bitmapCache = nullptr;
 uint32_t ExternalFont::s_bitmapCacheGen = 0;
 uint8_t ExternalFont::s_bitmapCacheUsers = 0;
 bool ExternalFont::s_bitmapCacheInPsram = false;
+ExternalFont::TtfSharedCacheSlot ExternalFont::s_ttfSharedCache[ExternalFont::kTtfSharedCacheSlots];
+uint32_t ExternalFont::s_ttfSharedCacheGeneration = 0;
 
 namespace {
 
@@ -163,6 +165,16 @@ void ExternalFont::unload() {
   metaCacheClear();
 }
 
+void ExternalFont::clearTtfCache() {
+  for (auto& slot : s_ttfSharedCache) {
+    if (slot.users != 0) {
+      continue;
+    }
+    releaseFontBuffer(slot.data);
+    slot = TtfSharedCacheSlot{};
+  }
+}
+
 /** Load font metadata from an on-disk font file at path, keeping glyph data on SD for on-demand reads. */
 bool ExternalFont::load(const char* path, const bool enableGlyphBitmapCache, const uint16_t pointSize) {
   unload();
@@ -247,44 +259,83 @@ bool ExternalFont::loadTtf(const char* path, const uint16_t pointSize) {
   }
 
   m_filePath = path;
-  m_file = SdMan.open(path, FILE_READ);
-  if (!m_file) {
-    INX_SERIAL.printf("[ExternalFont] Could not open TTF/OTF: %s\n", path);
-    return false;
+
+  for (size_t i = 0; i < kTtfSharedCacheSlots; ++i) {
+    auto& slot = s_ttfSharedCache[i];
+    if (slot.data != nullptr && slot.path == path) {
+      slot.users++;
+      slot.lastUsed = ++s_ttfSharedCacheGeneration;
+      m_ttfData = slot.data;
+      m_ttfDataSize = slot.size;
+      m_ttfDataInPsram = slot.inPsram;
+      m_ttfSharedCacheSlot = static_cast<int8_t>(i);
+      INX_SERIAL.printf("[ExternalFont] Reused cached TTF %s (%lu bytes, %upt)\n", path,
+                        static_cast<unsigned long>(m_ttfDataSize), static_cast<unsigned>(pointSize));
+      break;
+    }
   }
 
-  const uint64_t fileSize = m_file.size();
-  if (fileSize == 0 || fileSize > UINT32_MAX) {
-    INX_SERIAL.printf("[ExternalFont] Invalid TTF/OTF size: %llu\n", static_cast<unsigned long long>(fileSize));
-    m_file.close();
-    return false;
-  }
-
-  m_ttfDataSize = static_cast<uint32_t>(fileSize);
-  m_ttfData = allocateFontBuffer(m_ttfDataSize, &m_ttfDataInPsram);
   if (!m_ttfData) {
-    INX_SERIAL.printf("[ExternalFont] Could not allocate %lu bytes for TTF/OTF %s\n",
-                      static_cast<unsigned long>(m_ttfDataSize), path);
-    m_file.close();
-    m_ttfDataSize = 0;
-    return false;
-  }
+    m_file = SdMan.open(path, FILE_READ);
+    if (!m_file) {
+      INX_SERIAL.printf("[ExternalFont] Could not open TTF/OTF: %s\n", path);
+      return false;
+    }
 
-  uint32_t totalRead = 0;
-  while (totalRead < m_ttfDataSize) {
-    const uint32_t remaining = m_ttfDataSize - totalRead;
-    const uint32_t chunk = std::min<uint32_t>(remaining, 16u * 1024u);
-    const size_t bytesRead = m_file.read(m_ttfData + totalRead, chunk);
-    if (bytesRead != chunk) {
-      INX_SERIAL.printf("[ExternalFont] TTF/OTF read mismatch for %s: expected %lu, got %u\n", path,
-                        static_cast<unsigned long>(chunk), static_cast<unsigned>(bytesRead));
-      releaseTtfResources();
+    const uint64_t fileSize = m_file.size();
+    if (fileSize == 0 || fileSize > UINT32_MAX) {
+      INX_SERIAL.printf("[ExternalFont] Invalid TTF/OTF size: %llu\n", static_cast<unsigned long long>(fileSize));
       m_file.close();
       return false;
     }
-    totalRead += chunk;
+
+    m_ttfDataSize = static_cast<uint32_t>(fileSize);
+    m_ttfData = allocateFontBuffer(m_ttfDataSize, &m_ttfDataInPsram);
+    if (!m_ttfData) {
+      INX_SERIAL.printf("[ExternalFont] Could not allocate %lu bytes for TTF/OTF %s\n",
+                        static_cast<unsigned long>(m_ttfDataSize), path);
+      m_file.close();
+      m_ttfDataSize = 0;
+      return false;
+    }
+
+    uint32_t totalRead = 0;
+    while (totalRead < m_ttfDataSize) {
+      const uint32_t remaining = m_ttfDataSize - totalRead;
+      const uint32_t chunk = std::min<uint32_t>(remaining, 16u * 1024u);
+      const size_t bytesRead = m_file.read(m_ttfData + totalRead, chunk);
+      if (bytesRead != chunk) {
+        INX_SERIAL.printf("[ExternalFont] TTF/OTF read mismatch for %s: expected %lu, got %u\n", path,
+                          static_cast<unsigned long>(chunk), static_cast<unsigned>(bytesRead));
+        releaseTtfResources();
+        m_file.close();
+        return false;
+      }
+      totalRead += chunk;
+    }
+    m_file.close();
+
+    int cacheSlot = -1;
+    uint32_t oldest = UINT32_MAX;
+    for (size_t i = 0; i < kTtfSharedCacheSlots; ++i) {
+      auto& slot = s_ttfSharedCache[i];
+      if (slot.users == 0 && (slot.data == nullptr || slot.lastUsed < oldest)) {
+        oldest = slot.lastUsed;
+        cacheSlot = static_cast<int>(i);
+      }
+    }
+    if (cacheSlot >= 0) {
+      auto& slot = s_ttfSharedCache[cacheSlot];
+      releaseFontBuffer(slot.data);
+      slot.path = path;
+      slot.data = m_ttfData;
+      slot.size = m_ttfDataSize;
+      slot.lastUsed = ++s_ttfSharedCacheGeneration;
+      slot.users = 1;
+      slot.inPsram = m_ttfDataInPsram;
+      m_ttfSharedCacheSlot = static_cast<int8_t>(cacheSlot);
+    }
   }
-  m_file.close();
 
   static_assert(sizeof(stbtt_fontinfo) <= kTtfFontInfoBytes, "TTF font info storage is too small");
   const int fontOffset = stbtt_GetFontOffsetForIndex(m_ttfData, 0);
@@ -330,13 +381,21 @@ bool ExternalFont::loadTtf(const char* path, const uint16_t pointSize) {
 
 /** Release the in-memory TrueType file and reusable glyph bitmap buffer. */
 void ExternalFont::releaseTtfResources() {
-  releaseFontBuffer(m_ttfData);
+  if (m_ttfSharedCacheSlot >= 0 && m_ttfSharedCacheSlot < static_cast<int8_t>(kTtfSharedCacheSlots)) {
+    auto& slot = s_ttfSharedCache[static_cast<size_t>(m_ttfSharedCacheSlot)];
+    if (slot.users > 0) {
+      --slot.users;
+    }
+  } else {
+    releaseFontBuffer(m_ttfData);
+  }
   releaseFontBuffer(m_ttfBitmapBuffer);
   m_ttfData = nullptr;
   m_ttfBitmapBuffer = nullptr;
   m_ttfDataSize = 0;
   m_ttfBitmapBufferSize = 0;
   m_ttfDataInPsram = false;
+  m_ttfSharedCacheSlot = -1;
   m_ttfPointSize = 0;
   m_ttfBitmapToken = 0;
   m_ttfBitmapLength = 0;

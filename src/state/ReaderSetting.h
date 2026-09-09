@@ -69,8 +69,8 @@ class ReaderSetting {
 
   uint8_t orientation = 0;  ///< SystemSetting::PORTRAIT
 
-  uint8_t fontFamily = SystemSetting::CHAREINK;
-  uint8_t fontSize = SystemSetting::SMALL;  ///< 12 pt ChareInk on a fresh install
+  uint8_t fontFamily = SystemSetting::MONTSERRAT;
+  uint8_t fontSize = SystemSetting::SMALL;  ///< 12 pt Montserrat on a fresh install
   uint8_t lineHeight = 100;                 ///< Reader line height, % of natural (10-200)
   uint8_t textSpace = 100;                  ///< Reader word spacing, % of natural (10-200)
   uint8_t paragraphAlignment = 4;           ///< SystemSetting::FOLLOW_CSS

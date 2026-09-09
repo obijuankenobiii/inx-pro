@@ -38,10 +38,10 @@ Statistics::Statistics(GfxRenderer& renderer, MappedInputManager& mappedInput, s
 namespace {
 
 constexpr int FONT_SANS_SM = MONTSERRAT_8_FONT_ID;
-constexpr int FONT_SERIF = CHAREINK_14_FONT_ID;
-constexpr int FONT_SERIF_MD = CHAREINK_16_FONT_ID;
-constexpr int FONT_SERIF_LG = CHAREINK_18_FONT_ID;
-constexpr int FONT_SERIF_SM = CHAREINK_12_FONT_ID;
+constexpr int FONT_SERIF = MONTSERRAT_14_FONT_ID;
+constexpr int FONT_SERIF_MD = MONTSERRAT_16_FONT_ID;
+constexpr int FONT_SERIF_LG = MONTSERRAT_18_FONT_ID;
+constexpr int FONT_SERIF_SM = MONTSERRAT_12_FONT_ID;
 constexpr float kPi = 3.14159265f;
 
 ButtonBounds refreshButton(const GfxRenderer& renderer) {
