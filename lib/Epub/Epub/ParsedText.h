@@ -42,6 +42,8 @@ class ParsedText {
   bool extraParagraphSpacing;
   bool hyphenationEnabled;
   bool bionicReadingEnabled;
+  /** True when the first strong character in this paragraph is RTL. */
+  bool rtlParagraph_ = false;
   /** Reader "Indent" / book setting: legacy first-line em and em-based CSS indent simulation. */
   bool respectParagraphIndent_ = true;
   /** Word-spacing multiplier (textSpace/100); scales the inter-word space used for layout. */

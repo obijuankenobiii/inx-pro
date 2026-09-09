@@ -6,6 +6,7 @@
 #include <cctype>
 #include <climits>
 #include <cstdlib>
+#include <cstring>
 #include <map>
 #include <memory>
 #include <set>
@@ -31,8 +32,8 @@ std::vector<std::string> g_sdFamiliesSorted;
 }
 
 /**
- * @brief Extracts font size from filename (pt), e.g. Regular_14.bin -> 14.
- * Prefers the trailing "_<digits>" stem suffix so names like "4001_Regular_12.bin" still map to 12pt.
+ * @brief Extracts font size from filename (pt), e.g. Regular_14.ttf -> 14.
+ * Prefers the trailing "_<digits>" stem suffix so names like "4001_Regular_12.ttf" still map to 12pt.
  */
 static int extractSizeFromFilename(const std::string& filename) {
   const size_t dot = filename.rfind('.');
@@ -82,6 +83,39 @@ static std::string extractStyleFromFilename(const std::string& filename) {
   if (lowerFilename.find("italic") != std::string::npos) return "italic";
   return "regular";
 }
+
+static bool hasFontExtension(const std::string& filename, const char* extension) {
+  const size_t extensionLength = strlen(extension);
+  if (filename.size() < extensionLength) return false;
+  const size_t start = filename.size() - extensionLength;
+  for (size_t i = 0; i < extensionLength; ++i) {
+    char a = filename[start + i];
+    char b = extension[i];
+    if (a >= 'A' && a <= 'Z') a = static_cast<char>(a - 'A' + 'a');
+    if (b >= 'A' && b <= 'Z') b = static_cast<char>(b - 'A' + 'a');
+    if (a != b) return false;
+  }
+  return true;
+}
+
+static bool isFontFile(const std::string& filename) {
+  return hasFontExtension(filename, ".bin") || hasFontExtension(filename, ".ttf") ||
+         hasFontExtension(filename, ".otf");
+}
+
+static bool isOutlineFontFile(const std::string& filename) {
+  return hasFontExtension(filename, ".ttf") || hasFontExtension(filename, ".otf");
+}
+
+static bool shouldPreferFontPath(const std::string& current, const std::string& candidate) {
+  if (current.empty()) return true;
+  if (isOutlineFontFile(candidate) != isOutlineFontFile(current)) {
+    return isOutlineFontFile(candidate);
+  }
+  return hasFontExtension(candidate, ".ttf") && hasFontExtension(current, ".otf");
+}
+
+static constexpr int kDefaultOutlineFontSizes[] = {10, 12, 14, 16, 18};
 
 /**
  * @brief Initializes the font manager with built-in fonts
@@ -309,6 +343,37 @@ bool FontManager::scanSDFonts(const char* sdPath, bool forceRescan) {
   };
   std::map<std::pair<std::string, int>, FontGroup> groups;
 
+  auto addFontFile = [&](const std::string& family, const bool isLanguage, const std::string& familyPath,
+                         const std::string& filename) {
+    const int parsedSize = extractSizeFromFilename(filename);
+    const int* sizes = &parsedSize;
+    size_t sizeCount = 1;
+    if (parsedSize == 0) {
+      if (!isOutlineFontFile(filename)) return;
+      sizes = kDefaultOutlineFontSizes;
+      sizeCount = sizeof(kDefaultOutlineFontSizes) / sizeof(kDefaultOutlineFontSizes[0]);
+    }
+
+    const std::string fullPath = familyPath + "/" + filename;
+    const std::string style = extractStyleFromFilename(filename);
+    for (size_t i = 0; i < sizeCount; ++i) {
+      const int size = sizes[i];
+      const auto key = std::make_pair(family, size);
+      if (style == "regular" && shouldPreferFontPath(groups[key].regularPath, fullPath)) {
+        groups[key].regularPath = fullPath;
+      } else if (style == "bold" && shouldPreferFontPath(groups[key].boldPath, fullPath)) {
+        groups[key].boldPath = fullPath;
+      } else if (style == "italic" && shouldPreferFontPath(groups[key].italicPath, fullPath)) {
+        groups[key].italicPath = fullPath;
+      } else if (style == "bolditalic" && shouldPreferFontPath(groups[key].boldItalicPath, fullPath)) {
+        groups[key].boldItalicPath = fullPath;
+      }
+      groups[key].family = family;
+      groups[key].size = size;
+      groups[key].isLanguage = isLanguage;
+    }
+  };
+
   for (const auto& family : families) {
     std::string familyPath = std::string(sdPath) + "/" + family;
     auto familyDir = SdMan.open(familyPath.c_str());
@@ -327,25 +392,8 @@ bool FontManager::scanSDFonts(const char* sdPath, bool forceRescan) {
         continue;
       }
 
-      if (!file.isDirectory() && filename.length() > 4 && filename.substr(filename.length() - 4) == ".bin") {
-        int size = extractSizeFromFilename(filename);
-        if (size > 0) {
-          auto key = std::make_pair(family, size);
-          std::string fullPath = familyPath + "/" + filename;
-          std::string style = extractStyleFromFilename(filename);
-
-          if (style == "regular") {
-            groups[key].regularPath = fullPath;
-          } else if (style == "bold") {
-            groups[key].boldPath = fullPath;
-          } else if (style == "italic") {
-            groups[key].italicPath = fullPath;
-          } else if (style == "bolditalic") {
-            groups[key].boldItalicPath = fullPath;
-          }
-          groups[key].family = family;
-          groups[key].size = size;
-        }
+      if (!file.isDirectory() && isFontFile(filename)) {
+        addFontFile(family, false, familyPath, filename);
       }
       file.close();
     }
@@ -378,25 +426,8 @@ bool FontManager::scanSDFonts(const char* sdPath, bool forceRescan) {
       for (auto file = fontDir.openNextFile(); file; file = fontDir.openNextFile()) {
         file.getName(name, sizeof(name));
         const std::string filename = name;
-        if (!file.isDirectory() && filename.length() > 4 && filename.substr(filename.length() - 4) == ".bin") {
-          const int size = extractSizeFromFilename(filename);
-          if (size > 0) {
-            const auto key = std::make_pair(familyName, size);
-            const std::string fullPath = languagePath + "/" + filename;
-            const std::string style = extractStyleFromFilename(filename);
-            if (style == "regular") {
-              groups[key].regularPath = fullPath;
-            } else if (style == "bold") {
-              groups[key].boldPath = fullPath;
-            } else if (style == "italic") {
-              groups[key].italicPath = fullPath;
-            } else if (style == "bolditalic") {
-              groups[key].boldItalicPath = fullPath;
-            }
-            groups[key].family = familyName;
-            groups[key].size = size;
-            groups[key].isLanguage = true;
-          }
+        if (!file.isDirectory() && isFontFile(filename)) {
+          addFontFile(familyName, true, languagePath, filename);
         }
         file.close();
       }
@@ -507,7 +538,7 @@ int FontManager::getLoadedFontCount() { return g_loadedFontCount; }
 
 /**
  * @brief Loads a specific font from SD card by ID
- * Uses streaming ExternalFont with on-demand glyph table reads (no full index in RAM).
+ * Uses streaming ExternalFont for .bin files and PSRAM-backed on-demand TTF/OTF rasterization.
  */
 bool FontManager::loadFontFromSD(int fontId, GfxRenderer& renderer, const bool enableGlyphBitmapCache) {
   if (!g_scannedForFonts) {
@@ -540,7 +571,7 @@ bool FontManager::loadFontFromSD(int fontId, GfxRenderer& renderer, const bool e
       return nullptr;
     }
     auto stream = std::unique_ptr<ExternalFont>(new ExternalFont());
-    if (!stream->load(path.c_str(), enableGlyphBitmapCache)) {
+    if (!stream->load(path.c_str(), enableGlyphBitmapCache, static_cast<uint16_t>(entry->size))) {
       INX_SERIAL.printf("[FontManager] Skipping %s (failed to load): %s\n", label, path.c_str());
       return nullptr;
     }
@@ -548,7 +579,7 @@ bool FontManager::loadFontFromSD(int fontId, GfxRenderer& renderer, const bool e
   };
 
   std::unique_ptr<ExternalFont> regularStream(new ExternalFont());
-  if (!regularStream->load(entry->regularPath.c_str(), enableGlyphBitmapCache)) {
+  if (!regularStream->load(entry->regularPath.c_str(), enableGlyphBitmapCache, static_cast<uint16_t>(entry->size))) {
     INX_SERIAL.printf("[FontManager] Failed to load regular: %s\n", entry->regularPath.c_str());
     return false;
   }
@@ -594,7 +625,7 @@ bool FontManager::loadFontFromSD(int fontId, GfxRenderer& renderer, const bool e
     renderer.addStreamingFontStyle(entry->id, EpdFontFamily::BOLD_ITALIC, std::move(boldItalicStream));
   }
 
-  INX_SERIAL.printf("[FontManager] Loaded font ID %d: %s %dpt (SD streaming, %s, on-demand glyphs)\n", fontId,
+  INX_SERIAL.printf("[FontManager] Loaded font ID %d: %s %dpt (SD/PSRAM font, %s, on-demand glyphs)\n", fontId,
                 entry->family.c_str(), entry->size, enableGlyphBitmapCache ? "cached" : "stream-only");
 
   return true;

@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "hyphenation/Hyphenator.h"
+#include "../../GfxRenderer/RtlText.h"
 
 constexpr int MAX_COST = std::numeric_limits<int>::max();
 
@@ -299,6 +300,23 @@ void ParsedText::layoutAndExtractLines(const GfxRenderer& renderer, const int fo
                                        const bool includeLastLine) {
   if (words.empty()) {
     return;
+  }
+
+  rtlParagraph_ = false;
+  for (const auto& word : words) {
+    const RtlText::Direction direction = RtlText::firstStrongDirection(word.c_str());
+    if (direction == RtlText::Direction::RTL) {
+      rtlParagraph_ = true;
+      break;
+    }
+    if (direction == RtlText::Direction::LTR) {
+      break;
+    }
+  }
+  // EPUBs commonly omit text-align for RTL paragraphs. In that case the
+  // logical "left/start" edge is the right edge of the page.
+  if (rtlParagraph_ && style == TextBlock::LEFT_ALIGN) {
+    style = TextBlock::RIGHT_ALIGN;
   }
 
   applyParagraphIndent(renderer, fontId);
@@ -804,7 +822,9 @@ void ParsedText::extractLine(const size_t breakIndex, const int pageWidth, const
   }
 
   uint16_t xpos = currentIndent;
-  if (style == TextBlock::RIGHT_ALIGN && spareSpace >= 0) {
+  if ((style == TextBlock::RIGHT_ALIGN ||
+       (rtlParagraph_ && style == TextBlock::JUSTIFIED && isLastLine)) &&
+      spareSpace >= 0) {
     xpos += spareSpace - gapCount * spaceWidth;
   } else if (style == TextBlock::CENTER_ALIGN && spareSpace >= 0) {
     xpos += (spareSpace - gapCount * spaceWidth) / 2;

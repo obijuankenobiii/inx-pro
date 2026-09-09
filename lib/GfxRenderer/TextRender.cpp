@@ -7,6 +7,7 @@
 
 #include "GfxRenderer.h"
 #include "BitmapUtil.h"
+#include "RtlText.h"
 #include "system/FontManager.h"
 #include "system/LanguageManager.h"
 
@@ -168,6 +169,8 @@ bool embeddedGlyphBitmapIsValid(const EpdFontData* fontData, const EpdGlyph* gly
 
 int TextRender::getWidth(const int fontId, const char* text, const EpdFontFamily::Style style) const {
   text = LanguageManager::translateText(text);
+  std::string visualText;
+  text = RtlText::prepareForRender(text, visualText);
   const EpdFontFamily* primary = findFontFamily(gfx, fontId);
   if (primary == nullptr) {
     INX_SERIAL.printf("[%lu] [GFX] Font %d not found\n", millis(), fontId);
@@ -343,6 +346,8 @@ bool TextRender::supportsAntiAliasing(const int fontId) const {
 
 int TextRender::getSmallCapsWidth(const int fontId, const char* text, const EpdFontFamily::Style style) const {
   text = LanguageManager::translateText(text);
+  std::string visualText;
+  text = RtlText::prepareForRender(text, visualText);
   if (!text || *text == '\0' || findFontFamily(gfx, fontId) == nullptr) {
     return 0;
   }
@@ -380,6 +385,8 @@ int TextRender::getSmallCapsWidth(const int fontId, const char* text, const EpdF
 int TextRender::getScaledWidth(const int fontId, const char* text, const uint8_t scalePct,
                                const EpdFontFamily::Style style) const {
   text = LanguageManager::translateText(text);
+  std::string visualText;
+  text = RtlText::prepareForRender(text, visualText);
   if (!text || *text == '\0' || findFontFamily(gfx, fontId) == nullptr) {
     return 0;
   }
@@ -435,6 +442,8 @@ std::string TextRender::truncate(const int fontId, const char* text, const int m
 void TextRender::rotated90CW(const int fontId, const int x, const int y, const char* text, const bool black,
                              const EpdFontFamily::Style style) const {
   text = LanguageManager::translateText(text);
+  std::string visualText;
+  text = RtlText::prepareForRender(text, visualText);
   if (text == nullptr || *text == '\0' || findFontFamily(gfx, fontId) == nullptr) {
     return;
   }
@@ -511,6 +520,8 @@ void TextRender::rotated90CW(const int fontId, const int x, const int y, const c
 void TextRender::render(const int fontId, const int x, const int y, const char* text, const bool black,
                         const EpdFontFamily::Style style) const {
   text = LanguageManager::translateText(text);
+  std::string visualText;
+  text = RtlText::prepareForRender(text, visualText);
   const int yPos = y + getFontAscenderSize(fontId);
   int xpos = x;
 
@@ -534,6 +545,8 @@ void TextRender::render(const int fontId, const int x, const int y, const char* 
 void TextRender::renderGray(const int fontId, const int x, const int y, const char* text, const bool black,
                             const EpdFontFamily::Style style) const {
   text = LanguageManager::translateText(text);
+  std::string visualText;
+  text = RtlText::prepareForRender(text, visualText);
   const int yPos = y + getFontAscenderSize(fontId);
   int xpos = x;
 
@@ -556,6 +569,8 @@ void TextRender::renderGray(const int fontId, const int x, const int y, const ch
 int TextRender::renderScaled(const int fontId, const int x, const int y, const char* text, const uint8_t scalePct,
                              const bool black, const EpdFontFamily::Style style) const {
   text = LanguageManager::translateText(text);
+  std::string visualText;
+  text = RtlText::prepareForRender(text, visualText);
   if (text == nullptr || *text == '\0') {
     return x;
   }
@@ -589,7 +604,8 @@ int TextRender::renderSmallCaps(const int fontId, const int x, const int y, cons
   }
 
   const std::string upper = toUpperUtf8(text);
-  const char* ptr = upper.c_str();
+  std::string visualText;
+  const char* ptr = RtlText::prepareForRender(upper.c_str(), visualText);
   const int yPos = y + getFontAscenderSize(fontId);
   int xpos = x;
   int yCursor = yPos;
