@@ -127,6 +127,8 @@ class GfxRenderer {
   void copyGrayscaleMsbBuffers() const;
   void displayGrayBuffer(bool quality = false, bool trackForRevert = true) const;
   void displayGrayBufferFastQuality() const;
+  void displayGrayscaleBase(HalDisplay::RefreshMode fallback = HalDisplay::HALF_REFRESH,
+                            bool turnOffScreen = false) const;
   void prepareQualityGrayscale() const;
   bool storeBwBuffer();
   void restoreBwBuffer();

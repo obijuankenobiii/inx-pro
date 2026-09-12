@@ -302,6 +302,10 @@ void GfxRenderer::displayGrayBufferFastQuality() const {
 #endif
 }
 
+void GfxRenderer::displayGrayscaleBase(const HalDisplay::RefreshMode fallback, const bool turnOffScreen) const {
+  display.displayGrayscaleBase(fallback, turnOffScreen);
+}
+
 void GfxRenderer::prepareQualityGrayscale() const {
 #ifdef SIMULATOR
   display.preconditionGrayscale();

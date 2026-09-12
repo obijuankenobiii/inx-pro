@@ -14,6 +14,7 @@
 #include <HalDisplay.h>
 #include <HalGPIO.h>
 #include <ImageRender.h>
+#include <PngRender.h>
 #include <SDCardManager.h>
 #include <Txt.h>
 #include <Xtc.h>
@@ -89,6 +90,58 @@ void runSleepImageTwoBitPasses(GfxRenderer& renderer, const std::string& imagePa
 
   ImageRender::create(renderer, imagePath)
       .displayGrayscale(0, 0, renderer.getScreenWidth(), renderer.getScreenHeight(), options, quality);
+}
+
+// Transparent PNG sleep overlays use the dedicated CrossPoint sequence. The
+// shared ImageRender grayscale path is intentionally not used here: the panel
+// must retain the B/W screen as its base while the PNG is uploaded a second
+// time into the two grayscale planes.
+bool renderTransparentPngSleepScreen(GfxRenderer& renderer, const std::string& imagePath) {
+  const int screenWidth = renderer.getScreenWidth();
+  const int screenHeight = renderer.getScreenHeight();
+  const bool cropToFill = SETTINGS.sleepScreenCoverMode == SystemSetting::SLEEP_SCREEN_COVER_MODE::FIT;
+  PngRender png(renderer);
+
+  renderer.syncWriteBufferFromActive();
+  // Seed the transparent overlay in the normal B/W framebuffer using the
+  // image's two-bit quantizer.  Do not use ImageRenderMode::OneBit here:
+  // transparent sleep images must enter the same grayscale pipeline as the
+  // later LSB/MSB passes.
+  renderer.setRenderMode(GfxRenderer::BW);
+  if (!png.fromPath(imagePath, 0, 0, screenWidth, screenHeight, cropToFill, ImageRenderMode::TwoBit, 0.5f,
+                   nullptr, true)) {
+    return false;
+  }
+
+  if (!sleepTwoBitEnabled()) {
+    renderer.displayBuffer(HalDisplay::HALF_REFRESH);
+    return true;
+  }
+
+  renderer.displayGrayscaleBase(HalDisplay::HALF_REFRESH);
+
+  renderer.clearScreen(0x00);
+  renderer.setRenderMode(GfxRenderer::GRAYSCALE_LSB);
+  if (!png.fromPath(imagePath, 0, 0, screenWidth, screenHeight, cropToFill, ImageRenderMode::TwoBit, 0.5f,
+                    nullptr, true)) {
+    renderer.setRenderMode(GfxRenderer::BW);
+    return true;
+  }
+  renderer.copyGrayscaleLsbBuffers();
+
+  renderer.clearScreen(0x00);
+  renderer.setRenderMode(GfxRenderer::GRAYSCALE_MSB);
+  if (!png.fromPath(imagePath, 0, 0, screenWidth, screenHeight, cropToFill, ImageRenderMode::TwoBit, 0.5f,
+                    nullptr, true)) {
+    renderer.setRenderMode(GfxRenderer::BW);
+    return true;
+  }
+  renderer.copyGrayscaleMsbBuffers();
+
+  renderer.displayGrayBuffer(false);
+  renderer.setRenderMode(GfxRenderer::BW);
+  renderer.cleanupGrayscaleWithFrameBuffer();
+  return true;
 }
 
 void recordSleepImageUsed() {
@@ -392,6 +445,11 @@ void SleepActivity::renderTransparentSleepScreen() const {
       recordSleepImageUsed();
     }
     const bool preserveTransparency = StringUtils::checkFileExtension(imagePath, ".png");
+    if (preserveTransparency) {
+      if (renderTransparentPngSleepScreen(renderer, imagePath)) {
+        return;
+      }
+    }
     const bool removeBackground = sleepImageQualityEnabled() && !preserveTransparency;
     if (isSleepImagePathRaster(imagePath)) {
       ImageRender::Options options = sleepImageOptions(/*allowQuality=*/false);

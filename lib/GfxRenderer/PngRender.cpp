@@ -495,20 +495,24 @@ void drawQuantizedPixel(const RenderContext& ctx, const int x, const int y, cons
   }
 
   const uint8_t level = adjustTwoBitImageLevelForDisplay(FourToneImageDitherer::levelFromValue(q));
+  // Keep PNG's grayscale plane polarity identical to the working JPEG medium
+  // path.  The panel's tone-code order is device-specific; level 1/2 cannot
+  // be hard-coded here because that reverses dark/light gray on some panels.
+  const uint8_t grayscaleCode = grayscaleCodeTable()[level & 3u];
   GfxRenderer::RenderMode renderMode = ctx.renderer->getRenderMode();
-  if (renderMode == GfxRenderer::GRAY2_LSB) {
-    renderMode = GfxRenderer::GRAYSCALE_LSB;
-  } else if (renderMode == GfxRenderer::GRAY2_MSB) {
-    renderMode = GfxRenderer::GRAYSCALE_MSB;
-  }
   if (renderMode == GfxRenderer::BW) {
     if ((ctx.mode == ImageRenderMode::TwoBit && level > 0) || (ctx.mode == ImageRenderMode::OneBit && level < 3)) {
       ctx.renderer->drawPixel(x, y, true);
     }
-  } else if (renderMode == GfxRenderer::GRAYSCALE_MSB && (level == 1 || level == 2)) {
+  } else if (renderMode == GfxRenderer::GRAYSCALE_MSB && (grayscaleCode & 0b10u) != 0u) {
     ctx.renderer->drawPixel(x, y, false);
-  } else if (renderMode == GfxRenderer::GRAYSCALE_LSB && level == 1) {
+  } else if (renderMode == GfxRenderer::GRAYSCALE_LSB && (grayscaleCode & 0b01u) != 0u) {
     ctx.renderer->drawPixel(x, y, false);
+  } else if (renderMode == GfxRenderer::GRAY2_LSB || renderMode == GfxRenderer::GRAY2_MSB) {
+    const uint8_t bit = renderMode == GfxRenderer::GRAY2_LSB ? 0b01u : 0b10u;
+    if ((mapQualityGray2Level(level) & bit) == 0u) {
+      ctx.renderer->drawPixel(x, y, true);
+    }
   }
 }
 
