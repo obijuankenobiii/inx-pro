@@ -96,7 +96,7 @@ struct BookSettings {
   uint8_t fontFamily = SystemSetting::MONTSERRAT;         ///< Font family
   /** Preferred language package for this book. Empty means follow the system/default reader language. */
   char languageCode[33] = "";
-  uint8_t fontSize = SystemSetting::SMALL;                 ///< Font size
+  uint8_t fontSize = SystemSetting::SMALL;                 ///< Legacy index for built-in/.bin fonts; actual 8-60pt for TTF/OTF
   uint8_t lineHeight = 100;                                ///< Line height, % of natural (10-200)
   uint8_t textSpace = 100;                                 ///< Word spacing, % of natural (10-200)
   uint8_t paragraphAlignment = SystemSetting::FOLLOW_CSS;  ///< Paragraph alignment
@@ -184,8 +184,13 @@ struct BookSettings {
 
   void normalize() {
     FontManager::clampReaderFontFamilySlot(fontFamily);
-    if (fontSize >= SystemSetting::FONT_SIZE_COUNT) {
-      fontSize = SystemSetting::SMALL;
+    if (FontManager::isOutlineFontFamilySlot(fontFamily)) {
+      if (fontSize < FontManager::OUTLINE_FONT_MIN_POINT_SIZE ||
+          fontSize > FontManager::OUTLINE_FONT_MAX_POINT_SIZE) {
+        fontSize = static_cast<uint8_t>(FontManager::pointSizeForLegacyReaderSize(fontSize));
+      }
+    } else if (fontSize >= SystemSetting::FONT_SIZE_COUNT) {
+      fontSize = FontManager::legacyReaderSizeForPointSize(fontSize);
     }
     if (lineHeight < 10 || lineHeight > 200) {
       lineHeight = 100;
@@ -444,6 +449,14 @@ struct BookSettings {
    */
   bool saveToFile(const std::string& bookCachePath) {
     FontManager::clampReaderFontFamilySlot(fontFamily);
+    if (FontManager::isOutlineFontFamilySlot(fontFamily)) {
+      if (fontSize < FontManager::OUTLINE_FONT_MIN_POINT_SIZE ||
+          fontSize > FontManager::OUTLINE_FONT_MAX_POINT_SIZE) {
+        fontSize = static_cast<uint8_t>(FontManager::pointSizeForLegacyReaderSize(fontSize));
+      }
+    } else if (fontSize >= SystemSetting::FONT_SIZE_COUNT) {
+      fontSize = FontManager::legacyReaderSizeForPointSize(fontSize);
+    }
     if (lineHeight < 10 || lineHeight > 200) lineHeight = 100;
     if (textSpace < 10 || textSpace > 200) textSpace = 100;
     std::string settingsPath = bookCachePath + "/settings.bin";

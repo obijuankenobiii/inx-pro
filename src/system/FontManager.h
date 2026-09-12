@@ -30,6 +30,10 @@ class FontManager {
   /** SD streaming font IDs (must not overlap built-in reader/system font ranges). */
   static constexpr int SD_FONT_START_ID = 5000;
 
+  /** Point-size range exposed for TrueType/OpenType reader fonts. */
+  static constexpr uint8_t OUTLINE_FONT_MIN_POINT_SIZE = 8;
+  static constexpr uint8_t OUTLINE_FONT_MAX_POINT_SIZE = 60;
+
   static void initialize(GfxRenderer& renderer);
 
   static int getNextFont(int currentFontId);
@@ -47,6 +51,12 @@ class FontManager {
   static std::vector<std::string> readerFontFamilyEnumLabels();
   static std::string readerFontFamilyLabel(uint8_t slot);
   static void clampReaderFontFamilySlot(uint8_t& slot);
+  static bool isOutlineFontFamily(const std::string& family);
+  static bool isOutlineFontFamilySlot(uint8_t slot);
+  /** Convert the legacy five-position reader size to its equivalent point size. */
+  static int pointSizeForLegacyReaderSize(uint8_t sizeIndex);
+  /** Convert an outline point size to the closest legacy five-position size. */
+  static uint8_t legacyReaderSizeForPointSize(int pointSize);
   static int getFontIdNearestPointSize(const std::string& family, int preferredPt);
 
   static bool loadFontFromSD(int fontId, GfxRenderer& renderer, bool enableGlyphBitmapCache = true);

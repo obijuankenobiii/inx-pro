@@ -109,6 +109,32 @@ for root, _, files in os.walk(SRC_DIR):
                     'libraryMode:["List","Grid"]',
                     'libraryMode:["List","Grid","Thumbnail"]')
 
+            if file == "FontManagerPage.html":
+                html_content = html_content.replace(
+                    'TTF/OTF → <strong>.bin</strong> (10–18 pt).',
+                    'TTF/OTF files are stored on the SD card and rasterized at 8–60 pt on demand.')
+                html_content = html_content.replace('Build &amp; upload to SD', 'Upload to SD')
+                html_content = re.sub(
+                    r'<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;'
+                    r'margin:14px 0 16px;padding:12px 14px;border:1px solid #eee;border-radius:12px;'
+                    r'background:#fafafa">.*?(?=<button onclick=runFontInstall)',
+                    '',
+                    html_content,
+                    flags=re.DOTALL,
+                )
+                html_content = html_content.replace(
+                    'oneBit:!!document.getElementById("fontOneBitToggle")?.checked,', '')
+                html_content = html_content.replace(
+                    'r.textContent="Packing "+o+" "+a+"px…"',
+                    'r.textContent="Preparing "+o+"…"')
+                html_content = html_content.replace(
+                    'addModalLog("fontMgrLog",(o.oneBit?"Rasterizing 1-bit fonts":"Rasterizing 2-bit fonts")+" (may take a minute)…","info")',
+                    'addModalLog("fontMgrLog","Preparing TTF/OTF files…","info")')
+                html_content = html_content.replace(
+                    '/\\.bin$/i.test(e.name)',
+                    '/\\.(?:bin|ttf|otf)$/i.test(e.name)')
+                html_content = html_content.replace('all .bin files inside it?', 'all font files inside it?')
+
             # minified = regex.sub("\g<1>", html_content)
             minified = minify_html(html_content)
             base_name = f"{os.path.splitext(file)[0]}Html"

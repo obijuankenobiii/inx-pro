@@ -28,7 +28,7 @@ void readAndValidate(FsFile& file, uint8_t& member, uint8_t maxValue);
 ReaderSetting ReaderSetting::instance;
 
 namespace {
-constexpr uint8_t READER_SETTINGS_FILE_VERSION = 4;
+constexpr uint8_t READER_SETTINGS_FILE_VERSION = 5;
 constexpr uint8_t READER_SETTINGS_COUNT = 42;
 constexpr uint8_t LEGACY_IMAGE_PRESENTATION_COUNT = 4;
 constexpr char READER_SETTINGS_FILE[] = "/.system/reader_settings.bin";
@@ -138,6 +138,16 @@ bool ReaderSetting::saveToFile() const {
   FontManager::clampReaderFontFamilySlot(fontFamilyToSave);
   if (fontFamilyToSave != fontFamily) {
     const_cast<ReaderSetting*>(this)->fontFamily = fontFamilyToSave;
+  }
+  ReaderSetting* mutableSettings = const_cast<ReaderSetting*>(this);
+  if (FontManager::isOutlineFontFamilySlot(fontFamilyToSave)) {
+    if (mutableSettings->fontSize < FontManager::OUTLINE_FONT_MIN_POINT_SIZE ||
+        mutableSettings->fontSize > FontManager::OUTLINE_FONT_MAX_POINT_SIZE) {
+      mutableSettings->fontSize = static_cast<uint8_t>(
+          FontManager::pointSizeForLegacyReaderSize(mutableSettings->fontSize));
+    }
+  } else if (mutableSettings->fontSize >= SystemSetting::FONT_SIZE_COUNT) {
+    mutableSettings->fontSize = FontManager::legacyReaderSizeForPointSize(mutableSettings->fontSize);
   }
 #endif
 
@@ -305,7 +315,22 @@ bool ReaderSetting::loadFromFile() {
     }
     if (++settingsRead >= fileSettingsCount) break;
 
-    readAndValidate(inputFile, fontSize, SystemSetting::FONT_SIZE_COUNT);
+    serialization::readPod(inputFile, fontSize);
+#ifndef INX_SIMULATOR_WEB_ONLY
+    if (FontManager::isOutlineFontFamilySlot(fontFamily)) {
+      if (fontSize < FontManager::OUTLINE_FONT_MIN_POINT_SIZE ||
+          fontSize > FontManager::OUTLINE_FONT_MAX_POINT_SIZE) {
+        fontSize = static_cast<uint8_t>(FontManager::pointSizeForLegacyReaderSize(fontSize));
+      }
+    } else if (fontSize >= SystemSetting::FONT_SIZE_COUNT) {
+      // A settings file written while an outline family was selected can be
+      // reopened after that family is removed or replaced by a legacy .bin
+      // family. Convert the stored point size back to the legacy index.
+      fontSize = FontManager::legacyReaderSizeForPointSize(fontSize);
+    }
+#else
+    if (fontSize >= SystemSetting::FONT_SIZE_COUNT) fontSize = SystemSetting::SMALL;
+#endif
     if (++settingsRead >= fileSettingsCount) break;
 
     serialization::readPod(inputFile, lineHeight);
@@ -417,6 +442,14 @@ bool ReaderSetting::loadFromFile() {
 
 #ifndef INX_SIMULATOR_WEB_ONLY
   FontManager::clampReaderFontFamilySlot(fontFamily);
+  if (FontManager::isOutlineFontFamilySlot(fontFamily)) {
+    if (fontSize < FontManager::OUTLINE_FONT_MIN_POINT_SIZE ||
+        fontSize > FontManager::OUTLINE_FONT_MAX_POINT_SIZE) {
+      fontSize = static_cast<uint8_t>(FontManager::pointSizeForLegacyReaderSize(fontSize));
+    }
+  } else if (fontSize >= SystemSetting::FONT_SIZE_COUNT) {
+    fontSize = FontManager::legacyReaderSizeForPointSize(fontSize);
+  }
 #endif
 
   quickActionsMask &= (1u << SystemSetting::READER_BUTTON_ACTION_COUNT) - 1;
@@ -500,15 +533,26 @@ int ReaderSetting::getReaderFontIdForFamilyAndSize(uint8_t family, uint8_t size)
   (void)size;
   return 0;
 #else
-  if (size >= SystemSetting::FONT_SIZE_COUNT) {
-    size = SystemSetting::MEDIUM;
-  }
-  static const int kPtBySize[] = {10, 12, 14, 16, 18};
-  const int preferredPt = kPtBySize[size];
-
   if (family >= SystemSetting::FONT_FAMILY_BUILTIN_COUNT) {
     const std::string sdName = FontManager::readerFontFamilyLabel(family);
+    if (FontManager::isOutlineFontFamily(sdName)) {
+      int pointSize = size;
+      if (pointSize < FontManager::OUTLINE_FONT_MIN_POINT_SIZE ||
+          pointSize > FontManager::OUTLINE_FONT_MAX_POINT_SIZE) {
+        pointSize = FontManager::pointSizeForLegacyReaderSize(size);
+      }
+      return FontManager::getFontId(sdName, pointSize);
+    }
+
+    if (size >= SystemSetting::FONT_SIZE_COUNT) {
+      size = SystemSetting::MEDIUM;
+    }
+    const int preferredPt = FontManager::pointSizeForLegacyReaderSize(size);
     return FontManager::getFontIdNearestPointSize(sdName, preferredPt);
+  }
+
+  if (size >= SystemSetting::FONT_SIZE_COUNT) {
+    size = SystemSetting::MEDIUM;
   }
 
   switch (family) {

@@ -115,7 +115,7 @@ static bool shouldPreferFontPath(const std::string& current, const std::string& 
   return hasFontExtension(candidate, ".ttf") && hasFontExtension(current, ".otf");
 }
 
-static constexpr int kDefaultOutlineFontSizes[] = {10, 12, 14, 16, 18};
+static constexpr int kLegacyReaderPointSizes[] = {10, 12, 14, 16, 18};
 
 /**
  * @brief Initializes the font manager with built-in fonts
@@ -299,10 +299,22 @@ bool FontManager::scanSDFonts(const char* sdPath, bool forceRescan) {
     const int parsedSize = extractSizeFromFilename(filename);
     const int* sizes = &parsedSize;
     size_t sizeCount = 1;
-    if (parsedSize == 0) {
-      if (!isOutlineFontFile(filename)) return;
-      sizes = kDefaultOutlineFontSizes;
-      sizeCount = sizeof(kDefaultOutlineFontSizes) / sizeof(kDefaultOutlineFontSizes[0]);
+    if (isOutlineFontFile(filename)) {
+      // An outline font can be rasterized at any point size. The filename's
+      // numeric suffix is only a legacy hint, not a restriction on the
+      // sizes that the reader can expose.
+      static int outlineSizes[OUTLINE_FONT_MAX_POINT_SIZE - OUTLINE_FONT_MIN_POINT_SIZE + 1];
+      static bool initialized = false;
+      if (!initialized) {
+        for (int i = OUTLINE_FONT_MIN_POINT_SIZE; i <= OUTLINE_FONT_MAX_POINT_SIZE; ++i) {
+          outlineSizes[i - OUTLINE_FONT_MIN_POINT_SIZE] = i;
+        }
+        initialized = true;
+      }
+      sizes = outlineSizes;
+      sizeCount = sizeof(outlineSizes) / sizeof(outlineSizes[0]);
+    } else if (parsedSize == 0) {
+      return;
     }
 
     const std::string fullPath = familyPath + "/" + filename;
@@ -1017,6 +1029,47 @@ void FontManager::clampReaderFontFamilySlot(uint8_t& slot) {
   if (static_cast<uint32_t>(slot) >= n) {
     slot = 0;
   }
+}
+
+bool FontManager::isOutlineFontFamily(const std::string& family) {
+  if (!g_scannedForFonts) {
+    (void)scanSDFonts("/fonts", false);
+  }
+  for (const auto& entry : g_sdFonts) {
+    if (entry.family != family) {
+      continue;
+    }
+    if (isOutlineFontFile(entry.regularPath) || isOutlineFontFile(entry.boldPath) ||
+        isOutlineFontFile(entry.italicPath) || isOutlineFontFile(entry.boldItalicPath)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool FontManager::isOutlineFontFamilySlot(const uint8_t slot) {
+  if (slot == 0) {
+    return false;
+  }
+  return isOutlineFontFamily(readerFontFamilyLabel(slot));
+}
+
+int FontManager::pointSizeForLegacyReaderSize(const uint8_t sizeIndex) {
+  const size_t index = std::min<size_t>(sizeIndex, sizeof(kLegacyReaderPointSizes) / sizeof(kLegacyReaderPointSizes[0]) - 1);
+  return kLegacyReaderPointSizes[index];
+}
+
+uint8_t FontManager::legacyReaderSizeForPointSize(const int pointSize) {
+  int bestIndex = 0;
+  int bestDistance = INT_MAX;
+  for (size_t i = 0; i < sizeof(kLegacyReaderPointSizes) / sizeof(kLegacyReaderPointSizes[0]); ++i) {
+    const int distance = std::abs(pointSize - kLegacyReaderPointSizes[i]);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestIndex = static_cast<int>(i);
+    }
+  }
+  return static_cast<uint8_t>(bestIndex);
 }
 
 int FontManager::getFontIdNearestPointSize(const std::string& family, int preferredPt) {

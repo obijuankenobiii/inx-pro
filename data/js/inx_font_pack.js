@@ -1,6 +1,7 @@
 /**
- * Browser-side packer for Inx SD streaming fonts (.bin).
- * Layout must match ExternalFont::load / decodeGlyphRow (24-byte rows, 1-bit or 2-bit bitmaps).
+ * Legacy browser-side font helper.
+ * New installs keep TTF/OTF files on the SD card; the firmware rasterizes them at the
+ * requested point size. The old packing helpers remain below for older callers.
  */
 (function (global) {
   'use strict';
@@ -423,59 +424,26 @@
     var boldItalic = opts.boldItalic;
     var onLog = opts.onLog || function () {};
     var onProgress = opts.onProgress || function () {};
-    var oneBit = !!opts.oneBit;
 
     if (!regular) throw new Error('Regular TTF/OTF is required');
-
-    var token = Math.random().toString(36).slice(2, 11);
-    var faces = [];
-    var cps = collectCodepoints(opts.codepointRanges);
-
-    try {
-      var jobs = [];
-      jobs.push({ key: 'Regular', blob: regular, desc: {} });
-      if (bold) jobs.push({ key: 'Bold', blob: bold, desc: { weight: '700' } });
-      if (italic) jobs.push({ key: 'Italic', blob: italic, desc: { style: 'italic' } });
-      if (boldItalic) jobs.push({ key: 'BoldItalic', blob: boldItalic, desc: { weight: '700', style: 'italic' } });
-
-      var outBins = [];
-      var step = 0;
-      var totalSteps = jobs.length * SIZES.length;
-
-      for (var ji = 0; ji < jobs.length; ji++) {
-        var job = jobs[ji];
-        var fam = 'inxfp_' + token + '_' + job.key;
-        var face = await registerFace(fam, job.blob, job.desc);
-        faces.push(face);
-
-        for (var si = 0; si < SIZES.length; si++) {
-          var sz = SIZES[si];
-          step++;
-          onProgress(step, totalSteps, job.key, sz);
-          var loadPx = readerStepToCanvasPx(sz);
-          await document.fonts.load(loadPx + 'px "' + fam + '"');
-          var bytes = await buildBin(job.key, fam, sz, cps, {
-            oneBit: oneBit,
-            onGlyphProgress: function (done, total) {
-              onProgress(step - 1 + done / Math.max(1, total), totalSteps, job.key, sz);
-            },
-          });
-          var fn = job.key + '_' + sz + '.bin';
-          outBins.push({ filename: fn, blob: new Blob([bytes], { type: 'application/octet-stream' }) });
-          onLog('Packed ' + fn + ' (' + bytes.length + ' bytes, ' + (oneBit ? '1-bit' : '2-bit') + ')', 'success');
-          await new Promise(function (r) {
-            return setTimeout(r, 0);
-          });
-        }
-      }
-      return outBins;
-    } finally {
-      for (var fi = 0; fi < faces.length; fi++) {
-        try {
-          document.fonts.delete(faces[fi]);
-        } catch (e) {}
-      }
+    var jobs = [
+      { key: 'Regular', blob: regular },
+      { key: 'Bold', blob: bold },
+      { key: 'Italic', blob: italic },
+      { key: 'BoldItalic', blob: boldItalic },
+    ].filter(function (job) {
+      return !!job.blob;
+    });
+    var outFonts = [];
+    for (var i = 0; i < jobs.length; i++) {
+      var job = jobs[i];
+      var type = (job.blob.name || '').toLowerCase().endsWith('.otf') ? '.otf' : '.ttf';
+      var filename = job.key + type;
+      outFonts.push({ filename: filename, blob: job.blob });
+      onProgress(i + 1, jobs.length, job.key, 'outline');
+      onLog('Ready ' + filename + ' (TTF/OTF)', 'success');
     }
+    return outFonts;
   }
 
   global.InxFontPack = {

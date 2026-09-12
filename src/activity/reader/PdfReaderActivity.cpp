@@ -331,8 +331,15 @@ void PdfReaderActivity::computeLayoutMetrics() {
   cachedFontId = READER_SETTINGS.getReaderFontId();
   FontManager::ensureFontReady(cachedFontId, renderer);
 
-  const uint8_t headerSizeIndex =
-      static_cast<uint8_t>(std::min<int>(READER_SETTINGS.fontSize + 1, SystemSetting::EXTRA_LARGE));
+  uint8_t headerSizeIndex = 0;
+  if (FontManager::isOutlineFontFamilySlot(READER_SETTINGS.fontFamily)) {
+    headerSizeIndex = static_cast<uint8_t>(std::min<int>(
+        FontManager::OUTLINE_FONT_MAX_POINT_SIZE,
+        std::max<int>(FontManager::OUTLINE_FONT_MIN_POINT_SIZE, READER_SETTINGS.fontSize + 1)));
+  } else {
+    headerSizeIndex = static_cast<uint8_t>(
+        std::min<int>(READER_SETTINGS.fontSize + 1, SystemSetting::EXTRA_LARGE));
+  }
   cachedHeaderFontId = READER_SETTINGS.getReaderFontIdForFamilyAndSize(READER_SETTINGS.fontFamily, headerSizeIndex);
   FontManager::ensureFontReady(cachedHeaderFontId, renderer);
 

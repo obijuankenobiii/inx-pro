@@ -341,7 +341,16 @@ void FontManagerActivity::selectInstalled() {
     return;
   }
 
-  READER_SETTINGS.fontFamily = static_cast<uint8_t>(std::distance(families.begin(), familyIt));
+  const uint8_t newFamily = static_cast<uint8_t>(std::distance(families.begin(), familyIt));
+  const bool wasOutline = FontManager::isOutlineFontFamilySlot(READER_SETTINGS.fontFamily);
+  const bool isOutline = FontManager::isOutlineFontFamilySlot(newFamily);
+  if (isOutline && !wasOutline) {
+    READER_SETTINGS.fontSize = static_cast<uint8_t>(
+        FontManager::pointSizeForLegacyReaderSize(READER_SETTINGS.fontSize));
+  } else if (!isOutline && wasOutline) {
+    READER_SETTINGS.fontSize = FontManager::legacyReaderSizeForPointSize(READER_SETTINGS.fontSize);
+  }
+  READER_SETTINGS.fontFamily = newFamily;
   READER_SETTINGS.saveToFile();
   status_ = "Font selected.";
   selectedVisible_ = false;

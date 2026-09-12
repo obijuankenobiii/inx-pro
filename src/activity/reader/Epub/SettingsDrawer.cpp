@@ -182,6 +182,35 @@ void drawJustificationSegments(const GfxRenderer& renderer, int left, int right,
   }
 }
 
+const char* fontSizeLabel(const BookSettings& settings) {
+  static char label[16];
+  if (FontManager::isOutlineFontFamilySlot(settings.fontFamily)) {
+    int pointSize = settings.fontSize;
+    if (pointSize < FontManager::OUTLINE_FONT_MIN_POINT_SIZE ||
+        pointSize > FontManager::OUTLINE_FONT_MAX_POINT_SIZE) {
+      pointSize = FontManager::pointSizeForLegacyReaderSize(settings.fontSize);
+    }
+    std::snprintf(label, sizeof(label), "%d pt", pointSize);
+    return label;
+  }
+
+  static constexpr const char* legacySizes[] = {"Extra Small", "Small", "Medium", "Large", "X Large"};
+  const int index = settings.fontSize < SystemSetting::FONT_SIZE_COUNT ? settings.fontSize : SystemSetting::SMALL;
+  return legacySizes[index];
+}
+
+void setFontFamily(BookSettings& settings, const uint8_t family) {
+  const bool wasOutline = FontManager::isOutlineFontFamilySlot(settings.fontFamily);
+  const bool isOutline = FontManager::isOutlineFontFamilySlot(family);
+  settings.fontFamily = family;
+
+  if (isOutline && !wasOutline) {
+    settings.fontSize = static_cast<uint8_t>(FontManager::pointSizeForLegacyReaderSize(settings.fontSize));
+  } else if (!isOutline && wasOutline) {
+    settings.fontSize = FontManager::legacyReaderSizeForPointSize(settings.fontSize);
+  }
+}
+
 /** List selection: portrait uses Up/Down only so Left/Right stay for value edits (matches pre-drawer UX). */
 bool readSettingsListPrev(const MappedInputManager& in, const GfxRenderer& r) {
   if (isLandscapeReader(r)) {
@@ -305,7 +334,7 @@ void SettingsDrawer::setupMenu() {
       if (newVal >= n) {
         newVal = 0;
       }
-      s.fontFamily = static_cast<uint8_t>(newVal);
+      setFontFamily(s, static_cast<uint8_t>(newVal));
       FontManager::clampReaderFontFamilySlot(s.fontFamily);
       s.markCustomSettings();
     };
@@ -315,18 +344,23 @@ void SettingsDrawer::setupMenu() {
     fontEntry.item = MenuItem::FontSize;
     fontEntry.group = GroupType::FONT;
     fontEntry.name = "Size";
-    fontEntry.getValueText = [](const BookSettings& s) -> const char* {
-      static const char* sizes[] = {"Extra Small", "Small", "Medium", "Large", "X Large"};
-      int index = s.fontSize;
-      if (index > 4) index = 1;
-      return sizes[index];
-    };
+    fontEntry.getValueText = [](const BookSettings& s) -> const char* { return fontSizeLabel(s); };
     fontEntry.change = [](BookSettings& s, int delta) {
-      int newVal = s.fontSize + delta;
-      if (newVal >= 0 && newVal <= 4) {
-        s.fontSize = newVal;
-        s.markCustomSettings();
+      if (FontManager::isOutlineFontFamilySlot(s.fontFamily)) {
+        int pointSize = s.fontSize;
+        if (pointSize < FontManager::OUTLINE_FONT_MIN_POINT_SIZE ||
+            pointSize > FontManager::OUTLINE_FONT_MAX_POINT_SIZE) {
+          pointSize = FontManager::pointSizeForLegacyReaderSize(s.fontSize);
+        }
+        pointSize = std::max<int>(FontManager::OUTLINE_FONT_MIN_POINT_SIZE,
+                                  std::min<int>(FontManager::OUTLINE_FONT_MAX_POINT_SIZE, pointSize + delta));
+        s.fontSize = static_cast<uint8_t>(pointSize);
+      } else {
+        const int newVal = static_cast<int>(s.fontSize) + delta;
+        if (newVal < 0 || newVal >= SystemSetting::FONT_SIZE_COUNT) return;
+        s.fontSize = static_cast<uint8_t>(newVal);
       }
+      s.markCustomSettings();
     };
     menuItems.push_back(fontEntry);
 
@@ -1040,6 +1074,9 @@ void SettingsDrawer::drawMenuItemRow(int visibleRow, int menuIndex) {
 bool SettingsDrawer::isDropdownItem(const MenuItem item) const {
   switch (item) {
     case MenuItem::FontFamily:
+      return true;
+    case MenuItem::FontSize:
+      return FontManager::isOutlineFontFamilySlot(settings.fontFamily);
     case MenuItem::PresetPicker:
     case MenuItem::ReadingOrientation:
     case MenuItem::ReadingGuideLines:
@@ -1071,6 +1108,12 @@ void SettingsDrawer::openSelector(const int menuIndex) {
   if (item == MenuItem::FontFamily) {
     selectorOptions_ = FontManager::readerFontFamilyEnumLabels();
     current = settings.fontFamily;
+  } else if (item == MenuItem::FontSize) {
+    for (int pointSize = FontManager::OUTLINE_FONT_MIN_POINT_SIZE;
+         pointSize <= FontManager::OUTLINE_FONT_MAX_POINT_SIZE; ++pointSize) {
+      selectorOptions_.emplace_back(std::to_string(pointSize) + " pt");
+    }
+    current = static_cast<int>(settings.fontSize) - FontManager::OUTLINE_FONT_MIN_POINT_SIZE;
   } else if (item == MenuItem::PresetPicker) {
     const int count = READER_PRESETS.count();
     selectorOptions_.reserve(static_cast<size_t>(count));
@@ -1169,8 +1212,12 @@ void SettingsDrawer::commitSelectorSelection() {
 
   const MenuItem item = menuItems[static_cast<size_t>(selectorMenuIndex_)].item;
   if (item == MenuItem::FontFamily) {
-    settings.fontFamily = static_cast<uint8_t>(selectorSelected_);
+    setFontFamily(settings, static_cast<uint8_t>(selectorSelected_));
     FontManager::clampReaderFontFamilySlot(settings.fontFamily);
+    settings.markCustomSettings();
+    settingsUpdated = true;
+  } else if (item == MenuItem::FontSize) {
+    settings.fontSize = static_cast<uint8_t>(FontManager::OUTLINE_FONT_MIN_POINT_SIZE + selectorSelected_);
     settings.markCustomSettings();
     settingsUpdated = true;
   } else if (item == MenuItem::PresetPicker) {
