@@ -175,6 +175,7 @@ class CategorySettingsActivity final : public ActivityWithSubactivity, public na
   bool updateRequired = false;
   bool halfRefreshOnLoadApplied_ = false;
   bool selectorOpen = false;
+  bool comingSoonPopup_ = false;
   bool groupOpen = false;
   uint8_t selectorMode = 0;
   GroupType detailGroup = GroupType::NONE;
@@ -249,6 +250,8 @@ class CategorySettingsActivity final : public ActivityWithSubactivity, public na
   void closeSelector(bool save);
   /** Draws the value/enum/sleep-image selector overlay. */
   void renderSelectorOverlay();
+  void renderComingSoon();
+  void showComingSoon();
   /** Returns the option index corresponding to the entry's current value. */
   int selectedOptionIndex(const MenuEntry& entry) const;
   /** Applies the chosen option index to the entry's backing setting. */

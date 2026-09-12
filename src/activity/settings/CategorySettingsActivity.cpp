@@ -30,7 +30,6 @@
 #include "SleepImagePickerActivity.h"
 #include "ThumbnailGeneratorActivity.h"
 #include "ThemePickerActivity.h"
-#include "LanguageManagerActivity.h"
 #include "images/Close.h"
 #include "images/LibraryFilterLeft.h"
 #include "images/LibraryFilterRight.h"
@@ -112,6 +111,7 @@ void CategorySettingsActivity::onEnter() {
   renderingMutex = xSemaphoreCreateMutex();
 
   halfRefreshOnLoadApplied_ = false;
+  comingSoonPopup_ = false;
   selectedIndex = -1;
   scrollOffset = 0;
   updateRequired = true;
@@ -346,11 +346,18 @@ void CategorySettingsActivity::renderGroupPage() {
     const MenuEntry& entry = menuItems[static_cast<size_t>(index)];
     const int itemY = listTop + i * rowHeight;
     const bool selected = index == selectedIndex;
-    if (selected) {
+    const bool comingSoon = entry.name && strcmp(entry.name, "Language") == 0;
+    if (selected && !comingSoon) {
       renderer.rectangle.fill(0, itemY, pageWidth, rowHeight, static_cast<int>(GfxRenderer::FillTone::Ink));
     }
     const int textY = itemY + (rowHeight - renderer.text.getLineHeight(itemFont)) / 2;
-    renderer.text.render(itemFont, 20, textY, entry.name ? entry.name : "", !selected, EpdFontFamily::REGULAR);
+    if (comingSoon) {
+      renderer.text.renderGray(itemFont, 20, textY, entry.name ? entry.name : "", true,
+                               EpdFontFamily::REGULAR);
+    } else {
+      renderer.text.render(itemFont, 20, textY, entry.name ? entry.name : "", !selected,
+                           EpdFontFamily::REGULAR);
+    }
     if (entry.type == SettingType::TOGGLE && entry.valuePtr) {
       ReaderFontSettingsDraw::drawToggleCheckbox(renderer, pageWidth - 24, itemY, rowHeight, selected,
                                                   SETTINGS.*(entry.valuePtr) != 0);
@@ -561,11 +568,7 @@ void CategorySettingsActivity::setupMenu() {
               return;
             }
             if (strcmp(settingPtr->name, "Language") == 0) {
-              exitActivity();
-              enterNewActivity(new LanguageManagerActivity(renderer, mappedInput, [this] {
-                exitActivity();
-                updateRequired = true;
-              }));
+              showComingSoon();
               return;
             }
             if (strcmp(settingPtr->name, "Theme") == 0) {
@@ -876,6 +879,18 @@ void CategorySettingsActivity::closeSelector(const bool save) {
  * @brief Main loop handling input and state updates
  */
 void CategorySettingsActivity::loop() {
+  if (comingSoonPopup_) {
+    float tapNx = 0.0f;
+    float tapNy = 0.0f;
+    if (mappedInput.wasPressed(MappedInputManager::Button::Back) ||
+        mappedInput.wasPressed(MappedInputManager::Button::Confirm) ||
+        (mappedInput.hasTouch() && mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy))) {
+      comingSoonPopup_ = false;
+      updateRequired = true;
+    }
+    return;
+  }
+
   if (subActivity) {
     subActivity->loop();
     return;
@@ -1249,6 +1264,11 @@ void CategorySettingsActivity::renderSelectorOverlay() {
 void CategorySettingsActivity::render() {
   renderer.clearScreen();
 
+  if (comingSoonPopup_) {
+    renderComingSoon();
+    return;
+  }
+
   if (embedded && selectorOpen) {
     if (groupOpen) {
       renderGroupPage();
@@ -1313,14 +1333,19 @@ void CategorySettingsActivity::render() {
       continue;
     }
 
-    if (isSelected) {
+    const bool comingSoon = entry.name && strcmp(entry.name, "Language") == 0;
+    if (isSelected && !comingSoon) {
       renderer.rectangle.fill(0, itemY, pageWidth, itemHeight, static_cast<int>(GfxRenderer::FillTone::Ink));
     }
 
     int textX = entry.group == GroupType::NONE ? 20 : 28;
     int textY = itemY + (itemHeight - renderer.text.getLineHeight(systemFontId())) / 2;
 
-    renderer.text.render(systemFontId(), textX, textY, entry.name, !isSelected);
+    if (comingSoon) {
+      renderer.text.renderGray(systemFontId(), textX, textY, entry.name, true);
+    } else {
+      renderer.text.render(systemFontId(), textX, textY, entry.name, !isSelected);
+    }
 
     const bool useCheckbox = (entry.type == SettingType::TOGGLE && entry.valuePtr);
     if (useCheckbox) {
@@ -1362,4 +1387,18 @@ void CategorySettingsActivity::render() {
     renderSelectorOverlay();
   }
 
+}
+
+void CategorySettingsActivity::showComingSoon() {
+  comingSoonPopup_ = true;
+  updateRequired = true;
+}
+
+void CategorySettingsActivity::renderComingSoon() {
+  const PopUpBounds box = PopUp::bounds(renderer, 1);
+  PopUp::background(renderer, box);
+  PopUp::title(renderer, box, "Coming soon...");
+  PopUp::list(renderer, box, std::vector<std::string>{"OK"}, 0, 0);
+  PopUp::border(renderer, box);
+  renderer.displayBuffer();
 }

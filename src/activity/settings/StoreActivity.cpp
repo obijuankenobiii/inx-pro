@@ -2,9 +2,12 @@
 
 #include <GfxRenderer.h>
 
+#include <string>
+#include <vector>
+
 #include "activity/page/SubPage.h"
+#include "activity/page/components/global/PopUp.h"
 #include "activity/settings/FontManagerActivity.h"
-#include "activity/settings/LanguageManagerActivity.h"
 #include "images/BookAtlas.h"
 #include "images/Language.h"
 #include "images/Plugins.h"
@@ -30,6 +33,8 @@ constexpr int kSideMargin = 20;
 constexpr int kIconX = 24;
 constexpr int kTextX = 88;
 constexpr int kSubtitleGap = 5;
+
+bool comingSoonItem(const int index) { return index == 1 || index == 3; }
 }
 
 int StoreActivity::bodyTop() { return FREEINK_DEVICE_X4PRO ? 80 : 70; }
@@ -38,19 +43,33 @@ void StoreActivity::onEnter() {
   ActivityWithSubactivity::onEnter();
   selectedIndex_ = 0;
   subActivityFinished_ = false;
+  comingSoonPopup_ = false;
   render();
 }
 
 void StoreActivity::openSelected() {
   if (selectedIndex_ == 0) {
     enterNewActivity(new FontManagerActivity(renderer, mappedInput, [this] { subActivityFinished_ = true; }));
-  } else if (selectedIndex_ == 1) {
-    enterNewActivity(new LanguageManagerActivity(renderer, mappedInput, [this] { subActivityFinished_ = true; }));
+  } else if (comingSoonItem(selectedIndex_)) {
+    comingSoonPopup_ = true;
+    renderComingSoon();
   }
   // Dictionary is intentionally a no-op until its store integration is available.
 }
 
 void StoreActivity::loop() {
+  if (comingSoonPopup_) {
+    float tapNx = 0.0f;
+    float tapNy = 0.0f;
+    if (mappedInput.wasPressed(MappedInputManager::Button::Back) ||
+        mappedInput.wasPressed(MappedInputManager::Button::Confirm) ||
+        (mappedInput.hasTouch() && mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy))) {
+      comingSoonPopup_ = false;
+      render();
+    }
+    return;
+  }
+
   if (subActivity) {
     ActivityWithSubactivity::loop();
     if (subActivityFinished_) {
@@ -111,16 +130,37 @@ void StoreActivity::render() {
     const int y = firstRowY + i * kRowHeight;
     const int nextY = y + kRowHeight;
     const int rowHeight = kRowHeight;
+    const bool disabled = comingSoonItem(i);
     renderer.bitmap.icon(kMenuItems[i].icon, kIconX, y + (rowHeight - kIconSize) / 2, kIconSize, kIconSize);
     const int titleY = y + (rowHeight - contentHeight) / 2;
-    renderer.text.render(font, kTextX, titleY, kMenuItems[i].label, true, EpdFontFamily::BOLD);
+    if (disabled) {
+      renderer.text.renderGray(font, kTextX, titleY, kMenuItems[i].label, true, EpdFontFamily::BOLD);
+    } else {
+      renderer.text.render(font, kTextX, titleY, kMenuItems[i].label, true, EpdFontFamily::BOLD);
+    }
     const int subtitleY = titleY + renderer.text.getLineHeight(font) + kSubtitleGap;
-    renderer.text.render(subtitleFont, kTextX, subtitleY, kMenuItems[i].subtitle, true, EpdFontFamily::REGULAR);
+    if (disabled) {
+      renderer.text.renderGray(subtitleFont, kTextX, subtitleY, kMenuItems[i].subtitle, true,
+                               EpdFontFamily::REGULAR);
+    } else {
+      renderer.text.render(subtitleFont, kTextX, subtitleY, kMenuItems[i].subtitle, true,
+                           EpdFontFamily::REGULAR);
+    }
     if (i + 1 < kMenuItemCount) {
       renderer.line.render(kSideMargin, nextY - 1, screenW - kSideMargin, nextY - 1, true,
                            LineRender::Style::Dotted);
     }
   }
   mappedInput.mapLabels("\xC2\xAB Back", "Open", "Up", "Down");
+  renderer.displayBuffer();
+}
+
+void StoreActivity::renderComingSoon() {
+  renderer.clearScreen();
+  const PopUpBounds box = PopUp::bounds(renderer, 1);
+  PopUp::background(renderer, box);
+  PopUp::title(renderer, box, "Coming soon...");
+  PopUp::list(renderer, box, std::vector<std::string>{"OK"}, 0, 0);
+  PopUp::border(renderer, box);
   renderer.displayBuffer();
 }

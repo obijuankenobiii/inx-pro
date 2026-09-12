@@ -22,8 +22,10 @@ class StoreActivity final : public ActivityWithSubactivity {
   std::function<void()> onBack_;
   int selectedIndex_ = 0;
   bool subActivityFinished_ = false;
+  bool comingSoonPopup_ = false;
 
   static int bodyTop();
   void openSelected();
+  void renderComingSoon();
   void render();
 };
