@@ -323,7 +323,7 @@ async function decodeImage(file) {
   });
 }
 
-async function imageToJpeg(file, maxWidth, maxHeight, cropSquare, quality) {
+async function imageToRaster(file, maxWidth, maxHeight, cropSquare, mimeType, quality) {
   const image = await decodeImage(file);
   const sourceWidth = image.width;
   const sourceHeight = image.height;
@@ -350,8 +350,10 @@ async function imageToJpeg(file, maxWidth, maxHeight, cropSquare, quality) {
   canvas.width = targetWidth;
   canvas.height = targetHeight;
   const context = canvas.getContext("2d");
-  context.fillStyle = "#fff";
-  context.fillRect(0, 0, targetWidth, targetHeight);
+  if (mimeType !== "image/png") {
+    context.fillStyle = "#fff";
+    context.fillRect(0, 0, targetWidth, targetHeight);
+  }
   context.imageSmoothingEnabled = true;
   context.imageSmoothingQuality = "high";
   context.drawImage(image, sourceX, sourceY, drawWidth, drawHeight, 0, 0, targetWidth, targetHeight);
@@ -359,18 +361,22 @@ async function imageToJpeg(file, maxWidth, maxHeight, cropSquare, quality) {
     if (image.close) image.close();
   } catch (_) {}
   return await new Promise((resolve, reject) =>
-    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("JPEG conversion failed"))), "image/jpeg", quality ?? 0.82)
+    canvas.toBlob(
+      (blob) => (blob ? resolve(blob) : reject(new Error(mimeType === "image/png" ? "PNG conversion failed" : "JPEG conversion failed"))),
+      mimeType,
+      mimeType === "image/png" ? undefined : quality ?? 0.82
+    )
   );
 }
 
 async function uploadFolderThumbnail(path) {
   const input = document.createElement("input");
   input.type = "file";
-  input.accept = "image/*,.bmp";
+  input.accept = "image/png,image/jpeg,image/bmp,.png,.jpg,.jpeg,.bmp";
   input.onchange = async () => {
     if (!input.files || !input.files[0]) return;
     try {
-      const jpeg = await imageToJpeg(input.files[0], 200, 200, true);
+      const jpeg = await imageToRaster(input.files[0], 200, 200, true, "image/jpeg");
       await uploadBlobToPath(jpeg, "thumb.jpg", path);
       showToast("Folder thumbnail updated", false);
     } catch (error) {
@@ -381,7 +387,13 @@ async function uploadFolderThumbnail(path) {
 }
 
 function openCoverModal() {
-  document.getElementById("cover-input").value = "";
+  const input = document.getElementById("cover-input");
+  input.value = "";
+  input.accept = "image/png,image/jpeg,image/bmp,.png,.jpg,.jpeg,.bmp";
+  const copy = document.querySelector("#cover-modal .modal-copy");
+  if (copy) copy.textContent = "Images are resized for the display and saved in /sleep. PNG transparency is preserved.";
+  const options = document.querySelector("#cover-modal .cover-options");
+  if (options) options.textContent = "Maximum 480 × 800 · PNG transparency preserved · JPG/BMP converted to JPEG";
   document.getElementById("cover-error").textContent = "";
   openModal("cover-modal");
 }
@@ -403,9 +415,11 @@ async function uploadCovers() {
     const file = files[index];
     setUploadStatus("Converting " + file.name, index + 1 + "/" + files.length, (index / files.length) * 100, true);
     try {
-      const jpeg = await imageToJpeg(file, 480, 800, false, 1);
-      const outputName = file.name.replace(/\.[^.]+$/, "") + ".jpg";
-      await uploadBlobToPath(jpeg, outputName, "/sleep");
+      const preservePng = file.type === "image/png" || /\.png$/i.test(file.name);
+      const mimeType = preservePng ? "image/png" : "image/jpeg";
+      const image = await imageToRaster(file, 480, 800, false, mimeType, preservePng ? undefined : 1);
+      const outputName = file.name.replace(/\.[^.]+$/, "") + (preservePng ? ".png" : ".jpg");
+      await uploadBlobToPath(image, outputName, "/sleep");
       completed++;
     } catch (error) {
       showToast(file.name + ": " + error.message, true);

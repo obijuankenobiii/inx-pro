@@ -15,7 +15,7 @@
 #include "activity/ActivityWithSubactivity.h"
 
 /**
- * Lists sleep images under /sleep/ (BMP/JPG/JPEG + optional SD-root sleep.bmp/jpg/jpeg) so the user can
+ * Lists sleep images under /sleep/ (BMP/JPG/JPEG/PNG + optional SD-root sleep.bmp/jpg/jpeg/png) so the user can
  * pin one image or leave selection random for each sleep.
  */
 class SleepImagePickerActivity final : public ActivityWithSubactivity {

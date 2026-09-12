@@ -40,12 +40,13 @@
 #include "util/StringUtils.h"
 
 namespace {
-bool isSleepImagePathJpeg(const std::string& path) {
-  return StringUtils::checkFileExtension(path, ".jpg") || StringUtils::checkFileExtension(path, ".jpeg");
+bool isSleepImagePathRaster(const std::string& path) {
+  return StringUtils::checkFileExtension(path, ".jpg") || StringUtils::checkFileExtension(path, ".jpeg") ||
+         StringUtils::checkFileExtension(path, ".png");
 }
 bool isSupportedSleepImageFile(const std::string& filename) {
   return StringUtils::checkFileExtension(filename, ".bmp") || StringUtils::checkFileExtension(filename, ".jpg") ||
-         StringUtils::checkFileExtension(filename, ".jpeg");
+         StringUtils::checkFileExtension(filename, ".jpeg") || StringUtils::checkFileExtension(filename, ".png");
 }
 
 bool sleepTwoBitEnabled() {
@@ -73,7 +74,9 @@ ImageRender::Options sleepImageOptions(const bool allowQuality = true) {
 
 void runSleepImageTwoBitPasses(GfxRenderer& renderer, const std::string& imagePath,
                                const ImageRender::Options& baseOptions, const bool allowQuality = true) {
-  if (!sleepTwoBitEnabled()) {
+  // displayGrayscale() intentionally clears the screen for PNG's one-bit pass. Do not
+  // run that pass for a transparent overlay or it would erase the content beneath it.
+  if (!sleepTwoBitEnabled() || baseOptions.preserveTransparency) {
     return;
   }
 
@@ -102,6 +105,7 @@ std::string pathForFixedSleepBmp() {
   if (strcmp(SETTINGS.sleepCustomBmp, "/sleep.bmp") == 0) return SdMan.exists("/sleep.bmp") ? "/sleep.bmp" : "";
   if (strcmp(SETTINGS.sleepCustomBmp, "/sleep.jpg") == 0) return SdMan.exists("/sleep.jpg") ? "/sleep.jpg" : "";
   if (strcmp(SETTINGS.sleepCustomBmp, "/sleep.jpeg") == 0) return SdMan.exists("/sleep.jpeg") ? "/sleep.jpeg" : "";
+  if (strcmp(SETTINGS.sleepCustomBmp, "/sleep.png") == 0) return SdMan.exists("/sleep.png") ? "/sleep.png" : "";
   const std::string path = std::string("/sleep/") + SETTINGS.sleepCustomBmp;
   if (SdMan.exists(path.c_str())) {
     return path;
@@ -234,6 +238,9 @@ std::string pickSleepBmpPath() {
   if (SdMan.exists("/sleep.jpeg")) {
     return "/sleep.jpeg";
   }
+  if (SdMan.exists("/sleep.png")) {
+    return "/sleep.png";
+  }
   return "";
 }
 
@@ -342,7 +349,7 @@ void SleepActivity::renderCustomSleepScreen() const {
       recordSleepImageUsed();
     }
 
-    if (isSleepImagePathJpeg(imagePath)) {
+    if (isSleepImagePathRaster(imagePath)) {
       renderer.clearScreen();
       ImageRender::Options options = sleepImageOptions();
       if (ImageRender::create(renderer, imagePath)
@@ -384,10 +391,12 @@ void SleepActivity::renderTransparentSleepScreen() const {
     if (randomSleepImageEnabled()) {
       recordSleepImageUsed();
     }
-    const bool removeBackground = sleepImageQualityEnabled();
-    if (isSleepImagePathJpeg(imagePath)) {
+    const bool preserveTransparency = StringUtils::checkFileExtension(imagePath, ".png");
+    const bool removeBackground = sleepImageQualityEnabled() && !preserveTransparency;
+    if (isSleepImagePathRaster(imagePath)) {
       ImageRender::Options options = sleepImageOptions(/*allowQuality=*/false);
       options.useDisplayCache = removeBackground;
+      options.preserveTransparency = preserveTransparency;
       if (removeBackground) {
         renderer.clearScreen();
       }
@@ -428,7 +437,7 @@ void SleepActivity::renderCoverSleepScreen() const {
 
   const std::string coverPath = resolveLastReadCoverPathForSleep(APP_STATE.lastRead);
 
-  if (!coverPath.empty() && isSleepImagePathJpeg(coverPath)) {
+  if (!coverPath.empty() && isSleepImagePathRaster(coverPath)) {
     renderer.clearScreen();
     ImageRender::Options options = sleepImageOptions();
     if (ImageRender::create(renderer, coverPath)

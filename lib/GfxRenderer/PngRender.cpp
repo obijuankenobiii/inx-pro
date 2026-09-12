@@ -103,6 +103,7 @@ struct RenderContext {
   FourToneImageDitherer* twoBitDitherer;
   Atkinson1BitDitherer* oneBitDitherer;
   JpegLevelCapture* capture;
+  bool preserveTransparency;
 };
 
 bool readBE32(FsFile& file, uint32_t& value) {
@@ -390,19 +391,25 @@ bool decodeScanline(PngContext& ctx) {
   return true;
 }
 
-void convertScanlineToGray(const PngContext& ctx, uint8_t* grayRow) {
+void convertScanlineToGray(const PngContext& ctx, uint8_t* grayRow, uint8_t* alphaRow) {
   const uint8_t* src = ctx.currentRow;
   const uint32_t w = ctx.width;
+  if (alphaRow) memset(alphaRow, 255, w);
   switch (ctx.colorType) {
     case PNG_COLOR_GRAYSCALE:
       if (ctx.bitDepth == 8) {
-        for (uint32_t x = 0; x < w; x++)
-          grayRow[x] = (ctx.hasTransparentGray && src[x] == ctx.transparentGray) ? 255 : src[x];
+        for (uint32_t x = 0; x < w; x++) {
+          const bool transparent = ctx.hasTransparentGray && src[x] == ctx.transparentGray;
+          grayRow[x] = transparent ? 255 : src[x];
+          if (alphaRow && transparent) alphaRow[x] = 0;
+        }
       } else if (ctx.bitDepth == 16) {
         for (uint32_t x = 0; x < w; x++) {
           const uint8_t* p = src + x * 2;
           const uint16_t gray16 = static_cast<uint16_t>(p[0]) << 8 | p[1];
-          grayRow[x] = (ctx.hasTransparentGray && gray16 == ctx.transparentGray) ? 255 : p[0];
+          const bool transparent = ctx.hasTransparentGray && gray16 == ctx.transparentGray;
+          grayRow[x] = transparent ? 255 : p[0];
+          if (alphaRow && transparent) alphaRow[x] = 0;
         }
       } else {
         const int ppb = 8 / ctx.bitDepth;
@@ -410,7 +417,9 @@ void convertScanlineToGray(const PngContext& ctx, uint8_t* grayRow) {
         for (uint32_t x = 0; x < w; x++) {
           const int shift = (ppb - 1 - (x % ppb)) * ctx.bitDepth;
           const uint8_t sample = (src[x / ppb] >> shift) & mask;
-          grayRow[x] = (ctx.hasTransparentGray && sample == ctx.transparentGray) ? 255 : sample * 255 / mask;
+          const bool transparent = ctx.hasTransparentGray && sample == ctx.transparentGray;
+          grayRow[x] = transparent ? 255 : sample * 255 / mask;
+          if (alphaRow && transparent) alphaRow[x] = 0;
         }
       }
       break;
@@ -422,7 +431,10 @@ void convertScanlineToGray(const PngContext& ctx, uint8_t* grayRow) {
           const uint16_t r = ctx.bitDepth == 16 ? (static_cast<uint16_t>(p[0]) << 8 | p[1]) : p[0];
           const uint16_t g = ctx.bitDepth == 16 ? (static_cast<uint16_t>(p[2]) << 8 | p[3]) : p[1];
           const uint16_t b = ctx.bitDepth == 16 ? (static_cast<uint16_t>(p[4]) << 8 | p[5]) : p[2];
-          if (r == ctx.transparentRed && g == ctx.transparentGreen && b == ctx.transparentBlue) gray = 255;
+          if (r == ctx.transparentRed && g == ctx.transparentGreen && b == ctx.transparentBlue) {
+            gray = 255;
+            if (alphaRow) alphaRow[x] = 0;
+          }
         }
         grayRow[x] = gray;
       }
@@ -434,22 +446,28 @@ void convertScanlineToGray(const PngContext& ctx, uint8_t* grayRow) {
         const int shift = (ppb - 1 - (x % ppb)) * ctx.bitDepth;
         uint8_t idx = (src[x / ppb] >> shift) & mask;
         if (idx >= ctx.paletteSize) idx = 0;
+        const uint8_t alpha = ctx.paletteAlpha[idx];
         grayRow[x] = compositeOverWhite(
-            rgbToGray(ctx.palette[idx * 3], ctx.palette[idx * 3 + 1], ctx.palette[idx * 3 + 2]), ctx.paletteAlpha[idx]);
+            rgbToGray(ctx.palette[idx * 3], ctx.palette[idx * 3 + 1], ctx.palette[idx * 3 + 2]), alpha);
+        if (alphaRow) alphaRow[x] = alpha;
       }
       break;
     }
     case PNG_COLOR_GRAYSCALE_ALPHA:
       for (uint32_t x = 0; x < w; x++) {
-        grayRow[x] = ctx.bitDepth == 16 ? compositeOverWhite(src[x * 4], src[x * 4 + 2])
-                                        : compositeOverWhite(src[x * 2], src[x * 2 + 1]);
+        const uint8_t alpha = ctx.bitDepth == 16 ? src[x * 4 + 2] : src[x * 2 + 1];
+        grayRow[x] = compositeOverWhite(ctx.bitDepth == 16 ? src[x * 4] : src[x * 2], alpha);
+        if (alphaRow) alphaRow[x] = alpha;
       }
       break;
     case PNG_COLOR_RGBA:
       for (uint32_t x = 0; x < w; x++) {
         const uint8_t* p = src + x * (ctx.bitDepth == 16 ? 8 : 4);
-        grayRow[x] = ctx.bitDepth == 16 ? compositeOverWhite(rgbToGray(p[0], p[2], p[4]), p[6])
-                                        : compositeOverWhite(rgbToGray(p[0], p[1], p[2]), p[3]);
+        const uint8_t alpha = ctx.bitDepth == 16 ? p[6] : p[3];
+        grayRow[x] = compositeOverWhite(ctx.bitDepth == 16 ? rgbToGray(p[0], p[2], p[4])
+                                                            : rgbToGray(p[0], p[1], p[2]),
+                                        alpha);
+        if (alphaRow) alphaRow[x] = alpha;
       }
       break;
   }
@@ -494,12 +512,13 @@ void drawQuantizedPixel(const RenderContext& ctx, const int x, const int y, cons
   }
 }
 
-bool drawGrayRow(RenderContext& ctx, const uint8_t* grayRow, int width, int rowIndex) {
+bool drawGrayRow(RenderContext& ctx, const uint8_t* grayRow, const uint8_t* alphaRow, int width, int rowIndex) {
   if (!grayRow || width <= 0 || width != ctx.width) return false;
   const int screenY = ctx.y + rowIndex;
   for (int step = 0; step < width; step++) {
     const int ox = step;
-    const int gray = grayRow[ox];
+    const bool transparent = ctx.preserveTransparency && alphaRow && alphaRow[ox] == 0;
+    const int gray = transparent ? 255 : grayRow[ox];
 
     int q;
     const int solidBlackMax = ctx.mode == ImageRenderMode::TwoBit ? kPngTwoBitSolidBlackMax : kPngDitherSolidBlackMax;
@@ -518,13 +537,23 @@ bool drawGrayRow(RenderContext& ctx, const uint8_t* grayRow, int width, int rowI
       }
     }
 
-    if (ctx.mode == ImageRenderMode::TwoBit && ctx.capture && ctx.capture->captured) {
+    if (!transparent && ctx.mode == ImageRenderMode::TwoBit && ctx.capture && ctx.capture->captured) {
       const uint8_t level = adjustTwoBitImageLevelForDisplay(FourToneImageDitherer::levelFromValue(q));
       const size_t pixelIndex = static_cast<size_t>(rowIndex) * width + step;
       ctx.capture->values[pixelIndex / 4] |= static_cast<uint8_t>((level & 0x3) << ((pixelIndex % 4) * 2));
     }
 
-    drawQuantizedPixel(ctx, ctx.x + ox, screenY, q);
+    if (!transparent) {
+      // Normal image rendering can leave white pixels untouched because the image
+      // rectangle is cleared first. A transparent overlay is different: an opaque
+      // white pixel must cover the page underneath, while alpha==0 must not touch it.
+      const bool opaqueWhite = ctx.preserveTransparency && alphaRow && alphaRow[ox] == 255 && q == 255;
+      if (opaqueWhite) {
+        ctx.renderer->drawPixel(ctx.x + ox, screenY, false);
+      } else {
+        drawQuantizedPixel(ctx, ctx.x + ox, screenY, q);
+      }
+    }
   }
 
   if (ctx.mode == ImageRenderMode::TwoBit) {
@@ -548,9 +577,13 @@ bool decodeAndRender(FsFile& pngFile, RenderContext& renderCtx, int outW, int ou
 
   uint8_t* graySrc = static_cast<uint8_t*>(malloc(static_cast<size_t>(ctx.width)));
   uint8_t* grayDst = static_cast<uint8_t*>(malloc(static_cast<size_t>(outW)));
-  if (!graySrc || !grayDst) {
+  uint8_t* alphaSrc = renderCtx.preserveTransparency ? static_cast<uint8_t*>(malloc(static_cast<size_t>(ctx.width))) : nullptr;
+  uint8_t* alphaDst = renderCtx.preserveTransparency ? static_cast<uint8_t*>(malloc(static_cast<size_t>(outW))) : nullptr;
+  if (!graySrc || !grayDst || (renderCtx.preserveTransparency && (!alphaSrc || !alphaDst))) {
     free(graySrc);
     free(grayDst);
+    free(alphaSrc);
+    free(alphaDst);
     releasePng(ctx);
     delete ctxPtr;
     return false;
@@ -566,12 +599,14 @@ bool decodeAndRender(FsFile& pngFile, RenderContext& renderCtx, int outW, int ou
       if (!decodeScanline(ctx)) {
         free(graySrc);
         free(grayDst);
+        free(alphaSrc);
+        free(alphaDst);
         releasePng(ctx);
         delete ctxPtr;
         return false;
       }
       if (currentSrcY + 1 == sy) {
-        convertScanlineToGray(ctx, graySrc);
+        convertScanlineToGray(ctx, graySrc, alphaSrc);
       }
       advanceScanline(ctx);
       currentSrcY++;
@@ -580,10 +615,13 @@ bool decodeAndRender(FsFile& pngFile, RenderContext& renderCtx, int outW, int ou
     for (int ox = 0; ox < outW; ox++) {
       const int sx = srcX + (outW <= 1 ? 0 : std::min(srcW - 1, (ox * srcW) / outW));
       grayDst[ox] = graySrc[sx];
+      if (alphaDst) alphaDst[ox] = alphaSrc[sx];
     }
-    if (!drawGrayRow(renderCtx, grayDst, outW, oy)) {
+    if (!drawGrayRow(renderCtx, grayDst, alphaDst, outW, oy)) {
       free(graySrc);
       free(grayDst);
+      free(alphaSrc);
+      free(alphaDst);
       releasePng(ctx);
       delete ctxPtr;
       return false;
@@ -592,6 +630,8 @@ bool decodeAndRender(FsFile& pngFile, RenderContext& renderCtx, int outW, int ou
 
   free(graySrc);
   free(grayDst);
+  free(alphaSrc);
+  free(alphaDst);
   releasePng(ctx);
   delete ctxPtr;
   return true;
@@ -599,7 +639,8 @@ bool decodeAndRender(FsFile& pngFile, RenderContext& renderCtx, int outW, int ou
 }
 
 bool PngRender::render(FsFile& pngFile, int x, int y, int targetWidth, int targetHeight, bool cropToFill,
-                       const ImageRenderMode mode, const float cropAnchorX, JpegLevelCapture* capture) const {
+                       const ImageRenderMode mode, const float cropAnchorX, JpegLevelCapture* capture,
+                       const bool preserveTransparency) const {
   if (!pngFile || targetWidth <= 0 || targetHeight <= 0) return false;
 
   int sourceW = 0;
@@ -670,7 +711,8 @@ bool PngRender::render(FsFile& pngFile, int x, int y, int targetWidth, int targe
                        .mode = mode,
                        .twoBitDitherer = twoBitDitherer,
                        .oneBitDitherer = oneBitDitherer,
-                       .capture = capture};
+                       .capture = capture,
+                       .preserveTransparency = preserveTransparency};
   const bool ok = decodeAndRender(pngFile, ctx, outW, outH, srcX, srcY, srcW, srcH);
   delete twoBitDitherer;
   delete oneBitDitherer;
@@ -678,10 +720,12 @@ bool PngRender::render(FsFile& pngFile, int x, int y, int targetWidth, int targe
 }
 
 bool PngRender::fromPath(const std::string& path, int x, int y, int targetWidth, int targetHeight, bool cropToFill,
-                         const ImageRenderMode mode, const float cropAnchorX, JpegLevelCapture* capture) const {
+                         const ImageRenderMode mode, const float cropAnchorX, JpegLevelCapture* capture,
+                         const bool preserveTransparency) const {
   FsFile file;
   if (!SdMan.openFileForRead("PNG", path, file)) return false;
-  const bool ok = render(file, x, y, targetWidth, targetHeight, cropToFill, mode, cropAnchorX, capture);
+  const bool ok = render(file, x, y, targetWidth, targetHeight, cropToFill, mode, cropAnchorX, capture,
+                         preserveTransparency);
   file.close();
   return ok;
 }

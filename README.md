@@ -224,6 +224,7 @@ Put sleep images on the SD card:
 /sleep.bmp
 /sleep.jpg
 /sleep.jpeg
+/sleep.png
 ```
 
 You can choose a fixed sleep image from settings, or let the device pick one randomly.
