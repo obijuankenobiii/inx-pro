@@ -90,11 +90,23 @@ class CssParser {
   /** Resolved inherited CSS font emphasis for the current element. */
   bool resolveFontBold(const std::string& elementTagLower, const std::string& className, const std::string& id,
                        const std::string& styleAttr, bool inheritedBold) const;
+  /** True when font-size is explicitly present inline or in a matching stylesheet rule. */
+  bool hasFontSizeSpecified(const std::string& elementTagLower, const std::string& className,
+                            const std::string& id, const std::string& styleAttr) const;
   bool resolveFontItalic(const std::string& elementTagLower, const std::string& className, const std::string& id,
                          const std::string& styleAttr, bool inheritedItalic) const;
   bool resolveSmallCaps(const std::string& elementTagLower, const std::string& className, const std::string& id,
                         const std::string& styleAttr, bool inheritedSmallCaps) const;
   bool hasFirstLetterDropCapHint(const std::string& elementTagLower, const std::string& className,
+                                 const std::string& id, const std::string& styleAttr) const;
+  /** Resolved font-size multiplier for a matching ::first-letter rule, or 0 when none is specified. */
+  float getFirstLetterFontSizeEm(const std::string& elementTagLower, const std::string& className,
+                                 const std::string& id, const std::string& styleAttr) const;
+  /** Resolved unitless line-height multiplier for ::first-letter, or 0 when none is specified. */
+  float getFirstLetterLineHeightEm(const std::string& elementTagLower, const std::string& className,
+                                   const std::string& id, const std::string& styleAttr) const;
+  /** Resolved first-letter CSS color as reader tone: 0 white, 1 black, 2 gray. */
+  uint8_t getFirstLetterTextTone(const std::string& elementTagLower, const std::string& className,
                                  const std::string& id, const std::string& styleAttr) const;
   uint8_t getFirstLetterDropCapLineCount(const std::string& elementTagLower, const std::string& className,
                                          const std::string& id, const std::string& styleAttr) const;

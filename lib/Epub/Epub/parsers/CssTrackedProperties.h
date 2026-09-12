@@ -22,7 +22,7 @@ inline bool isTrackedCssProperty(const std::string& name) {
       "background",      "background-color", "background-image",
       "block-size",      "border",           "border-bottom",
       "border-color",    "border-left",      "border-radius",
-      "border-right",    "border-style",     "border-top",
+      "border-right",    "border-style",     "border-top",       "color",
 	      "border-width",    "display",          "float",
 	      "font-size",       "font-style",       "font-variant",
 	      "font-variant-caps",

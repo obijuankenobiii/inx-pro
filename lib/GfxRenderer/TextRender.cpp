@@ -705,7 +705,11 @@ void TextRender::renderChar(const EpdFontFamily& fontFamily, const uint32_t cp, 
             const uint8_t bitIndex = (3 - (glyphX % 4)) * 2;
             const uint8_t bmpVal = 3 - ((byte >> bitIndex) & 0x3);
 
-            if (!pixelState && bmpVal < 3) {
+            if (gray && gfx.renderMode == GfxRenderer::BW && bmpVal < 3) {
+              if (((screenX + screenY) & 1) == 0) {
+                gfx.drawPixel(screenX, screenY, pixelState);
+              }
+            } else if (!pixelState && bmpVal < 3) {
               renderSolidTextPixel(gfx, screenX, screenY, false);
             } else if (gfx.renderMode == GfxRenderer::BW && bmpVal < 3) {
               gfx.drawPixel(screenX, screenY, pixelState);
@@ -737,7 +741,11 @@ void TextRender::renderChar(const EpdFontFamily& fontFamily, const uint32_t cp, 
           const uint8_t bitIndex = (3 - (pixelPosition % 4)) * 2;
           const uint8_t bmpVal = 3 - ((byte >> bitIndex) & 0x3);
 
-          if (!pixelState && bmpVal < 3) {
+          if (gray && gfx.renderMode == GfxRenderer::BW && bmpVal < 3) {
+            if (((screenX + screenY) & 1) == 0) {
+              gfx.drawPixel(screenX, screenY, pixelState);
+            }
+          } else if (!pixelState && bmpVal < 3) {
             renderSolidTextPixel(gfx, screenX, screenY, false);
           } else if (gfx.renderMode == GfxRenderer::BW && bmpVal < 3) {
             gfx.drawPixel(screenX, screenY, pixelState);

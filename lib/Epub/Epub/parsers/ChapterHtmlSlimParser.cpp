@@ -1023,7 +1023,8 @@ void ChapterHtmlSlimParser::flushPartWordBuffer() {
     if (!currentPage) currentPage.reset(new Page());
 
     const std::string dropCapText = uppercaseSingleLetterDropCap(partWordBuffer, partWordBufferIndex);
-    const bool inlineFirstLine = dropCapLineCount <= 1;
+    const bool inlineFirstLine = dropCapLineCount <= 1 ||
+                                 (dropCapLineHeightEm > 0.0f && dropCapLineHeightEm < 1.0f);
     const bool cssBoldActive = !cssFontStyleStack.empty() && cssFontStyleStack.back().bold;
     const bool cssItalicActive = !cssFontStyleStack.empty() && cssFontStyleStack.back().italic;
     const bool dropCapBold = boldUntilDepth < depth || cssBoldActive;
@@ -1033,14 +1034,24 @@ void ChapterHtmlSlimParser::flushPartWordBuffer() {
             ? EpdFontFamily::BOLD_ITALIC
             : (dropCapItalic ? EpdFontFamily::ITALIC : EpdFontFamily::BOLD);
     int dropCapFontId = FontManager::getDropCapFontId(fontId, dropCapLineCount);
+    const FontManager::FontInfo* bodyInfo = FontManager::getFontInfo(fontId);
+    if (dropCapFontSizeEm > 0.0f && bodyInfo && !bodyInfo->isBuiltin) {
+      const int targetPt = std::clamp(
+          static_cast<int>(bodyInfo->size * dropCapFontSizeEm + 0.5f),
+          static_cast<int>(FontManager::OUTLINE_FONT_MIN_POINT_SIZE),
+          static_cast<int>(FontManager::OUTLINE_FONT_MAX_POINT_SIZE));
+      dropCapFontId = FontManager::getFontIdNearestPointSize(bodyInfo->family, targetPt);
+    }
     if (!FontManager::ensureFontReady(dropCapFontId, renderer)) {
       dropCapFontId = maxFontId;
     }
     const FontManager::FontInfo* dropCapInfo = FontManager::getFontInfo(dropCapFontId);
-    INX_SERIAL.printf("[%lu] [INCR-FONT] dropcap body=%d lines=%u -> font=%d size=%d\n", millis(), fontId,
-                      static_cast<unsigned>(dropCapLineCount), dropCapFontId, dropCapInfo ? dropCapInfo->size : 0);
+    INX_SERIAL.printf("[%lu] [INCR-FONT] dropcap body=%d lines=%u cssEm=%.2f -> font=%d size=%d\n", millis(), fontId,
+                      static_cast<unsigned>(dropCapLineCount), static_cast<double>(dropCapFontSizeEm), dropCapFontId,
+                      dropCapInfo ? dropCapInfo->size : 0);
     currentPage->elements.emplace_back(
-        new PageDropCap(dropCapText, 0, currentPageNextY, dropCapFontId, inlineFirstLine, dropCapStyle));
+        new PageDropCap(dropCapText, 0, currentPageNextY, dropCapFontId, inlineFirstLine, dropCapStyle,
+                        dropCapTextTone));
 
     int dropCapWidth = renderer.text.getWidth(dropCapFontId, dropCapText.c_str(), dropCapStyle) + 3;
 
@@ -1052,6 +1063,9 @@ void ChapterHtmlSlimParser::flushPartWordBuffer() {
     inDropCap = false;
     dropCapConsumeWholeContainer = false;
     dropCapLineCount = 3;
+    dropCapFontSizeEm = 0.0f;
+    dropCapLineHeightEm = 0.0f;
+    dropCapTextTone = 1;
     return;
   }
 
@@ -1423,6 +1437,7 @@ void ChapterHtmlSlimParser::applyDropCapHint(const XML_Char* name, const std::st
   const bool pseudoHint = css().hasFirstLetterDropCapHint(tagLower, classAttr, idAttr, styleAttr);
   const bool scaledFirstInlineDropCap =
       strcmp(name, "span") == 0 && currentTextBlock && currentTextBlock->isEmpty() &&
+      !css().isDisplayBlock(tagLower, classAttr, idAttr, styleAttr) &&
       css().getFontSizeEm(tagLower, classAttr, idAttr, styleAttr) >= 1.5f;
   if (!attrHint && !pseudoHint && !scaledFirstInlineDropCap) {
     return;
@@ -1431,6 +1446,15 @@ void ChapterHtmlSlimParser::applyDropCapHint(const XML_Char* name, const std::st
   inDropCap = true;
   dropCapDepth = depth;
   dropCapConsumeWholeContainer = (strcmp(name, "span") == 0);
+  dropCapFontSizeEm = css().getFirstLetterFontSizeEm(tagLower, classAttr, idAttr, styleAttr);
+  dropCapLineHeightEm = css().getFirstLetterLineHeightEm(tagLower, classAttr, idAttr, styleAttr);
+  dropCapTextTone = css().getFirstLetterTextTone(tagLower, classAttr, idAttr, styleAttr);
+  if (dropCapFontSizeEm <= 0.0f && strcmp(name, "span") == 0) {
+    const float spanFontSizeEm = css().getFontSizeEm(tagLower, classAttr, idAttr, styleAttr);
+    if (spanFontSizeEm != 1.0f) {
+      dropCapFontSizeEm = spanFontSizeEm;
+    }
+  }
   dropCapLineCount = attrHint
                          ? detectDropCapLineCount(classAttr, idAttr, styleAttr)
                          : (pseudoHint ? css().getFirstLetterDropCapLineCount(tagLower, classAttr, idAttr, styleAttr)
@@ -1619,6 +1643,46 @@ int ChapterHtmlSlimParser::activeBlockContentX() const { return std::max(0, curr
 int ChapterHtmlSlimParser::activeBlockContentWidth() const {
   return std::max(
       1, static_cast<int>(viewportWidth) - std::max(0, currentCssInsetLeftPx) - std::max(0, currentCssInsetRightPx));
+}
+
+int ChapterHtmlSlimParser::blockFontIdForEm(const float em) const {
+  if (em <= 0.0f || std::fabs(em - 1.0f) < 0.01f) {
+    return -1;
+  }
+
+  const int baseFontId = activeBlockFontId();
+  const FontManager::FontInfo* baseInfo = FontManager::getFontInfo(baseFontId);
+  if (baseInfo && !baseInfo->isBuiltin) {
+    const int targetPt = std::max(1, static_cast<int>(baseInfo->size * em + 0.5f));
+    return FontManager::getFontIdNearestPointSize(baseInfo->family, targetPt);
+  }
+
+  // Bitmap/built-in fonts do not have arbitrary point sizes available.
+  if (em >= 1.5f) return maxFontId;
+  if (em >= 1.2f) return headerFontId;
+  return -1;
+}
+
+int ChapterHtmlSlimParser::headingFontIdForTag(const std::string& tagLower, const std::string& classAttr,
+                                               const std::string& idAttr, const std::string& styleAttr) const {
+  if (tagLower.size() != 2 || tagLower[0] != 'h' || tagLower[1] < '1' || tagLower[1] > '6') {
+    return headerFontId;
+  }
+
+  const FontManager::FontInfo* bodyInfo = FontManager::getFontInfo(fontId);
+  if (!bodyInfo || bodyInfo->isBuiltin) {
+    return headerFontId;
+  }
+
+  // Match normal HTML heading sizes only when the book has no explicit
+  // font-size. An EPUB's CSS/inline style must be the source of truth.
+  static constexpr float kHeadingEm[] = {2.0f, 1.5f, 1.17f, 1.0f, 0.83f, 0.67f};
+  const int level = tagLower[1] - '1';
+  const float requestedEm = css().hasFontSizeSpecified(tagLower, classAttr, idAttr, styleAttr)
+                                ? css().getFontSizeEm(tagLower, classAttr, idAttr, styleAttr)
+                                : kHeadingEm[level];
+  const int targetPt = std::max(1, static_cast<int>(bodyInfo->size * requestedEm + 0.5f));
+  return FontManager::getFontIdNearestPointSize(bodyInfo->family, targetPt);
 }
 
 void ChapterHtmlSlimParser::beginCssBlockBox(const std::string& tagLower, const std::string& classAttr,
@@ -1963,6 +2027,10 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
     self->pushBlockClosingScopeIfNeeded();
     self->currentBlockFontId =
         self->blockFontIdForEm(self->css().getFontSizeEm(tagLower, classAttr, idAttr, styleAttr));
+    if (self->currentBlockFontId >= 0 &&
+        !FontManager::ensureFontReady(self->currentBlockFontId, self->renderer)) {
+      self->currentBlockFontId = -1;
+    }
     TextBlock::Style blockStyle =
         self->resolveBlockStyle(name, atts, elementHasExplicitTextAlign, elementCssStyle, inheritedCssStyle);
     if (self->inHeader) {
@@ -2009,6 +2077,10 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
       self->makePages();
     }
     self->inHeader = true;
+    self->currentBlockFontId = self->headingFontIdForTag(tagLower, classAttr, idAttr, styleAttr);
+    if (!FontManager::ensureFontReady(self->currentBlockFontId, self->renderer)) {
+      self->currentBlockFontId = self->headerFontId;
+    }
     self->beginCssBlockBox(tagLower, classAttr, idAttr, styleAttr);
     self->pushBlockClosingScopeIfNeeded();
     TextBlock::Style headerStyle = TextBlock::CENTER_ALIGN;
@@ -2040,6 +2112,10 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
       self->pushBlockClosingScopeIfNeeded();
       self->currentBlockFontId =
           self->blockFontIdForEm(self->css().getFontSizeEm(tagLower, classAttr, idAttr, styleAttr));
+      if (self->currentBlockFontId >= 0 &&
+          !FontManager::ensureFontReady(self->currentBlockFontId, self->renderer)) {
+        self->currentBlockFontId = -1;
+      }
       if (self->currentTextBlock && !self->listNoIndentDepths_.empty()) {
         self->currentTextBlock->setCssTextIndentFromCascade(0);
       } else if (self->currentTextBlock && (followCssParagraphLayout || self->respectCssParagraphIndent) &&
@@ -2392,6 +2468,9 @@ void XMLCALL ChapterHtmlSlimParser::endElement(void* userData, const XML_Char* n
     self->dropCapDepth = INT_MAX;
     self->dropCapConsumeWholeContainer = false;
     self->dropCapLineCount = 3;
+    self->dropCapFontSizeEm = 0.0f;
+    self->dropCapLineHeightEm = 0.0f;
+    self->dropCapTextTone = 1;
   }
 }
 
@@ -2900,6 +2979,9 @@ bool ChapterHtmlSlimParser::prepareParse(const bool skipImageProcessing) {
   dropCapDepth = INT_MAX;
   dropCapConsumeWholeContainer = false;
   dropCapLineCount = 3;
+  dropCapFontSizeEm = 0.0f;
+  dropCapLineHeightEm = 0.0f;
+  dropCapTextTone = 1;
   nextWordJoinsPrevious = false;
   cssLoaded = false;
   currentBlockBottomSpacingPx = 0;

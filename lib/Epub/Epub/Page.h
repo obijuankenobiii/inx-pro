@@ -158,6 +158,7 @@ class PageDropCap final : public PageElement {
   int dropCapFontId;
   bool inlineFirstLine;
   EpdFontFamily::Style style;
+  uint8_t textTone;
 
  public:
   /**
@@ -167,17 +168,19 @@ class PageDropCap final : public PageElement {
    * @param fontId The specific large font ID to use
    */
   PageDropCap(std::string text, const int16_t xPos, const int16_t yPos, int fontId, bool inlineFirstLine = false,
-              EpdFontFamily::Style style = EpdFontFamily::BOLD)
+              EpdFontFamily::Style style = EpdFontFamily::BOLD, uint8_t textTone = 1)
       : PageElement(xPos, yPos),
         text(std::move(text)),
         dropCapFontId(fontId),
         inlineFirstLine(inlineFirstLine),
-        style(style) {}
+        style(style),
+        textTone(textTone) {}
 
   const std::string& getDropCapText() const { return text; }
   int getDropCapFontId() const { return dropCapFontId; }
   EpdFontFamily::Style getStyle() const { return style; }
   void setStyle(const EpdFontFamily::Style value) { style = value; }
+  uint8_t getTextTone() const { return textTone; }
   bool isInlineFirstLine() const { return inlineFirstLine; }
   static constexpr int16_t VERTICAL_ADJUSTMENT = 0;
 

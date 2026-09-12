@@ -70,6 +70,12 @@ class ChapterHtmlSlimParser {
   int dropCapDepth = INT_MAX;
   bool dropCapConsumeWholeContainer = false;
   uint8_t dropCapLineCount = 3;
+  /** Explicit CSS font-size multiplier for the active drop cap; 0 means use initial-letter line count. */
+  float dropCapFontSizeEm = 0.0f;
+  /** CSS ::first-letter line-height multiplier; below 1 uses baseline alignment. */
+  float dropCapLineHeightEm = 0.0f;
+  /** CSS ::first-letter text tone: 0 white, 1 black, 2 gray. */
+  uint8_t dropCapTextTone = 1;
 
   char partWordBuffer[MAX_WORD_SIZE + 1] = {};
   int partWordBufferIndex = 0;
@@ -303,6 +309,9 @@ class ChapterHtmlSlimParser {
                         const std::string& styleAttr);
   /** Current text layout width after inherited CSS margin/padding-left/right. */
   int activeBlockContentWidth() const;
+  /** Selects the semantic heading size for an outline font family. */
+  int headingFontIdForTag(const std::string& tagLower, const std::string& classAttr, const std::string& idAttr,
+                          const std::string& styleAttr) const;
   /** Current text x offset after inherited CSS margin/padding-left. */
   int activeBlockContentX() const;
   /** Captures the current CSS horizontal inset for the active text block. */
@@ -314,12 +323,8 @@ class ChapterHtmlSlimParser {
   int activeBlockFontId() const {
     return currentBlockFontId >= 0 ? currentBlockFontId : (inHeader ? headerFontId : fontId);
   }
-  /** Maps a CSS font-size em multiplier to a larger reader font id, or -1 to keep the default. */
-  int blockFontIdForEm(float em) const {
-    if (em >= 1.5f) return maxFontId;
-    if (em >= 1.2f) return headerFontId;
-    return -1;
-  }
+  /** Maps a CSS font-size em multiplier relative to the active block font, or -1 to keep the default. */
+  int blockFontIdForEm(float em) const;
 
   /**
    * Adds an image to the current page layout.
