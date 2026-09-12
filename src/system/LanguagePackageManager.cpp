@@ -12,7 +12,7 @@
 
 namespace {
 constexpr char kRepositoryBase[] =
-    "https://raw.githubusercontent.com/obijuankenobiii/inx-font/main/";
+    "https://raw.githubusercontent.com/obijuankenobiii/inx-store/main/";
 constexpr char kDownloadPath[] = "/.system/language-package.zip";
 constexpr size_t kMaxPackageBytes = 5 * 1024 * 1024;
 constexpr size_t kMaxExtractedBytes = 16 * 1024 * 1024;

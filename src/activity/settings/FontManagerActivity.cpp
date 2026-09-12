@@ -5,7 +5,6 @@
 
 #include <algorithm>
 #include <cctype>
-#include <cmath>
 #include <cstdio>
 
 #include "activity/page/SubPage.h"
@@ -29,8 +28,6 @@ constexpr int kSideMargin = 20;
 constexpr int kActionIconSize = 40;
 constexpr int kActionIconGap = 12;
 constexpr int kScrollCaretSize = 40;
-constexpr int kTabWidth = 120;
-constexpr int kTabHeight = Button::height - 10;
 constexpr int kCategoryFilterWidth = 150;
 constexpr int kCategoryFilterRowHeight = UiLayout::LIST_ITEM_HEIGHT;
 
@@ -95,46 +92,6 @@ ButtonBounds scrollCaretBounds(const GfxRenderer& renderer) {
           kScrollCaretSize, kScrollCaretSize};
 }
 
-void renderVariantTab(const GfxRenderer& renderer, const int x, const int y, const char* label, const bool selected,
-                      const bool roundLeft, const bool roundRight) {
-  constexpr int corner = 4;
-  const int tone = selected ? static_cast<int>(GfxRenderer::FillTone::Ink)
-                            : static_cast<int>(GfxRenderer::FillTone::Paper);
-  renderer.rectangle.fill(x, y, kTabWidth, kTabHeight, tone, false);
-  renderer.rectangle.render(x, y, kTabWidth, kTabHeight, true, false);
-
-  auto clearOutsideCorner = [&](const int cornerX, const int cornerY, const bool left, const bool top) {
-    for (int dy = 0; dy <= corner; ++dy) {
-      for (int dx = 0; dx <= corner; ++dx) {
-        const int distanceX = left ? dx - corner : dx;
-        const int distanceY = top ? dy - corner : dy;
-        if (distanceX * distanceX + distanceY * distanceY > corner * corner) {
-          renderer.drawPixel(cornerX + dx, cornerY + dy, false);
-        }
-      }
-    }
-    for (int offset = 0; offset <= corner; ++offset) {
-      const int span = static_cast<int>(std::sqrt(corner * corner - (corner - offset) * (corner - offset)));
-      const int arcX = left ? cornerX + corner - span : cornerX + span;
-      const int arcY = top ? cornerY + offset : cornerY + corner - offset;
-      renderer.drawPixel(arcX, arcY, true);
-    }
-  };
-
-  if (roundLeft) {
-    clearOutsideCorner(x, y, true, true);
-    clearOutsideCorner(x, y + kTabHeight - corner - 1, true, false);
-  }
-  if (roundRight) {
-    clearOutsideCorner(x + kTabWidth - corner - 1, y, false, true);
-    clearOutsideCorner(x + kTabWidth - corner - 1, y + kTabHeight - corner - 1, false, false);
-  }
-
-  const int font = systemFontId();
-  const int textWidth = renderer.text.getWidth(font, label);
-  const int textY = y + (kTabHeight - renderer.text.getLineHeight(font)) / 2;
-  renderer.text.render(font, x + (kTabWidth - textWidth) / 2, textY, label, !selected, EpdFontFamily::REGULAR);
-}
 }
 
 void FontManagerActivity::displayTaskTrampoline(void* param) {
@@ -147,7 +104,7 @@ void FontManagerActivity::installTaskTrampoline(void* param) {
 
 void FontManagerActivity::onEnter() {
   ActivityWithSubactivity::onEnter();
-  state_ = State::Loading;
+  state_ = State::Ready;
   status_.clear();
   selectedIndex_ = 0;
   scrollOffset_ = 0;
@@ -155,7 +112,6 @@ void FontManagerActivity::onEnter() {
   categoryFilterOpen_ = false;
   categoryFilter_ = CategoryFilter::All;
   packages_.clear();
-  activeVariant_ = 1;
   installingPackageIndex_ = -1;
   progressDownloaded_ = 0;
   progressTotal_ = 0;
@@ -163,7 +119,6 @@ void FontManagerActivity::onEnter() {
   shuttingDown_ = false;
   lastProgressPercent_ = -1;
   lastProgressUpdateMs_ = 0;
-  render();
   loadPackages();
 }
 
@@ -209,7 +164,7 @@ int FontManagerActivity::visibleRowCount(const int bodyTop) const {
 int FontManagerActivity::visiblePackageCount() const {
   int count = 0;
   for (const FontPackageManager::Package& package : packages_) {
-    if (package.variant == activeVariantName() && matchesCategory(package)) ++count;
+    if (matchesCategory(package)) ++count;
   }
   return count;
 }
@@ -219,20 +174,11 @@ int FontManagerActivity::packageIndexAt(const int visibleIndex) const {
   int index = 0;
   for (int packageIndex = 0; packageIndex < static_cast<int>(packages_.size()); ++packageIndex) {
     const FontPackageManager::Package& package = packages_[static_cast<size_t>(packageIndex)];
-    if (package.variant != activeVariantName() || !matchesCategory(package)) continue;
+    if (!matchesCategory(package)) continue;
     if (index == visibleIndex) return packageIndex;
     ++index;
   }
   return -1;
-}
-
-void FontManagerActivity::selectVariant(const int variant) {
-  if (variant < 0 || variant > 1 || variant == activeVariant_) return;
-  activeVariant_ = variant;
-  selectedIndex_ = 0;
-  scrollOffset_ = 0;
-  selectedVisible_ = false;
-  updateDisplay();
 }
 
 int FontManagerActivity::categoryFilterCount() const { return 3; }
@@ -257,12 +203,12 @@ bool FontManagerActivity::matchesCategory(const FontPackageManager::Package& pac
 }
 
 ButtonBounds FontManagerActivity::categoryFilterBounds() const {
-  return {kSideMargin, pageBodyTop(), kCategoryFilterWidth, kTabHeight};
+  return {kSideMargin, pageBodyTop(), kCategoryFilterWidth, kFilterHeight};
 }
 
 void FontManagerActivity::categoryFilterDropdown() const {
   const int x = kSideMargin;
-  const int y = pageBodyTop() + kTabHeight;
+  const int y = pageBodyTop() + kFilterHeight;
   const int height = categoryFilterCount() * kCategoryFilterRowHeight + 1;
   const char* labels[] = {"All", "Sans Serif", "Serif"};
   const int font = systemFontId();
@@ -282,7 +228,7 @@ void FontManagerActivity::categoryFilterDropdown() const {
 
 void FontManagerActivity::handleCategoryFilterTap(const int tapX, const int tapY) {
   const int x = kSideMargin;
-  const int y = pageBodyTop() + kTabHeight;
+  const int y = pageBodyTop() + kFilterHeight;
   const int height = categoryFilterCount() * kCategoryFilterRowHeight + 1;
   if (tapX >= x && tapX < x + kCategoryFilterWidth && tapY >= y && tapY < y + height) {
     applyCategoryFilter((tapY - y) / kCategoryFilterRowHeight);
@@ -497,14 +443,6 @@ void FontManagerActivity::render() {
   const int screenW = renderer.getScreenWidth();
   const int screenH = renderer.getScreenHeight();
 
-  if (state_ == State::Loading) {
-    renderer.text.centered(font, screenH / 2 - 16, "Loading fonts...", true, EpdFontFamily::BOLD);
-    renderer.text.centered(font, screenH / 2 + 18, "Please wait", true, EpdFontFamily::REGULAR);
-    mappedInput.mapLabels("\xC2\xAB Back", "", "", "");
-    renderer.displayBuffer();
-    return;
-  }
-
   if (state_ == State::Downloading) {
     const int centerY = bodyTop + (screenH - bodyTop - 80) / 2;
     renderer.text.centered(font, centerY - 72, "DOWNLOADING FONT", true, EpdFontFamily::BOLD);
@@ -545,14 +483,7 @@ void FontManagerActivity::render() {
       if (selectedIndex_ >= scrollOffset_ + visibleRows) scrollOffset_ = selectedIndex_ - visibleRows + 1;
     }
 
-    const int tabsX = screenW - kSideMargin - kTabWidth * 2;
     Button::render(renderer, categoryFilterBounds(), categoryFilterLabel(), categoryFilterOpen_, font);
-    for (int tab = 0; tab < 2; ++tab) {
-      const int tabX = tabsX + tab * kTabWidth;
-      const bool selectedTab = tab == activeVariant_;
-      const char* label = tab == 0 ? "1-bit" : "2-bit";
-      renderVariantTab(renderer, tabX, bodyTop, label, selectedTab, tab == 0, tab == 1);
-    }
 
     const int end = std::min(total, scrollOffset_ + visibleRows);
     for (int index = scrollOffset_; index < end; ++index) {
@@ -651,12 +582,6 @@ void FontManagerActivity::loop() {
           updateDisplay();
           return;
         }
-        const int tabsX = renderer.getScreenWidth() - kSideMargin - kTabWidth * 2;
-        if (y >= bodyTop && y < bodyTop + kTabHeight && x >= tabsX && x < tabsX + kTabWidth * 2) {
-          selectVariant((x - tabsX) / kTabWidth);
-          return;
-        }
-
         const int visibleRows = visibleRowCount(fontListTop);
         const int maxScroll = std::max(0, visiblePackageCount() - visibleRows);
         if (maxScroll > 0 && contains(scrollCaretBounds(renderer), x, y)) {
@@ -686,9 +611,6 @@ void FontManagerActivity::loop() {
           }
         }
       } else if (state_ == State::Failed && contains(actionBounds(renderer), x, y)) {
-        state_ = State::Loading;
-        status_.clear();
-        updateDisplay();
         loadPackages();
       } else if (state_ == State::Ready && packages_.empty()) {
         goBack_();
@@ -721,8 +643,6 @@ void FontManagerActivity::loop() {
       return;
     }
   } else if (state_ == State::Failed && mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
-    state_ = State::Loading;
-    updateDisplay();
     loadPackages();
   }
 }

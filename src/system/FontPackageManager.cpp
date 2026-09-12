@@ -11,59 +11,46 @@
 
 namespace {
 constexpr char kFontRepositoryBase[] =
-    "https://raw.githubusercontent.com/obijuankenobiii/inx-font/main/";
+    "https://raw.githubusercontent.com/obijuankenobiii/inx-store/main/";
 constexpr char kDownloadPath[] = "/.system/font-package.zip";
 constexpr size_t kMaxPackageBytes = 5 * 1024 * 1024;
 constexpr size_t kMaxExtractedBytes = 16 * 1024 * 1024;
 
 struct StaticPackage {
   const char* name;
-  const char* variant;
+  const char* pathName;
   const char* path;
   FontPackageManager::Category category;
 };
 
 constexpr StaticPackage kStaticPackages[] = {
-    {"Alegreya", "1-bit", "1bit/Alegreya.zip", FontPackageManager::Category::Serif},
-    {"AtkinsonHL-Mono", "1-bit", "1bit/AtkinsonHL-Mono.zip", FontPackageManager::Category::SansSerif},
-    {"AtkinsonHL-Next", "1-bit", "1bit/AtkinsonHL-Next.zip", FontPackageManager::Category::SansSerif},
-    {"BitterPro", "1-bit", "1bit/BitterPro.zip", FontPackageManager::Category::Serif},
-    {"Charis", "1-bit", "1bit/Charis.zip", FontPackageManager::Category::Serif},
-    {"Inter", "1-bit", "1bit/Inter.zip", FontPackageManager::Category::SansSerif},
-    {"Lexend", "1-bit", "1bit/Lexend.zip", FontPackageManager::Category::SansSerif},
-    {"LexicaUltralegible", "1-bit", "1bit/LexicaUltralegible.zip", FontPackageManager::Category::SansSerif},
-    {"Literata", "1-bit", "1bit/Literata.zip", FontPackageManager::Category::Serif},
-    {"Lora", "1-bit", "1bit/Lora.zip", FontPackageManager::Category::Serif},
-    {"Merriweather", "1-bit", "1bit/Merriweather.zip", FontPackageManager::Category::Serif},
-    {"NotoSans", "1-bit", "1bit/NotoSans.zip", FontPackageManager::Category::SansSerif},
-    {"OpenDyslexic", "1-bit", "1bit/OpenDyslexic.zip", FontPackageManager::Category::SansSerif},
-    {"PlexMono", "1-bit", "1bit/PlexMono.zip", FontPackageManager::Category::SansSerif},
-    {"PlexSans", "1-bit", "1bit/PlexSans.zip", FontPackageManager::Category::SansSerif},
-    {"SourceSans3", "1-bit", "1bit/SourceSans3.zip", FontPackageManager::Category::SansSerif},
-    {"SourceSerif4", "1-bit", "1bit/SourceSerif4.zip", FontPackageManager::Category::Serif},
-    {"Tinos", "1-bit", "1bit/Tinos.zip", FontPackageManager::Category::Serif},
-    {"Alegreya", "2-bit", "2bit/Alegreya.zip", FontPackageManager::Category::Serif},
-    {"AtkinsonHL-Mono", "2-bit", "2bit/AtkinsonHL-Mono.zip", FontPackageManager::Category::SansSerif},
-    {"AtkinsonHL-Next", "2-bit", "2bit/AtkinsonHL-Next.zip", FontPackageManager::Category::SansSerif},
-    {"BitterPro", "2-bit", "2bit/BitterPro.zip", FontPackageManager::Category::Serif},
-    {"Charis", "2-bit", "2bit/Charis.zip", FontPackageManager::Category::Serif},
-    {"Inter", "2-bit", "2bit/Inter.zip", FontPackageManager::Category::SansSerif},
-    {"Lexend", "2-bit", "2bit/Lexend.zip", FontPackageManager::Category::SansSerif},
-    {"LexicaUltralegible", "2-bit", "2bit/LexicaUltralegible.zip", FontPackageManager::Category::SansSerif},
-    {"Literata", "2-bit", "2bit/Literata.zip", FontPackageManager::Category::Serif},
-    {"Lora", "2-bit", "2bit/Lora.zip", FontPackageManager::Category::Serif},
-    {"Merriweather", "2-bit", "2bit/Merriweather.zip", FontPackageManager::Category::Serif},
-    {"NotoSans", "2-bit", "2bit/NotoSans.zip", FontPackageManager::Category::SansSerif},
-    {"OpenDyslexic", "2-bit", "2bit/OpenDyslexic.zip", FontPackageManager::Category::SansSerif},
-    {"PlexMono", "2-bit", "2bit/PlexMono.zip", FontPackageManager::Category::SansSerif},
-    {"PlexSans", "2-bit", "2bit/PlexSans.zip", FontPackageManager::Category::SansSerif},
-    {"SourceSans3", "2-bit", "2bit/SourceSans3.zip", FontPackageManager::Category::SansSerif},
-    {"SourceSerif4", "2-bit", "2bit/SourceSerif4.zip", FontPackageManager::Category::Serif},
-    {"Tinos", "2-bit", "2bit/Tinos.zip", FontPackageManager::Category::Serif},
+    {"Alegreya", "Alegreya", "font/Alegreya.zip", FontPackageManager::Category::Serif},
+    {"Atkinson Hyperlegible Mono", "AtkinsonHL-Mono", "font/AtkinsonHL-Mono.zip", FontPackageManager::Category::SansSerif},
+    {"Atkinson Hyperlegible Next", "AtkinsonHL-Next", "font/AtkinsonHL-Next.zip", FontPackageManager::Category::SansSerif},
+    {"Bitter Pro", "BitterPro", "font/BitterPro.zip", FontPackageManager::Category::Serif},
+    {"ChareInk7SP", "ChareInk7", "font/ChareInk7.zip", FontPackageManager::Category::Serif},
+    {"Charis", "Charis", "font/Charis.zip", FontPackageManager::Category::Serif},
+    {"Inter", "Inter", "font/Inter.zip", FontPackageManager::Category::SansSerif},
+    {"Lexend", "Lexend", "font/Lexend.zip", FontPackageManager::Category::SansSerif},
+    {"Lexica Ultralegible", "LexicaUltralegible", "font/LexicaUltralegible.zip", FontPackageManager::Category::SansSerif},
+    {"Literata", "Literata", "font/Literata.zip", FontPackageManager::Category::Serif},
+    {"Lora", "Lora", "font/Lora.zip", FontPackageManager::Category::Serif},
+    {"Merriweather", "Merriweather", "font/Merriweather.zip", FontPackageManager::Category::Serif},
+    {"Noto Sans", "NotoSans", "font/NotoSans.zip", FontPackageManager::Category::SansSerif},
+    {"OpenDyslexic", "OpenDyslexic", "font/OpenDyslexic.zip", FontPackageManager::Category::SansSerif},
+    {"IBM Plex Mono", "PlexMono", "font/PlexMono.zip", FontPackageManager::Category::SansSerif},
+    {"IBM Plex Sans", "PlexSans", "font/PlexSans.zip", FontPackageManager::Category::SansSerif},
+    {"Source Sans 3", "SourceSans3", "font/SourceSans3.zip", FontPackageManager::Category::SansSerif},
+    {"Source Serif 4 SmText", "SourceSerif4", "font/SourceSerif4.zip", FontPackageManager::Category::Serif},
+    {"Tinos", "Tinos", "font/Tinos.zip", FontPackageManager::Category::Serif},
 };
 
-bool isSafeBinName(const std::string& name) {
-  if (!StringUtils::checkFileExtension(name, ".bin")) return false;
+bool isSafeFontName(const std::string& name) {
+  if (!StringUtils::checkFileExtension(name, ".ttf") &&
+      !StringUtils::checkFileExtension(name, ".otf") &&
+      !StringUtils::checkFileExtension(name, ".bin")) {
+    return false;
+  }
   if (name.empty() || name == "." || name == "..") return false;
   for (const char c : name) {
     if (c == '/' || c == '\\' || c == ':' || c < 32) return false;
@@ -123,9 +110,7 @@ bool FontPackageManager::fetchAvailable(std::vector<Package>& packages, std::str
 
   packages.reserve(sizeof(kStaticPackages) / sizeof(kStaticPackages[0]));
   for (const StaticPackage& item : kStaticPackages) {
-    const std::string installFamily = std::string(item.name) + " " + item.variant;
-    packages.push_back(
-        {item.name, item.variant, std::string(kFontRepositoryBase) + item.path, installFamily, 0, item.category});
+    packages.push_back({item.name, std::string(kFontRepositoryBase) + item.path, item.pathName, 0, item.category});
   }
   return true;
 }
@@ -146,7 +131,7 @@ bool FontPackageManager::isInstalled(const Package& package) {
   for (FsFile file = directory.openNextFile(); file; file = directory.openNextFile()) {
     char name[128] = {0};
     file.getName(name, sizeof(name));
-    if (!file.isDirectory() && isSafeBinName(name)) {
+    if (!file.isDirectory() && isSafeFontName(name)) {
       installed = true;
       file.close();
       break;
@@ -204,7 +189,7 @@ bool FontPackageManager::install(const Package& package, std::string& error, Pro
     if (!name) continue;
     const std::string entryName = FsHelpers::normalisePath(name);
     const std::string baseName = entryBaseName(entryName);
-    if (entryName.empty() || entryName.find("__MACOSX/") == 0 || !isSafeBinName(baseName)) continue;
+    if (entryName.empty() || entryName.find("__MACOSX/") == 0 || !isSafeFontName(baseName)) continue;
 
     size_t inflatedSize = 0;
     if (!zip.getInflatedFileSize(entryName.c_str(), &inflatedSize) || inflatedSize == 0 ||
@@ -240,7 +225,7 @@ bool FontPackageManager::install(const Package& package, std::string& error, Pro
   zip.close();
   SdMan.remove(kDownloadPath);
   if (extractedFiles == 0) {
-    error = "No compiled font files found in package";
+    error = "No font files found in package";
     return false;
   }
 

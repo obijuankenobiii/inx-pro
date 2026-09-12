@@ -6,19 +6,19 @@
 
 #include <functional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "activity/ActivityWithSubactivity.h"
 #include "activity/page/Page.h"
-#include "activity/page/components/global/Button.h"
-#include "system/FontPackageManager.h"
+#include "system/DictionaryPackageManager.h"
 
-/** Downloads TTF/OTF font packages and refreshes the local FontManager catalog. */
-class FontManagerActivity final : public ActivityWithSubactivity {
+/** Downloads and removes compressed StarDict dictionaries. */
+class DictionaryManagerActivity final : public ActivityWithSubactivity {
  public:
-  explicit FontManagerActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
-                               const std::function<void()>& goBack)
-      : ActivityWithSubactivity("FontManager", renderer, mappedInput), goBack_(goBack) {}
+  DictionaryManagerActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
+                             std::function<void()> goBack)
+      : ActivityWithSubactivity("DictionaryManager", renderer, mappedInput), goBack_(std::move(goBack)) {}
 
   void onEnter() override;
   void onExit() override;
@@ -27,19 +27,13 @@ class FontManagerActivity final : public ActivityWithSubactivity {
 
  private:
   enum class State : uint8_t { Ready, Downloading, Failed };
-  enum class CategoryFilter : uint8_t { All, SansSerif, Serif };
 
   static constexpr int kRowHeight = Page::LIST_ITEM_HEIGHT;
-  static constexpr int kFilterHeight = Button::height - 10;
 
   const std::function<void()> goBack_;
-  std::vector<FontPackageManager::Package> packages_;
+  std::vector<DictionaryPackageManager::Package> packages_;
   std::string status_;
   int selectedIndex_ = 0;
-  int scrollOffset_ = 0;
-  bool selectedVisible_ = false;
-  bool categoryFilterOpen_ = false;
-  CategoryFilter categoryFilter_ = CategoryFilter::All;
   int installingPackageIndex_ = -1;
   volatile size_t progressDownloaded_ = 0;
   volatile size_t progressTotal_ = 0;
@@ -54,8 +48,6 @@ class FontManagerActivity final : public ActivityWithSubactivity {
 
   void loadPackages();
   void installSelected();
-  void removeSelected();
-  void selectInstalled();
   void startInstallation();
   void launchWifiSelection();
   void onWifiSelectionComplete(bool connected);
@@ -65,15 +57,4 @@ class FontManagerActivity final : public ActivityWithSubactivity {
   void installTaskLoop();
   void render();
   void updateDisplay();
-  int visibleRowCount(int bodyTop) const;
-  int listTop(int bodyTop) const { return bodyTop + kFilterHeight + 20; }
-  int visiblePackageCount() const;
-  int packageIndexAt(int visibleIndex) const;
-  int categoryFilterCount() const;
-  const char* categoryFilterLabel() const;
-  bool matchesCategory(const FontPackageManager::Package& package) const;
-  ButtonBounds categoryFilterBounds() const;
-  void categoryFilterDropdown() const;
-  void handleCategoryFilterTap(int tapX, int tapY);
-  void applyCategoryFilter(int index);
 };

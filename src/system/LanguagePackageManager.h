@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-/** Lists and installs language packages hosted in the inx-font repository.
+/** Lists and installs language packages hosted in the inx-store repository.
  *
  * A language package is a single ZIP containing:
  *   lang/<code>/translate.yml

@@ -2,7 +2,7 @@
 
 ## Downloadable language packages
 
-Language packages are ZIP archives published by the `inx-font` repository. A
+Language packages are ZIP archives published by the `inx-store` repository. A
 package contains translation metadata and may include compiled font fallback
 files:
 

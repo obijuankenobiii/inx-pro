@@ -7,6 +7,7 @@
 
 #include "activity/page/SubPage.h"
 #include "activity/page/components/global/PopUp.h"
+#include "activity/settings/DictionaryManagerActivity.h"
 #include "activity/settings/FontManagerActivity.h"
 #include "images/BookAtlas.h"
 #include "images/Language.h"
@@ -50,11 +51,12 @@ void StoreActivity::onEnter() {
 void StoreActivity::openSelected() {
   if (selectedIndex_ == 0) {
     enterNewActivity(new FontManagerActivity(renderer, mappedInput, [this] { subActivityFinished_ = true; }));
+  } else if (selectedIndex_ == 2) {
+    enterNewActivity(new DictionaryManagerActivity(renderer, mappedInput, [this] { subActivityFinished_ = true; }));
   } else if (comingSoonItem(selectedIndex_)) {
     comingSoonPopup_ = true;
     renderComingSoon();
   }
-  // Dictionary is intentionally a no-op until its store integration is available.
 }
 
 void StoreActivity::loop() {
