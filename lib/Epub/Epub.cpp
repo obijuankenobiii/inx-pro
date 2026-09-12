@@ -941,6 +941,7 @@ bool Epub::parseContentOpf(BookMetadataCache::BookMetadata& bookMetadata) {
 
   bookMetadata.title = opfParser.title;
   bookMetadata.author = opfParser.author;
+  bookMetadata.description = opfParser.description;
   bookMetadata.language = opfParser.language;
   bookMetadata.coverItemHref = opfParser.coverItemHref;
   bookMetadata.textReferenceHref = opfParser.textReferenceHref;
@@ -1075,6 +1076,7 @@ bool Epub::load(const bool buildIfMissing) {
 
   meta.title = opfParser.title;
   meta.author = opfParser.author;
+  meta.description = opfParser.description;
   meta.language = opfParser.language;
   meta.coverItemHref = opfParser.coverItemHref;
   meta.textReferenceHref = opfParser.textReferenceHref;

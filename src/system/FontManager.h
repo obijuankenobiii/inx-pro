@@ -58,6 +58,8 @@ class FontManager {
   /** Convert an outline point size to the closest legacy five-position size. */
   static uint8_t legacyReaderSizeForPointSize(int pointSize);
   static int getFontIdNearestPointSize(const std::string& family, int preferredPt);
+  /** Select the proportional drop-cap size for the active reader font. */
+  static int getDropCapFontId(int bodyFontId, uint8_t lineCount);
 
   static bool loadFontFromSD(int fontId, GfxRenderer& renderer, bool enableGlyphBitmapCache = true);
   static bool ensureFontReady(int fontId, GfxRenderer& renderer);

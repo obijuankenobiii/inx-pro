@@ -1032,10 +1032,17 @@ void ChapterHtmlSlimParser::flushPartWordBuffer() {
         dropCapBold && dropCapItalic
             ? EpdFontFamily::BOLD_ITALIC
             : (dropCapItalic ? EpdFontFamily::ITALIC : EpdFontFamily::BOLD);
+    int dropCapFontId = FontManager::getDropCapFontId(fontId, dropCapLineCount);
+    if (!FontManager::ensureFontReady(dropCapFontId, renderer)) {
+      dropCapFontId = maxFontId;
+    }
+    const FontManager::FontInfo* dropCapInfo = FontManager::getFontInfo(dropCapFontId);
+    INX_SERIAL.printf("[%lu] [INCR-FONT] dropcap body=%d lines=%u -> font=%d size=%d\n", millis(), fontId,
+                      static_cast<unsigned>(dropCapLineCount), dropCapFontId, dropCapInfo ? dropCapInfo->size : 0);
     currentPage->elements.emplace_back(
-        new PageDropCap(dropCapText, 0, currentPageNextY, maxFontId, inlineFirstLine, dropCapStyle));
+        new PageDropCap(dropCapText, 0, currentPageNextY, dropCapFontId, inlineFirstLine, dropCapStyle));
 
-    int dropCapWidth = renderer.text.getWidth(maxFontId, dropCapText.c_str(), dropCapStyle) + 3;
+    int dropCapWidth = renderer.text.getWidth(dropCapFontId, dropCapText.c_str(), dropCapStyle) + 3;
 
     if (currentTextBlock) {
       currentTextBlock->setLeftIndent(dropCapWidth, inlineFirstLine ? 1 : dropCapLineCount);

@@ -30,6 +30,9 @@ void BaseCarouselActivity::render() {
   const int shadowStyleY = contentTop + kRowHeight * 2;
   const int labelY = contentTop + kRowHeight * 3;
   const int labelColorY = contentTop + kRowHeight * 4;
+  const int titleY = contentTop + kRowHeight * 5;
+  const int authorY = contentTop + kRowHeight * 6;
+  const int progressY = contentTop + kRowHeight * (recentStyle_ ? 7 : 5);
   renderer.rectangle.fill(0, styleY, width, kRowHeight, static_cast<int>(GfxRenderer::FillTone::Paper));
   renderer.rectangle.fill(0, backgroundY, width, kRowHeight, static_cast<int>(GfxRenderer::FillTone::Paper));
   renderer.rectangle.fill(0, labelY, width, kRowHeight, static_cast<int>(GfxRenderer::FillTone::Paper));
@@ -66,6 +69,24 @@ void BaseCarouselActivity::render() {
   renderer.line.render(0, shadowStyleY - 1, width, shadowStyleY - 1, true, LineRender::Style::Dotted);
   renderer.line.render(0, labelY - 1, width, labelY - 1, true, LineRender::Style::Dotted);
   renderer.line.render(0, labelColorY - 1, width, labelColorY - 1, true, LineRender::Style::Dotted);
+
+  if (recentStyle_) {
+    renderer.rectangle.fill(0, titleY, width, kRowHeight, static_cast<int>(GfxRenderer::FillTone::Paper));
+    renderer.rectangle.fill(0, authorY, width, kRowHeight, static_cast<int>(GfxRenderer::FillTone::Paper));
+    renderer.text.render(font, 20, titleY + (kRowHeight - renderer.text.getLineHeight(font)) / 2, "Show title", true,
+                         EpdFontFamily::REGULAR);
+    Toggle::render(renderer, width - 20, titleY, kRowHeight, showTitle_);
+    renderer.text.render(font, 20, authorY + (kRowHeight - renderer.text.getLineHeight(font)) / 2, "Show author",
+                         true, EpdFontFamily::REGULAR);
+    Toggle::render(renderer, width - 20, authorY, kRowHeight, showAuthor_);
+    renderer.line.render(0, titleY - 1, width, titleY - 1, true, LineRender::Style::Dotted);
+    renderer.line.render(0, authorY - 1, width, authorY - 1, true, LineRender::Style::Dotted);
+  }
+  renderer.rectangle.fill(0, progressY, width, kRowHeight, static_cast<int>(GfxRenderer::FillTone::Paper));
+  renderer.text.render(font, 20, progressY + (kRowHeight - renderer.text.getLineHeight(font)) / 2,
+                       "Show progress", true, EpdFontFamily::REGULAR);
+  Toggle::render(renderer, width - 20, progressY, kRowHeight, showProgress_);
+  renderer.line.render(0, progressY - 1, width, progressY - 1, true, LineRender::Style::Dotted);
 
   if (stylePopup_) renderStylePopup();
   if (shadowStylePopup_) renderShadowStylePopup();
@@ -104,7 +125,7 @@ void BaseCarouselActivity::renderShadowStylePopup() {
 }
 
 void BaseCarouselActivity::close() {
-  if (onApply_) onApply_(style_, background_, showLabel_, labelColor_, shadowStyle_);
+  if (onApply_) onApply_(style_, background_, showLabel_, labelColor_, shadowStyle_, showTitle_, showAuthor_, showProgress_);
   if (onBack_) onBack_();
 }
 
@@ -191,6 +212,24 @@ void BaseCarouselActivity::handleTouch(const int x, const int y) {
   if (x >= 0 && x < renderer.getScreenWidth() && y >= contentTop + kRowHeight * 4 &&
       y < contentTop + kRowHeight * 5) {
     labelColorPopup_ = true;
+    render();
+    return;
+  }
+  if (recentStyle_ && x >= 0 && x < renderer.getScreenWidth() && y >= contentTop + kRowHeight * 5 &&
+      y < contentTop + kRowHeight * 6) {
+    showTitle_ = !showTitle_;
+    render();
+    return;
+  }
+  if (recentStyle_ && x >= 0 && x < renderer.getScreenWidth() && y >= contentTop + kRowHeight * 6 &&
+      y < contentTop + kRowHeight * 7) {
+    showAuthor_ = !showAuthor_;
+    render();
+    return;
+  }
+  if (x >= 0 && x < renderer.getScreenWidth() && y >= contentTop + kRowHeight * (recentStyle_ ? 7 : 5) &&
+      y < contentTop + kRowHeight * (recentStyle_ ? 8 : 6)) {
+    showProgress_ = !showProgress_;
     render();
   }
 }

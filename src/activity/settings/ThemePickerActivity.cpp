@@ -12,6 +12,7 @@
 #include "activity/settings/BaseCarouselActivity.h"
 #include "activity/settings/BaseHeatmapActivity.h"
 #include "activity/settings/BaseLibraryActivity.h"
+#include "activity/settings/BaseDescriptionActivity.h"
 #include "activity/settings/BaseTemperatureActivity.h"
 #include "images/ThemeBorder.h"
 #include "images/Setting.h"
@@ -51,6 +52,10 @@ bool supportsHeatmapSettings(const HomeTheme::Widget widget) { return widget == 
 
 bool supportsLibrarySettings(const HomeTheme::Widget widget) { return widget == HomeTheme::Widget::Library; }
 
+bool supportsDescriptionSettings(const HomeTheme::Widget widget) {
+  return widget == HomeTheme::Widget::Description;
+}
+
 #if FREEINK_DEVICE_STICKY
 bool supportsTemperatureSettings(const HomeTheme::Widget widget) {
   return widget == HomeTheme::Widget::Temperature;
@@ -81,9 +86,9 @@ void setDefaultLibraryFolders(char (&folders)[3][128]) {
 int widgetOptionCount(const HomeTheme::Layout layout, const bool sleepTheme) {
   if (layout == HomeTheme::Layout::Classic) return 1;
 #if FREEINK_DEVICE_STICKY
-  return sleepTheme ? 5 : 13;
+  return sleepTheme ? 5 : 14;
 #else
-  return sleepTheme ? 3 : 11;
+  return sleepTheme ? 3 : 12;
 #endif
 }
 
@@ -94,6 +99,7 @@ HomeTheme::Widget widgetOptionAt(const bool sleepTheme, const int index) {
       HomeTheme::Widget::Shortcuts,
       HomeTheme::Widget::Clock,
       HomeTheme::Widget::Recent,
+      HomeTheme::Widget::Description,
 #if FREEINK_DEVICE_STICKY
       HomeTheme::Widget::Temperature,
 #endif
@@ -282,7 +288,10 @@ void ThemePickerActivity::renderWidgetPicker() {
     const int cellY = layoutY + (slot / columns) * cellH;
     renderWidgetPreview(widgets_[slot], cellX, cellY, cellW, cellH, backgrounds_[slot] != 0,
                         carouselStyles_[slot], carouselLabels_[slot] != 0, carouselLabelColors_[slot],
-                        carouselShadowStyles_[slot], heatmapViews_[slot], libraryFolders_[slot]);
+                        carouselShadowStyles_[slot], heatmapViews_[slot], libraryFolders_[slot],
+                        descriptionTitles_[slot] != 0, descriptionAuthors_[slot] != 0,
+                        descriptionProgress_[slot] != 0, recentTitles_[slot] != 0, recentAuthors_[slot] != 0,
+                        recentProgress_[slot] != 0, carouselProgress_[slot] != 0);
   }
 
   renderBorder(borders_[0], layoutX, layoutY, layoutW, layoutH);
@@ -315,6 +324,12 @@ void ThemePickerActivity::renderWidgetPicker() {
     }
 #endif
     if (supportsLibrarySettings(widgets_[slot])) {
+      const CarouselSettingsBounds settings = carouselSettingsBounds(cellX, cellY, cellW, cellH);
+      renderer.rectangle.fill(settings.x - 4, settings.y - 4, settings.size + 8, settings.size + 8, false);
+      renderer.rectangle.render(settings.x - 4, settings.y - 4, settings.size + 8, settings.size + 8, true);
+      renderer.bitmap.icon(Setting, settings.x, settings.y, settings.size, settings.size);
+    }
+    if (supportsDescriptionSettings(widgets_[slot])) {
       const CarouselSettingsBounds settings = carouselSettingsBounds(cellX, cellY, cellW, cellH);
       renderer.rectangle.fill(settings.x - 4, settings.y - 4, settings.size + 8, settings.size + 8, false);
       renderer.rectangle.render(settings.x - 4, settings.y - 4, settings.size + 8, settings.size + 8, true);
@@ -356,15 +371,20 @@ void ThemePickerActivity::renderWidgetPreview(const HomeTheme::Widget widget, co
                                               const HomeTheme::CarouselLabelColor labelColor,
                                               const HomeTheme::CarouselShadowStyle shadowStyle,
                                               const HomeTheme::HeatmapView heatmapView,
-                                              const char (*libraryFolders)[128]) {
+                                              const char (*libraryFolders)[128], const bool descriptionShowTitle,
+                                              const bool descriptionShowAuthor, const bool descriptionShowProgress,
+                                              const bool recentShowTitle, const bool recentShowAuthor,
+                                              const bool recentShowProgress, const bool carouselShowProgress) {
   if (width <= 0 || height <= 0) return;
 
   switch (widget) {
     case HomeTheme::Widget::Carousel:
-      carousel_.preview(x, y, width, height, background, style, showLabel, labelColor, shadowStyle);
+      carousel_.preview(x, y, width, height, background, style, showLabel, labelColor, shadowStyle,
+                        carouselShowProgress);
       break;
     case HomeTheme::Widget::Recent:
-      recent_.preview(x, y, width, height, background, style, showLabel, labelColor, shadowStyle);
+      recent_.preview(x, y, width, height, background, style, showLabel, labelColor, shadowStyle, recentShowTitle,
+                      recentShowAuthor, recentShowProgress);
       break;
     case HomeTheme::Widget::Shortcuts:
       shortcut_.render(x, y, width, height);
@@ -397,6 +417,10 @@ void ThemePickerActivity::renderWidgetPreview(const HomeTheme::Widget widget, co
       break;
     case HomeTheme::Widget::Library:
       drawLibraryPreviewPlaceholders(renderer, x, y, width, height, background, showLabel);
+      break;
+    case HomeTheme::Widget::Description:
+      description_.render(0, x, y, width, height, background, showLabel, labelColor, shadowStyle,
+                          descriptionShowTitle, descriptionShowAuthor, descriptionShowProgress);
       break;
     case HomeTheme::Widget::Empty:
     default:
@@ -453,6 +477,13 @@ void ThemePickerActivity::editTheme() {
     backgrounds_[i] = theme.backgrounds[i];
     carouselStyles_[i] = theme.carouselStyles[i];
     carouselLabels_[i] = theme.carouselLabels[i];
+    descriptionTitles_[i] = theme.descriptionTitles[i];
+    descriptionAuthors_[i] = theme.descriptionAuthors[i];
+    descriptionProgress_[i] = theme.descriptionProgress[i];
+    recentTitles_[i] = theme.recentTitles[i];
+    recentAuthors_[i] = theme.recentAuthors[i];
+    recentProgress_[i] = theme.recentProgress[i];
+    carouselProgress_[i] = theme.carouselProgress[i];
     carouselLabelColors_[i] = theme.carouselLabelColors[i];
     carouselShadowStyles_[i] = theme.carouselShadowStyles[i];
     heatmapViews_[i] = theme.heatmapViews[i];
@@ -479,6 +510,13 @@ void ThemePickerActivity::editTheme() {
     for (HomeTheme::Border& border : borders_) border = HomeTheme::Border::None;
     for (HomeTheme::CarouselStyle& style : carouselStyles_) style = HomeTheme::CarouselStyle::Centered;
     for (uint8_t& label : carouselLabels_) label = 0;
+    for (uint8_t& value : descriptionTitles_) value = 1;
+    for (uint8_t& value : descriptionAuthors_) value = 1;
+    for (uint8_t& value : descriptionProgress_) value = 1;
+    for (uint8_t& value : recentTitles_) value = 1;
+    for (uint8_t& value : recentAuthors_) value = 1;
+    for (uint8_t& value : recentProgress_) value = 1;
+    for (uint8_t& value : carouselProgress_) value = 1;
     for (HomeTheme::CarouselLabelColor& color : carouselLabelColors_) color = HomeTheme::CarouselLabelColor::Black;
     for (HomeTheme::CarouselShadowStyle& style : carouselShadowStyles_) {
       style = HomeTheme::CarouselShadowStyle::None;
@@ -495,12 +533,14 @@ void ThemePickerActivity::saveEditorAndClose() {
   if (screen_ == Screen::Widgets && editingExisting_ && !widgetPopup_ && !borderPopup_) {
     if (editingSleep_) {
       HomeTheme::updateSleep(layout_, widgets_, borders_, backgrounds_, carouselStyles_, carouselLabels_,
-                             carouselLabelColors_, carouselShadowStyles_, heatmapViews_, libraryFolders_,
-                             HomeTheme::slotCount(layout_));
+                             carouselLabelColors_, carouselShadowStyles_, heatmapViews_, descriptionTitles_,
+                             descriptionAuthors_, descriptionProgress_, recentTitles_, recentAuthors_, recentProgress_,
+                             carouselProgress_, libraryFolders_, HomeTheme::slotCount(layout_));
     } else {
-      HomeTheme::update(selected_, layout_, widgets_, borders_, backgrounds_, carouselStyles_, carouselLabels_,
-                        carouselLabelColors_, carouselShadowStyles_, heatmapViews_, libraryFolders_,
-                        HomeTheme::slotCount(layout_));
+        HomeTheme::update(selected_, layout_, widgets_, borders_, backgrounds_, carouselStyles_, carouselLabels_,
+                        carouselLabelColors_, carouselShadowStyles_, heatmapViews_, descriptionTitles_,
+                        descriptionAuthors_, descriptionProgress_, recentTitles_, recentAuthors_, recentProgress_,
+                        carouselProgress_, libraryFolders_, HomeTheme::slotCount(layout_));
     }
   }
   close();
@@ -531,15 +571,26 @@ void ThemePickerActivity::openCarouselSettings(const int slot) {
       carouselLabelColors_[slot], carouselShadowStyles_[slot],
       [this, slot](const HomeTheme::CarouselStyle style, const bool background, const bool showLabel,
                    const HomeTheme::CarouselLabelColor labelColor,
-                   const HomeTheme::CarouselShadowStyle shadowStyle) {
+                   const HomeTheme::CarouselShadowStyle shadowStyle, const bool showTitle, const bool showAuthor,
+                   const bool showProgress) {
         carouselStyles_[slot] = style;
         backgrounds_[slot] = background ? 1 : 0;
         carouselLabels_[slot] = showLabel ? 1 : 0;
         carouselLabelColors_[slot] = labelColor;
         carouselShadowStyles_[slot] = shadowStyle;
+        if (widgets_[slot] == HomeTheme::Widget::Recent) {
+          recentTitles_[slot] = showTitle ? 1 : 0;
+          recentAuthors_[slot] = showAuthor ? 1 : 0;
+          recentProgress_[slot] = showProgress ? 1 : 0;
+        } else if (widgets_[slot] == HomeTheme::Widget::Carousel) {
+          carouselProgress_[slot] = showProgress ? 1 : 0;
+        }
         carouselSettingsFinished_ = true;
       },
-      [] {}, widgets_[slot] == HomeTheme::Widget::Recent));
+      [] {}, widgets_[slot] == HomeTheme::Widget::Recent,
+      widgets_[slot] == HomeTheme::Widget::Recent ? recentTitles_[slot] != 0 : true,
+      widgets_[slot] == HomeTheme::Widget::Recent ? recentAuthors_[slot] != 0 : true,
+      widgets_[slot] == HomeTheme::Widget::Recent ? recentProgress_[slot] != 0 : carouselProgress_[slot] != 0));
 }
 
 void ThemePickerActivity::openHeatmapSettings(const int slot) {
@@ -592,6 +643,22 @@ void ThemePickerActivity::openLibrarySettings(const int slot) {
         backgrounds_[slot] = background ? 1 : 0;
         carouselLabels_[slot] = showLabel ? 1 : 0;
         librarySettingsFinished_ = true;
+      },
+      [] {}));
+}
+
+void ThemePickerActivity::openDescriptionSettings(const int slot) {
+  widgetSlot_ = slot;
+  descriptionSettingsFinished_ = false;
+  enterNewActivity(new BaseDescriptionActivity(
+      renderer, mappedInput, backgrounds_[slot] != 0, descriptionTitles_[slot] != 0,
+      descriptionAuthors_[slot] != 0, descriptionProgress_[slot] != 0,
+      [this, slot](const bool background, const bool showTitle, const bool showAuthor, const bool showProgress) {
+        backgrounds_[slot] = background ? 1 : 0;
+        descriptionTitles_[slot] = showTitle ? 1 : 0;
+        descriptionAuthors_[slot] = showAuthor ? 1 : 0;
+        descriptionProgress_[slot] = showProgress ? 1 : 0;
+        descriptionSettingsFinished_ = true;
       },
       [] {}));
 }
@@ -658,9 +725,23 @@ void ThemePickerActivity::handleTouch(const int x, const int y) {
       popupSelected_ = widgetPopupScroll_ + optionY / box.row;
       if (popupSelected_ >= options) return;
       const bool wasLibrary = widgets_[widgetSlot_] == HomeTheme::Widget::Library;
+      const bool wasDescription = widgets_[widgetSlot_] == HomeTheme::Widget::Description;
+      const bool wasRecent = widgets_[widgetSlot_] == HomeTheme::Widget::Recent;
+      const bool wasCarousel = widgets_[widgetSlot_] == HomeTheme::Widget::Carousel;
       widgets_[widgetSlot_] = widgetOptionAt(editingSleep_, popupSelected_);
       if (widgets_[widgetSlot_] == HomeTheme::Widget::Empty) borders_[widgetSlot_] = HomeTheme::Border::None;
-      if (supportsLibrarySettings(widgets_[widgetSlot_])) {
+      if (supportsDescriptionSettings(widgets_[widgetSlot_])) {
+        if (!wasDescription) {
+          backgrounds_[widgetSlot_] = 0;
+          descriptionTitles_[widgetSlot_] = 1;
+          descriptionAuthors_[widgetSlot_] = 1;
+          descriptionProgress_[widgetSlot_] = 1;
+        }
+        carouselLabels_[widgetSlot_] = 0;
+        carouselStyles_[widgetSlot_] = HomeTheme::CarouselStyle::Centered;
+        carouselLabelColors_[widgetSlot_] = HomeTheme::CarouselLabelColor::Black;
+        carouselShadowStyles_[widgetSlot_] = HomeTheme::CarouselShadowStyle::None;
+      } else if (supportsLibrarySettings(widgets_[widgetSlot_])) {
         if (!wasLibrary) {
           setDefaultLibraryFolders(libraryFolders_[widgetSlot_]);
           backgrounds_[widgetSlot_] = 0;
@@ -674,6 +755,14 @@ void ThemePickerActivity::handleTouch(const int x, const int y) {
         carouselLabels_[widgetSlot_] = 1;
         carouselLabelColors_[widgetSlot_] = HomeTheme::CarouselLabelColor::Black;
         carouselShadowStyles_[widgetSlot_] = HomeTheme::CarouselShadowStyle::None;
+        if (widgets_[widgetSlot_] == HomeTheme::Widget::Recent && !wasRecent) {
+          recentTitles_[widgetSlot_] = 1;
+          recentAuthors_[widgetSlot_] = 1;
+          recentProgress_[widgetSlot_] = 1;
+        }
+        if (widgets_[widgetSlot_] == HomeTheme::Widget::Carousel && !wasCarousel) {
+          carouselProgress_[widgetSlot_] = 1;
+        }
       } else if (supportsHeatmapSettings(widgets_[widgetSlot_])) {
         heatmapViews_[widgetSlot_] = HomeTheme::HeatmapView::Weekly;
         carouselLabels_[widgetSlot_] = 1;
@@ -687,6 +776,8 @@ void ThemePickerActivity::handleTouch(const int x, const int y) {
       widgetPopup_ = false;
       if (supportsLibrarySettings(widgets_[widgetSlot_])) {
         openLibrarySettings(widgetSlot_);
+      } else if (supportsDescriptionSettings(widgets_[widgetSlot_])) {
+        openDescriptionSettings(widgetSlot_);
       } else {
         render();
       }
@@ -733,6 +824,13 @@ void ThemePickerActivity::handleTouch(const int x, const int y) {
           return;
         }
       }
+      if (supportsDescriptionSettings(widgets_[slot])) {
+        const CarouselSettingsBounds settings = carouselSettingsBounds(cellX, cellY, cellW, cellH);
+        if (inside(x, y, settings.x - 8, settings.y - 8, settings.size + 16, settings.size + 16)) {
+          openDescriptionSettings(slot);
+          return;
+        }
+      }
     }
     if (inside(x, y, previewX, previewY, previewW, previewH)) {
       const int column = std::min(columns - 1, (x - previewX) / cellW);
@@ -772,6 +870,11 @@ void ThemePickerActivity::loop() {
     if (librarySettingsFinished_) {
       exitActivity();
       librarySettingsFinished_ = false;
+      render();
+    }
+    if (descriptionSettingsFinished_) {
+      exitActivity();
+      descriptionSettingsFinished_ = false;
       render();
     }
     return;
@@ -853,9 +956,23 @@ void ThemePickerActivity::loop() {
         render();
       } else if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
         const bool wasLibrary = widgets_[widgetSlot_] == HomeTheme::Widget::Library;
+        const bool wasDescription = widgets_[widgetSlot_] == HomeTheme::Widget::Description;
+        const bool wasRecent = widgets_[widgetSlot_] == HomeTheme::Widget::Recent;
+        const bool wasCarousel = widgets_[widgetSlot_] == HomeTheme::Widget::Carousel;
         widgets_[widgetSlot_] = widgetOptionAt(editingSleep_, popupSelected_);
         if (widgets_[widgetSlot_] == HomeTheme::Widget::Empty) borders_[widgetSlot_] = HomeTheme::Border::None;
-        if (supportsLibrarySettings(widgets_[widgetSlot_])) {
+        if (supportsDescriptionSettings(widgets_[widgetSlot_])) {
+          if (!wasDescription) {
+            backgrounds_[widgetSlot_] = 0;
+            descriptionTitles_[widgetSlot_] = 1;
+            descriptionAuthors_[widgetSlot_] = 1;
+            descriptionProgress_[widgetSlot_] = 1;
+          }
+          carouselLabels_[widgetSlot_] = 0;
+          carouselStyles_[widgetSlot_] = HomeTheme::CarouselStyle::Centered;
+          carouselLabelColors_[widgetSlot_] = HomeTheme::CarouselLabelColor::Black;
+          carouselShadowStyles_[widgetSlot_] = HomeTheme::CarouselShadowStyle::None;
+        } else if (supportsLibrarySettings(widgets_[widgetSlot_])) {
           if (!wasLibrary) {
             setDefaultLibraryFolders(libraryFolders_[widgetSlot_]);
             backgrounds_[widgetSlot_] = 0;
@@ -869,6 +986,14 @@ void ThemePickerActivity::loop() {
           carouselLabels_[widgetSlot_] = 1;
           carouselLabelColors_[widgetSlot_] = HomeTheme::CarouselLabelColor::Black;
           carouselShadowStyles_[widgetSlot_] = HomeTheme::CarouselShadowStyle::None;
+          if (widgets_[widgetSlot_] == HomeTheme::Widget::Recent && !wasRecent) {
+            recentTitles_[widgetSlot_] = 1;
+            recentAuthors_[widgetSlot_] = 1;
+            recentProgress_[widgetSlot_] = 1;
+          }
+          if (widgets_[widgetSlot_] == HomeTheme::Widget::Carousel && !wasCarousel) {
+            carouselProgress_[widgetSlot_] = 1;
+          }
         } else if (supportsHeatmapSettings(widgets_[widgetSlot_])) {
           heatmapViews_[widgetSlot_] = HomeTheme::HeatmapView::Weekly;
           carouselLabels_[widgetSlot_] = 1;
@@ -882,6 +1007,8 @@ void ThemePickerActivity::loop() {
         widgetPopup_ = false;
         if (supportsLibrarySettings(widgets_[widgetSlot_])) {
           openLibrarySettings(widgetSlot_);
+        } else if (supportsDescriptionSettings(widgets_[widgetSlot_])) {
+          openDescriptionSettings(widgetSlot_);
         } else {
           render();
         }

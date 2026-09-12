@@ -99,7 +99,8 @@ void renderThumbnail(GfxRenderer& renderer, const RecentBook& book, const int x,
 void Recent::render(const int x, const int y, const int width, const int height, const bool background,
                     const HomeTheme::CarouselStyle style, const bool showLabel,
                     const HomeTheme::CarouselLabelColor labelColor,
-                    const HomeTheme::CarouselShadowStyle shadowStyle) const {
+                    const HomeTheme::CarouselShadowStyle shadowStyle, const bool showTitle, const bool showAuthor,
+                    const bool showProgress) const {
   if (width <= 0 || height <= 0) return;
   renderBackground(x, y, width, height, background);
   const ContentArea content = contentArea(y, height, showLabel);
@@ -128,17 +129,24 @@ void Recent::render(const int x, const int y, const int width, const int height,
   const std::string author = renderer_.text.truncate(font, book.author.c_str(), contentWidth);
   const int lineHeight = renderer_.text.getLineHeight(font);
   const int titleLines = titleSecond.empty() ? 1 : 2;
-  const int titleBlockHeight = titleLines * lineHeight + (book.author.empty() ? 0 : lineHeight + 4);
+  const bool hasAuthor = showAuthor && !book.author.empty();
+  const int titleBlockHeight = (showTitle ? titleLines * lineHeight : 0) +
+                               (hasAuthor ? lineHeight + (showTitle ? 4 : 0) : 0);
   const int titleY = content.y + std::max(8, (content.height - titleBlockHeight) / 2 - 20);
-  renderer_.text.render(font, contentX, titleY, title.c_str(), true, EpdFontFamily::BOLD);
-  if (!titleSecond.empty()) {
-    renderer_.text.render(font, contentX, titleY + lineHeight, titleSecond.c_str(), true, EpdFontFamily::BOLD);
+  int textY = titleY;
+  if (showTitle) {
+    renderer_.text.render(font, contentX, textY, title.c_str(), true, EpdFontFamily::BOLD);
+    if (!titleSecond.empty()) {
+      renderer_.text.render(font, contentX, textY + lineHeight, titleSecond.c_str(), true, EpdFontFamily::BOLD);
+    }
+    textY += titleLines * lineHeight;
   }
-  if (!book.author.empty()) {
-    const int authorY = titleY + titleLines * lineHeight + 4;
+  if (hasAuthor) {
+    const int authorY = textY + (showTitle ? 4 : 0);
     renderer_.text.render(font, contentX, authorY, author.c_str(), true, EpdFontFamily::REGULAR);
   }
 
+  if (!showProgress) return;
   const int percentage = book.progress < 0.0f ? 0 : std::max(0, std::min(100, static_cast<int>(book.progress * 100.0f + 0.5f)));
   const std::string percentageText = std::to_string(percentage) + "%";
   constexpr int percentageFont = MONTSERRAT_8_FONT_ID;
@@ -161,7 +169,8 @@ void Recent::render(const int x, const int y, const int width, const int height,
 void Recent::preview(const int x, const int y, const int width, const int height, const bool background,
                      const HomeTheme::CarouselStyle style, const bool showLabel,
                      const HomeTheme::CarouselLabelColor labelColor,
-                     const HomeTheme::CarouselShadowStyle shadowStyle) const {
+                     const HomeTheme::CarouselShadowStyle shadowStyle, const bool showTitle, const bool showAuthor,
+                     const bool showProgress) const {
   if (width <= 0 || height <= 0) return;
   renderBackground(x, y, width, height, background);
   const ContentArea content = contentArea(y, height, showLabel);
@@ -184,10 +193,13 @@ void Recent::preview(const int x, const int y, const int width, const int height
   const int font = systemFontId();
   const int lineHeight = renderer_.text.getLineHeight(font);
   const int titleY = content.y + std::max(8, (content.height - lineHeight * 2 - 28) / 2 - 20);
-  renderer_.text.render(font, contentX, titleY, "Book title", true, EpdFontFamily::BOLD);
-  const int authorY = titleY + lineHeight + 4;
-  renderer_.text.render(font, contentX, authorY, "Author", true, EpdFontFamily::REGULAR);
+  if (showTitle) renderer_.text.render(font, contentX, titleY, "Book title", true, EpdFontFamily::BOLD);
+  if (showAuthor) {
+    const int authorY = titleY + (showTitle ? lineHeight + 4 : 0);
+    renderer_.text.render(font, contentX, authorY, "Author", true, EpdFontFamily::REGULAR);
+  }
 
+  if (!showProgress) return;
   constexpr int percentage = 65;
   const int percentageWidth = renderer_.text.getWidth(MONTSERRAT_8_FONT_ID, "65%");
   const int barY = std::min(content.y + content.height - innerPadding - 11,

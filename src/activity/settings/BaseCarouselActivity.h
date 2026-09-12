@@ -9,12 +9,13 @@
 class BaseCarouselActivity final : public Activity {
  public:
   using ApplyCallback = std::function<void(HomeTheme::CarouselStyle, bool, bool, HomeTheme::CarouselLabelColor,
-                                           HomeTheme::CarouselShadowStyle)>;
+                                           HomeTheme::CarouselShadowStyle, bool, bool, bool)>;
 
   BaseCarouselActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, HomeTheme::CarouselStyle style,
                        bool background, bool showLabel, HomeTheme::CarouselLabelColor labelColor,
                        HomeTheme::CarouselShadowStyle shadowStyle, ApplyCallback onApply, std::function<void()> onBack,
-                       bool recentStyle = false)
+                       bool recentStyle = false, bool showTitle = true, bool showAuthor = true,
+                       bool showProgress = true)
       : Activity("BaseCarousel", renderer, mappedInput),
         style_(style),
         background_(background),
@@ -22,6 +23,9 @@ class BaseCarouselActivity final : public Activity {
         shadowStyle_(shadowStyle),
         labelColor_(labelColor),
         recentStyle_(recentStyle),
+        showTitle_(showTitle),
+        showAuthor_(showAuthor),
+        showProgress_(showProgress),
         onApply_(std::move(onApply)),
         onBack_(std::move(onBack)) {
     if (recentStyle_ && style_ == HomeTheme::CarouselStyle::Centered) {
@@ -44,6 +48,9 @@ class BaseCarouselActivity final : public Activity {
   HomeTheme::CarouselLabelColor labelColor_ = HomeTheme::CarouselLabelColor::Black;
   HomeTheme::CarouselShadowStyle shadowStyle_ = HomeTheme::CarouselShadowStyle::None;
   bool recentStyle_ = false;
+  bool showTitle_ = true;
+  bool showAuthor_ = true;
+  bool showProgress_ = true;
   ApplyCallback onApply_;
   std::function<void()> onBack_;
 

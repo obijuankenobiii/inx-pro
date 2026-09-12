@@ -12,6 +12,7 @@
 #include "../widget/Favorites.h"
 #include "../widget/Heatmap.h"
 #include "../widget/Library.h"
+#include "../widget/Description.h"
 #include "state/HomeTheme.h"
 
 class GfxRenderer;
@@ -88,4 +89,5 @@ class HomeWidgetLayout final {
   Favorites favorites_;
   Heatmap heatmap_;
   LibraryWidget library_;
+  Description description_;
 };

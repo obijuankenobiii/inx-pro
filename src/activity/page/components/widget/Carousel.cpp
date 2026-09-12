@@ -103,6 +103,27 @@ void renderCover(GfxRenderer& renderer, const RecentBook& book, const int x, con
                        EpdFontFamily::REGULAR);
 }
 
+void renderProgressTag(GfxRenderer& renderer, const RecentBook& book, const int x, const int y, const int width,
+                       const int height) {
+  if (width < 8 || height < 8) return;
+
+  constexpr int paddingX = 6;
+  constexpr int paddingY = 4;
+  constexpr int margin = 5;
+  constexpr int font = MONTSERRAT_8_FONT_ID;
+  const int percentage = book.progress < 0.0f
+                             ? 0
+                             : std::max(0, std::min(100, static_cast<int>(book.progress * 100.0f + 0.5f)));
+  const std::string label = std::to_string(percentage) + "%";
+  const int tagWidth = renderer.text.getWidth(font, label.c_str()) + paddingX * 2;
+  const int tagHeight = renderer.text.getLineHeight(font) + paddingY * 2;
+  const int tagX = x + std::max(0, width - tagWidth - margin);
+  const int tagY = y + margin;
+  renderer.rectangle.fill(tagX, tagY, tagWidth, tagHeight, static_cast<int>(GfxRenderer::FillTone::Ink), true);
+  renderer.rectangle.render(tagX, tagY, tagWidth, tagHeight, false, true);
+  renderer.text.render(font, tagX + paddingX, tagY + paddingY, label.c_str(), false);
+}
+
 void preloadCover(GfxRenderer& renderer, const RecentBook& book, const int x, const int y, const int width,
                   const int height, const float cropAnchorX, const bool cropToFill = true) {
   const std::string path = thumbnailPath(book.cachePath);
@@ -239,12 +260,12 @@ void preloadFrame(GfxRenderer& renderer, const std::vector<RecentBook>& books, c
 void Carousel::render(const int index, const int x, const int y, const int width, const int height,
                       const bool background, const HomeTheme::CarouselStyle style, const bool showLabel,
                       const HomeTheme::CarouselLabelColor labelColor,
-                      const HomeTheme::CarouselShadowStyle shadowStyle) const {
+                      const HomeTheme::CarouselShadowStyle shadowStyle, const bool showProgress) const {
   renderBackground(x, y, width, height, background);
   const ContentArea content = contentArea(y, height, showLabel);
   if (showLabel) renderLabel(x, y, "Continue Reading", labelColor);
   if (style == HomeTheme::CarouselStyle::Left) {
-    renderLeft(index, x, content.y, width, content.height, shadowStyle);
+    renderLeft(index, x, content.y, width, content.height, shadowStyle, showProgress);
     return;
   }
   const auto& books = RECENT_BOOKS.getBooks();
@@ -267,25 +288,42 @@ void Carousel::render(const int index, const int x, const int y, const int width
     const bool even = evenThumbnails();
     renderCover(renderer_, books[0], layout.centerX, layout.centerY, layout.centerWidth, layout.centerHeight,
                 MONTSERRAT_14_FONT_ID, 0.5f, even, shadowStyle);
+    if (showProgress) renderProgressTag(renderer_, books[0], layout.centerX, layout.centerY, layout.centerWidth,
+                                         layout.centerHeight);
     renderCover(renderer_, books[1], layout.sideX, layout.sideY, layout.sideWidth, layout.sideHeight,
                 MONTSERRAT_10_FONT_ID, 0.5f, even, shadowStyle);
+    if (showProgress) renderProgressTag(renderer_, books[1], layout.sideX, layout.sideY, layout.sideWidth,
+                                         layout.sideHeight);
     return;
   }
   const bool even = evenThumbnails();
   if (books.size() > 1) {
     renderCover(renderer_, books[(current + books.size() - 1) % books.size()], layout.sideX, layout.sideY,
                 layout.sideWidth, layout.sideHeight, MONTSERRAT_10_FONT_ID, 1.0f, true, shadowStyle);
+    if (showProgress) {
+      const RecentBook& book = books[(current + books.size() - 1) % books.size()];
+      renderProgressTag(renderer_, book, layout.sideX, layout.sideY, layout.sideWidth, layout.sideHeight);
+    }
   }
   if (books.size() > 1) {
     renderCover(renderer_, books[(current + 1) % books.size()], layout.centerX + layout.centerWidth + layout.gap,
                 layout.sideY, layout.sideWidth, layout.sideHeight, MONTSERRAT_10_FONT_ID, 0.0f, true, shadowStyle);
+    if (showProgress) {
+      const RecentBook& book = books[(current + 1) % books.size()];
+      renderProgressTag(renderer_, book, layout.centerX + layout.centerWidth + layout.gap, layout.sideY,
+                        layout.sideWidth, layout.sideHeight);
+    }
   }
   renderCover(renderer_, books[current], layout.centerX, layout.centerY, layout.centerWidth, layout.centerHeight,
               MONTSERRAT_14_FONT_ID, 0.5f, even, shadowStyle);
+  if (showProgress) {
+    renderProgressTag(renderer_, books[current], layout.centerX, layout.centerY, layout.centerWidth,
+                      layout.centerHeight);
+  }
 }
 
 void Carousel::renderLeft(const int index, const int x, const int y, const int width, const int height,
-                          const HomeTheme::CarouselShadowStyle shadowStyle) const {
+                          const HomeTheme::CarouselShadowStyle shadowStyle, const bool showProgress) const {
   const auto& books = RECENT_BOOKS.getBooks();
   if (books.empty()) {
     renderer_.text.centered(systemFontId(), y + height / 2, "No recent");
@@ -305,6 +343,9 @@ void Carousel::renderLeft(const int index, const int x, const int y, const int w
     if (visibleWidth <= 0) break;
     renderCover(renderer_, books[static_cast<size_t>(bookIndex)], card.x, card.y, visibleWidth, card.height,
                 MONTSERRAT_10_FONT_ID, 0.5f, even || visibleWidth < card.width, shadowStyle);
+    if (showProgress) {
+      renderProgressTag(renderer_, books[static_cast<size_t>(bookIndex)], card.x, card.y, visibleWidth, card.height);
+    }
     cardX += card.width + kLeftCardGap;
   }
 }
@@ -355,22 +396,26 @@ void Carousel::preload(const int index, const int x, const int y, const int widt
 void Carousel::preview(const int x, const int y, const int width, const int height, const bool background,
                        const HomeTheme::CarouselStyle style, const bool showLabel,
                        const HomeTheme::CarouselLabelColor labelColor,
-                       const HomeTheme::CarouselShadowStyle shadowStyle) const {
+                       const HomeTheme::CarouselShadowStyle shadowStyle, const bool showProgress) const {
   renderBackground(x, y, width, height, background);
   const ContentArea content = contentArea(y, height, showLabel);
   if (showLabel) renderLabel(x, y, "Continue Reading", labelColor);
   if (style == HomeTheme::CarouselStyle::Left) {
-    previewLeft(x, content.y, width, content.height, shadowStyle);
+    previewLeft(x, content.y, width, content.height, shadowStyle, showProgress);
     return;
   }
   const CarouselBounds layout = bounds(x, content.y, width, content.height);
 
-  auto renderCoverPlaceholder = [this, shadowStyle](const int coverX, const int coverY, const int coverWidth,
-                                                const int coverHeight) {
+  auto renderCoverPlaceholder = [this, shadowStyle, showProgress](const int coverX, const int coverY,
+                                                                  const int coverWidth, const int coverHeight) {
     renderShadow(renderer_, coverX + 6, coverY + 6, coverWidth, coverHeight, shadowStyle);
     renderer_.rectangle.fill(coverX, coverY, coverWidth, coverHeight, false);
     renderer_.rectangle.render(coverX, coverY, coverWidth, coverHeight, true,
                                SETTINGS.bitmapRoundedCorners != 0, SETTINGS.bitmapRoundedCorners == 2);
+    if (showProgress) {
+      const RecentBook placeholder("", "", "Book title", "Author", 0.65f);
+      renderProgressTag(renderer_, placeholder, coverX, coverY, coverWidth, coverHeight);
+    }
   };
 
   renderCoverPlaceholder(layout.sideX, layout.sideY, layout.sideWidth, layout.sideHeight);
@@ -380,7 +425,7 @@ void Carousel::preview(const int x, const int y, const int width, const int heig
 }
 
 void Carousel::previewLeft(const int x, const int y, const int width, const int height,
-                           const HomeTheme::CarouselShadowStyle shadowStyle) const {
+                           const HomeTheme::CarouselShadowStyle shadowStyle, const bool showProgress) const {
   constexpr int horizontalPadding = kLeftCardMargin;
   constexpr int topPadding = 20;
   constexpr int bottomPadding = 20;
@@ -398,6 +443,10 @@ void Carousel::previewLeft(const int x, const int y, const int width, const int 
     renderer_.rectangle.fill(cardX, cardY, visibleWidth, cardHeight, false);
     renderer_.rectangle.render(cardX, cardY, visibleWidth, cardHeight, true,
                                SETTINGS.bitmapRoundedCorners != 0, SETTINGS.bitmapRoundedCorners == 2);
+    if (showProgress) {
+      const RecentBook placeholder("", "", "Book title", "Author", 0.65f);
+      renderProgressTag(renderer_, placeholder, cardX, cardY, visibleWidth, cardHeight);
+    }
   }
 }
 

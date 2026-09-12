@@ -7,7 +7,7 @@
 HomeWidgetLayout::HomeWidgetLayout(GfxRenderer& renderer)
     : renderer_(renderer), carousel_(renderer), clock_(renderer), calendar_(renderer), recent_(renderer),
       shortcut_(renderer), shortcutList_(renderer), temperature_(renderer), humidity_(renderer), todaysReading_(renderer),
-      favorites_(renderer), heatmap_(renderer), library_(renderer) {}
+      favorites_(renderer), heatmap_(renderer), library_(renderer), description_(renderer) {}
 
 void HomeWidgetLayout::render(const HomeTheme::Theme& theme, const int carouselIndex, const int favoriteIndex) const {
   switch (theme.layout) {
@@ -130,13 +130,24 @@ void HomeWidgetLayout::renderClassic(const int carouselIndex) const {
 void HomeWidgetLayout::renderGrid(const HomeTheme::Theme& theme, const int carouselIndex, const int favoriteIndex,
                                   const bool sleep) const {
   const Grid layout = grid(theme.layout, sleep, sleep ? &theme : nullptr);
+  int descriptionRecentIndex = -1;
+  for (int slot = 0; slot < HomeTheme::slotCount(theme.layout); ++slot) {
+    if (theme.widgets[slot] == HomeTheme::Widget::Carousel) {
+      descriptionRecentIndex = carouselIndex;
+      break;
+    }
+    if (descriptionRecentIndex < 0 && theme.widgets[slot] == HomeTheme::Widget::Recent) {
+      descriptionRecentIndex = 0;
+    }
+  }
   for (int slot = 0; slot < HomeTheme::slotCount(theme.layout); ++slot) {
     const Bounds bounds = slotBounds(layout, slot);
     switch (theme.widgets[slot]) {
       case HomeTheme::Widget::Carousel:
         carousel_.render(carouselIndex, bounds.x, bounds.y, bounds.width, bounds.height,
                          theme.backgrounds[slot] != 0, theme.carouselStyles[slot], theme.carouselLabels[slot] != 0,
-                         theme.carouselLabelColors[slot], theme.carouselShadowStyles[slot]);
+                         theme.carouselLabelColors[slot], theme.carouselShadowStyles[slot],
+                         theme.carouselProgress[slot] != 0);
         break;
       case HomeTheme::Widget::Shortcuts:
         shortcut_.render(bounds.x, bounds.y, bounds.width, bounds.height);
@@ -153,7 +164,8 @@ void HomeWidgetLayout::renderGrid(const HomeTheme::Theme& theme, const int carou
       case HomeTheme::Widget::Recent:
         recent_.render(bounds.x, bounds.y, bounds.width, bounds.height, theme.backgrounds[slot] != 0,
                        theme.carouselStyles[slot], theme.carouselLabels[slot] != 0, theme.carouselLabelColors[slot],
-                       theme.carouselShadowStyles[slot]);
+                       theme.carouselShadowStyles[slot], theme.recentTitles[slot] != 0, theme.recentAuthors[slot] != 0,
+                       theme.recentProgress[slot] != 0);
         break;
 #if FREEINK_DEVICE_STICKY
       case HomeTheme::Widget::Temperature:
@@ -178,6 +190,13 @@ void HomeWidgetLayout::renderGrid(const HomeTheme::Theme& theme, const int carou
       case HomeTheme::Widget::Library:
         library_.render(bounds.x, bounds.y, bounds.width, bounds.height, theme.libraryFolders[slot],
                         theme.backgrounds[slot] != 0, theme.carouselLabels[slot] != 0);
+        break;
+      case HomeTheme::Widget::Description:
+        description_.render(descriptionRecentIndex, bounds.x, bounds.y, bounds.width, bounds.height,
+                            theme.backgrounds[slot] != 0, theme.carouselLabels[slot] != 0,
+                            theme.carouselLabelColors[slot], theme.carouselShadowStyles[slot],
+                            theme.descriptionTitles[slot] != 0, theme.descriptionAuthors[slot] != 0,
+                            theme.descriptionProgress[slot] != 0);
         break;
       case HomeTheme::Widget::Empty:
       default:

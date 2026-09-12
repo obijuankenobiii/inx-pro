@@ -595,12 +595,14 @@ bool FontManager::loadFontFromSD(int fontId, GfxRenderer& renderer, const bool e
 }
 
 bool FontManager::ensureReaderLayoutFonts(int bodyFontId, GfxRenderer& renderer) {
-  const int maxFontId = getMaxFontId(bodyFontId);
   const int headerFontId = getNextFont(bodyFontId);
-  int requiredIds[3] = {bodyFontId, maxFontId, headerFontId};
+  // Drop caps select their proportional size when the parser encounters one.
+  // Do not preload the family's largest size here; for outline fonts that is
+  // commonly the generated 60pt variant and wastes PSRAM on ordinary chapters.
+  int requiredIds[2] = {bodyFontId, headerFontId};
   int requiredCount = 0;
 
-  for (int i = 0; i < 3; ++i) {
+  for (int i = 0; i < 2; ++i) {
     bool seen = false;
     for (int j = 0; j < requiredCount; ++j) {
       if (requiredIds[j] == requiredIds[i]) {
@@ -1108,4 +1110,16 @@ int FontManager::getFontIdNearestPointSize(const std::string& family, int prefer
     return largestLtId;
   }
   return MONTSERRAT_14_FONT_ID;
+}
+
+int FontManager::getDropCapFontId(const int bodyFontId, const uint8_t lineCount) {
+  const FontInfo* bodyInfo = getFontInfo(bodyFontId);
+  if (!bodyInfo || bodyInfo->isBuiltin) {
+    return getMaxFontId(bodyFontId);
+  }
+
+  const int lines = std::max(1, static_cast<int>(lineCount));
+  const int targetPt = std::clamp(bodyInfo->size * lines, static_cast<int>(OUTLINE_FONT_MIN_POINT_SIZE),
+                                  static_cast<int>(OUTLINE_FONT_MAX_POINT_SIZE));
+  return getFontIdNearestPointSize(bodyInfo->family, targetPt);
 }

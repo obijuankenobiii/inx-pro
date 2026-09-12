@@ -11,7 +11,10 @@ namespace HomeTheme {
 namespace {
 
 constexpr char kThemeFile[] = "/.system/home_themes.bin";
-constexpr uint8_t kVersion = 16;
+constexpr uint8_t kVersion = 19;
+constexpr uint8_t kDescriptionOptionsVersion = 17;
+constexpr uint8_t kRecentOptionsVersion = 18;
+constexpr uint8_t kLibraryFoldersVersion = 17;
 constexpr uint8_t kLegacyLibraryFoldersVersion = 13;
 constexpr uint8_t kLegacyMultiLibraryFoldersVersion = 14;
 constexpr uint8_t kLegacySingleLibraryFoldersVersion = 15;
@@ -41,6 +44,9 @@ void setDefaultCarouselLabels(Theme& theme);
 CarouselLabelColor defaultCarouselLabelColor(Widget widget);
 void setDefaultCarouselLabelColors(Theme& theme);
 void setDefaultCarouselShadowStyles(Theme& theme);
+void setDefaultDescriptionOptions(Theme& theme);
+void setDefaultRecentOptions(Theme& theme);
+void setDefaultCarouselProgress(Theme& theme);
 void setDefaultHeatmapViews(Theme& theme);
 void setDefaultLibraryFolders(Theme& theme);
 
@@ -51,15 +57,22 @@ void makeDefault() {
   setName(themes[0], "Home");
   themes[0].layout = Layout::OneByTwo;
   for (Widget& widget : themes[0].widgets) widget = Widget::Empty;
-  themes[0].widgets[0] = Widget::TodaysReading;
-  themes[0].widgets[1] = Widget::Carousel;
+  themes[0].widgets[0] = Widget::Carousel;
+  themes[0].widgets[1] = Widget::Description;
   setDefaultBackgrounds(themes[0]);
   setDefaultCarouselStyles(themes[0]);
   setDefaultCarouselLabels(themes[0]);
   setDefaultCarouselLabelColors(themes[0]);
   setDefaultCarouselShadowStyles(themes[0]);
+  setDefaultDescriptionOptions(themes[0]);
+  setDefaultRecentOptions(themes[0]);
+  setDefaultCarouselProgress(themes[0]);
   setDefaultHeatmapViews(themes[0]);
   setDefaultLibraryFolders(themes[0]);
+  themes[0].carouselStyles[0] = CarouselStyle::Left;
+  themes[0].carouselLabels[0] = 0;
+  themes[0].backgrounds[0] = 0;
+  themes[0].carouselProgress[0] = 0;
   sleepTheme = {};
   setName(sleepTheme, "Sleep");
   sleepTheme.layout = Layout::OneByTwo;
@@ -72,15 +85,22 @@ bool repairEmptyHomeTheme() {
       themes[0].widgets[0] != Widget::Empty || themes[0].widgets[1] != Widget::Empty) {
     return false;
   }
-  themes[0].widgets[0] = Widget::TodaysReading;
-  themes[0].widgets[1] = Widget::Carousel;
+  themes[0].widgets[0] = Widget::Carousel;
+  themes[0].widgets[1] = Widget::Description;
   setDefaultBackgrounds(themes[0]);
   setDefaultCarouselStyles(themes[0]);
   setDefaultCarouselLabels(themes[0]);
   setDefaultCarouselLabelColors(themes[0]);
   setDefaultCarouselShadowStyles(themes[0]);
+  setDefaultDescriptionOptions(themes[0]);
+  setDefaultRecentOptions(themes[0]);
+  setDefaultCarouselProgress(themes[0]);
   setDefaultHeatmapViews(themes[0]);
   setDefaultLibraryFolders(themes[0]);
+  themes[0].carouselStyles[0] = CarouselStyle::Left;
+  themes[0].carouselLabels[0] = 0;
+  themes[0].backgrounds[0] = 0;
+  themes[0].carouselProgress[0] = 0;
   return true;
 }
 
@@ -91,7 +111,7 @@ void ensureLoaded() {
 bool validLayout(const uint8_t value) { return value <= static_cast<uint8_t>(Layout::TwoByTwo); }
 
 bool validWidget(const uint8_t value) {
-  return value <= static_cast<uint8_t>(Widget::Library);
+  return value <= static_cast<uint8_t>(Widget::Description);
 }
 
 bool validBorder(const uint8_t value) {
@@ -142,6 +162,26 @@ void setDefaultCarouselShadowStyles(Theme& theme) {
   for (CarouselShadowStyle& style : theme.carouselShadowStyles) style = CarouselShadowStyle::None;
 }
 
+void setDefaultDescriptionOptions(Theme& theme) {
+  for (int i = 0; i < 4; ++i) {
+    theme.descriptionTitles[i] = 1;
+    theme.descriptionAuthors[i] = 1;
+    theme.descriptionProgress[i] = 1;
+  }
+}
+
+void setDefaultRecentOptions(Theme& theme) {
+  for (int i = 0; i < 4; ++i) {
+    theme.recentTitles[i] = 1;
+    theme.recentAuthors[i] = 1;
+    theme.recentProgress[i] = 1;
+  }
+}
+
+void setDefaultCarouselProgress(Theme& theme) {
+  for (uint8_t& value : theme.carouselProgress) value = 1;
+}
+
 void setDefaultHeatmapViews(Theme& theme) {
   for (HeatmapView& view : theme.heatmapViews) view = HeatmapView::Weekly;
 }
@@ -179,7 +219,8 @@ void load() {
   if ((version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != 7 &&
        version != kLegacyCarouselShadowVersion && version != kLegacyCarouselShadowStyleVersion &&
        version != 10 && version != 11 && version != kHeatmapViewVersion && version != kLegacyLibraryFoldersVersion &&
-       version != kLegacyMultiLibraryFoldersVersion && version != kLegacySingleLibraryFoldersVersion &&
+       version != kLegacyMultiLibraryFoldersVersion && version != kLegacySingleLibraryFoldersVersion && version != 16 &&
+       version != 17 && version != 18 &&
        version != kVersion) || storedCount == 0 ||
       storedCount > kMaxThemes) {
     file.close();
@@ -242,7 +283,7 @@ void load() {
       }
       serialization::readPod(file, theme.carouselLabels[i]);
       theme.carouselLabels[i] = theme.carouselLabels[i] != 0 ? 1 : 0;
-      if (version < kVersion && theme.widgets[i] == Widget::Heatmap) theme.carouselLabels[i] = 1;
+      if (version < kDescriptionOptionsVersion && theme.widgets[i] == Widget::Heatmap) theme.carouselLabels[i] = 1;
     }
     for (int i = 0; i < 4; ++i) {
       if (version < kLegacyCarouselShadowVersion) {
@@ -278,6 +319,42 @@ void load() {
       theme.carouselShadowStyles[i] = style;
     }
     for (int i = 0; i < 4; ++i) {
+      if (version < kDescriptionOptionsVersion) {
+        theme.descriptionTitles[i] = 1;
+        theme.descriptionAuthors[i] = 1;
+        theme.descriptionProgress[i] = 1;
+        continue;
+      }
+      serialization::readPod(file, theme.descriptionTitles[i]);
+      serialization::readPod(file, theme.descriptionAuthors[i]);
+      serialization::readPod(file, theme.descriptionProgress[i]);
+      theme.descriptionTitles[i] = theme.descriptionTitles[i] != 0 ? 1 : 0;
+      theme.descriptionAuthors[i] = theme.descriptionAuthors[i] != 0 ? 1 : 0;
+      theme.descriptionProgress[i] = theme.descriptionProgress[i] != 0 ? 1 : 0;
+    }
+    for (int i = 0; i < 4; ++i) {
+      if (version < kRecentOptionsVersion) {
+        theme.recentTitles[i] = 1;
+        theme.recentAuthors[i] = 1;
+        theme.recentProgress[i] = 1;
+        continue;
+      }
+      serialization::readPod(file, theme.recentTitles[i]);
+      serialization::readPod(file, theme.recentAuthors[i]);
+      serialization::readPod(file, theme.recentProgress[i]);
+      theme.recentTitles[i] = theme.recentTitles[i] != 0 ? 1 : 0;
+      theme.recentAuthors[i] = theme.recentAuthors[i] != 0 ? 1 : 0;
+      theme.recentProgress[i] = theme.recentProgress[i] != 0 ? 1 : 0;
+    }
+    for (int i = 0; i < 4; ++i) {
+      if (version < kVersion) {
+        theme.carouselProgress[i] = 1;
+        continue;
+      }
+      serialization::readPod(file, theme.carouselProgress[i]);
+      theme.carouselProgress[i] = theme.carouselProgress[i] != 0 ? 1 : 0;
+    }
+    for (int i = 0; i < 4; ++i) {
       if (version < kHeatmapViewVersion) {
         theme.heatmapViews[i] = HeatmapView::Weekly;
         continue;
@@ -286,14 +363,14 @@ void load() {
       serialization::readPod(file, value);
       theme.heatmapViews[i] = validHeatmapView(value) ? static_cast<HeatmapView>(value) : HeatmapView::Weekly;
     }
-    if (version >= kVersion || version == kLegacyMultiLibraryFoldersVersion) {
+    if (version >= kLibraryFoldersVersion || version == kLegacyMultiLibraryFoldersVersion) {
       for (auto& library : theme.libraryFolders) {
         std::string value;
         serialization::readString(file, value);
         setLibraryFolder(library[0], value.c_str());
-        if (version >= kVersion || version == kLegacyMultiLibraryFoldersVersion) {
+        if (version >= kLibraryFoldersVersion || version == kLegacyMultiLibraryFoldersVersion) {
           for (int extra = 1; extra < 3; ++extra) {
-            if (version >= kVersion || version == kLegacyMultiLibraryFoldersVersion) {
+            if (version >= kLibraryFoldersVersion || version == kLegacyMultiLibraryFoldersVersion) {
               serialization::readString(file, value);
               setLibraryFolder(library[extra], value.c_str());
             } else {
@@ -322,6 +399,9 @@ void load() {
       for (uint8_t& label : theme.carouselLabels) label = 0;
       for (CarouselLabelColor& color : theme.carouselLabelColors) color = CarouselLabelColor::Black;
       for (CarouselShadowStyle& style : theme.carouselShadowStyles) style = CarouselShadowStyle::None;
+      setDefaultDescriptionOptions(theme);
+      setDefaultRecentOptions(theme);
+      setDefaultCarouselProgress(theme);
       for (HeatmapView& view : theme.heatmapViews) view = HeatmapView::Weekly;
       setDefaultLibraryFolders(theme);
     }
@@ -395,6 +475,17 @@ bool save() {
     for (const CarouselShadowStyle style : theme.carouselShadowStyles) {
       serialization::writePod(file, static_cast<uint8_t>(style));
     }
+    for (int i = 0; i < 4; ++i) {
+      serialization::writePod(file, theme.descriptionTitles[i]);
+      serialization::writePod(file, theme.descriptionAuthors[i]);
+      serialization::writePod(file, theme.descriptionProgress[i]);
+    }
+    for (int i = 0; i < 4; ++i) {
+      serialization::writePod(file, theme.recentTitles[i]);
+      serialization::writePod(file, theme.recentAuthors[i]);
+      serialization::writePod(file, theme.recentProgress[i]);
+    }
+    for (int i = 0; i < 4; ++i) serialization::writePod(file, theme.carouselProgress[i]);
     for (const HeatmapView view : theme.heatmapViews) {
       serialization::writePod(file, static_cast<uint8_t>(view));
     }
@@ -441,7 +532,9 @@ void activate(const int index) {
 int add(const Layout layout, const Widget* widgets, const Border* borders, const uint8_t* backgrounds,
         const CarouselStyle* carouselStyles, const uint8_t* carouselLabels,
         const CarouselLabelColor* carouselLabelColors, const CarouselShadowStyle* carouselShadowStyles,
-        const HeatmapView* heatmapViews,
+        const HeatmapView* heatmapViews, const uint8_t* descriptionTitles, const uint8_t* descriptionAuthors,
+        const uint8_t* descriptionProgress, const uint8_t* recentTitles, const uint8_t* recentAuthors,
+        const uint8_t* recentProgress, const uint8_t* carouselProgress,
         const char (*libraryFolders)[3][128],
         const int slotCountValue) {
   ensureLoaded();
@@ -472,6 +565,27 @@ int add(const Layout layout, const Widget* widgets, const Border* borders, const
                                             validCarouselShadowStyle(static_cast<uint8_t>(carouselShadowStyles[i]))
                                         ? carouselShadowStyles[i]
                                         : CarouselShadowStyle::None;
+    theme.descriptionTitles[i] = layout != Layout::Classic && descriptionTitles && i < slotCountValue
+                                     ? (descriptionTitles[i] != 0 ? 1 : 0)
+                                     : 1;
+    theme.descriptionAuthors[i] = layout != Layout::Classic && descriptionAuthors && i < slotCountValue
+                                      ? (descriptionAuthors[i] != 0 ? 1 : 0)
+                                      : 1;
+    theme.descriptionProgress[i] = layout != Layout::Classic && descriptionProgress && i < slotCountValue
+                                       ? (descriptionProgress[i] != 0 ? 1 : 0)
+                                       : 1;
+    theme.recentTitles[i] = layout != Layout::Classic && recentTitles && i < slotCountValue
+                                ? (recentTitles[i] != 0 ? 1 : 0)
+                                : 1;
+    theme.recentAuthors[i] = layout != Layout::Classic && recentAuthors && i < slotCountValue
+                                 ? (recentAuthors[i] != 0 ? 1 : 0)
+                                 : 1;
+    theme.recentProgress[i] = layout != Layout::Classic && recentProgress && i < slotCountValue
+                                  ? (recentProgress[i] != 0 ? 1 : 0)
+                                  : 1;
+    theme.carouselProgress[i] = layout != Layout::Classic && carouselProgress && i < slotCountValue
+                                    ? (carouselProgress[i] != 0 ? 1 : 0)
+                                    : 1;
     theme.heatmapViews[i] = layout != Layout::Classic && heatmapViews && i < slotCountValue &&
                                    validHeatmapView(static_cast<uint8_t>(heatmapViews[i]))
                                ? heatmapViews[i]
@@ -491,7 +605,9 @@ int add(const Layout layout, const Widget* widgets, const Border* borders, const
 void update(const int index, const Layout layout, const Widget* widgets, const Border* borders,
             const uint8_t* backgrounds, const CarouselStyle* carouselStyles, const uint8_t* carouselLabels,
             const CarouselLabelColor* carouselLabelColors, const CarouselShadowStyle* carouselShadowStyles,
-            const HeatmapView* heatmapViews,
+            const HeatmapView* heatmapViews, const uint8_t* descriptionTitles, const uint8_t* descriptionAuthors,
+            const uint8_t* descriptionProgress, const uint8_t* recentTitles, const uint8_t* recentAuthors,
+            const uint8_t* recentProgress, const uint8_t* carouselProgress,
             const char (*libraryFolders)[3][128],
             const int slotCountValue) {
   ensureLoaded();
@@ -519,6 +635,27 @@ void update(const int index, const Layout layout, const Widget* widgets, const B
                                             validCarouselShadowStyle(static_cast<uint8_t>(carouselShadowStyles[i]))
                                         ? carouselShadowStyles[i]
                                         : CarouselShadowStyle::None;
+    theme.descriptionTitles[i] = layout != Layout::Classic && descriptionTitles && i < slotCountValue
+                                     ? (descriptionTitles[i] != 0 ? 1 : 0)
+                                     : 1;
+    theme.descriptionAuthors[i] = layout != Layout::Classic && descriptionAuthors && i < slotCountValue
+                                      ? (descriptionAuthors[i] != 0 ? 1 : 0)
+                                      : 1;
+    theme.descriptionProgress[i] = layout != Layout::Classic && descriptionProgress && i < slotCountValue
+                                       ? (descriptionProgress[i] != 0 ? 1 : 0)
+                                       : 1;
+    theme.recentTitles[i] = layout != Layout::Classic && recentTitles && i < slotCountValue
+                                ? (recentTitles[i] != 0 ? 1 : 0)
+                                : 1;
+    theme.recentAuthors[i] = layout != Layout::Classic && recentAuthors && i < slotCountValue
+                                 ? (recentAuthors[i] != 0 ? 1 : 0)
+                                 : 1;
+    theme.recentProgress[i] = layout != Layout::Classic && recentProgress && i < slotCountValue
+                                  ? (recentProgress[i] != 0 ? 1 : 0)
+                                  : 1;
+    theme.carouselProgress[i] = layout != Layout::Classic && carouselProgress && i < slotCountValue
+                                    ? (carouselProgress[i] != 0 ? 1 : 0)
+                                    : 1;
     theme.heatmapViews[i] = layout != Layout::Classic && heatmapViews && i < slotCountValue &&
                                    validHeatmapView(static_cast<uint8_t>(heatmapViews[i]))
                                ? heatmapViews[i]
@@ -536,7 +673,9 @@ void update(const int index, const Layout layout, const Widget* widgets, const B
 void updateSleep(const Layout layout, const Widget* widgets, const Border* borders, const uint8_t* backgrounds,
                  const CarouselStyle* carouselStyles, const uint8_t* carouselLabels,
                  const CarouselLabelColor* carouselLabelColors, const CarouselShadowStyle* carouselShadowStyles,
-                 const HeatmapView* heatmapViews,
+                 const HeatmapView* heatmapViews, const uint8_t* descriptionTitles, const uint8_t* descriptionAuthors,
+                 const uint8_t* descriptionProgress, const uint8_t* recentTitles, const uint8_t* recentAuthors,
+                 const uint8_t* recentProgress, const uint8_t* carouselProgress,
                  const char (*libraryFolders)[3][128],
                  const int slotCountValue) {
   ensureLoaded();
@@ -562,6 +701,27 @@ void updateSleep(const Layout layout, const Widget* widgets, const Border* borde
                                                  validCarouselShadowStyle(static_cast<uint8_t>(carouselShadowStyles[i]))
                                              ? carouselShadowStyles[i]
                                              : CarouselShadowStyle::None;
+    sleepTheme.descriptionTitles[i] = layout != Layout::Classic && descriptionTitles && i < slotCountValue
+                                          ? (descriptionTitles[i] != 0 ? 1 : 0)
+                                          : 1;
+    sleepTheme.descriptionAuthors[i] = layout != Layout::Classic && descriptionAuthors && i < slotCountValue
+                                           ? (descriptionAuthors[i] != 0 ? 1 : 0)
+                                           : 1;
+    sleepTheme.descriptionProgress[i] = layout != Layout::Classic && descriptionProgress && i < slotCountValue
+                                            ? (descriptionProgress[i] != 0 ? 1 : 0)
+                                            : 1;
+    sleepTheme.recentTitles[i] = layout != Layout::Classic && recentTitles && i < slotCountValue
+                                     ? (recentTitles[i] != 0 ? 1 : 0)
+                                     : 1;
+    sleepTheme.recentAuthors[i] = layout != Layout::Classic && recentAuthors && i < slotCountValue
+                                      ? (recentAuthors[i] != 0 ? 1 : 0)
+                                      : 1;
+    sleepTheme.recentProgress[i] = layout != Layout::Classic && recentProgress && i < slotCountValue
+                                       ? (recentProgress[i] != 0 ? 1 : 0)
+                                       : 1;
+    sleepTheme.carouselProgress[i] = layout != Layout::Classic && carouselProgress && i < slotCountValue
+                                         ? (carouselProgress[i] != 0 ? 1 : 0)
+                                         : 1;
     sleepTheme.heatmapViews[i] = layout != Layout::Classic && heatmapViews && i < slotCountValue &&
                                          validHeatmapView(static_cast<uint8_t>(heatmapViews[i]))
                                      ? heatmapViews[i]
@@ -632,6 +792,8 @@ const char* widgetLabel(const Widget widget) {
       return "Reading Heatmap";
     case Widget::Library:
       return "Library";
+    case Widget::Description:
+      return "Description";
     default:
       return "Unknown";
   }
