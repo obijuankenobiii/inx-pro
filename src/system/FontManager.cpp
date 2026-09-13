@@ -14,6 +14,7 @@
 
 #include "EpdFontFamily.h"
 #include "ExternalFont.h"
+#include "FontPreviews.h"
 #include "SDCardManager.h"
 #include "system/Fonts.h"
 
@@ -180,6 +181,7 @@ void FontManager::initialize(GfxRenderer& renderer) {
   renderer.insertFont(MONTSERRAT_18_FONT_ID, montserrat18FontFamily);
 
   renderer.insertFont(MONTSERRAT_CLOCK_70_FONT_ID, montserratClock70FontFamily);
+  FontPreviews::initialize(renderer);
 
   INX_SERIAL.println("[FontManager] Initialized (Montserrat + SD streaming)");
 }

@@ -951,11 +951,19 @@ void EpubActivity::startVoiceNoteForSelection(const std::string& selectedText, c
             annUi_.setPendingNoteText(note);
           }
         }
-        updateRequired = true;
+        if (attachToHighlight) {
+          restoreWordSelectionAfterNote();
+        } else {
+          updateRequired = true;
+        }
       },
-      [this]() {
+      [this, attachToHighlight]() {
         exitActivity();
-        updateRequired = true;
+        if (attachToHighlight) {
+          restoreWordSelectionAfterNote();
+        } else {
+          updateRequired = true;
+        }
       }));
   return;
 #else
@@ -978,13 +986,33 @@ void EpubActivity::startVoiceNoteForSelection(const std::string& selectedText, c
         } else if (!success) {
           readerPopup("Could not record note");
         }
-        updateRequired = true;
+        if (attachToHighlight) {
+          restoreWordSelectionAfterNote();
+        } else {
+          updateRequired = true;
+        }
       },
-      [this]() {
+      [this, attachToHighlight]() {
         exitActivity();
-        updateRequired = true;
+        if (attachToHighlight) {
+          restoreWordSelectionAfterNote();
+        } else {
+          updateRequired = true;
+        }
       }));
 #endif
+}
+
+void EpubActivity::restoreWordSelectionAfterNote() {
+  if (!wordSelectionOpen_ || selectedWord_ < 0 || selectedWord_ >= static_cast<int>(touchWords_.size())) {
+    updateRequired = true;
+    return;
+  }
+
+  wordActionsOpen_ = true;
+  INX_SERIAL.printf("[%lu] [WORD_SELECTION] restored after note anchor=%d focus=%d\n", millis(),
+                    wordSelectionAnchor_, wordSelectionFocus_);
+  renderWordSelection();
 }
 
 bool EpubActivity::handleWordTouch() {
@@ -1223,13 +1251,16 @@ bool EpubActivity::handleWordSelection() {
   }
   const PageWordHit word = touchWords_[static_cast<size_t>(selectedWord_)];
   const std::string actionLabel = actions[static_cast<size_t>(action)];
+  const bool keepSelectionForNote = actionLabel == "Add note";
   bool highlighted = false;
   if (actionLabel == "Highlight") {
     highlighted = annUi_.saveExternalHighlight(*this, selectedText, static_cast<size_t>(wordLo),
                                                 static_cast<size_t>(wordHi));
   }
-  closeWordSelection();
-  renderScreen(true);
+  if (!keepSelectionForNote) {
+    closeWordSelection();
+    renderScreen(true);
+  }
   pauseReadingStats();
 
   if (actionLabel == "Look up") {

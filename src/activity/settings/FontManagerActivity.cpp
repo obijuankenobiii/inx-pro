@@ -16,6 +16,7 @@
 #include "images/Trash.h"
 #include "state/ReaderSetting.h"
 #include "system/FontManager.h"
+#include "system/FontPreviews.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
 #include "util/StringUtils.h"
@@ -450,8 +451,12 @@ void FontManagerActivity::render() {
     const std::string packageName = packageIndex >= 0 && packageIndex < static_cast<int>(packages_.size())
                                         ? displayFontName(packages_[static_cast<size_t>(packageIndex)].name)
                                         : "Font";
-    const std::string name = renderer.text.truncate(font, packageName.c_str(), screenW - 60);
-    renderer.text.centered(font, centerY - 34, name.c_str(), true, EpdFontFamily::BOLD);
+    const int previewFont = packageIndex >= 0 && packageIndex < static_cast<int>(packages_.size())
+                                ? FontPreviews::fontIdForFamily(packages_[static_cast<size_t>(packageIndex)].installFamily)
+                                : -1;
+    const int nameFont = previewFont >= 0 ? previewFont : font;
+    const std::string name = renderer.text.truncate(nameFont, packageName.c_str(), screenW - 60);
+    renderer.text.centered(nameFont, centerY - 34, name.c_str(), true, EpdFontFamily::REGULAR);
     renderer.text.centered(font, centerY + 4, "Installing font package", true, EpdFontFamily::REGULAR);
 
     const size_t downloaded = progressDownloaded_;
@@ -492,18 +497,20 @@ void FontManagerActivity::render() {
       const int y = fontListTop + (index - scrollOffset_) * kRowHeight;
       const bool selected = selectedVisible_ && index == selectedIndex_;
       if (selected) renderer.rectangle.fill(0, y, screenW, kRowHeight, static_cast<int>(GfxRenderer::FillTone::Ink));
-      const int textY = y + (kRowHeight - renderer.text.getLineHeight(font)) / 2;
       const int deleteIconX = screenW - kSideMargin - kActionIconSize;
       const int actionIconX = deleteIconX - kActionIconGap - kActionIconSize;
       const int maxNameWidth = screenW - (kSideMargin * 2) - (kActionIconSize * 2) - kActionIconGap - 20;
       const std::string displayName = displayFontName(packages_[static_cast<size_t>(packageIndex)].name);
-      const std::string packageName = renderer.text.truncate(font, displayName.c_str(), maxNameWidth,
+      const int previewFont = FontPreviews::fontIdForFamily(packages_[static_cast<size_t>(packageIndex)].installFamily);
+      const int nameFont = previewFont >= 0 ? previewFont : font;
+      const int textY = y + (kRowHeight - renderer.text.getLineHeight(nameFont)) / 2;
+      const std::string packageName = renderer.text.truncate(nameFont, displayName.c_str(), maxNameWidth,
                                                               EpdFontFamily::REGULAR);
       const bool installed = FontPackageManager::isInstalled(packages_[static_cast<size_t>(packageIndex)]);
       if (installed && !selected) {
-        renderer.text.renderGray(font, kSideMargin, textY, packageName.c_str(), true, EpdFontFamily::REGULAR);
+        renderer.text.renderGray(nameFont, kSideMargin, textY, packageName.c_str(), true, EpdFontFamily::REGULAR);
       } else {
-        renderer.text.render(font, kSideMargin, textY, packageName.c_str(), !selected, EpdFontFamily::REGULAR);
+        renderer.text.render(nameFont, kSideMargin, textY, packageName.c_str(), !selected, EpdFontFamily::REGULAR);
       }
       const int iconY = y + (kRowHeight - kActionIconSize) / 2;
       if (installed) {

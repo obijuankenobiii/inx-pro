@@ -175,6 +175,7 @@ class EpubActivity final : public ActivityWithSubactivity {
   bool openWordSelection(int x, int y);
   void startVoiceNoteForSelection(const std::string& selectedText, uint16_t wordLo, uint16_t wordHi,
                                   bool attachToHighlight = false);
+  void restoreWordSelectionAfterNote();
   void startVoiceNoteForPage();
   void closeWordSelection();
   void renderWordSelection();
