@@ -52,7 +52,11 @@
 #include "system/FrontlightPreferences.h"
 #include "system/MappedInputManager.h"
 #include "system/ScreenComponents.h"
-#include "system/StudyCards.h"
+#include "system/PluginManager.h"
+
+extern "C" {
+#include "lua.h"
+}
 
 namespace {
 constexpr unsigned long goHomeMs = 1000;
@@ -713,8 +717,11 @@ std::vector<std::string> EpubActivity::currentWordActions() const {
   }
   actions.push_back("Highlight");
   actions.push_back(wordSelectionIsMultiple() ? "Add note" : "Add page note");
-  if (StudyCards::isInstalled()) {
-    actions.push_back("Add to study");
+  std::string pluginId;
+  std::string pluginLabel;
+  std::string pluginFunction;
+  if (PluginManager::findReaderSelectionPlugin(pluginId, pluginLabel, pluginFunction)) {
+    actions.push_back(pluginLabel);
   }
   if (!wordSelectionIsMultiple() && selectedWord_ >= 0 && selectedWord_ < static_cast<int>(touchWords_.size()) &&
       !touchWords_[static_cast<size_t>(selectedWord_)].footnoteTarget.empty()) {
@@ -1282,13 +1289,44 @@ bool EpubActivity::handleWordSelection() {
   const std::string actionLabel = actions[static_cast<size_t>(action)];
   const bool keepSelectionForNote = actionLabel == "Add note";
   bool highlighted = false;
-  bool studyCardAdded = false;
+  bool pluginActionSucceeded = false;
+  std::string pluginId;
+  std::string pluginLabel;
+  std::string pluginFunction;
+  const bool hasPluginAction = PluginManager::findReaderSelectionPlugin(pluginId, pluginLabel, pluginFunction);
   if (actionLabel == "Highlight") {
     highlighted = annUi_.saveExternalHighlight(*this, selectedText, static_cast<size_t>(wordLo),
                                                 static_cast<size_t>(wordHi));
-  } else if (actionLabel == "Add to study" && epub && section) {
-    studyCardAdded = StudyCards::add(*epub, getCurrentChapterTitle(), static_cast<uint16_t>(currentSpineIndex),
-                                     static_cast<uint16_t>(section->currentPage), selectedText);
+  } else if (epub && section && hasPluginAction && actionLabel == pluginLabel) {
+    std::string luaError;
+    pluginActionSucceeded = PluginManager::invoke(
+        pluginId.c_str(), pluginFunction.c_str(),
+        [&](lua_State* state) {
+          lua_newtable(state);
+          const std::string context = selectedText;
+          const std::string book = epub->getTitle();
+          const std::string chapter = getCurrentChapterTitle();
+          lua_pushlstring(state, selectedText.c_str(), selectedText.size());
+          lua_setfield(state, -2, "front");
+          lua_pushliteral(state, "");
+          lua_setfield(state, -2, "back");
+          lua_pushlstring(state, context.c_str(), context.size());
+          lua_setfield(state, -2, "context");
+          lua_pushlstring(state, book.c_str(), book.size());
+          lua_setfield(state, -2, "book");
+          lua_pushlstring(state, chapter.c_str(), chapter.size());
+          lua_setfield(state, -2, "chapter");
+          lua_pushliteral(state, "inx study");
+          lua_setfield(state, -2, "tags");
+          lua_pushinteger(state, static_cast<lua_Integer>(section->currentPage));
+          lua_setfield(state, -2, "page");
+          lua_pushinteger(state, static_cast<lua_Integer>(currentSpineIndex));
+          lua_setfield(state, -2, "spine");
+          lua_pushinteger(state, static_cast<lua_Integer>(millis() / 1000));
+          lua_setfield(state, -2, "created");
+        },
+        luaError);
+    if (!pluginActionSucceeded) INX_SERIAL.printf("[LUA] reader plugin action failed: %s\n", luaError.c_str());
   }
   if (!keepSelectionForNote) {
     closeWordSelection();
@@ -1308,8 +1346,8 @@ bool EpubActivity::handleWordSelection() {
     startVoiceNoteForPage();
   } else if (actionLabel == "Add note") {
     startVoiceNoteForSelection(selectedText, static_cast<uint16_t>(wordLo), static_cast<uint16_t>(wordHi), true);
-  } else if (actionLabel == "Add to study") {
-    readerPopup(studyCardAdded ? "Added to study" : "Could not save study card", 1400);
+  } else if (hasPluginAction && actionLabel == pluginLabel) {
+    readerPopup(pluginActionSucceeded ? "Plugin action completed" : "Plugin action failed", 1400);
   } else if (actionLabel == "View footnote" && !word.footnoteTarget.empty()) {
     footnoteBody_.show(*this, word.footnoteTarget, word.text);
   }

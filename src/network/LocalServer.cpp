@@ -6,6 +6,7 @@
 #include "LocalServer.h"
 
 #include <ArduinoJson.h>
+#include <uri/UriGlob.h>
 #ifndef INX_SIMULATOR_WEB_ONLY
 #include <Epub.h>
 #include <Epub/Page.h>
@@ -29,7 +30,6 @@
 #include "../state/SystemSetting.h"
 #include "../system/LanguageManager.h"
 #include "../system/PluginManager.h"
-#include "../system/StudyCards.h"
 #ifndef INX_SIMULATOR_WEB_ONLY
 #include "activity/reader/Epub/EpubAnnotations.h"
 #include "activity/reader/Epub/EpubBookmarks.h"
@@ -47,8 +47,6 @@
 #include "html/JsZipMinJs.generated.h"
 #include "html/QrCreatorLogoJs.generated.h"
 #include "html/SettingsPageHtml.generated.h"
-#include "html/StudyPageHtml.generated.h"
-#include "html/StudyPageJs.generated.h"
 #include "html/TagsPageHtml.generated.h"
 #ifndef INX_SIMULATOR_WEB_ONLY
 #include "util/LibraryIndex.h"
@@ -97,7 +95,10 @@ unsigned long wsLastCompleteAt = 0;
 String addLanguageManagerNavLink(const char* pageHtml) {
   String page = pageHtml;
   page.replace("</nav>", "<a class=nav-btn href=/language-manager>Language</a></nav>");
-  if (PluginManager::isInstalled("study-cards") && page.indexOf("/study") < 0) {
+  std::string pluginId;
+  std::string pluginPage;
+  std::string pluginScript;
+  if (PluginManager::findWebPlugin(pluginId, pluginPage, pluginScript) && page.indexOf("/study") < 0) {
     page.replace("</nav>", "<a class=nav-btn href=/study>Study</a></nav>");
   }
   return page;
@@ -670,7 +671,7 @@ void LocalServer::begin() {
   server->on("/files", HTTP_GET, [this] { handleFileList(); });
   server->on("/epub", HTTP_GET, [this] { handleEpubPage(); });
   server->on("/export", HTTP_GET, [this] { handleExportPage(); });
-  server->on("/study", HTTP_GET, [this] { handleStudyPage(); });
+  server->on("/study", HTTP_GET, [this] { handlePluginPage(); });
   server->on("/font-manager", HTTP_GET, [this] { handleFontManagerPage(); });
   server->on("/language-manager", HTTP_GET, [this] { handleLanguageManagerPage(); });
   server->on("/tags", HTTP_GET, [this] { handleTagsPage(); });
@@ -679,7 +680,7 @@ void LocalServer::begin() {
   server->on("/js/qr_creator_logo.min.js", HTTP_GET, [this] { handleQrCreatorLogoJs(); });
   server->on("/js/epub_page.js", HTTP_GET, [this] { handleEpubPageJs(); });
   server->on("/js/files_page.js", HTTP_GET, [this] { handleFilesPageJs(); });
-  server->on("/js/study_page.js", HTTP_GET, [this] { handleStudyPageJs(); });
+  server->on("/js/study_page.js", HTTP_GET, [this] { handlePluginPageJs(); });
 
   server->on("/api/status", HTTP_GET, [this] { handleStatus(); });
   server->on("/api/device-identity", HTTP_GET, [this] { handleDeviceIdentityGet(); });
@@ -688,8 +689,7 @@ void LocalServer::begin() {
   server->on("/api/device-identity/card", HTTP_GET, [this] { handleDeviceIdentityCardImage(); });
   server->on("/api/files", HTTP_GET, [this] { handleFileListData(); });
   server->on("/api/export-notes", HTTP_GET, [this] { handleExportNotesData(); });
-  server->on("/api/plugins/study/cards", HTTP_GET, [this] { handleStudyCardsData(); });
-  server->on("/api/plugins/study/export", HTTP_GET, [this] { handleStudyExport(); });
+  server->on(UriGlob("/api/plugin/*"), HTTP_GET, [this] { handlePluginApi(); });
   server->on("/api/book-tags", HTTP_GET, [this] { handleBookTagsGet(); });
   server->on("/api/book-tags", HTTP_POST, [this] { handleBookTagsPost(); });
   server->on("/api/library-index/refresh", HTTP_POST, [this] { handleLibraryIndexRefresh(); });
@@ -1022,12 +1022,21 @@ void LocalServer::handleExportPage() const {
   server->send(200, "text/html; charset=utf-8", addLanguageManagerNavLink(ExportPageHtml));
 }
 
-void LocalServer::handleStudyPage() const {
-  if (!StudyCards::isInstalled()) {
-    server->send(404, "text/plain", "Study Cards plugin is not installed");
+void LocalServer::handlePluginPage() const {
+  std::string pluginId;
+  std::string pluginPage;
+  std::string pluginScript;
+  if (!PluginManager::findWebPlugin(pluginId, pluginPage, pluginScript)) {
+    server->send(404, "text/plain", "No plugin web page is installed");
     return;
   }
-  server->send(200, "text/html; charset=utf-8", addLanguageManagerNavLink(StudyPageHtml));
+  std::string html;
+  std::string error;
+  if (!PluginManager::readFile(pluginId.c_str(), pluginPage.c_str(), html, 64 * 1024, error)) {
+    server->send(404, "text/plain", error.c_str());
+    return;
+  }
+  server->send(200, "text/html; charset=utf-8", addLanguageManagerNavLink(html.c_str()));
 }
 
 void LocalServer::handleFontManagerPage() const {
@@ -1060,8 +1069,21 @@ void LocalServer::handleFilesPageJs() const {
   server->send_P(200, PSTR("text/javascript; charset=utf-8"), FILES_PAGE_JS, sizeof(FILES_PAGE_JS) - 1);
 }
 
-void LocalServer::handleStudyPageJs() const {
-  server->send_P(200, PSTR("text/javascript; charset=utf-8"), STUDY_PAGE_JS, sizeof(STUDY_PAGE_JS) - 1);
+void LocalServer::handlePluginPageJs() const {
+  std::string pluginId;
+  std::string pluginPage;
+  std::string pluginScript;
+  if (!PluginManager::findWebPlugin(pluginId, pluginPage, pluginScript)) {
+    server->send(404, "text/plain", "No plugin web page is installed");
+    return;
+  }
+  std::string script;
+  std::string error;
+  if (!PluginManager::readFile(pluginId.c_str(), pluginScript.c_str(), script, 32 * 1024, error)) {
+    server->send(404, "text/plain", error.c_str());
+    return;
+  }
+  server->send(200, "text/javascript; charset=utf-8", script.c_str());
 }
 
 void LocalServer::handleFileListData() const {
@@ -1153,44 +1175,31 @@ void LocalServer::handleExportNotesData() const {
 #endif
 }
 
-void LocalServer::handleStudyCardsData() const {
-  if (!StudyCards::isInstalled()) {
-    server->send(404, "application/json", "{\"ok\":false,\"error\":\"plugin_not_installed\"}");
+void LocalServer::handlePluginApi() const {
+  const String prefix = "/api/plugin/";
+  const String uri = server->uri();
+  if (!uri.startsWith(prefix)) {
+    server->send(404, "text/plain", "Plugin endpoint not found");
     return;
   }
-
-  server->setContentLength(CONTENT_LENGTH_UNKNOWN);
-  server->send(200, "application/json", "");
-  server->sendContent("{\"ok\":true,\"cards\":");
-  StudyCards::exportJson([this](const std::string& chunk) {
-    server->sendContent(chunk.c_str());
-    return true;
-  });
-  server->sendContent("}");
-  server->sendContent("");
-}
-
-void LocalServer::handleStudyExport() const {
-  if (!StudyCards::isInstalled()) {
-    server->send(404, "text/plain", "Study Cards plugin is not installed");
+  const String route = uri.substring(prefix.length());
+  const int separator = route.indexOf('/');
+  if (separator <= 0 || separator >= route.length() - 1) {
+    server->send(400, "text/plain", "Invalid plugin endpoint");
     return;
   }
-  const bool anki = server->hasArg("format") && server->arg("format") == "anki";
+  const String pluginId = route.substring(0, separator);
+  const String function = route.substring(separator + 1);
+  std::string output;
+  std::string error;
+  if (!PluginManager::invokeString(pluginId.c_str(), function.c_str(), nullptr, output, error)) {
+    server->send(404, "text/plain", error.c_str());
+    return;
+  }
+  const bool anki = function == "export_anki";
   const char* contentType = anki ? "text/tab-separated-values; charset=utf-8" : "application/json; charset=utf-8";
-  const char* filename = anki ? "inx-study-cards.txt" : "inx-study-cards.json";
-  server->sendHeader("Content-Disposition", String("attachment; filename=\"") + filename + "\"");
-  server->setContentLength(CONTENT_LENGTH_UNKNOWN);
-  server->send(200, contentType, "");
-  const auto writer = [this](const std::string& chunk) {
-    server->sendContent(chunk.c_str());
-    return true;
-  };
-  if (anki) {
-    StudyCards::exportAnki(writer);
-  } else {
-    StudyCards::exportJson(writer);
-  }
-  server->sendContent("");
+  if (anki) server->sendHeader("Content-Disposition", "attachment; filename=\"study-cards.txt\"");
+  server->send(200, contentType, output.c_str());
 }
 
 void LocalServer::handleBookTagsGet() const {

@@ -74,7 +74,7 @@ class LocalServer {
   void handleQrCreatorLogoJs() const;
   void handleEpubPageJs() const;
   void handleFilesPageJs() const;
-  void handleStudyPageJs() const;
+  void handlePluginPageJs() const;
   void handleNotFound() const;
   void handleStatus() const;
   void handleDeviceIdentityGet() const;
@@ -84,11 +84,10 @@ class LocalServer {
   void handleFileList() const;
   void handleEpubPage() const;
   void handleExportPage() const;
-  void handleStudyPage() const;
+  void handlePluginPage() const;
   void handleFileListData() const;
   void handleExportNotesData() const;
-  void handleStudyCardsData() const;
-  void handleStudyExport() const;
+  void handlePluginApi() const;
   void handleDownload() const;
   void handleUpload() const;
   void handleUploadPost() const;
