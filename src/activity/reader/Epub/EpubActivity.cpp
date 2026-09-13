@@ -34,6 +34,7 @@
 #endif
 #include "KOReaderSyncActivity.h"
 #include "SettingsDrawer.h"
+#include "activity/page/components/global/Button.h"
 #include "activity/page/components/global/PopUp.h"
 #include "activity/util/KeyboardEntryActivity.h"
 #include "state/BookProgress.h"
@@ -57,8 +58,8 @@ constexpr unsigned long goHomeMs = 1000;
 constexpr unsigned long bookmarkHoldMs = 1000;
 constexpr unsigned long wordSelectionHoldMs = 500;
 constexpr bool kReaderHighQualityFastLut = true;
-
-const std::vector<std::string> kBaseWordActions = {"Look up", "Highlight", "Add note"};
+constexpr int kWordSelectionHandleRadius = 11;
+constexpr int kWordSelectionActionGap = 14;
 
 bool pageImageFootprintAtLeastHalfScreen(const Page& page, const GfxRenderer& renderer, int marginLeft, int marginTop) {
   if (!page.hasImages()) {
@@ -684,15 +685,33 @@ int EpubActivity::wordAt(const int x, const int y) const {
 }
 
 void EpubActivity::closeWordSelection() {
+  const bool hadWordSelection = wordSelectionOpen_;
   wordSelectionOpen_ = false;
   wordActionsOpen_ = false;
   selectedWord_ = -1;
+  wordSelectionAnchor_ = -1;
+  wordSelectionFocus_ = -1;
+  wordSelectionHandleDragActive_ = false;
+  wordSelectionDraggingStart_ = false;
+  wordSelectionDraggingOnWord_ = false;
+  if (hadWordSelection) {
+    annUi_.clearExternalFramebuffer();
+  }
   std::vector<PageWordHit>().swap(touchWords_);
 }
 
+bool EpubActivity::wordSelectionIsMultiple() const {
+  return wordSelectionAnchor_ >= 0 && wordSelectionFocus_ >= 0 && wordSelectionAnchor_ != wordSelectionFocus_;
+}
+
 std::vector<std::string> EpubActivity::currentWordActions() const {
-  std::vector<std::string> actions = kBaseWordActions;
-  if (selectedWord_ >= 0 && selectedWord_ < static_cast<int>(touchWords_.size()) &&
+  std::vector<std::string> actions;
+  if (!wordSelectionIsMultiple()) {
+    actions.push_back("Look up");
+  }
+  actions.push_back("Highlight");
+  actions.push_back(wordSelectionIsMultiple() ? "Add note" : "Add page note");
+  if (!wordSelectionIsMultiple() && selectedWord_ >= 0 && selectedWord_ < static_cast<int>(touchWords_.size()) &&
       !touchWords_[static_cast<size_t>(selectedWord_)].footnoteTarget.empty()) {
     actions.push_back("View footnote");
   }
@@ -704,23 +723,178 @@ void EpubActivity::renderWordSelection() {
     return;
   }
 
-  renderer.syncWriteBufferFromActive();
+  if (!annUi_.restoreExternalFramebuffer(*this)) {
+    renderer.syncWriteBufferFromActive();
+  }
   renderer.setRenderMode(GfxRenderer::BW);
 
-  const PageWordHit& word = touchWords_[static_cast<size_t>(selectedWord_)];
-  renderer.ui.fillSparseInkLatticeInRect(word.screenX, std::max(0, word.screenY), std::max(1, word.screenW),
-                                         std::max(3, word.screenH), 2);
+  const size_t actionWordIndex = static_cast<size_t>(std::max(wordSelectionAnchor_, wordSelectionFocus_));
+  const PageWordHit& word = touchWords_[actionWordIndex < touchWords_.size() ? actionWordIndex
+                                                                              : static_cast<size_t>(selectedWord_)];
+  drawWordSelectionRange();
+  drawWordSelectionHandles();
 
-  if (wordActionsOpen_) {
-    const std::vector<std::string> actions = currentWordActions();
-    const PopUpBounds box = PopUp::bounds(renderer, static_cast<int>(actions.size()));
-    PopUp::background(renderer, box);
-    PopUp::title(renderer, box, word.text);
-    PopUp::list(renderer, box, actions, -1, 0);
-    PopUp::border(renderer, box);
+  if (wordActionsOpen_ && !wordSelectionHandleDragActive_) {
+    drawWordSelectionActionBar(word);
   }
 
   renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+}
+
+void EpubActivity::drawWordSelectionRange() {
+  if (wordSelectionAnchor_ < 0 || wordSelectionFocus_ < 0 || touchWords_.empty()) {
+    return;
+  }
+  const size_t lo = static_cast<size_t>(std::min(wordSelectionAnchor_, wordSelectionFocus_));
+  const size_t hi = static_cast<size_t>(std::max(wordSelectionAnchor_, wordSelectionFocus_));
+  if (lo >= touchWords_.size() || hi >= touchWords_.size()) {
+    return;
+  }
+
+  size_t first = lo;
+  while (first <= hi) {
+    const int lineY = touchWords_[first].screenY;
+    size_t last = first + 1;
+    int minX = touchWords_[first].screenX;
+    int maxR = touchWords_[first].screenX + touchWords_[first].screenW;
+    int lineHeight = std::max(3, touchWords_[first].screenH);
+    while (last <= hi && touchWords_[last].screenY == lineY) {
+      minX = std::min(minX, touchWords_[last].screenX);
+      maxR = std::max(maxR, touchWords_[last].screenX + touchWords_[last].screenW);
+      lineHeight = std::max(lineHeight, std::max(3, touchWords_[last].screenH));
+      ++last;
+    }
+    renderer.ui.fillSparseInkLatticeInRect(minX, std::max(0, lineY), std::max(1, maxR - minX), lineHeight, 2);
+    first = last;
+  }
+}
+
+void EpubActivity::drawWordSelectionHandles() {
+  if (wordSelectionAnchor_ < 0 || wordSelectionFocus_ < 0 || touchWords_.empty()) {
+    return;
+  }
+  const size_t lo = static_cast<size_t>(std::min(wordSelectionAnchor_, wordSelectionFocus_));
+  const size_t hi = static_cast<size_t>(std::max(wordSelectionAnchor_, wordSelectionFocus_));
+  if (lo >= touchWords_.size() || hi >= touchWords_.size()) {
+    return;
+  }
+
+  const PageWordHit& first = touchWords_[lo];
+  const PageWordHit& last = touchWords_[hi];
+  const int lineTop = first.screenY;
+  const int firstLineBottom = first.screenY + std::max(3, first.screenH);
+  const int lastLineTop = last.screenY;
+  const int startX = first.screenX;
+  const int startCenterY = std::max(kWordSelectionHandleRadius, lineTop - kWordSelectionHandleRadius);
+  const int endX = last.screenX + std::max(1, last.screenW);
+  const int endCenterY = std::min(renderer.getScreenHeight() - kWordSelectionHandleRadius,
+                                  last.screenY + std::max(3, last.screenH) + kWordSelectionHandleRadius);
+
+  renderer.line.render(startX, startCenterY + kWordSelectionHandleRadius, startX, firstLineBottom, true);
+  renderer.line.render(startX + 1, startCenterY + kWordSelectionHandleRadius, startX + 1, firstLineBottom, true);
+  renderer.circle.render(startX, startCenterY, kWordSelectionHandleRadius, true);
+  renderer.circle.render(startX, startCenterY, kWordSelectionHandleRadius - 2, false);
+  renderer.line.render(endX, lastLineTop, endX, endCenterY - kWordSelectionHandleRadius, true);
+  renderer.line.render(endX + 1, lastLineTop, endX + 1, endCenterY - kWordSelectionHandleRadius, true);
+  renderer.circle.render(endX, endCenterY, kWordSelectionHandleRadius, true);
+  renderer.circle.render(endX, endCenterY, kWordSelectionHandleRadius - 2, false);
+}
+
+int EpubActivity::wordSelectionHandleAt(const int x, const int y) const {
+  if (wordSelectionAnchor_ < 0 || wordSelectionFocus_ < 0 || touchWords_.empty()) {
+    return -1;
+  }
+  const size_t lo = static_cast<size_t>(std::min(wordSelectionAnchor_, wordSelectionFocus_));
+  const size_t hi = static_cast<size_t>(std::max(wordSelectionAnchor_, wordSelectionFocus_));
+  if (lo >= touchWords_.size() || hi >= touchWords_.size()) {
+    return -1;
+  }
+
+  const PageWordHit& first = touchWords_[lo];
+  const PageWordHit& last = touchWords_[hi];
+  const int startX = first.screenX;
+  const int startY = std::max(kWordSelectionHandleRadius, first.screenY - kWordSelectionHandleRadius);
+  const int endX = last.screenX + std::max(1, last.screenW);
+  const int endY = std::min(renderer.getScreenHeight() - kWordSelectionHandleRadius,
+                            last.screenY + std::max(3, last.screenH) + kWordSelectionHandleRadius);
+  const int hitRadius = kWordSelectionHandleRadius + 8;
+  const int startDx = x - startX;
+  const int startDy = y - startY;
+  if (startDx * startDx + startDy * startDy <= hitRadius * hitRadius) {
+    return 0;
+  }
+  const int endDx = x - endX;
+  const int endDy = y - endY;
+  if (endDx * endDx + endDy * endDy <= hitRadius * hitRadius) {
+    return 1;
+  }
+  return -1;
+}
+
+bool EpubActivity::wordSelectionActionBarBounds(const PageWordHit& word, int& x, int& y, int& width, int& height,
+                                                std::vector<int>* itemWidths) const {
+  if (!wordSelectionOpen_ || !wordActionsOpen_) {
+    return false;
+  }
+
+  const int font = systemFontId();
+  const std::vector<std::string> actions = currentWordActions();
+  if (actions.empty()) {
+    return false;
+  }
+
+  width = 0;
+  height = Button::height;
+  if (itemWidths) {
+    itemWidths->clear();
+  }
+  for (const std::string& action : actions) {
+    const int itemWidth = Button::width(renderer, action.c_str(), font);
+    width += itemWidth;
+    if (itemWidths) {
+      itemWidths->push_back(itemWidth);
+    }
+  }
+
+  constexpr int margin = 20;
+  const int lineBottom = word.screenY + std::max(3, word.screenH);
+  const int anchorX = word.screenX + std::max(1, word.screenW);
+  x = anchorX - width / 2;
+  y = lineBottom + kWordSelectionHandleRadius + kWordSelectionActionGap;
+  x = std::max(margin, std::min(x, renderer.getScreenWidth() - margin - width));
+  if (y + height > renderer.getScreenHeight() - margin) {
+    y = std::max(margin, word.screenY - height - kWordSelectionHandleRadius - kWordSelectionActionGap);
+  }
+  return true;
+}
+
+void EpubActivity::drawWordSelectionActionBar(const PageWordHit& word) {
+  int x = 0;
+  int y = 0;
+  int width = 0;
+  int height = 0;
+  std::vector<int> itemWidths;
+  if (!wordSelectionActionBarBounds(word, x, y, width, height, &itemWidths)) {
+    return;
+  }
+
+  renderer.rectangle.fill(x, y, width, height, false, true, false);
+  renderer.rectangle.render(x, y, width, height, true, true, false);
+
+  const int font = systemFontId();
+  const int textHeight = renderer.text.getLineHeight(font);
+  const int textY = y + (height - textHeight) / 2;
+  const std::vector<std::string> actions = currentWordActions();
+  int itemX = x;
+  for (size_t i = 0; i < actions.size(); ++i) {
+    const int textWidth = renderer.text.getWidth(font, actions[i].c_str());
+    renderer.text.render(font, itemX + (itemWidths[i] - textWidth) / 2, textY, actions[i].c_str(), true,
+                         EpdFontFamily::REGULAR);
+    itemX += itemWidths[i];
+    if (i + 1 < actions.size()) {
+      renderer.line.render(itemX, y + 8, itemX, y + height - 8, true, LineRender::Style::Dotted);
+    }
+  }
 }
 
 bool EpubActivity::openWordSelection(const int x, const int y) {
@@ -748,24 +922,34 @@ bool EpubActivity::openWordSelection(const int x, const int y) {
 
   wordSelectionOpen_ = true;
   wordActionsOpen_ = true;
+  wordSelectionAnchor_ = selectedWord_;
+  wordSelectionFocus_ = selectedWord_;
+  wordSelectionHandleDragActive_ = false;
+  wordSelectionDraggingStart_ = false;
+  wordSelectionDraggingOnWord_ = false;
+  annUi_.captureExternalFramebuffer(*this);
   renderWordSelection();
   return true;
 }
 
 void EpubActivity::startVoiceNoteForSelection(const std::string& selectedText, const uint16_t wordLo,
-                                              const uint16_t wordHi) {
+                                              const uint16_t wordHi, const bool attachToHighlight) {
 #if !FREEINK_CAP_MIC
-  (void)wordLo;
-  (void)wordHi;
   if (selectedText.empty()) {
     return;
   }
   enterNewActivity(new KeyboardEntryActivity(
       renderer, mappedInput, "Add note", "", 10, 256, false,
-      [this](const std::string& note) {
+      [this, selectedText, wordLo, wordHi, attachToHighlight](const std::string& note) {
         exitActivity();
-        if (!note.empty() && annUi_.isActive()) {
-          annUi_.setPendingNoteText(note);
+        if (!note.empty()) {
+          if (attachToHighlight) {
+            if (!annUi_.saveExternalHighlight(*this, selectedText, wordLo, wordHi, note)) {
+              readerPopup("Could not save note");
+            }
+          } else if (annUi_.isActive()) {
+            annUi_.setPendingNoteText(note);
+          }
         }
         updateRequired = true;
       },
@@ -781,11 +965,15 @@ void EpubActivity::startVoiceNoteForSelection(const std::string& selectedText, c
   const std::string voiceDirectory = epub->getCachePath() + "/voice";
   enterNewActivity(new VoiceNoteActivity(
       renderer, mappedInput, voiceDirectory,
-      [this](const std::string& audioPath, const bool success) {
+      [this, selectedText, wordLo, wordHi, attachToHighlight](const std::string& audioPath, const bool success) {
         INX_SERIAL.printf("[%lu] [VOICE-NOTE] captured path=%s success=%d\n", millis(), audioPath.c_str(),
                           success ? 1 : 0);
         exitActivity();
-        if (success && annUi_.isActive()) {
+        if (success && attachToHighlight) {
+          if (!annUi_.saveExternalHighlight(*this, selectedText, wordLo, wordHi, {}, audioPath)) {
+            readerPopup("Could not save note");
+          }
+        } else if (success && annUi_.isActive()) {
           annUi_.setPendingNoteAudioPath(audioPath);
         } else if (!success) {
           readerPopup("Could not record note");
@@ -889,6 +1077,46 @@ bool EpubActivity::handleWordSelection() {
     return false;
   }
 
+  if (wordSelectionHandleDragActive_) {
+    float nx = 0.0f;
+    float ny = 0.0f;
+    if (mappedInput.isTouchHeldInScreen(renderer, nx, ny)) {
+      const int x = static_cast<int>(nx * renderer.getScreenWidth());
+      const int y = static_cast<int>(ny * renderer.getScreenHeight());
+      const int word = wordAt(x, y);
+      wordSelectionDraggingOnWord_ = word >= 0;
+      if (word >= 0) {
+        if (wordSelectionDraggingStart_) {
+          wordSelectionAnchor_ = word;
+        } else {
+          wordSelectionFocus_ = word;
+        }
+        selectedWord_ = wordSelectionDraggingStart_ ? wordSelectionAnchor_ : wordSelectionFocus_;
+        renderWordSelection();
+      }
+      return true;
+    }
+
+    wordSelectionHandleDragActive_ = false;
+    wordActionsOpen_ = wordSelectionDraggingOnWord_;
+    renderWordSelection();
+    return true;
+  }
+
+  float pressNx = 0.0f;
+  float pressNy = 0.0f;
+  if (mappedInput.wasTouchPressedInScreen(renderer, pressNx, pressNy)) {
+    const int pressX = static_cast<int>(pressNx * renderer.getScreenWidth());
+    const int pressY = static_cast<int>(pressNy * renderer.getScreenHeight());
+    const int handle = wordSelectionHandleAt(pressX, pressY);
+    if (handle >= 0) {
+      wordSelectionHandleDragActive_ = true;
+      wordSelectionDraggingStart_ = handle == 0;
+      wordSelectionDraggingOnWord_ = true;
+      return true;
+    }
+  }
+
   if (mappedInput.wasTouchSwipeUp() || mappedInput.wasTouchSwipeDown() || mappedInput.wasTouchSwipeLeft() ||
       mappedInput.wasTouchSwipeRight()) {
     closeWordSelection();
@@ -907,6 +1135,27 @@ bool EpubActivity::handleWordSelection() {
   INX_SERIAL.printf("[%lu] [WORD_SELECTION] touch=(%d,%d) actions=%d spine=%d page=%d\n", millis(), x, y,
                 wordActionsOpen_ ? 1 : 0, currentSpineIndex, section ? section->currentPage : -1);
 
+  auto focusWordFromTap = [this](const int tappedWord) {
+    const int currentLo = std::min(wordSelectionAnchor_, wordSelectionFocus_);
+    const int currentHi = std::max(wordSelectionAnchor_, wordSelectionFocus_);
+    if (tappedWord < currentLo) {
+      // Expand toward the beginning while preserving the current end.
+      wordSelectionAnchor_ = tappedWord;
+      wordSelectionFocus_ = currentHi;
+    } else if (tappedWord > currentHi) {
+      // Expand toward the end while preserving the current beginning.
+      wordSelectionAnchor_ = currentLo;
+      wordSelectionFocus_ = tappedWord;
+    } else {
+      // Move the active endpoint when tapping inside the current range.
+      wordSelectionFocus_ = tappedWord;
+    }
+    selectedWord_ = tappedWord;
+    // For a range, currentWordActions() removes only Look up and keeps the
+    // Highlight/Add note menu visible.
+    wordActionsOpen_ = true;
+  };
+
   if (!wordActionsOpen_) {
     const int word = wordAt(x, y);
     if (word < 0) {
@@ -914,40 +1163,82 @@ bool EpubActivity::handleWordSelection() {
       renderScreen(true);
       return true;
     }
-    selectedWord_ = word;
-    wordActionsOpen_ = true;
+    focusWordFromTap(word);
     renderWordSelection();
     return true;
   }
 
+  const size_t actionWordIndex = static_cast<size_t>(std::max(wordSelectionAnchor_, wordSelectionFocus_));
+  const PageWordHit& selected = touchWords_[actionWordIndex < touchWords_.size() ? actionWordIndex
+                                                                                   : static_cast<size_t>(selectedWord_)];
+  int barX = 0;
+  int barY = 0;
+  int barWidth = 0;
+  int barHeight = 0;
+  std::vector<int> itemWidths;
   const std::vector<std::string> actions = currentWordActions();
-  const PopUpBounds box = PopUp::bounds(renderer, static_cast<int>(actions.size()));
-  const int listY = box.y + box.header;
-  if (x < box.x || x >= box.x + box.width || y < listY || y >= listY + box.row * box.rows) {
+  if (!wordSelectionActionBarBounds(selected, barX, barY, barWidth, barHeight, &itemWidths) || x < barX ||
+      x >= barX + barWidth || y < barY || y >= barY + barHeight) {
+    const int tappedWord = wordAt(x, y);
+    if (tappedWord >= 0) {
+      focusWordFromTap(tappedWord);
+      INX_SERIAL.printf("[%lu] [WORD_SELECTION] focus word=%d anchor=%d multiple=%d\n", millis(), tappedWord,
+                    wordSelectionAnchor_, wordSelectionIsMultiple() ? 1 : 0);
+      renderWordSelection();
+      return true;
+    }
     closeWordSelection();
     renderScreen(true);
     return true;
   }
 
-  const int action = (y - listY) / box.row;
+  int action = -1;
+  int actionX = barX;
+  for (size_t i = 0; i < itemWidths.size(); ++i) {
+    if (x >= actionX && x < actionX + itemWidths[i]) {
+      action = static_cast<int>(i);
+      break;
+    }
+    actionX += itemWidths[i];
+  }
+  if (action < 0 || action >= static_cast<int>(actions.size())) {
+    return true;
+  }
   INX_SERIAL.printf("[%lu] [WORD_SELECTION] action=%d spine=%d page=%d\n", millis(), action, currentSpineIndex,
                 section ? section->currentPage : -1);
+  const int wordLo = std::min(wordSelectionAnchor_, wordSelectionFocus_);
+  const int wordHi = std::max(wordSelectionAnchor_, wordSelectionFocus_);
+  std::string selectedText;
+  for (int i = wordLo; i <= wordHi && i >= 0 && i < static_cast<int>(touchWords_.size()); ++i) {
+    if (!selectedText.empty()) {
+      selectedText += ' ';
+    }
+    selectedText += touchWords_[static_cast<size_t>(i)].text;
+  }
   const PageWordHit word = touchWords_[static_cast<size_t>(selectedWord_)];
+  const std::string actionLabel = actions[static_cast<size_t>(action)];
+  bool highlighted = false;
+  if (actionLabel == "Highlight") {
+    highlighted = annUi_.saveExternalHighlight(*this, selectedText, static_cast<size_t>(wordLo),
+                                                static_cast<size_t>(wordHi));
+  }
   closeWordSelection();
   renderScreen(true);
   pauseReadingStats();
 
-  if (action == 0) {
+  if (actionLabel == "Look up") {
     if (!dictUi_.lookupAt(*this, word.screenX + word.screenW / 2, word.screenY + word.screenH / 2)) {
       renderScreen(true);
     }
-  } else if (action == 1) {
-    if (!annUi_.startAt(*this, word.screenX + word.screenW / 2, word.screenY + word.screenH / 2)) {
-      renderScreen(true);
+  } else if (actionLabel == "Highlight") {
+    if (!highlighted) {
+      readerPopup("Could not save highlight");
     }
-  } else if (action == 2) {
+  } else if (actionLabel == "Add page note") {
     startVoiceNoteForPage();
-  } else if (action == 3 && !word.footnoteTarget.empty()) {
+  } else if (actionLabel == "Add note") {
+    startVoiceNoteForSelection(selectedText, static_cast<uint16_t>(wordLo), static_cast<uint16_t>(wordHi), true);
+  } else if (actionLabel == "View footnote" && !word.footnoteTarget.empty()) {
     footnoteBody_.show(*this, word.footnoteTarget, word.text);
   }
   return true;
@@ -1182,6 +1473,10 @@ void EpubActivity::loop() {
   }
 
   const bool readerTouchEnabled = !settingsDrawer || settingsDrawer->isTouchEnabled();
+
+  if (readerTouchEnabled && annUi_.handlePreEntryTouchGesture(*this)) {
+    return;
+  }
 
   if (readerTouchEnabled) {
     if (READER_SETTINGS.pageTurnMode == ReaderSetting::PAGE_TURN_SWIPE) {

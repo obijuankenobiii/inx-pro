@@ -18,7 +18,12 @@
 namespace {
 
 constexpr unsigned long kChordHoldMs = 600;
+constexpr unsigned long kTouchSelectionHoldMs = 300;
 constexpr int kHighlightLatticeStepPx = 2;
+constexpr int kTouchSelectionStartDistancePx = 14;
+constexpr int kSelectionHandleRadius = 11;
+constexpr int kSelectionHandleStem = 0;
+constexpr int kSelectionActionGap = 14;
 constexpr int kOverlayMargin = 20;
 constexpr int kCaretSize = 40;
 constexpr int kCaretSourceSize = 30;
@@ -57,6 +62,16 @@ void EpubAnnotationUi::clearSessionAndCapture() {
   std::vector<std::pair<size_t, size_t>>().swap(pendingSpans_);
   wordLookup_.clear();
   clearWordIndexCache();
+  resetTouchGestureState();
+}
+
+void EpubAnnotationUi::resetTouchGestureState() {
+  touchDragActive_ = false;
+  touchGestureCandidate_ = false;
+  touchSelectionUi_ = false;
+  touchSelectionComplete_ = false;
+  touchGestureStartX_ = 0;
+  touchGestureStartY_ = 0;
 }
 
 void EpubAnnotationUi::tryChordEnter(EpubActivity& act) {
@@ -147,6 +162,7 @@ void EpubAnnotationUi::enter(EpubActivity& act) {
   pendingNoteText_.clear();
   selectingStarted_ = false;
   pendingSpans_.clear();
+  resetTouchGestureState();
   wordLookup_.clear();
   anchor_ = 0;
   prepareWordGeometry(act);
@@ -181,6 +197,75 @@ bool EpubAnnotationUi::startAt(EpubActivity& act, const int x, const int y) {
   return true;
 }
 
+bool EpubAnnotationUi::handlePreEntryTouchGesture(EpubActivity& act) {
+  if (mode_ || !act.epub || !act.section || !act.mappedInput.hasTouch()) {
+    return false;
+  }
+
+  const MappedInputManager& m = act.mappedInput;
+  float nx = 0.0f;
+  float ny = 0.0f;
+
+  if (m.wasTouchPressedInScreen(act.renderer, nx, ny)) {
+    const int x = static_cast<int>(nx * act.renderer.getScreenWidth());
+    const int y = static_cast<int>(ny * act.renderer.getScreenHeight());
+    // Reuse the same geometry/cache as annotation mode, but do not capture or
+    // enter the overlay until the finger actually moves.
+    prepareWordGeometry(act);
+    touchGestureCandidate_ = focusAt(x, y);
+    touchGestureStartX_ = x;
+    touchGestureStartY_ = y;
+    if (touchGestureCandidate_) {
+      INX_SERIAL.printf("[%lu] [ANNOTATION] touch candidate word=%u start=(%d,%d)\n", millis(),
+                        static_cast<unsigned>(focus_), x, y);
+      return true;
+    }
+  }
+
+  if (!touchGestureCandidate_) {
+    return false;
+  }
+
+  if (!m.isTouchPressed()) {
+    // It was a tap, so let the normal reader tap/long-press routing process the
+    // release. A selection gesture only begins after movement crosses slop.
+    resetTouchGestureState();
+    return false;
+  }
+
+  if (!m.isTouchHeldInScreen(act.renderer, nx, ny)) {
+    return true;
+  }
+
+  const int x = static_cast<int>(nx * act.renderer.getScreenWidth());
+  const int y = static_cast<int>(ny * act.renderer.getScreenHeight());
+  const int dx = x - touchGestureStartX_;
+  const int dy = y - touchGestureStartY_;
+  // Let quick text swipes remain page-turn gestures. Text selection becomes
+  // eligible only after the finger has held on the starting word for 500 ms.
+  if (m.lastTouchHeldMs() < kTouchSelectionHoldMs) {
+    return true;
+  }
+  if (dx * dx + dy * dy < kTouchSelectionStartDistancePx * kTouchSelectionStartDistancePx) {
+    return true;
+  }
+
+  if (!startAt(act, touchGestureStartX_, touchGestureStartY_)) {
+    resetTouchGestureState();
+    return false;
+  }
+
+  touchDragActive_ = true;
+  touchGestureCandidate_ = false;
+  touchSelectionUi_ = true;
+  touchSelectionComplete_ = false;
+  focusAt(x, y);
+  INX_SERIAL.printf("[%lu] [ANNOTATION] touch drag start=%u focus=%u point=(%d,%d)\n", millis(),
+                    static_cast<unsigned>(anchor_), static_cast<unsigned>(focus_), x, y);
+  act.updateRequired = true;
+  return true;
+}
+
 void EpubAnnotationUi::exit(EpubActivity& act) {
   INX_SERIAL.printf("[%lu] [ANNOTATION] exit spine=%d page=%d selected=%d pending=%u stored=%u\n", millis(),
                 act.currentSpineIndex, act.section ? act.section->currentPage : -1, selectingStarted_ ? 1 : 0,
@@ -190,6 +275,7 @@ void EpubAnnotationUi::exit(EpubActivity& act) {
   pendingNoteAudioPath_.clear();
   pendingNoteText_.clear();
   selectingStarted_ = false;
+  resetTouchGestureState();
   std::vector<std::pair<size_t, size_t>>().swap(pendingSpans_);
   std::vector<std::pair<size_t, size_t>>().swap(storedRanges_);
   wordLookup_.clear();
@@ -372,17 +458,147 @@ void EpubAnnotationUi::drawHighlights(EpubActivity& act) {
   }
 }
 
+void EpubAnnotationUi::drawTouchSelectionHandles(EpubActivity& act) {
+  if (!touchSelectionUi_ || !selectingStarted_ || words_.empty()) {
+    return;
+  }
+
+  const size_t lo = std::min(anchor_, focus_);
+  const size_t hi = std::max(anchor_, focus_);
+  if (lo >= words_.size() || hi >= words_.size()) {
+    return;
+  }
+
+  const PageWordHit& first = words_[lo];
+  const PageWordHit& last = words_[hi];
+  const int startX = first.screenX;
+  const int startCenterY = std::max(kSelectionHandleRadius,
+                                    first.screenY - kSelectionHandleRadius - kSelectionHandleStem);
+  const int endX = last.screenX + std::max(1, last.screenW);
+  const int endCenterY = std::min(act.renderer.getScreenHeight() - kSelectionHandleRadius,
+                                  last.screenY + std::max(3, last.screenH) + kSelectionHandleRadius +
+                                      kSelectionHandleStem);
+
+  const int firstLineBottom = first.screenY + std::max(3, first.screenH);
+  const int lastLineTop = last.screenY;
+
+  // Continue the stem through the complete line box, not only through the
+  // gap between the text and the circle. This keeps the cursor aligned with
+  // the same line height used by the selection highlight.
+  act.renderer.line.render(startX, startCenterY + kSelectionHandleRadius, startX, firstLineBottom, true);
+  act.renderer.circle.render(startX, startCenterY, kSelectionHandleRadius, true);
+  act.renderer.circle.render(startX, startCenterY, kSelectionHandleRadius - 2, false);
+
+  act.renderer.line.render(endX, lastLineTop, endX, endCenterY - kSelectionHandleRadius, true);
+  act.renderer.circle.render(endX, endCenterY, kSelectionHandleRadius, true);
+  act.renderer.circle.render(endX, endCenterY, kSelectionHandleRadius - 2, false);
+}
+
+void EpubAnnotationUi::drawTouchSelectionActions(EpubActivity& act) {
+  if (!touchSelectionUi_ || !touchSelectionComplete_ || !selectingStarted_ || words_.empty()) {
+    return;
+  }
+
+  const size_t hi = std::max(anchor_, focus_);
+  if (hi >= words_.size()) {
+    return;
+  }
+
+  const int font = systemFontId();
+  const int highlightWidth = Button::width(act.renderer, "Highlight", font);
+  const int noteWidth = Button::width(act.renderer, "Add note", font);
+  const int barWidth = highlightWidth + noteWidth;
+  const int barHeight = Button::height;
+  const PageWordHit& last = words_[hi];
+  const int endX = last.screenX + std::max(1, last.screenW);
+  const int endY = last.screenY + std::max(3, last.screenH) + kSelectionHandleRadius + kSelectionHandleStem +
+                   kSelectionActionGap;
+  const int margin = kOverlayMargin;
+  int barX = endX - barWidth / 2;
+  int barY = endY;
+  barX = std::max(margin, std::min(barX, act.renderer.getScreenWidth() - margin - barWidth));
+  if (barY + barHeight > act.renderer.getScreenHeight() - margin) {
+    barY = std::max(margin, last.screenY - barHeight - kSelectionHandleRadius - kSelectionHandleStem -
+                              kSelectionActionGap);
+  }
+
+  act.renderer.rectangle.fill(barX, barY, barWidth, barHeight, false, true, true);
+  act.renderer.rectangle.render(barX, barY, barWidth, barHeight, true, true, true);
+
+  const int highlightTextWidth = act.renderer.text.getWidth(font, "Highlight");
+  const int noteTextWidth = act.renderer.text.getWidth(font, "Add note");
+  const int textHeight = act.renderer.text.getLineHeight(font);
+  const int textY = barY + (barHeight - textHeight) / 2;
+  act.renderer.text.render(font, barX + (highlightWidth - highlightTextWidth) / 2, textY, "Highlight", true,
+                           EpdFontFamily::REGULAR);
+  act.renderer.text.render(font, barX + highlightWidth + (noteWidth - noteTextWidth) / 2, textY, "Add note", true,
+                           EpdFontFamily::REGULAR);
+  act.renderer.line.render(barX + highlightWidth, barY + 8, barX + highlightWidth, barY + barHeight - 8, true);
+}
+
+bool EpubAnnotationUi::handleTouchSelectionActionTap(EpubActivity& act, const int x, const int y) {
+  if (!touchSelectionUi_ || !touchSelectionComplete_ || !selectingStarted_ || words_.empty()) {
+    return false;
+  }
+
+  const size_t lo = std::min(anchor_, focus_);
+  const size_t hi = std::max(anchor_, focus_);
+  if (hi >= words_.size()) {
+    return false;
+  }
+
+  const int font = systemFontId();
+  const int highlightWidth = Button::width(act.renderer, "Highlight", font);
+  const int noteWidth = Button::width(act.renderer, "Add note", font);
+  const int barWidth = highlightWidth + noteWidth;
+  const int barHeight = Button::height;
+  const PageWordHit& last = words_[hi];
+  const int endX = last.screenX + std::max(1, last.screenW);
+  const int endY = last.screenY + std::max(3, last.screenH) + kSelectionHandleRadius + kSelectionHandleStem +
+                   kSelectionActionGap;
+  const int margin = kOverlayMargin;
+  int barX = endX - barWidth / 2;
+  int barY = endY;
+  barX = std::max(margin, std::min(barX, act.renderer.getScreenWidth() - margin - barWidth));
+  if (barY + barHeight > act.renderer.getScreenHeight() - margin) {
+    barY = std::max(margin, last.screenY - barHeight - kSelectionHandleRadius - kSelectionHandleStem -
+                              kSelectionActionGap);
+  }
+
+  if (x < barX || x >= barX + barWidth || y < barY || y >= barY + barHeight) {
+    return false;
+  }
+  if (x < barX + highlightWidth) {
+    saveToStorage(act);
+    act.startPageTimer();
+    return true;
+  }
+
+  const std::string selectedText = extractRangeText(lo, hi);
+  if (selectedText.empty()) {
+    act.readerPopup("Select text first");
+    return true;
+  }
+  act.startVoiceNoteForSelection(selectedText, static_cast<uint16_t>(std::min<size_t>(lo, 0xFFFEu)),
+                                 static_cast<uint16_t>(std::min<size_t>(hi, 0xFFFEu)));
+  act.startPageTimer();
+  return true;
+}
+
 void EpubAnnotationUi::drawUiOverlay(EpubActivity& act) {
   if (!mode_ || suppressOverlayDraw_) {
     return;
   }
   const GfxRenderer::Orientation o = act.renderer.getOrientation();
   drawHighlights(act);
+  drawTouchSelectionHandles(act);
   constexpr int closeSize = 40;
   constexpr int margin = 20;
   const int closeX = act.renderer.getScreenWidth() - margin - closeSize;
   const int closeY = margin;
-  if (controlsVisible_) {
+  if (touchSelectionUi_) {
+    drawTouchSelectionActions(act);
+  } else if (controlsVisible_) {
     act.renderer.bitmap.icon(Close, closeX, closeY, closeSize, closeSize);
     const int font = systemFontId();
     const int saveWidth = Button::width(act.renderer, "Save", font);
@@ -409,6 +625,31 @@ void EpubAnnotationUi::drawUiOverlay(EpubActivity& act) {
 void EpubAnnotationUi::handleInput(EpubActivity& act) {
   const MappedInputManager& m = act.mappedInput;
 
+  if (touchDragActive_) {
+    float nx = 0.0f;
+    float ny = 0.0f;
+    if (m.isTouchHeldInScreen(act.renderer, nx, ny)) {
+      const int x = static_cast<int>(nx * act.renderer.getScreenWidth());
+      const int y = static_cast<int>(ny * act.renderer.getScreenHeight());
+      const size_t oldFocus = focus_;
+      focusAt(x, y);
+      if (focus_ != oldFocus) {
+        act.updateRequired = true;
+      }
+      return;
+    }
+
+    // The release ends the drag. Keep the selected range and leave the
+    // existing Save/Add note controls available; do not let the same release
+    // become a page-turn swipe or the annotation close gesture.
+    touchDragActive_ = false;
+    touchSelectionComplete_ = true;
+    act.updateRequired = true;
+    INX_SERIAL.printf("[%lu] [ANNOTATION] touch drag end anchor=%u focus=%u\n", millis(),
+                      static_cast<unsigned>(anchor_), static_cast<unsigned>(focus_));
+    return;
+  }
+
   if (m.hasTouch() && m.wasTouchSwipeUpForRenderer(act.renderer)) {
     exit(act);
     act.startPageTimer();
@@ -429,6 +670,10 @@ void EpubAnnotationUi::handleInput(EpubActivity& act) {
       if (x >= caret.x && x < caret.x + caret.width && y >= caret.y && y < caret.y + caret.height) {
         controlsVisible_ = !controlsVisible_;
         act.updateRequired = true;
+        return;
+      }
+
+      if (handleTouchSelectionActionTap(act, x, y)) {
         return;
       }
 
@@ -621,4 +866,39 @@ void EpubAnnotationUi::saveToStorage(EpubActivity& act) {
                 static_cast<unsigned>(annotations_.records().size()));
 
   exit(act);
+}
+
+bool EpubAnnotationUi::saveExternalHighlight(EpubActivity& act, const std::string& selectedText, const size_t wordLo,
+                                             const size_t wordHi, const std::string& note,
+                                             const std::string& noteAudioPath) {
+  if (!act.epub || !act.section || selectedText.empty() || wordLo > wordHi) {
+    return false;
+  }
+
+  EpubAnnotationRecord record{};
+  record.timestamp = static_cast<uint32_t>(time(nullptr));
+  record.text = selectedText;
+  record.startSpine = static_cast<uint16_t>(act.currentSpineIndex);
+  record.startPage = static_cast<uint16_t>(act.section->currentPage);
+  record.endSpine = record.startSpine;
+  record.endPage = record.startPage;
+  record.pageWordLo = static_cast<uint16_t>(std::min<size_t>(wordLo, 0xFFFEu));
+  record.pageWordHi = static_cast<uint16_t>(std::min<size_t>(wordHi, 0xFFFEu));
+  record.startPageWordLo = EpubAnnotations::kWildcard;
+  record.startPageWordHi = EpubAnnotations::kWildcard;
+  record.note = note;
+  record.noteAudioPath = noteAudioPath;
+
+  const std::string cachePath = act.epub->getCachePath();
+  if (!annotations_.appendHighlight(cachePath, act.epub->getSpineItemsCount(), record, act.currentSpineIndex,
+                                     act.section->currentPage)) {
+    return false;
+  }
+
+  annotations_.ensurePageLoaded(cachePath, act.currentSpineIndex, act.section->currentPage);
+  clearWordIndexCache();
+  INX_SERIAL.printf("[%lu] [ANNOTATION] external highlight saved spine=%d page=%d words=%u..%u\n", millis(),
+                    act.currentSpineIndex, act.section->currentPage, static_cast<unsigned>(wordLo),
+                    static_cast<unsigned>(wordHi));
+  return true;
 }

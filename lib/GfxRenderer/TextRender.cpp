@@ -125,6 +125,14 @@ bool read1BitRowPixel(const uint8_t* row, const int width, const int x) {
   return ((row[x / 8] >> (7 - (x % 8))) & 1u) != 0;
 }
 
+// TTF glyph bitmaps are packed as one continuous pixel stream, so a row can
+// begin partway through a byte when the glyph width is not divisible by four.
+uint8_t read2BitRowPixel(const uint8_t* row, const size_t rowPixelOffset, const int x) {
+  const size_t packedPixel = rowPixelOffset + static_cast<size_t>(x);
+  const uint8_t byte = row[packedPixel / 4u];
+  return static_cast<uint8_t>((byte >> ((3u - (packedPixel % 4u)) * 2u)) & 0x3u);
+}
+
 const EpdFontFamily* findFontFamily(const GfxRenderer& gfx, const int fontId) { return gfx.findFontFamily(fontId); }
 
 ExternalFont* findStreamingFont(const GfxRenderer& gfx, const EpdFontData* data) { return gfx.findStreamingFont(data); }
@@ -692,8 +700,12 @@ void TextRender::renderChar(const EpdFontFamily& fontFamily, const uint32_t cp, 
       }
       uint8_t rowBuf[kMaxRowBytes];
       for (int glyphY = 0; glyphY < height; glyphY++) {
-        const uint32_t rowOff = glyph->dataOffset + static_cast<uint32_t>(glyphY) * static_cast<uint32_t>(rowBytes);
-        if (!it->getGlyphBitmap(rowOff, rowBytes, rowBuf)) {
+        const size_t rowPixelOffset = is2Bit ? (static_cast<size_t>(glyphY) * width) % 4u : 0u;
+        const size_t rowStartByte = is2Bit ? (static_cast<size_t>(glyphY) * width) / 4u
+                                           : static_cast<size_t>(glyphY) * rowBytes;
+        const size_t packedRowBytes = is2Bit ? (rowPixelOffset + width + 3u) / 4u : rowBytes;
+        const uint32_t rowOff = glyph->dataOffset + static_cast<uint32_t>(rowStartByte);
+        if (!it->getGlyphBitmap(rowOff, packedRowBytes, rowBuf)) {
           *x += glyph->advanceX;
           return;
         }
@@ -701,9 +713,7 @@ void TextRender::renderChar(const EpdFontFamily& fontFamily, const uint32_t cp, 
         for (int glyphX = 0; glyphX < width; glyphX++) {
           const int screenX = *x + left + glyphX;
           if (is2Bit) {
-            const uint8_t byte = rowBuf[glyphX / 4];
-            const uint8_t bitIndex = (3 - (glyphX % 4)) * 2;
-            const uint8_t bmpVal = 3 - ((byte >> bitIndex) & 0x3);
+            const uint8_t bmpVal = 3 - read2BitRowPixel(rowBuf, rowPixelOffset, glyphX);
 
             if (gray && gfx.renderMode == GfxRenderer::BW && bmpVal < 3) {
               if (((screenX + screenY) & 1) == 0) {
@@ -822,8 +832,12 @@ void TextRender::renderScaledChar(const EpdFontFamily& fontFamily, const uint32_
       uint8_t rowBuf[kMaxRowBytes];
       for (int outY = 0; outY < scaledH; ++outY) {
         const int srcY = std::min<int>(height - 1, (outY * static_cast<int>(height)) / scaledH);
-        const uint32_t rowOff = glyph->dataOffset + static_cast<uint32_t>(srcY) * static_cast<uint32_t>(rowBytes);
-        if (!it->getGlyphBitmap(rowOff, rowBytes, rowBuf)) {
+        const size_t rowPixelOffset = is2Bit ? (static_cast<size_t>(srcY) * width) % 4u : 0u;
+        const size_t rowStartByte = is2Bit ? (static_cast<size_t>(srcY) * width) / 4u
+                                           : static_cast<size_t>(srcY) * rowBytes;
+        const size_t packedRowBytes = is2Bit ? (rowPixelOffset + width + 3u) / 4u : rowBytes;
+        const uint32_t rowOff = glyph->dataOffset + static_cast<uint32_t>(rowStartByte);
+        if (!it->getGlyphBitmap(rowOff, packedRowBytes, rowBuf)) {
           *x += scaledAdvanceX;
           return;
         }
@@ -837,7 +851,7 @@ void TextRender::renderScaledChar(const EpdFontFamily& fontFamily, const uint32_
           if (is2Bit) {
             uint8_t rawMax = 0;
             for (int sx = sx0; sx < sx1; ++sx) {
-              const uint8_t raw = (rowBuf[sx / 4] >> ((3 - (sx % 4)) * 2)) & 0x3;
+              const uint8_t raw = read2BitRowPixel(rowBuf, rowPixelOffset, sx);
               if (raw > rawMax) rawMax = raw;
             }
             const uint8_t bmpVal = 3 - rawMax;

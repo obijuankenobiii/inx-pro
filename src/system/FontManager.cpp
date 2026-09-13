@@ -598,7 +598,7 @@ bool FontManager::ensureReaderLayoutFonts(int bodyFontId, GfxRenderer& renderer)
   const int headerFontId = getNextFont(bodyFontId);
   // Drop caps select their proportional size when the parser encounters one.
   // Do not preload the family's largest size here; for outline fonts that is
-  // commonly the generated 60pt variant and wastes PSRAM on ordinary chapters.
+  // commonly the generated 45pt variant and wastes PSRAM on ordinary chapters.
   int requiredIds[2] = {bodyFontId, headerFontId};
   int requiredCount = 0;
 

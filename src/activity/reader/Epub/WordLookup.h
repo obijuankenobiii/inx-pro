@@ -34,6 +34,7 @@ class WordLookup {
 
   bool captureFramebuffer(EpubActivity& activity);
   bool restoreFramebuffer(EpubActivity& activity) const;
+  void clearFramebufferCapture();
 
  private:
   void moveFocusWord(int delta);

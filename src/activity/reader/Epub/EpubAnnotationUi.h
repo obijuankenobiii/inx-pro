@@ -50,6 +50,8 @@ class EpubAnnotationUi {
   void tryChordEnter(EpubActivity& act);
   void enter(EpubActivity& act);
   bool startAt(EpubActivity& act, int x, int y);
+  /** Starts annotation selection when a touch begins on text and is dragged. */
+  bool handlePreEntryTouchGesture(EpubActivity& act);
   void exit(EpubActivity& act);
   void handleInput(EpubActivity& act);
   void repaint(EpubActivity& act);
@@ -66,6 +68,11 @@ class EpubAnnotationUi {
 
   std::string extractRangeText(size_t anchorFlat, size_t focusFlat) const;
   void saveToStorage(EpubActivity& act);
+  bool saveExternalHighlight(EpubActivity& act, const std::string& selectedText, size_t wordLo, size_t wordHi,
+                             const std::string& note = {}, const std::string& noteAudioPath = {});
+  bool captureExternalFramebuffer(EpubActivity& act) { return wordLookup_.captureFramebuffer(act); }
+  bool restoreExternalFramebuffer(EpubActivity& act) const { return wordLookup_.restoreFramebuffer(act); }
+  void clearExternalFramebuffer() { wordLookup_.clearFramebufferCapture(); }
 
   void prepareWordGeometry(EpubActivity& act);
 
@@ -76,10 +83,14 @@ class EpubAnnotationUi {
   void drawLatticeHighlightRect(EpubActivity& act, int x, int y, int width, int height);
   void drawLatticeHighlightForWordIndexRange(EpubActivity& act, size_t lo, size_t hi);
   void drawHighlights(EpubActivity& act);
+  void drawTouchSelectionHandles(EpubActivity& act);
+  void drawTouchSelectionActions(EpubActivity& act);
+  bool handleTouchSelectionActionTap(EpubActivity& act, int x, int y);
 
   bool focusAt(int x, int y);
   bool tryNavigationHoldRepeat(EpubActivity& act);
   bool captureFramebuffer(EpubActivity& act);
+  void resetTouchGestureState();
 
   bool hasSaveableContent() const;
   void resetSelectionToStart(EpubActivity& act);
@@ -102,6 +113,12 @@ class EpubAnnotationUi {
   unsigned long chordStartMs_ = 0;
   bool chordConsumed_ = false;
   bool selectingStarted_ = false;
+  bool touchDragActive_ = false;
+  bool touchGestureCandidate_ = false;
+  bool touchSelectionUi_ = false;
+  bool touchSelectionComplete_ = false;
+  int touchGestureStartX_ = 0;
+  int touchGestureStartY_ = 0;
   /** Completed ranges while browsing between Start/Stop cycles (same page). */
   std::vector<std::pair<size_t, size_t>> pendingSpans_;
   EpubAnnotations annotations_;

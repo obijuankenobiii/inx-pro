@@ -173,12 +173,20 @@ class EpubActivity final : public ActivityWithSubactivity {
   bool handleWordTouch();
   bool handleWordSelection();
   bool openWordSelection(int x, int y);
-  void startVoiceNoteForSelection(const std::string& selectedText, uint16_t wordLo, uint16_t wordHi);
+  void startVoiceNoteForSelection(const std::string& selectedText, uint16_t wordLo, uint16_t wordHi,
+                                  bool attachToHighlight = false);
   void startVoiceNoteForPage();
   void closeWordSelection();
   void renderWordSelection();
+  void drawWordSelectionRange();
+  void drawWordSelectionHandles();
+  void drawWordSelectionActionBar(const PageWordHit& word);
+  bool wordSelectionActionBarBounds(const PageWordHit& word, int& x, int& y, int& width, int& height,
+                                    std::vector<int>* itemWidths = nullptr) const;
+  int wordSelectionHandleAt(int x, int y) const;
+  bool wordSelectionIsMultiple() const;
   int wordAt(int x, int y) const;
-  /** Base word-action list ("Look up"/"Highlight"/"Add note") plus "View footnote" appended when the
+  /** Base word-action list ("Look up"/"Add note") plus "View footnote" appended when the
    * currently selected word (touchWords_[selectedWord_]) is a footnote/link marker. */
   std::vector<std::string> currentWordActions() const;
 
@@ -286,6 +294,11 @@ class EpubActivity final : public ActivityWithSubactivity {
   bool wordSelectionOpen_ = false;
   bool wordActionsOpen_ = false;
   int selectedWord_ = -1;
+  int wordSelectionAnchor_ = -1;
+  int wordSelectionFocus_ = -1;
+  bool wordSelectionHandleDragActive_ = false;
+  bool wordSelectionDraggingStart_ = false;
+  bool wordSelectionDraggingOnWord_ = false;
   std::vector<PageWordHit> touchWords_;
   bool pageNotePopupOpen_ = false;
   bool pageNoteTranscriptionPending_ = false;

@@ -32,7 +32,7 @@ class FontManager {
 
   /** Point-size range exposed for TrueType/OpenType reader fonts. */
   static constexpr uint8_t OUTLINE_FONT_MIN_POINT_SIZE = 8;
-  static constexpr uint8_t OUTLINE_FONT_MAX_POINT_SIZE = 60;
+  static constexpr uint8_t OUTLINE_FONT_MAX_POINT_SIZE = 45;
 
   static void initialize(GfxRenderer& renderer);
 
