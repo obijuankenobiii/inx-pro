@@ -460,17 +460,17 @@
       const saveButton = document.getElementById('saveButton'); saveButton.disabled = true;
       try {
         const code = generated.code;
-        await mkdirQuiet('/', 'system'); await mkdirQuiet('/system', 'lang'); await mkdirQuiet('/system/lang', code);
+        await mkdirQuiet('/', '.system'); await mkdirQuiet('/.system', 'lang'); await mkdirQuiet('/.system/lang', code);
         await mkdirQuiet('/', 'fonts'); await mkdirQuiet('/fonts', 'lang'); await mkdirQuiet('/fonts/lang', code);
-        await uploadBlob(generated.yaml, 'translate.yml', '/system/lang/' + code);
+        await uploadBlob(generated.yaml, 'translate.yml', '/.system/lang/' + code);
         for (const bin of generated.bins) await uploadBlob(bin.blob, bin.filename, '/fonts/lang/' + code);
-        if (generated.hyphenation) await uploadBlob(generated.hyphenation, 'hyphenation.bin', '/system/lang/' + code);
+        if (generated.hyphenation) await uploadBlob(generated.hyphenation, 'hyphenation.bin', '/.system/lang/' + code);
         const rescan = await fetch('/api/fonts/rescan', {method: 'POST'});
         if (!rescan.ok) throw new Error(await rescan.text() || 'Font rescan failed');
         const active = await fetch('/api/language', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({code})});
         if (!active.ok) throw new Error(await active.text() || 'Could not activate language');
         await updateInstalledLanguages();
-        setStatus('Language files copied to /system/lang/' + code + '/ and /fonts/lang/' + code + '/.', false, true);
+        setStatus('Language files copied to /.system/lang/' + code + '/ and /fonts/lang/' + code + '/.', false, true);
       } catch (error) { setStatus('Copy failed: ' + (error.message || error), true); }
       finally { saveButton.disabled = false; }
     }

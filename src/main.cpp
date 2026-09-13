@@ -225,6 +225,11 @@ void openHomeSubPage(const HomeSubPage::Section section) {
   switchTo<HomeSubPage>(render, input, section, [] { onGoToHome(); });
 }
 
+void openHomeDescription(const std::string& bookPath, const std::string& cachePath) {
+  switchTo<HomeSubPage>(render, input, HomeSubPage::Section::Description, [] { onGoToHome(); }, "", bookPath,
+                        cachePath);
+}
+
 void openDictionaryLookup(const std::string& word) {
   switchTo<HomeSubPage>(render, input, HomeSubPage::Section::Dictionary, [] { onGoToHome(); }, word);
 }

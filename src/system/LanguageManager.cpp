@@ -446,7 +446,7 @@ bool parseTranslationLine(const std::string& line, std::string& key, std::string
 bool loadLanguageFile(const std::string& code, std::vector<Translation>& loaded, std::string& name) {
   if (!SdMan.ready() || code.empty()) return false;
 
-  const std::string path = "/system/lang/" + code + "/translate.yml";
+  const std::string path = "/.system/lang/" + code + "/translate.yml";
   SdIoMutex::Lock ioLock;
   FsFile file = SdMan.open(path.c_str(), O_READ);
   if (!file) return false;
@@ -577,7 +577,7 @@ const char* LanguageManager::activeLanguageName() {
 
 bool LanguageManager::isInstalled(const char* code) {
   if (!validCode(code) || !code || code[0] == '\0' || !SdMan.ready()) return false;
-  const std::string path = "/system/lang/" + std::string(code) + "/translate.yml";
+  const std::string path = "/.system/lang/" + std::string(code) + "/translate.yml";
   SdIoMutex::Lock ioLock;
   return SdMan.exists(path.c_str());
 }
@@ -587,7 +587,7 @@ std::vector<LanguageManager::LanguageInfo> LanguageManager::installedLanguages()
   result.push_back({"", "English"});
   if (!SdMan.ready()) return result;
 
-  FsFile root = SdMan.open("/system/lang");
+  FsFile root = SdMan.open("/.system/lang");
   if (!root || !root.isDirectory()) return result;
 
   for (FsFile entry = root.openNextFile(); entry; entry = root.openNextFile()) {

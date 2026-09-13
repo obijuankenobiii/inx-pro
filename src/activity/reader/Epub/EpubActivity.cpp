@@ -837,7 +837,7 @@ bool EpubActivity::wordSelectionActionBarBounds(const PageWordHit& word, int& x,
     return false;
   }
 
-  const int font = systemFontId();
+  const int font = MONTSERRAT_8_FONT_ID;
   const std::vector<std::string> actions = currentWordActions();
   if (actions.empty()) {
     return false;
@@ -856,7 +856,7 @@ bool EpubActivity::wordSelectionActionBarBounds(const PageWordHit& word, int& x,
     }
   }
 
-  constexpr int margin = 20;
+  constexpr int margin = 15;
   const int lineBottom = word.screenY + std::max(3, word.screenH);
   const int anchorX = word.screenX + std::max(1, word.screenW);
   x = anchorX - width / 2;
@@ -1075,6 +1075,12 @@ bool EpubActivity::handleImageTouch() {
 bool EpubActivity::handleWordSelection() {
   if (!wordSelectionOpen_) {
     return false;
+  }
+
+  if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+    closeWordSelection();
+    renderScreen(true);
+    return true;
   }
 
   if (wordSelectionHandleDragActive_) {

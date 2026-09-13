@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-/** Runtime UI translation loader for /system/lang/<code>/translate.yml. */
+/** Runtime UI translation loader for /.system/lang/<code>/translate.yml. */
 class LanguageManager {
  public:
   struct LanguageInfo {

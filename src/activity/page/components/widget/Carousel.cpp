@@ -291,7 +291,7 @@ void Carousel::render(const int index, const int x, const int y, const int width
     if (showProgress) renderProgressTag(renderer_, books[0], layout.centerX, layout.centerY, layout.centerWidth,
                                          layout.centerHeight);
     renderCover(renderer_, books[1], layout.sideX, layout.sideY, layout.sideWidth, layout.sideHeight,
-                MONTSERRAT_10_FONT_ID, 0.5f, even, shadowStyle);
+                MONTSERRAT_10_FONT_ID, 0.0f, true, shadowStyle);
     if (showProgress) renderProgressTag(renderer_, books[1], layout.sideX, layout.sideY, layout.sideWidth,
                                          layout.sideHeight);
     return;
@@ -341,9 +341,10 @@ void Carousel::renderLeft(const int index, const int x, const int y, const int w
     if (card.x >= x + width) break;
     const int visibleWidth = std::min(card.width, x + width - card.x);
     if (visibleWidth <= 0) break;
+    const bool clipped = visibleWidth < card.width;
     renderCover(renderer_, books[static_cast<size_t>(bookIndex)], card.x, card.y, visibleWidth, card.height,
-                MONTSERRAT_10_FONT_ID, 0.5f, even || visibleWidth < card.width, shadowStyle);
-    if (showProgress) {
+                MONTSERRAT_10_FONT_ID, clipped ? 0.0f : 0.5f, even || clipped, shadowStyle);
+    if (showProgress && !clipped) {
       renderProgressTag(renderer_, books[static_cast<size_t>(bookIndex)], card.x, card.y, visibleWidth, card.height);
     }
     cardX += card.width + kLeftCardGap;
@@ -368,8 +369,9 @@ void Carousel::preload(const int index, const int x, const int y, const int widt
         if (card.x >= x + width) break;
         const int visibleWidth = std::min(card.width, x + width - card.x);
         if (visibleWidth > 0) {
-          preloadCover(renderer_, books[bookIndex], card.x, card.y, visibleWidth, card.height, 0.5f,
-                       even || visibleWidth < card.width);
+          const bool clipped = visibleWidth < card.width;
+          preloadCover(renderer_, books[bookIndex], card.x, card.y, visibleWidth, card.height,
+                       clipped ? 0.0f : 0.5f, even || clipped);
         }
         cardX += card.width + kLeftCardGap;
       }
@@ -385,7 +387,7 @@ void Carousel::preload(const int index, const int x, const int y, const int widt
     const bool even = evenThumbnails();
     preloadCover(renderer_, books[0], layout.centerX, layout.centerY, layout.centerWidth, layout.centerHeight, 0.5f,
                  even);
-    preloadCover(renderer_, books[1], layout.sideX, layout.sideY, layout.sideWidth, layout.sideHeight, 0.5f, even);
+    preloadCover(renderer_, books[1], layout.sideX, layout.sideY, layout.sideWidth, layout.sideHeight, 0.0f, true);
     return;
   }
   for (size_t book = 0; book < books.size(); ++book) {
@@ -443,7 +445,7 @@ void Carousel::previewLeft(const int x, const int y, const int width, const int 
     renderer_.rectangle.fill(cardX, cardY, visibleWidth, cardHeight, false);
     renderer_.rectangle.render(cardX, cardY, visibleWidth, cardHeight, true,
                                SETTINGS.bitmapRoundedCorners != 0, SETTINGS.bitmapRoundedCorners == 2);
-    if (showProgress) {
+    if (showProgress && visibleWidth == cardWidth) {
       const RecentBook placeholder("", "", "Book title", "Author", 0.65f);
       renderProgressTag(renderer_, placeholder, cardX, cardY, visibleWidth, cardHeight);
     }

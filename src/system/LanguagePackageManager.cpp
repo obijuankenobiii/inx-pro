@@ -186,14 +186,14 @@ bool installArchiveLocked(const std::string& archivePath, const std::string& cod
     return false;
   }
 
-  SdMan.mkdir("/system");
-  SdMan.mkdir("/system/lang");
-  SdMan.mkdir((std::string("/system/lang/") + code).c_str());
+  SdMan.mkdir("/.system");
+  SdMan.mkdir("/.system/lang");
+  SdMan.mkdir((std::string("/.system/lang/") + code).c_str());
   SdMan.mkdir("/fonts");
   SdMan.mkdir("/fonts/lang");
   SdMan.mkdir((std::string("/fonts/lang/") + code).c_str());
 
-  const std::string translationPath = "/system/lang/" + code + "/translate.yml";
+  const std::string translationPath = "/.system/lang/" + code + "/translate.yml";
   size_t writtenBytes = 0;
   for (size_t i = 0; i < zip.entryCount(); ++i) {
     const char* name = zip.fileNameAt(i);
@@ -210,7 +210,7 @@ bool installArchiveLocked(const std::string& archivePath, const std::string& cod
     if (entryName == languagePrefix + "hyphenation.bin") {
       size_t inflatedSize = 0;
       if (!zip.getInflatedFileSize(entryName.c_str(), &inflatedSize) ||
-          !writeZipEntry(zip, entryName, "/system/lang/" + code + "/hyphenation.bin", inflatedSize, error)) {
+          !writeZipEntry(zip, entryName, "/.system/lang/" + code + "/hyphenation.bin", inflatedSize, error)) {
         zip.close();
         return false;
       }
@@ -258,7 +258,7 @@ bool LanguagePackageManager::isInstalled(const Package& package) {
   if (!SdMan.ready() || !isSafeLanguageCode(package.code)) return false;
 
   SdIoMutex::Lock ioLock;
-  const std::string codePath = "/system/lang/" + package.code;
+  const std::string codePath = "/.system/lang/" + package.code;
   const std::string translationPath = codePath + "/translate.yml";
   if (!SdMan.exists(translationPath.c_str())) return false;
 
@@ -310,7 +310,7 @@ bool LanguagePackageManager::remove(const Package& package, std::string& error) 
   }
 
   SdIoMutex::Lock ioLock;
-  const std::string systemPath = "/system/lang/" + package.code;
+  const std::string systemPath = "/.system/lang/" + package.code;
   const std::string fontPath = "/fonts/lang/" + package.code;
   const bool hadSystem = SdMan.exists(systemPath.c_str());
   const bool hadFonts = SdMan.exists(fontPath.c_str());

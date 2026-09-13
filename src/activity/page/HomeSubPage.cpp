@@ -22,6 +22,7 @@
 #include "components/global/Button.h"
 #include "images/Close.h"
 #include "images/Download.h"
+#include "images/LibraryFilterRight.h"
 #include "images/Trash.h"
 #include "activity/util/KeyboardEntryActivity.h"
 #include "dictionary/StarDictLookup.h"
@@ -50,6 +51,8 @@ const char* label(const HomeSubPage::Section section) {
       return "Favorites";
     case HomeSubPage::Section::Dictionary:
       return "Dictionary";
+    case HomeSubPage::Section::Description:
+      return "Description";
   }
   return "";
 }
@@ -64,6 +67,8 @@ const char* emptyState(const HomeSubPage::Section section) {
       return "No favorites yet";
     case HomeSubPage::Section::Dictionary:
       return "No saved words yet";
+    case HomeSubPage::Section::Description:
+      return "No description available";
   }
   return "";
 }
@@ -112,6 +117,10 @@ std::string cachePathForBookPath(const std::string& bookPath) {
   return "/.metadata/epub/" + std::to_string(std::hash<std::string>{}(bookPath));
 }
 
+std::string metadataCachePathForBook(const RecentBook& book) {
+  return book.cachePath.empty() ? cachePathForBookPath(book.path) : book.cachePath;
+}
+
 std::string bookPathForCachePath(const std::string& cachePath) {
   for (const RecentBook& book : RECENT_BOOKS.getBooks()) {
     if (book.path.empty()) continue;
@@ -149,8 +158,13 @@ std::string trimText(std::string text) {
 }
 
 HomeSubPage::HomeSubPage(GfxRenderer& renderer, MappedInputManager& mappedInput, const Section section,
-                         std::function<void()> close, std::string lookupWord)
-    : SubPage(label(section), renderer, mappedInput, std::move(close)), section(section), lookupWord_(std::move(lookupWord)) {}
+                         std::function<void()> close, std::string lookupWord, std::string descriptionBookPath,
+                         std::string descriptionCachePath)
+    : SubPage(label(section), renderer, mappedInput, std::move(close)),
+      section(section),
+      lookupWord_(std::move(lookupWord)),
+      descriptionBookPath_(std::move(descriptionBookPath)),
+      descriptionCachePath_(std::move(descriptionCachePath)) {}
 
 const char* HomeSubPage::name() const { return headerName_.empty() ? label(section) : headerName_.c_str(); }
 
@@ -177,6 +191,12 @@ void HomeSubPage::onEnter() {
   lookupAlreadySaved_ = false;
   lookupSaveX_ = -1;
   lookupNextX_ = -1;
+  descriptionPage_ = 0;
+  descriptionLines_.clear();
+  descriptionPages_.clear();
+  descriptionAuthor_.clear();
+  descriptionBodyTop_ = contentTop;
+  descriptionBottom_ = renderer.getScreenHeight() - contentBottom;
   load();
   if (section == Section::Dictionary && !lookupWord_.empty()) {
     lookupWord_ = trimText(lookupWord_);
@@ -189,6 +209,11 @@ void HomeSubPage::onEnter() {
 }
 
 void HomeSubPage::loop() {
+  if (section == Section::Description) {
+    if (descriptionInput()) return;
+    renderPage();
+    return;
+  }
   if (lookupShowing_) {
     if (lookupLoading_) {
       renderPage();
@@ -307,6 +332,11 @@ void HomeSubPage::load() {
   pages.clear();
   page = 0;
 
+  if (section == Section::Description) {
+    loadDescription();
+    return;
+  }
+
   if (section == Section::Dictionary) {
     const int savedCount = SAVED_WORDS.count();
     rows.reserve(static_cast<size_t>(savedCount));
@@ -375,6 +405,79 @@ void HomeSubPage::load() {
     rows[index].groupStart = index == 0 || rows[index].cachePath != rows[index - 1].cachePath;
   }
   makePages();
+}
+
+void HomeSubPage::loadDescription() {
+  std::string title = "Description";
+  std::string raw;
+  if (!descriptionBookPath_.empty()) {
+    for (const RecentBook& book : RECENT_BOOKS.getBooks()) {
+      if (book.path == descriptionBookPath_) {
+        if (!book.title.empty()) title = book.title;
+        if (descriptionCachePath_.empty()) descriptionCachePath_ = metadataCachePathForBook(book);
+        break;
+      }
+    }
+  }
+
+  BookMetadataCache metadata(descriptionCachePath_);
+  if (metadata.load()) {
+    if (!metadata.coreMetadata.title.empty()) title = metadata.coreMetadata.title;
+    descriptionAuthor_ = metadata.coreMetadata.author;
+    raw = metadata.coreMetadata.description;
+  }
+
+  headerName_ = renderer.text.truncate(MONTSERRAT_16_FONT_ID, title.c_str(), renderer.getScreenWidth() - 100,
+                                       EpdFontFamily::BOLD);
+  descriptionLines_ = layoutDefinitionBlocks(renderer, parseHtmlToBlocks(raw), renderer.getScreenWidth() - 40);
+  descriptionBodyTop_ = contentTop;
+  if (!descriptionAuthor_.empty()) {
+    descriptionBodyTop_ += renderer.text.getLineHeight(MONTSERRAT_12_FONT_ID) + 14;
+  }
+  descriptionBottom_ = renderer.getScreenHeight() - contentBottom - renderer.text.getLineHeight(MONTSERRAT_10_FONT_ID) - 12;
+  makeDescriptionPages();
+}
+
+void HomeSubPage::makeDescriptionPages() {
+  descriptionPages_.clear();
+  if (descriptionLines_.empty()) {
+    descriptionPages_.push_back(0);
+    descriptionPage_ = 0;
+    return;
+  }
+
+  size_t start = 0;
+  while (start < descriptionLines_.size()) {
+    descriptionPages_.push_back(start);
+    int y = descriptionBodyTop_;
+    size_t index = start;
+    while (index < descriptionLines_.size()) {
+      const DefinitionStyledLine& line = descriptionLines_[index];
+      const int gap = index == start ? 0 : line.extraGapBeforePx;
+      const int lineHeight = renderer.text.getLineHeight(line.fontId);
+      if (y + gap + lineHeight > descriptionBottom_ && index > start) break;
+      y += gap + lineHeight;
+      ++index;
+    }
+    start = index > start ? index : start + 1;
+  }
+  descriptionPage_ = std::min(descriptionPage_, static_cast<int>(descriptionPages_.size()) - 1);
+}
+
+bool HomeSubPage::descriptionInput() {
+  if (closeInput()) return true;
+  if (!mappedInput.hasTouch()) return false;
+  if (mappedInput.wasTouchSwipeLeft() && descriptionPage_ + 1 < static_cast<int>(descriptionPages_.size())) {
+    ++descriptionPage_;
+    updateRequired = true;
+    return true;
+  }
+  if (mappedInput.wasTouchSwipeRight() && descriptionPage_ > 0) {
+    --descriptionPage_;
+    updateRequired = true;
+    return true;
+  }
+  return false;
 }
 
 void HomeSubPage::loadBookmarks(const std::string& cachePath, const std::string& title) {
@@ -522,6 +625,10 @@ bool HomeSubPage::contentInput() {
 }
 
 void HomeSubPage::menu() {
+  if (section == Section::Description) {
+    SubPage::menu();
+    return;
+  }
   if (selected < 0) {
     SubPage::menu();
     if (section == Section::Dictionary && !lookupShowing_) {
@@ -578,6 +685,10 @@ void HomeSubPage::makePages() {
 }
 
 void HomeSubPage::content() {
+  if (section == Section::Description) {
+    descriptionContent();
+    return;
+  }
   if (lookupShowing_) {
     lookupContent();
     return;
@@ -665,6 +776,27 @@ void HomeSubPage::content() {
                            LineRender::Style::Dotted);
     }
     y += rowHeight;
+  }
+}
+
+void HomeSubPage::descriptionContent() {
+  constexpr int left = 20;
+  if (!descriptionAuthor_.empty()) {
+    renderer.text.render(MONTSERRAT_12_FONT_ID, left, contentTop, descriptionAuthor_.c_str(), true,
+                         EpdFontFamily::REGULAR);
+  }
+  if (descriptionLines_.empty()) {
+    renderer.text.centered(systemFontId(), (contentTop + renderer.getScreenHeight()) / 2,
+                           "No description available");
+  } else {
+    const size_t start = descriptionPages_[static_cast<size_t>(descriptionPage_)];
+    renderStyledLines(renderer, descriptionLines_, left, descriptionBodyTop_, descriptionBottom_, start);
+  }
+
+  if (descriptionPage_ + 1 < static_cast<int>(descriptionPages_.size())) {
+    constexpr int caretSize = 30;
+    renderer.bitmap.icon(LibraryFilterRight, renderer.getScreenWidth() - 20 - caretSize,
+                         renderer.getScreenHeight() - contentBottom - caretSize, caretSize, caretSize);
   }
 }
 

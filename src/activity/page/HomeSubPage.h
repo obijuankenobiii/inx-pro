@@ -11,10 +11,11 @@
 
 class HomeSubPage final : public SubPage {
  public:
-  enum class Section { Bookmarks, Highlights, Favorites, Dictionary };
+  enum class Section { Bookmarks, Highlights, Favorites, Dictionary, Description };
 
   HomeSubPage(GfxRenderer& renderer, MappedInputManager& mappedInput, Section section,
-              std::function<void()> close, std::string lookupWord = {});
+              std::function<void()> close, std::string lookupWord = {}, std::string descriptionBookPath = {},
+              std::string descriptionCachePath = {});
 
   const char* name() const override;
   void onEnter() override;
@@ -64,6 +65,10 @@ class HomeSubPage final : public SubPage {
   void saveDictionaryLookup();
   void startNoteTranscription();
   void pollNoteTranscription();
+  void loadDescription();
+  void makeDescriptionPages();
+  void descriptionContent();
+  bool descriptionInput();
 
   bool transcriptionPending_ = false;
   uint32_t transcriptionLastRefreshMs_ = 0;
@@ -90,4 +95,12 @@ class HomeSubPage final : public SubPage {
   int lookupNextY_ = -1;
   int lookupNextW_ = 0;
   int lookupNextH_ = 0;
+  std::string descriptionBookPath_;
+  std::string descriptionCachePath_;
+  std::string descriptionAuthor_;
+  std::vector<DefinitionStyledLine> descriptionLines_;
+  std::vector<size_t> descriptionPages_;
+  int descriptionPage_ = 0;
+  int descriptionBodyTop_ = 80;
+  int descriptionBottom_ = 0;
 };
