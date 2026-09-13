@@ -45,6 +45,9 @@ class FontManagerActivity final : public ActivityWithSubactivity {
   volatile size_t progressTotal_ = 0;
   volatile bool updateRequired_ = false;
   volatile State state_ = State::Ready;
+  volatile bool showCompletionCheck_ = false;
+  volatile uint32_t completionCheckExpiresAt_ = 0;
+  bool fontCatalogNeedsRescan_ = false;
   TaskHandle_t displayTaskHandle_ = nullptr;
   TaskHandle_t installTaskHandle_ = nullptr;
   SemaphoreHandle_t renderingMutex_ = nullptr;

@@ -142,7 +142,8 @@ bool FontPackageManager::isInstalled(const Package& package) {
   return installed;
 }
 
-bool FontPackageManager::install(const Package& package, std::string& error, ProgressCallback progress) {
+bool FontPackageManager::install(const Package& package, std::string& error, ProgressCallback progress,
+                                 const bool rescanFonts) {
   error.clear();
   if (package.url.empty()) {
     error = "Invalid font package";
@@ -229,7 +230,7 @@ bool FontPackageManager::install(const Package& package, std::string& error, Pro
     return false;
   }
 
-  FontManager::scanSDFonts("/fonts", true);
+  if (rescanFonts) FontManager::scanSDFonts("/fonts", true);
   return true;
 }
 

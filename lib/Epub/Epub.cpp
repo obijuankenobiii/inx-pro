@@ -64,8 +64,10 @@ bool spineHrefLooksLikeRenderableHtml(const std::string& href) {
 
 constexpr const char* kPackagedDeviceThumbnailPath = "META-INF/thumbnail.jpg";
 constexpr const char* kBookMetadataCacheFile = "/book.bin";
-constexpr int kThumbnailMaxWidth = 360;
-constexpr int kThumbnailMaxHeight = 540;
+// Keep generated EPUB thumbnails at the X4 Pro's native portrait width scale so
+// library/carousel views do not have to enlarge a low-resolution cover.
+constexpr int kThumbnailMaxWidth = 480;
+constexpr int kThumbnailMaxHeight = 720;
 constexpr uint8_t kThumbnailJpegQuality = 96;
 constexpr size_t kSlowPathCoverPsramMaxBytes = 1024 * 1024;
 constexpr size_t kImageMetadataProbeBytes = 64 * 1024;

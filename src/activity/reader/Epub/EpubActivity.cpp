@@ -52,6 +52,7 @@
 #include "system/FrontlightPreferences.h"
 #include "system/MappedInputManager.h"
 #include "system/ScreenComponents.h"
+#include "system/StudyCards.h"
 
 namespace {
 constexpr unsigned long goHomeMs = 1000;
@@ -190,9 +191,10 @@ void EpubActivity::drawPreparingBookScreen() {
   renderer.displayBuffer();
 }
 
-void EpubActivity::readerPopup(const char* message) {
+void EpubActivity::readerPopup(const char* message, const uint32_t autoDismissMs) {
   invalidatePreparedPage();
   pauseReadingStats();
+  readerPopupExpiresAt_ = autoDismissMs == 0 ? 0 : millis() + autoDismissMs;
   renderer.syncWriteBufferFromActive();
   ScreenComponents::drawPopup(renderer, message);
 }
@@ -711,6 +713,9 @@ std::vector<std::string> EpubActivity::currentWordActions() const {
   }
   actions.push_back("Highlight");
   actions.push_back(wordSelectionIsMultiple() ? "Add note" : "Add page note");
+  if (StudyCards::isInstalled()) {
+    actions.push_back("Add to study");
+  }
   if (!wordSelectionIsMultiple() && selectedWord_ >= 0 && selectedWord_ < static_cast<int>(touchWords_.size()) &&
       !touchWords_[static_cast<size_t>(selectedWord_)].footnoteTarget.empty()) {
     actions.push_back("View footnote");
@@ -843,14 +848,15 @@ bool EpubActivity::wordSelectionActionBarBounds(const PageWordHit& word, int& x,
     return false;
   }
 
+  const bool vertical = actions.size() > 3;
   width = 0;
-  height = Button::height;
+  height = vertical ? Button::height * static_cast<int>(actions.size()) : Button::height;
   if (itemWidths) {
     itemWidths->clear();
   }
   for (const std::string& action : actions) {
     const int itemWidth = Button::width(renderer, action.c_str(), font);
-    width += itemWidth;
+    width = vertical ? std::max(width, itemWidth) : width + itemWidth;
     if (itemWidths) {
       itemWidths->push_back(itemWidth);
     }
@@ -885,6 +891,22 @@ void EpubActivity::drawWordSelectionActionBar(const PageWordHit& word) {
   const int textHeight = renderer.text.getLineHeight(font);
   const int textY = y + (height - textHeight) / 2;
   const std::vector<std::string> actions = currentWordActions();
+  const bool vertical = actions.size() > 3;
+  if (vertical) {
+    constexpr int verticalTextPadding = 16;
+    for (size_t i = 0; i < actions.size(); ++i) {
+      const int rowY = y + static_cast<int>(i) * Button::height;
+      renderer.text.render(font, x + verticalTextPadding, rowY + (Button::height - textHeight) / 2,
+                           actions[i].c_str(), true,
+                           EpdFontFamily::REGULAR);
+      if (i + 1 < actions.size()) {
+        renderer.line.render(x + 8, rowY + Button::height, x + width - 8, rowY + Button::height, true,
+                             LineRender::Style::Dotted);
+      }
+    }
+    return;
+  }
+
   int itemX = x;
   for (size_t i = 0; i < actions.size(); ++i) {
     const int textWidth = renderer.text.getWidth(font, actions[i].c_str());
@@ -1227,13 +1249,20 @@ bool EpubActivity::handleWordSelection() {
   }
 
   int action = -1;
-  int actionX = barX;
-  for (size_t i = 0; i < itemWidths.size(); ++i) {
-    if (x >= actionX && x < actionX + itemWidths[i]) {
-      action = static_cast<int>(i);
-      break;
+  if (actions.size() > 3) {
+    const int row = (y - barY) / Button::height;
+    if (row >= 0 && row < static_cast<int>(actions.size())) {
+      action = row;
     }
-    actionX += itemWidths[i];
+  } else {
+    int actionX = barX;
+    for (size_t i = 0; i < itemWidths.size(); ++i) {
+      if (x >= actionX && x < actionX + itemWidths[i]) {
+        action = static_cast<int>(i);
+        break;
+      }
+      actionX += itemWidths[i];
+    }
   }
   if (action < 0 || action >= static_cast<int>(actions.size())) {
     return true;
@@ -1253,9 +1282,13 @@ bool EpubActivity::handleWordSelection() {
   const std::string actionLabel = actions[static_cast<size_t>(action)];
   const bool keepSelectionForNote = actionLabel == "Add note";
   bool highlighted = false;
+  bool studyCardAdded = false;
   if (actionLabel == "Highlight") {
     highlighted = annUi_.saveExternalHighlight(*this, selectedText, static_cast<size_t>(wordLo),
                                                 static_cast<size_t>(wordHi));
+  } else if (actionLabel == "Add to study" && epub && section) {
+    studyCardAdded = StudyCards::add(*epub, getCurrentChapterTitle(), static_cast<uint16_t>(currentSpineIndex),
+                                     static_cast<uint16_t>(section->currentPage), selectedText);
   }
   if (!keepSelectionForNote) {
     closeWordSelection();
@@ -1271,10 +1304,12 @@ bool EpubActivity::handleWordSelection() {
     if (!highlighted) {
       readerPopup("Could not save highlight");
     }
-  } else if (actionLabel == "Add page note") {
+  } else if (actionLabel == "Add note") {
     startVoiceNoteForPage();
   } else if (actionLabel == "Add note") {
     startVoiceNoteForSelection(selectedText, static_cast<uint16_t>(wordLo), static_cast<uint16_t>(wordHi), true);
+  } else if (actionLabel == "Add to study") {
+    readerPopup(studyCardAdded ? "Added to study" : "Could not save study card", 1400);
   } else if (actionLabel == "View footnote" && !word.footnoteTarget.empty()) {
     footnoteBody_.show(*this, word.footnoteTarget, word.text);
   }
@@ -1351,6 +1386,13 @@ void EpubActivity::loop() {
   if (subActivity) {
     subActivity->loop();
     consumePageNoteVoiceCompletion();
+    return;
+  }
+
+  if (readerPopupExpiresAt_ != 0 && static_cast<int32_t>(millis() - readerPopupExpiresAt_) >= 0) {
+    readerPopupExpiresAt_ = 0;
+    updateRequired = false;
+    renderScreen(true);
     return;
   }
 

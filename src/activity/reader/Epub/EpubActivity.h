@@ -271,7 +271,7 @@ class EpubActivity final : public ActivityWithSubactivity {
   void drawLoadingScreen();
 
   /** Close drawers (if open), then show a centered popup message. */
-  void readerPopup(const char* message);
+  void readerPopup(const char* message, uint32_t autoDismissMs = 0);
 
   /** After a failed chapter load: popup, revert once to last good chapter, then clear cache and exit if still broken.
    */
@@ -310,6 +310,7 @@ class EpubActivity final : public ActivityWithSubactivity {
   bool pageNoteVoiceCompletionPending_ = false;
   bool pageNoteVoiceSuccess_ = false;
   std::string pageNoteVoicePath_;
+  uint32_t readerPopupExpiresAt_ = 0;
   OrientationPickerUi orientationPicker_;
   PresetPickerUi presetPicker_;
   QuickActionsMenuUi quickActionsUi_;

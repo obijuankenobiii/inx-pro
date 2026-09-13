@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inx — Study Cards</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#fafafa;color:#1d1d1f;font-family:system-ui,sans-serif}
+.container{max-width:760px;margin:0 auto;padding:28px 18px}.header{text-align:center;margin-bottom:22px}
+h1{font-size:26px;margin:0 0 18px}.nav{display:flex;justify-content:center;gap:6px;flex-wrap:wrap;border-bottom:1px solid #eee;padding-bottom:12px}
+.nav a{color:#555;text-decoration:none;padding:6px 10px;border-radius:7px;font-size:13px}.nav a.active{background:#111;color:#fff}
+.toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:24px 0 16px;flex-wrap:wrap}
+.summary{color:#777;font-size:13px}.actions{display:flex;gap:8px}.button{border:0;border-radius:999px;background:#111;color:#fff;padding:9px 15px;font:inherit;font-size:13px;cursor:pointer}.button.secondary{background:#e8e8ed;color:#222}
+.card-row{background:#fff;border:1px solid #ececef;border-radius:12px;padding:15px 16px;margin-bottom:10px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+.card-front{font-size:17px;font-weight:650}.card-back{margin-top:8px;color:#555;white-space:pre-wrap}.card-meta{margin-top:12px;color:#999;font-size:12px}.empty{text-align:center;color:#888;padding:48px 16px;background:#fff;border:1px solid #eee;border-radius:12px}
+</style>
+<div class="container">
+  <div class="header"><h1>Study Cards</h1><nav class="nav"><a href="/">Dashboard</a><a href="/epub">Epub</a><a href="/export">Notes</a><a class="active" href="/study">Study</a></nav></div>
+  <div class="toolbar"><span class="summary" id="summary">Loading...</span><div class="actions"><button class="button secondary" onclick="downloadCards('json')">Download JSON</button><button class="button" onclick="downloadCards('anki')">Download for Anki</button></div></div>
+  <div id="card-list"><div class="empty">Loading cards...</div></div>
+</div>
+<script defer src="/js/study_page.js"></script>

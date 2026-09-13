@@ -9,6 +9,7 @@
 #include "activity/page/components/global/PopUp.h"
 #include "activity/settings/DictionaryManagerActivity.h"
 #include "activity/settings/FontManagerActivity.h"
+#include "activity/settings/PluginManagerActivity.h"
 #include "images/BookAtlas.h"
 #include "images/Language.h"
 #include "images/Plugins.h"
@@ -35,7 +36,7 @@ constexpr int kIconX = 24;
 constexpr int kTextX = 88;
 constexpr int kSubtitleGap = 5;
 
-bool comingSoonItem(const int index) { return index == 1 || index == 3; }
+bool comingSoonItem(const int index) { return index == 1; }
 }
 
 int StoreActivity::bodyTop() { return FREEINK_DEVICE_X4PRO ? 80 : 70; }
@@ -53,6 +54,8 @@ void StoreActivity::openSelected() {
     enterNewActivity(new FontManagerActivity(renderer, mappedInput, [this] { subActivityFinished_ = true; }));
   } else if (selectedIndex_ == 2) {
     enterNewActivity(new DictionaryManagerActivity(renderer, mappedInput, [this] { subActivityFinished_ = true; }));
+  } else if (selectedIndex_ == 3) {
+    enterNewActivity(new PluginManagerActivity(renderer, mappedInput, [this] { subActivityFinished_ = true; }));
   } else if (comingSoonItem(selectedIndex_)) {
     comingSoonPopup_ = true;
     renderComingSoon();

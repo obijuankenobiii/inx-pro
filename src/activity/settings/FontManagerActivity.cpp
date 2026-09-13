@@ -27,7 +27,6 @@ constexpr uint32_t kInstallTaskStack = 8192;
 constexpr int kBottomMargin = 44;
 constexpr int kSideMargin = 20;
 constexpr int kActionIconSize = 40;
-constexpr int kActionIconGap = 12;
 constexpr int kScrollCaretSize = 40;
 constexpr int kCategoryFilterWidth = 150;
 constexpr int kCategoryFilterRowHeight = UiLayout::LIST_ITEM_HEIGHT;
@@ -118,6 +117,9 @@ void FontManagerActivity::onEnter() {
   progressTotal_ = 0;
   updateRequired_ = false;
   shuttingDown_ = false;
+  showCompletionCheck_ = false;
+  completionCheckExpiresAt_ = 0;
+  fontCatalogNeedsRescan_ = false;
   lastProgressPercent_ = -1;
   lastProgressUpdateMs_ = 0;
   loadPackages();
@@ -143,6 +145,10 @@ void FontManagerActivity::onExit() {
   if (renderingMutex_) {
     vSemaphoreDelete(renderingMutex_);
     renderingMutex_ = nullptr;
+  }
+  if (fontCatalogNeedsRescan_) {
+    FontManager::scanSDFonts("/fonts", true);
+    fontCatalogNeedsRescan_ = false;
   }
 }
 
@@ -266,6 +272,8 @@ void FontManagerActivity::installSelected() {
   state_ = State::Downloading;
   status_ = "Downloading and installing...";
   installingPackageIndex_ = packageIndex;
+  showCompletionCheck_ = false;
+  completionCheckExpiresAt_ = 0;
   progressDownloaded_ = 0;
   progressTotal_ = 0;
   lastProgressPercent_ = -1;
@@ -326,6 +334,8 @@ void FontManagerActivity::removeSelected() {
     READER_SETTINGS.fontFamily = SystemSetting::MONTSERRAT;
     READER_SETTINGS.saveToFile();
   }
+  showCompletionCheck_ = false;
+  completionCheckExpiresAt_ = 0;
   selectedVisible_ = false;
   status_ = "Font removed.";
   updateDisplay();
@@ -350,6 +360,7 @@ void FontManagerActivity::startInstallation() {
     updateDisplay();
     return;
   }
+  INX_SERIAL.printf("[%lu] [FONT-UI] display task ready handle=%p\n", millis(), displayTaskHandle_);
 
   updateRequired_ = true;
   if (xTaskCreatePinnedToCore(&FontManagerActivity::installTaskTrampoline, "FontInstallTask", kInstallTaskStack, this,
@@ -362,10 +373,20 @@ void FontManagerActivity::startInstallation() {
 }
 
 void FontManagerActivity::displayTaskLoop() {
+  INX_SERIAL.printf("[%lu] [FONT-UI] display task started\n", millis());
   while (true) {
+    if (showCompletionCheck_ && completionCheckExpiresAt_ != 0 &&
+        static_cast<int32_t>(millis() - completionCheckExpiresAt_) >= 0) {
+      showCompletionCheck_ = false;
+      completionCheckExpiresAt_ = 0;
+      updateRequired_ = true;
+    }
     if (updateRequired_) {
       updateRequired_ = false;
       if (renderingMutex_ && xSemaphoreTake(renderingMutex_, pdMS_TO_TICKS(100)) == pdTRUE) {
+        INX_SERIAL.printf("[%lu] [FONT-UI] render state=%d downloaded=%u total=%u\n", millis(),
+                          static_cast<int>(state_), static_cast<unsigned>(progressDownloaded_),
+                          static_cast<unsigned>(progressTotal_));
         render();
         xSemaphoreGive(renderingMutex_);
       }
@@ -391,20 +412,28 @@ void FontManagerActivity::installTaskLoop() {
             lastProgressUpdateMs_ = now;
             updateRequired_ = true;
           }
-        });
+        },
+        false);
+    if (installed) fontCatalogNeedsRescan_ = true;
   }
 
   if (!shuttingDown_) {
     if (installed) {
       state_ = State::Ready;
       status_ = "Font installed.";
+      showCompletionCheck_ = true;
+      completionCheckExpiresAt_ = millis() + 2000;
       selectedVisible_ = false;
     } else {
       state_ = State::Failed;
       status_ = error.empty() ? "Font installation failed." : error;
+      showCompletionCheck_ = false;
+      completionCheckExpiresAt_ = 0;
     }
     updateRequired_ = true;
   }
+  INX_SERIAL.printf("[%lu] [FONT-UI] install returned installed=%d state=%d\n", millis(), installed,
+                    static_cast<int>(state_));
   installTaskHandle_ = nullptr;
   vTaskDelete(nullptr);
 }
@@ -424,19 +453,28 @@ void FontManagerActivity::launchWifiSelection() {
 }
 
 void FontManagerActivity::onWifiSelectionComplete(const bool connected) {
+  INX_SERIAL.printf("[%lu] [FONT-WIFI] complete connected=%d status=%d ip=%s\n", millis(), connected,
+                    static_cast<int>(WiFi.status()), WiFi.localIP().toString().c_str());
   exitActivity();
-
+  INX_SERIAL.printf("[%lu] [FONT-WIFI] subactivity exited\n", millis());
   if (!connected || WiFi.status() != WL_CONNECTED || WiFi.localIP() == IPAddress(0, 0, 0, 0)) {
     state_ = State::Failed;
     status_ = "Wi-Fi connection failed. Tap Retry.";
-    updateDisplay();
+    render();
     return;
   }
-
+  renderer.syncWriteBufferFromActive();
+  render();
+  INX_SERIAL.printf("[%lu] [FONT-WIFI] starting font install\n", millis());
   installSelected();
 }
 
+
 void FontManagerActivity::render() {
+  // WifiSelectionActivity leaves the X4 Pro renderer after an async refresh.
+  // Re-seed the writable framebuffer from the frame actually on the panel
+  // before replacing it with the Font Manager screen.
+  renderer.syncWriteBufferFromActive();
   renderer.clearScreen();
   const int bodyTop = SubPage::header(renderer, "Font Manager");
   const int fontListTop = listTop(bodyTop);
@@ -478,7 +516,7 @@ void FontManagerActivity::render() {
     return;
   }
 
-  if (state_ == State::Ready && !packages_.empty()) {
+  if (!packages_.empty()) {
     const int total = visiblePackageCount();
     const int visibleRows = visibleRowCount(fontListTop);
     const int maxScroll = std::max(0, total - visibleRows);
@@ -498,10 +536,24 @@ void FontManagerActivity::render() {
       const bool selected = selectedVisible_ && index == selectedIndex_;
       if (selected) renderer.rectangle.fill(0, y, screenW, kRowHeight, static_cast<int>(GfxRenderer::FillTone::Ink));
       const int deleteIconX = screenW - kSideMargin - kActionIconSize;
-      const int actionIconX = deleteIconX - kActionIconGap - kActionIconSize;
-      const int maxNameWidth = screenW - (kSideMargin * 2) - (kActionIconSize * 2) - kActionIconGap - 20;
+      const bool downloadingCurrent = state_ == State::Downloading && packageIndex == installingPackageIndex_;
+      const size_t downloaded = progressDownloaded_;
+      const size_t totalBytes = progressTotal_;
+      const int percent = totalBytes > 0
+                              ? std::max(0, std::min(100, static_cast<int>((downloaded * 100) / totalBytes)))
+                              : 0;
+      const std::string percentText = std::to_string(percent) + "%";
+      const int percentWidth = renderer.text.getWidth(font, percentText.c_str());
+      const int maxNameWidth = downloadingCurrent
+                                   ? screenW - (kSideMargin * 2) - percentWidth - 20
+                                   : screenW - (kSideMargin * 2) - kActionIconSize - 20;
       const std::string displayName = displayFontName(packages_[static_cast<size_t>(packageIndex)].name);
-      const int previewFont = FontPreviews::fontIdForFamily(packages_[static_cast<size_t>(packageIndex)].installFamily);
+      // FontPackageManager rescans and unloads SD streaming fonts when the
+      // install finishes. Keep the download UI on the built-in system font so
+      // it cannot render a preview font while that catalog is being replaced.
+      const int previewFont = state_ == State::Downloading
+                                  ? -1
+                                  : FontPreviews::fontIdForFamily(packages_[static_cast<size_t>(packageIndex)].installFamily);
       const int nameFont = previewFont >= 0 ? previewFont : font;
       const int textY = y + (kRowHeight - renderer.text.getLineHeight(nameFont)) / 2;
       const std::string packageName = renderer.text.truncate(nameFont, displayName.c_str(), maxNameWidth,
@@ -513,10 +565,13 @@ void FontManagerActivity::render() {
         renderer.text.render(nameFont, kSideMargin, textY, packageName.c_str(), !selected, EpdFontFamily::REGULAR);
       }
       const int iconY = y + (kRowHeight - kActionIconSize) / 2;
-      if (installed) {
-        renderer.bitmap.icon(Check, actionIconX, iconY, kActionIconSize, kActionIconSize,
-                             BitmapRender::Orientation::None, selected);
-        renderer.bitmap.icon(Trash, deleteIconX, iconY, kActionIconSize, kActionIconSize,
+      if (downloadingCurrent) {
+        renderer.text.render(font, screenW - kSideMargin - percentWidth,
+                             y + (kRowHeight - renderer.text.getLineHeight(font)) / 2, percentText.c_str(),
+                             !selected, EpdFontFamily::REGULAR);
+      } else if (installed) {
+        const bool showCheck = showCompletionCheck_ && packageIndex == installingPackageIndex_;
+        renderer.bitmap.icon(showCheck ? Check : Trash, deleteIconX, iconY, kActionIconSize, kActionIconSize,
                              BitmapRender::Orientation::None, selected);
       } else {
         renderer.bitmap.icon(Download, deleteIconX, iconY, kActionIconSize, kActionIconSize,
@@ -532,8 +587,9 @@ void FontManagerActivity::render() {
                                                                : BitmapRender::Orientation::Rotate90CW;
     renderer.bitmap.iconScaled(LibraryFilterRight, caretBounds.x, caretBounds.y, 30, 30, kScrollCaretSize,
                                kScrollCaretSize, caretOrientation);
-    mappedInput.mapLabels("\xC2\xAB Back", "Download", "Up", "Down");
-    if (categoryFilterOpen_) categoryFilterDropdown();
+    mappedInput.mapLabels("\xC2\xAB Back", state_ == State::Downloading ? "" : "Download",
+                          state_ == State::Downloading ? "" : "Up", state_ == State::Downloading ? "" : "Down");
+    if (categoryFilterOpen_ && state_ != State::Downloading) categoryFilterDropdown();
   } else {
     const int centerY = bodyTop + (screenH - bodyTop - 80) / 2;
     renderer.text.centered(font, centerY - 26, status_.c_str(), true, EpdFontFamily::BOLD);
