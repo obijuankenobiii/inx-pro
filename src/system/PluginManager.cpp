@@ -14,7 +14,10 @@ extern "C" {
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <cstring>
 #include <vector>
+
+#include "esp_heap_caps.h"
 
 #include "../network/HttpDownloader.h"
 #include "util/SdIoMutex.h"
@@ -57,6 +60,27 @@ struct LoadedPlugin {
 };
 
 std::vector<LoadedPlugin> gLoadedPlugins;
+
+// Lua tables, VM stacks, strings, and compiled chunks are ordinary byte
+// buffers and do not need internal RAM. Keep the Lua heap in PSRAM so loading
+// a plugin does not take tens of kilobytes from the reader's working heap.
+void* luaPsramAllocator(void*, void* pointer, const size_t oldSize, const size_t newSize) {
+  if (newSize == 0) {
+    if (pointer) heap_caps_free(pointer);
+    return nullptr;
+  }
+
+  void* replacement = heap_caps_malloc(newSize, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (!replacement) return nullptr;
+  if (pointer) {
+    std::memcpy(replacement, pointer, std::min(oldSize, newSize));
+    heap_caps_free(pointer);
+  }
+  return replacement;
+}
+
+size_t internalHeapFree() { return heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT); }
+size_t psramHeapFree() { return heap_caps_get_free_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); }
 
 bool safeEntryName(const std::string& name) {
   if (name.empty() || name.size() > 96 || name == "." || name == ".." || name.find('/') != std::string::npos ||
@@ -310,7 +334,9 @@ lua_State* loadPlugin(const std::string& id, std::string& error) {
     error = "Lua entrypoint main.lua is missing or too large";
     return nullptr;
   }
-  lua_State* state = luaL_newstate();
+  const size_t internalBefore = internalHeapFree();
+  const size_t psramBefore = psramHeapFree();
+  lua_State* state = lua_newstate(luaPsramAllocator, nullptr);
   if (!state) {
     error = "Could not create Lua state";
     return nullptr;
@@ -325,7 +351,11 @@ lua_State* loadPlugin(const std::string& id, std::string& error) {
     return nullptr;
   }
   gLoadedPlugins.push_back({id, state});
-  INX_SERIAL.printf("[LUA] loaded plugin=%s\n", id.c_str());
+  INX_SERIAL.printf("[LUA] loaded plugin=%s internal_free=%u (%d) psram_free=%u (%d)\n", id.c_str(),
+                    static_cast<unsigned>(internalHeapFree()),
+                    static_cast<int>(internalHeapFree()) - static_cast<int>(internalBefore),
+                    static_cast<unsigned>(psramHeapFree()),
+                    static_cast<int>(psramHeapFree()) - static_cast<int>(psramBefore));
   return state;
 }
 

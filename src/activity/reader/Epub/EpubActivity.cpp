@@ -1301,30 +1301,25 @@ bool EpubActivity::handleWordSelection() {
     std::string luaError;
     pluginActionSucceeded = PluginManager::invoke(
         pluginId.c_str(), pluginFunction.c_str(),
-        [&](lua_State* state) {
-          lua_newtable(state);
-          const std::string context = selectedText;
-          const std::string book = epub->getTitle();
-          const std::string chapter = getCurrentChapterTitle();
-          lua_pushlstring(state, selectedText.c_str(), selectedText.size());
-          lua_setfield(state, -2, "front");
-          lua_pushliteral(state, "");
-          lua_setfield(state, -2, "back");
-          lua_pushlstring(state, context.c_str(), context.size());
-          lua_setfield(state, -2, "context");
-          lua_pushlstring(state, book.c_str(), book.size());
-          lua_setfield(state, -2, "book");
-          lua_pushlstring(state, chapter.c_str(), chapter.size());
-          lua_setfield(state, -2, "chapter");
-          lua_pushliteral(state, "inx study");
-          lua_setfield(state, -2, "tags");
-          lua_pushinteger(state, static_cast<lua_Integer>(section->currentPage));
-          lua_setfield(state, -2, "page");
-          lua_pushinteger(state, static_cast<lua_Integer>(currentSpineIndex));
-          lua_setfield(state, -2, "spine");
-          lua_pushinteger(state, static_cast<lua_Integer>(millis() / 1000));
-          lua_setfield(state, -2, "created");
-        },
+      [&](lua_State* state) {
+        lua_newtable(state);
+        const std::string book = epub->getTitle();
+        const std::string chapter = getCurrentChapterTitle();
+        lua_pushlstring(state, selectedText.c_str(), selectedText.size());
+        lua_setfield(state, -2, "selected_text");
+        lua_pushlstring(state, selectedText.c_str(), selectedText.size());
+        lua_setfield(state, -2, "selection_context");
+        lua_pushlstring(state, book.c_str(), book.size());
+        lua_setfield(state, -2, "book_title");
+        lua_pushlstring(state, chapter.c_str(), chapter.size());
+        lua_setfield(state, -2, "chapter_title");
+        lua_pushinteger(state, static_cast<lua_Integer>(section->currentPage));
+        lua_setfield(state, -2, "page_number");
+        lua_pushinteger(state, static_cast<lua_Integer>(currentSpineIndex));
+        lua_setfield(state, -2, "spine_index");
+        lua_pushinteger(state, static_cast<lua_Integer>(millis() / 1000));
+        lua_setfield(state, -2, "timestamp");
+      },
         luaError);
     if (!pluginActionSucceeded) INX_SERIAL.printf("[LUA] reader plugin action failed: %s\n", luaError.c_str());
   }

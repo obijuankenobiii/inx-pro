@@ -1196,10 +1196,9 @@ void LocalServer::handlePluginApi() const {
     server->send(404, "text/plain", error.c_str());
     return;
   }
-  const bool anki = function == "export_anki";
-  const char* contentType = anki ? "text/tab-separated-values; charset=utf-8" : "application/json; charset=utf-8";
-  if (anki) server->sendHeader("Content-Disposition", "attachment; filename=\"study-cards.txt\"");
-  server->send(200, contentType, output.c_str());
+  // Plugin functions own their response format. Keep the host route generic;
+  // download behavior and filenames belong to the plugin's web UI.
+  server->send(200, "text/plain; charset=utf-8", output.c_str());
 }
 
 void LocalServer::handleBookTagsGet() const {

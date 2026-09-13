@@ -2,6 +2,7 @@
 
 #include <GfxRenderer.h>
 #include <WiFi.h>
+#include <esp_heap_caps.h>
 
 #include <algorithm>
 #include <cctype>
@@ -135,11 +136,11 @@ void FontManagerActivity::onExit() {
   ActivityWithSubactivity::onExit();
 
   if (installTaskHandle_) {
-    vTaskDelete(installTaskHandle_);
+    vTaskDeleteWithCaps(installTaskHandle_);
     installTaskHandle_ = nullptr;
   }
   if (displayTaskHandle_) {
-    vTaskDelete(displayTaskHandle_);
+    vTaskDeleteWithCaps(displayTaskHandle_);
     displayTaskHandle_ = nullptr;
   }
   if (renderingMutex_) {
@@ -353,8 +354,8 @@ void FontManagerActivity::startInstallation() {
   }
 
   if (!displayTaskHandle_ &&
-      xTaskCreatePinnedToCore(&FontManagerActivity::displayTaskTrampoline, "FontDisplayTask", kDisplayTaskStack,
-                              this, 1, &displayTaskHandle_, 1) != pdPASS) {
+      xTaskCreatePinnedToCoreWithCaps(&FontManagerActivity::displayTaskTrampoline, "FontDisplayTask", kDisplayTaskStack,
+                                      this, 1, &displayTaskHandle_, 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
     state_ = State::Failed;
     status_ = "Could not start download.";
     updateDisplay();
@@ -363,8 +364,8 @@ void FontManagerActivity::startInstallation() {
   INX_SERIAL.printf("[%lu] [FONT-UI] display task ready handle=%p\n", millis(), displayTaskHandle_);
 
   updateRequired_ = true;
-  if (xTaskCreatePinnedToCore(&FontManagerActivity::installTaskTrampoline, "FontInstallTask", kInstallTaskStack, this,
-                              1, &installTaskHandle_, 0) != pdPASS) {
+  if (xTaskCreatePinnedToCoreWithCaps(&FontManagerActivity::installTaskTrampoline, "FontInstallTask", kInstallTaskStack,
+                                      this, 1, &installTaskHandle_, 0, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
     installTaskHandle_ = nullptr;
     state_ = State::Failed;
     status_ = "Could not start download.";
@@ -435,7 +436,7 @@ void FontManagerActivity::installTaskLoop() {
   INX_SERIAL.printf("[%lu] [FONT-UI] install returned installed=%d state=%d\n", millis(), installed,
                     static_cast<int>(state_));
   installTaskHandle_ = nullptr;
-  vTaskDelete(nullptr);
+  vTaskDeleteWithCaps(nullptr);
 }
 
 void FontManagerActivity::updateDisplay() {

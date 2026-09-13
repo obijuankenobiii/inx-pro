@@ -2,6 +2,7 @@
 
 #include <SDCardManager.h>
 #include <Serialization.h>
+#include <esp_heap_caps.h>
 
 #include <algorithm>
 #include <cstring>
@@ -24,11 +25,33 @@ constexpr uint8_t kLegacyCarouselShadowStyleVersion = 9;
 constexpr uint8_t kSleepThemeVersion = 3;
 constexpr int kMaxThemes = 8;
 
-Theme themes[kMaxThemes] = {};
-Theme sleepTheme = {};
+// These tables are persistent settings, not hot rendering buffers. Allocate
+// them once from PSRAM so the internal heap remains available to the reader
+// and display paths while preserving the existing reference-based API.
+Theme* themeStorage = nullptr;
+Theme* themes = nullptr;
+Theme* sleepThemeStorage = nullptr;
+#define sleepTheme (*sleepThemeStorage)
 int themeCount = 0;
 int selectedTheme = 0;
 bool loaded = false;
+
+bool ensureStorage() {
+  if (themeStorage != nullptr) return true;
+
+  constexpr uint32_t caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
+  themeStorage = static_cast<Theme*>(heap_caps_calloc(kMaxThemes + 1, sizeof(Theme), caps));
+  if (themeStorage == nullptr) {
+    // Keep the reader functional if PSRAM is unavailable, while still
+    // preferring PSRAM on the target boards.
+    themeStorage = static_cast<Theme*>(heap_caps_calloc(kMaxThemes + 1, sizeof(Theme), MALLOC_CAP_8BIT));
+  }
+  if (themeStorage == nullptr) return false;
+
+  themes = themeStorage;
+  sleepThemeStorage = themeStorage + kMaxThemes;
+  return true;
+}
 
 void setName(Theme& theme, const std::string& name) {
   std::strncpy(theme.name, name.c_str(), sizeof(theme.name) - 1);
@@ -204,6 +227,12 @@ void setLibraryFolder(char (&destination)[128], const char* source) {
 }
 
 void load() {
+  if (!ensureStorage()) {
+    loaded = true;
+    themeCount = 0;
+    selectedTheme = 0;
+    return;
+  }
   loaded = true;
   makeDefault();
 

@@ -2,6 +2,7 @@
 
 #include <GfxRenderer.h>
 #include <WiFi.h>
+#include <esp_heap_caps.h>
 
 #include <algorithm>
 #include <cstdio>
@@ -101,11 +102,11 @@ void LanguageManagerActivity::onExit() {
   while (installTaskHandle_ && millis() - start < 1500) vTaskDelay(pdMS_TO_TICKS(10));
   ActivityWithSubactivity::onExit();
   if (installTaskHandle_) {
-    vTaskDelete(installTaskHandle_);
+    vTaskDeleteWithCaps(installTaskHandle_);
     installTaskHandle_ = nullptr;
   }
   if (displayTaskHandle_) {
-    vTaskDelete(displayTaskHandle_);
+    vTaskDeleteWithCaps(displayTaskHandle_);
     displayTaskHandle_ = nullptr;
   }
   if (renderingMutex_) {
@@ -158,16 +159,16 @@ void LanguageManagerActivity::startInstallation() {
     return;
   }
   if (!displayTaskHandle_ &&
-      xTaskCreatePinnedToCore(&LanguageManagerActivity::displayTaskTrampoline, "LangDisplayTask", kDisplayTaskStack,
-                              this, 1, &displayTaskHandle_, 1) != pdPASS) {
+      xTaskCreatePinnedToCoreWithCaps(&LanguageManagerActivity::displayTaskTrampoline, "LangDisplayTask", kDisplayTaskStack,
+                                      this, 1, &displayTaskHandle_, 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
     state_ = State::Failed;
     status_ = "Could not start download.";
     updateDisplay();
     return;
   }
   updateRequired_ = true;
-  if (xTaskCreatePinnedToCore(&LanguageManagerActivity::installTaskTrampoline, "LangInstallTask", kInstallTaskStack,
-                              this, 1, &installTaskHandle_, 0) != pdPASS) {
+  if (xTaskCreatePinnedToCoreWithCaps(&LanguageManagerActivity::installTaskTrampoline, "LangInstallTask", kInstallTaskStack,
+                                      this, 1, &installTaskHandle_, 0, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
     installTaskHandle_ = nullptr;
     state_ = State::Failed;
     status_ = "Could not start download.";
@@ -273,7 +274,7 @@ void LanguageManagerActivity::installTaskLoop() {
     updateRequired_ = true;
   }
   installTaskHandle_ = nullptr;
-  vTaskDelete(nullptr);
+  vTaskDeleteWithCaps(nullptr);
 }
 
 void LanguageManagerActivity::updateDisplay() {

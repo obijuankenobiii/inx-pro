@@ -2,6 +2,7 @@
 
 #include <GfxRenderer.h>
 #include <WiFi.h>
+#include <esp_heap_caps.h>
 
 #include <algorithm>
 #include <cstdio>
@@ -48,11 +49,11 @@ void PluginManagerActivity::onExit() {
   while (workerTask_ && millis() - started < 1500) vTaskDelay(pdMS_TO_TICKS(10));
   ActivityWithSubactivity::onExit();
   if (workerTask_) {
-    vTaskDelete(workerTask_);
+    vTaskDeleteWithCaps(workerTask_);
     workerTask_ = nullptr;
   }
   if (displayTask_) {
-    vTaskDelete(displayTask_);
+    vTaskDeleteWithCaps(displayTask_);
     displayTask_ = nullptr;
   }
   if (renderingMutex_) {
@@ -113,16 +114,17 @@ void PluginManagerActivity::startInstallation() {
     render();
     return;
   }
-  if (!displayTask_ && xTaskCreatePinnedToCore(&PluginManagerActivity::displayTaskTrampoline, "PluginDisplayTask",
-                                               4096, this, 1, &displayTask_, 1) != pdPASS) {
+  if (!displayTask_ &&
+      xTaskCreatePinnedToCoreWithCaps(&PluginManagerActivity::displayTaskTrampoline, "PluginDisplayTask", 4096, this,
+                                      1, &displayTask_, 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
     state_ = State::Failed;
     status_ = "Could not start download.";
     render();
     return;
   }
   updateRequired_ = true;
-  if (xTaskCreatePinnedToCore(&PluginManagerActivity::workerTaskTrampoline, "PluginInstallTask", kTaskStack, this, 1,
-                              &workerTask_, 0) != pdPASS) {
+  if (xTaskCreatePinnedToCoreWithCaps(&PluginManagerActivity::workerTaskTrampoline, "PluginInstallTask", kTaskStack,
+                                      this, 1, &workerTask_, 0, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
     workerTask_ = nullptr;
     state_ = State::Failed;
     status_ = "Could not start download.";
@@ -176,7 +178,7 @@ void PluginManagerActivity::displayTaskTrampoline(void* param) {
     updateRequired_ = true;
   }
   workerTask_ = nullptr;
-  vTaskDelete(nullptr);
+  vTaskDeleteWithCaps(nullptr);
   while (true) vTaskDelay(portMAX_DELAY);
 }
 
