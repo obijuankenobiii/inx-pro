@@ -72,6 +72,7 @@ void EpubAnnotationUi::resetTouchGestureState() {
   touchSelectionComplete_ = false;
   touchGestureStartX_ = 0;
   touchGestureStartY_ = 0;
+  touchGestureStartMs_ = 0;
 }
 
 void EpubAnnotationUi::tryChordEnter(EpubActivity& act) {
@@ -215,6 +216,7 @@ bool EpubAnnotationUi::handlePreEntryTouchGesture(EpubActivity& act) {
     touchGestureCandidate_ = focusAt(x, y);
     touchGestureStartX_ = x;
     touchGestureStartY_ = y;
+    touchGestureStartMs_ = millis();
     if (touchGestureCandidate_) {
       INX_SERIAL.printf("[%lu] [ANNOTATION] touch candidate word=%u start=(%d,%d)\n", millis(),
                         static_cast<unsigned>(focus_), x, y);
@@ -241,12 +243,21 @@ bool EpubAnnotationUi::handlePreEntryTouchGesture(EpubActivity& act) {
   const int y = static_cast<int>(ny * act.renderer.getScreenHeight());
   const int dx = x - touchGestureStartX_;
   const int dy = y - touchGestureStartY_;
-  // Let quick text swipes remain page-turn gestures. Text selection becomes
-  // eligible only after the finger has held on the starting word for 500 ms.
-  if (m.lastTouchHeldMs() < kTouchSelectionHoldMs) {
+  // Let quick text swipes remain page-turn gestures. After 300 ms without
+  // movement, enter the normal word-selection UI immediately while the finger
+  // is still down; the handles no longer wait for touch release.
+  const unsigned long heldMs = touchGestureStartMs_ == 0 ? 0 : millis() - touchGestureStartMs_;
+  if (heldMs < kTouchSelectionHoldMs) {
     return true;
   }
   if (dx * dx + dy * dy < kTouchSelectionStartDistancePx * kTouchSelectionStartDistancePx) {
+    if (act.openWordSelection(touchGestureStartX_, touchGestureStartY_)) {
+      resetTouchGestureState();
+      // The long-press has already been consumed by word selection. Do not
+      // let the eventual finger-up become a second tap in the selection UI.
+      m.ignoreCurrentTouch();
+      return true;
+    }
     return true;
   }
 

@@ -86,6 +86,15 @@ for root, _, files in os.walk(SRC_DIR):
             with open(html_path, "r", encoding="utf-8") as f:
                 html_content = f.read()
 
+            # Removed web pages are no longer part of the navigation. Strip
+            # their legacy links from embedded pages as well.
+            html_content = re.sub(
+                r'<a\b[^>]*href=["\']?/(?:tags|export)["\']?[^>]*>\s*(?:Tags|Bookmarks\s*&(?:amp;)?\s*Annotations)\s*</a>',
+                "",
+                html_content,
+                flags=re.IGNORECASE,
+            )
+
             # Sticky has one fixed chrome layout. Keep the legacy source page
             # compatible with older branches, but do not expose the removed
             # Classic/Bottom Tabs selector in the firmware-served settings UI.
@@ -108,6 +117,47 @@ for root, _, files in os.walk(SRC_DIR):
                 html_content = html_content.replace(
                     'libraryMode:["List","Grid"]',
                     'libraryMode:["List","Grid","Thumbnail"]')
+                # Keep the web controls aligned with the persisted firmware
+                # fields.  SettingsPage.html is intentionally compact, so
+                # these small source transforms keep the generated page and
+                # the firmware API in lockstep without maintaining a second
+                # copy of the page.
+                html_content = html_content.replace(
+                    'sleepScreen:["Dark","Light","Custom","Recent Book","Transparent Cover","None","Date Time"]',
+                    'sleepScreen:["Dark","Light","Custom","Recent Book","Transparent Cover","None","Date Time","Widgets"]')
+                html_content = html_content.replace(
+                    'sleepScreenCoverFilter:["None","Contrast","Inverted"]',
+                    'sleepScreenCoverFilter:["None","Grayscale","Inverted"]')
+                html_content = html_content.replace(
+                    'frontButtonLayout:["Back, Ccnfirm, Left, Right","Left, Right, Back, Confirm","Left, Back, Confirm, Right","Back, Confirm, Right, Left"]',
+                    'frontButtonLayout:["Back, Confirm, Left, Right","Left, Right, Back, Confirm","Left, Back, Confirm, Right","Back, Confirm, Right, Left","Left, Right, Confirm, Back"]')
+                html_content = html_content.replace(
+                    'lineSpacing:["Tight","Normal","Wide","Wider","Loose"]',
+                    'lineHeight:["Tight (80%)","Normal (100%)","Wide (120%)","Wider (140%)","Loose (160%)"],textSpace:["Tight (80%)","Normal (100%)","Wide (120%)"]')
+                html_content = html_content.replace(
+                    'libraryMode:["List","Grid","Thumbnail"]',
+                    'libraryMode:["List","Grid","Thumbnail"],librarySortMode:["Title A-Z","Title Z-A","Folder A-Z","Folder Z-A","Author A-Z","Author Z-A"]')
+                html_content = html_content.replace(
+                    'optionValues={recentLibraryMode:[2,4,6],statusBarFullStyle:[0,7,8,9]}',
+                    'optionValues={recentLibraryMode:[2,4,6],lineHeight:[80,100,120,140,160],textSpace:[80,100,120],statusBarFullStyle:[0,7,8,9]}')
+                html_content = html_content.replace(
+                    'id=lineSpacing',
+                    'id=lineHeight')
+                html_content = html_content.replace(
+                    '<div class=setting-item><div><div class=setting-label>Screen Margin</div>',
+                    '<div class=setting-item><div><div class=setting-label>Word spacing</div></div><div class=setting-control><select id=textSpace></select></div></div><div class=setting-item><div><div class=setting-label>Screen Margin</div>')
+                html_content = html_content.replace(
+                    '<div class=setting-item><div><div class=setting-label>Boot Mode</div>',
+                    '<div class=setting-item><div><div class=setting-label>Library sort order</div></div><div class=setting-control><select id=librarySortMode></select></div></div><div class=setting-item><div><div class=setting-label>Boot Mode</div>')
+                html_content = html_content.replace(
+                    '<div class=setting-item><div><div class=setting-label>Image Quality</div></div><div class=setting-control><select id=readerImageGrayscale></select></div></div>',
+                    '<div class=setting-item><div><div class=setting-label>Image Quality</div></div><div class=setting-control><select id=readerImageGrayscale></select></div></div><div class=setting-item><div><div class=setting-label>Smart refresh on images</div></div><div class=setting-control><label class=toggle-switch><input id=readerSmartRefreshOnImages type=checkbox><span class=toggle-slider></span></label></div></div>')
+                html_content = html_content.replace(
+                    '"bionicReadingEnabled","textAntiAliasing"]',
+                    '"bionicReadingEnabled","textAntiAliasing","readerSmartRefreshOnImages"]')
+                html_content = html_content.replace(
+                    'const e="sleepScreen"!==a||clockAvailable()?options[a]:options[a].slice(0,6),s=optionValues[a]||e.map(function(e,t){return t})',
+                    'const e="sleepScreen"!==a||clockAvailable()?options[a]:options[a].filter(function(e,t){return 6!==t}),s=optionValues[a]||("sleepScreen"===a&&!clockAvailable()?e.map(function(e,t){return t>=6?t+1:t}):e.map(function(e,t){return t}))')
 
             if file == "FontManagerPage.html":
                 html_content = html_content.replace(

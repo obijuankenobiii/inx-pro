@@ -66,33 +66,36 @@ class LocalServer {
   bool isEpubFile(const String& filename) const;
 
   void handleRoot() const;
+  void handlePluginsPage() const;
   void handleFontManagerPage() const;
   void handleLanguageManagerPage() const;
-  void handleTagsPage() const;
   void handleInxFontPackJs() const;
   void handleJsZipMinJs() const;
   void handleQrCreatorLogoJs() const;
   void handleEpubPageJs() const;
   void handleFilesPageJs() const;
   void handlePluginPageJs() const;
+  void handlePluginAsset() const;
   void handleNotFound() const;
   void handleStatus() const;
+  void handleRecentBooksData() const;
+  void handleRecentBookDelete() const;
+  void handleDashboardStats() const;
   void handleDeviceIdentityGet() const;
   void handleDeviceIdentityPost() const;
   void handleDeviceIdentityPhoto() const;
   void handleDeviceIdentityCardImage() const;
   void handleFileList() const;
   void handleEpubPage() const;
-  void handleExportPage() const;
   void handlePluginPage() const;
   void handleFileListData() const;
-  void handleExportNotesData() const;
   void handlePluginApi() const;
   void handleDownload() const;
   void handleUpload() const;
   void handleUploadPost() const;
   void handleCreateFolder() const;
   void handleDelete() const;
+  void handleMove() const;
   void handleRename() const;
   void collectEpubRenames(const std::string& oldDirPath, const std::string& newDirPath,
                           std::vector<std::pair<std::string, std::string>>& out) const;
@@ -118,8 +121,4 @@ class LocalServer {
   void handleOpdsDelete() const;
 
   void handleFontsRescan() const;
-  void handleLibraryIndexRefresh() const;
-  void handleLibraryIndexStatus() const;
-  void handleBookTagsGet() const;
-  void handleBookTagsPost() const;
 };

@@ -119,6 +119,7 @@ class EpubAnnotationUi {
   bool touchSelectionComplete_ = false;
   int touchGestureStartX_ = 0;
   int touchGestureStartY_ = 0;
+  unsigned long touchGestureStartMs_ = 0;
   /** Completed ranges while browsing between Start/Stop cycles (same page). */
   std::vector<std::pair<size_t, size_t>> pendingSpans_;
   EpubAnnotations annotations_;

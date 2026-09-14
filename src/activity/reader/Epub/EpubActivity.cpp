@@ -61,7 +61,7 @@ extern "C" {
 namespace {
 constexpr unsigned long goHomeMs = 1000;
 constexpr unsigned long bookmarkHoldMs = 1000;
-constexpr unsigned long wordSelectionHoldMs = 500;
+constexpr unsigned long wordSelectionHoldMs = 300;
 constexpr bool kReaderHighQualityFastLut = true;
 constexpr int kWordSelectionHandleRadius = 11;
 constexpr int kWordSelectionActionGap = 14;
@@ -868,6 +868,12 @@ bool EpubActivity::wordSelectionActionBarBounds(const PageWordHit& word, int& x,
       itemWidths->push_back(itemWidth);
     }
   }
+  // The four-item menu is intentionally a little wider than the measured
+  // label bounds so it reads as a proper vertical action panel and does not
+  // crowd the system-font text at the right edge.
+  if (vertical) {
+    width += 20;
+  }
 
   constexpr int margin = 15;
   const int lineBottom = word.screenY + std::max(3, word.screenH);
@@ -891,14 +897,14 @@ void EpubActivity::drawWordSelectionActionBar(const PageWordHit& word) {
     return;
   }
 
-  renderer.rectangle.fill(x, y, width, height, false, true, false);
-  renderer.rectangle.render(x, y, width, height, true, true, false);
+  const std::vector<std::string> actions = currentWordActions();
+  const bool vertical = actions.size() > 3;
+  renderer.rectangle.fill(x, y, width, height, false, vertical ? false : true, false);
+  renderer.rectangle.render(x, y, width, height, true, vertical ? false : true, false);
 
   const int font = systemFontId();
   const int textHeight = renderer.text.getLineHeight(font);
   const int textY = y + (height - textHeight) / 2;
-  const std::vector<std::string> actions = currentWordActions();
-  const bool vertical = actions.size() > 3;
   if (vertical) {
     constexpr int verticalTextPadding = 16;
     for (size_t i = 0; i < actions.size(); ++i) {

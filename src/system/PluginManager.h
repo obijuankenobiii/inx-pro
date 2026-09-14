@@ -18,6 +18,17 @@ class PluginManager {
     size_t size = 0;
   };
 
+  struct WebLink {
+    std::string id;
+    std::string name;
+    std::string label;
+    std::string path;
+    std::string page;
+    std::string script;
+    std::string icon;
+    int order = 0;
+  };
+
   using ProgressCallback = std::function<void(size_t downloaded, size_t total)>;
   using LuaArgumentPusher = std::function<void(lua_State* state)>;
 
@@ -50,6 +61,9 @@ class PluginManager {
 
   /** Find an installed plugin that contributes a web page and script. */
   static bool findWebPlugin(std::string& id, std::string& page, std::string& script);
+
+  /** List all installed plugins that contribute a web page and navigation link. */
+  static bool listWebPlugins(std::vector<WebLink>& links);
 
  private:
   PluginManager() = delete;

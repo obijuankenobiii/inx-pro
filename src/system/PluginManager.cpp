@@ -41,7 +41,7 @@ struct StaticPackage {
 };
 
 constexpr StaticPackage kStaticPackages[] = {
-    {"study-cards", "Study Cards", "Save selected passages and export them for Anki", "plugin/study-cards.zip"},
+    {"study-cards", "Anki Export", "Adds anki supported export", "plugin/study-cards.zip"},
 };
 
 bool safeId(const std::string& id) {
@@ -115,6 +115,45 @@ bool readInstalledManifest(const std::string& id, JsonDocument& document) {
   std::string manifest;
   if (!readSdFile(pluginPath(id) + "/manifest.json", manifest, kMaxManifestBytes)) return false;
   return deserializeJson(document, manifest) == DeserializationError::Ok;
+}
+
+bool safeWebPath(const std::string& path) {
+  if (path.empty() || path.size() > 64 || path[0] != '/' || path.find("..") != std::string::npos) return false;
+  for (const unsigned char c : path) {
+    if (!std::isalnum(c) && c != '/' && c != '-' && c != '_' && c != '.') return false;
+  }
+  return true;
+}
+
+bool readWebLink(const char* candidate, PluginManager::WebLink& link) {
+  JsonDocument document;
+  if (!readInstalledManifest(candidate, document)) return false;
+
+  const JsonObject web = document["web"].as<JsonObject>();
+  const char* page = web["page"] | "";
+  const char* script = web["script"] | "";
+  if (!page || !script || !safeEntryName(page) || !safeEntryName(script)) return false;
+
+  const std::string id = candidate ? candidate : "";
+  const char* name = document["name"] | "";
+  const char* label = web["label"] | "";
+  const char* configuredPath = web["path"] | "";
+  const char* icon = web["icon"] | "";
+  if (icon && icon[0] && !safeEntryName(icon)) return false;
+  const std::string path = configuredPath && configuredPath[0]
+                               ? configuredPath
+                               : (id == "study-cards" ? "/study" : "/plugin/" + id);
+  if (!safeWebPath(path)) return false;
+
+  link.id = id;
+  link.name = name ? name : id;
+  link.label = label && label[0] ? label : link.name;
+  link.path = path;
+  link.page = page;
+  link.script = script;
+  link.icon = icon ? icon : "";
+  link.order = web["order"] | 100;
+  return true;
 }
 
 template <typename Callback>
@@ -638,27 +677,32 @@ bool PluginManager::findReaderSelectionPlugin(std::string& id, std::string& labe
   });
 }
 
+bool PluginManager::listWebPlugins(std::vector<WebLink>& links) {
+  links.clear();
+  if (!SdMan.ready()) return false;
+  SdIoMutex::Lock ioLock;
+  forEachInstalledPlugin([&](const char* candidate) {
+    WebLink link;
+    if (readWebLink(candidate, link)) links.push_back(link);
+    return false;
+  });
+  std::sort(links.begin(), links.end(), [](const WebLink& left, const WebLink& right) {
+    if (left.order != right.order) return left.order < right.order;
+    return left.label < right.label;
+  });
+  return !links.empty();
+}
+
 bool PluginManager::findWebPlugin(std::string& id, std::string& page, std::string& script) {
   id.clear();
   page.clear();
   script.clear();
-  if (!SdMan.ready()) return false;
-  SdIoMutex::Lock ioLock;
-  return forEachInstalledPlugin([&](const char* candidate) {
-    JsonDocument document;
-    if (!readInstalledManifest(candidate, document)) return false;
-    const JsonObject web = document["web"].as<JsonObject>();
-    const std::string candidatePage = web["page"] | "";
-    const std::string candidateScript = web["script"] | "";
-    if (candidatePage.empty() || candidateScript.empty() || !safeEntryName(candidatePage) ||
-        !safeEntryName(candidateScript)) {
-      return false;
-    }
-    id = candidate;
-    page = candidatePage;
-    script = candidateScript;
-    return true;
-  });
+  std::vector<WebLink> links;
+  if (!listWebPlugins(links)) return false;
+  id = links.front().id;
+  page = links.front().page;
+  script = links.front().script;
+  return true;
 }
 
 bool PluginManager::install(const Package& package, std::string& error, ProgressCallback progress) {

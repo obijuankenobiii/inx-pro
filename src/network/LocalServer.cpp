@@ -9,8 +9,6 @@
 #include <uri/UriGlob.h>
 #ifndef INX_SIMULATOR_WEB_ONLY
 #include <Epub.h>
-#include <Epub/Page.h>
-#include <Epub/Section.h>
 #include <FsHelpers.h>
 #include <HalGPIO.h>
 #endif
@@ -24,20 +22,16 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
-#include <set>
 
 #include "../state/ReaderSetting.h"
 #include "../state/SystemSetting.h"
 #include "../system/LanguageManager.h"
 #include "../system/PluginManager.h"
 #ifndef INX_SIMULATOR_WEB_ONLY
-#include "activity/reader/Epub/EpubAnnotations.h"
-#include "activity/reader/Epub/EpubBookmarks.h"
 #include "activity/reader/Epub/GeminiTranscription.h"
 #endif
 #include "html/EpubPageHtml.generated.h"
 #include "html/EpubPageJs.generated.h"
-#include "html/ExportPageHtml.generated.h"
 #include "html/FilesPageHtml.generated.h"
 #include "html/FilesPageJs.generated.h"
 #include "html/FontManagerPageHtml.generated.h"
@@ -47,12 +41,8 @@
 #include "html/JsZipMinJs.generated.h"
 #include "html/QrCreatorLogoJs.generated.h"
 #include "html/SettingsPageHtml.generated.h"
-#include "html/TagsPageHtml.generated.h"
 #ifndef INX_SIMULATOR_WEB_ONLY
-#include "util/LibraryIndex.h"
 #include "state/BookState.h"
-#include "state/BookTags.h"
-#include "state/EpubNotesIndex.h"
 #include "state/RecentBooks.h"
 #include "system/FontManager.h"
 #include "util/StringUtils.h"
@@ -76,11 +66,6 @@ constexpr const char* DEVICE_IDENTITY_CARD = "/sleep/device-identity.jpg";
 
 LocalServer* wsInstance = nullptr;
 
-volatile bool webLibraryIndexing = false;
-volatile int webLibraryIndexCurrent = 0;
-volatile int webLibraryIndexTotal = 0;
-char webLibraryIndexPath[128] = "";
-
 FsFile wsUploadFile;
 String wsUploadFileName;
 String wsUploadPath;
@@ -92,15 +77,208 @@ String wsLastCompleteName;
 size_t wsLastCompleteSize = 0;
 unsigned long wsLastCompleteAt = 0;
 
+String escapeHtml(const std::string& value) {
+  String escaped;
+  for (const char c : value) {
+    switch (c) {
+      case '&':
+        escaped += "&amp;";
+        break;
+      case '<':
+        escaped += "&lt;";
+        break;
+      case '>':
+        escaped += "&gt;";
+        break;
+      case '"':
+        escaped += "&quot;";
+        break;
+      case '\'':
+        escaped += "&#39;";
+        break;
+      default:
+        escaped += c;
+        break;
+    }
+  }
+  return escaped;
+}
+
+bool findWebPluginForUri(const String& uri, PluginManager::WebLink& result) {
+  std::vector<PluginManager::WebLink> links;
+  if (!PluginManager::listWebPlugins(links)) return false;
+
+  for (const PluginManager::WebLink& link : links) {
+    if (uri == link.path.c_str()) {
+      result = link;
+      return true;
+    }
+    if (uri.startsWith("/plugin/") && uri.substring(8) == link.id.c_str()) {
+      result = link;
+      return true;
+    }
+    if (uri == "/study" && link.id == "study-cards") {
+      result = link;
+      return true;
+    }
+  }
+  return false;
+}
+
 String addLanguageManagerNavLink(const char* pageHtml) {
   String page = pageHtml;
-  page.replace("</nav>", "<a class=nav-btn href=/language-manager>Language</a></nav>");
-  std::string pluginId;
-  std::string pluginPage;
-  std::string pluginScript;
-  if (PluginManager::findWebPlugin(pluginId, pluginPage, pluginScript) && page.indexOf("/study") < 0) {
-    page.replace("</nav>", "<a class=nav-btn href=/study>Study</a></nav>");
+  if (page.indexOf("/language-manager") < 0) {
+    page.replace("</nav>", "<a class=nav-btn href=/language-manager>Language</a></nav>");
   }
+
+  std::vector<PluginManager::WebLink> links;
+  if (PluginManager::listWebPlugins(links)) {
+    for (const PluginManager::WebLink& link : links) {
+      if (page.indexOf(link.path.c_str()) >= 0) continue;
+      String navLink;
+      navLink += "<a class=nav-btn href=\"";
+      navLink += link.path.c_str();
+      navLink += "\">";
+      navLink += escapeHtml(link.label);
+      navLink += "</a>";
+      page.replace("</nav>", navLink + "</nav>");
+    }
+  }
+
+  // Shared INX web shell. Keep the page-specific HTML/JS below it intact, but
+  // present the same library-style navigation and visual language everywhere.
+  const char* shellStyle = R"rawliteral(
+<style id="inx-web-shell">
+:root{--inx-orange:#22272b;--inx-orange-dark:#000;--inx-ink:#182027;--inx-muted:#7d858b;--inx-line:#e3e5e7;--inx-page:#f5f6f7;--inx-panel:#fff;--inx-soft:#f1f2f3}
+*{box-sizing:border-box}
+body{background:var(--inx-page)!important;color:var(--inx-ink)!important;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif!important;min-height:100vh;overflow-x:hidden}
+.inx-rail{position:fixed;z-index:900;inset:0 auto 0 0;width:68px;background:#fff;border-right:1px solid var(--inx-line);display:flex;flex-direction:column;align-items:center;padding:18px 10px;gap:9px}
+.inx-brand{width:38px;height:38px;display:grid;place-items:center;margin-bottom:18px;color:var(--inx-orange);font-size:25px;font-weight:850;line-height:1}
+.inx-brand:before{content:"▰";transform:skew(-14deg);display:block}
+.inx-rail-link{width:42px;height:42px;display:grid;place-items:center;border:1px solid transparent;border-radius:10px;color:#758087;text-decoration:none;font-size:19px;font-weight:650;line-height:1;transition:.15s ease}.inx-rail-link svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.inx-font-glyph{font-size:14px;letter-spacing:-.08em}
+.inx-plugin-launcher{width:42px;height:42px;display:grid;place-items:center;margin-top:4px;border:1px solid transparent;border-top:1px solid var(--inx-line);border-radius:5px;background:transparent;color:#758087;cursor:pointer;padding:9px 0 0;text-decoration:none;transition:.15s ease}.inx-plugin-launcher svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.inx-plugin-launcher:hover,.inx-plugin-launcher.active{color:var(--inx-orange);background:#f0f1f2}
+.inx-rail-link:hover{color:var(--inx-orange);background:#f0f1f2}
+.inx-rail-link.active{background:var(--inx-orange);color:#fff;box-shadow:0 5px 12px rgba(24,32,39,.18)}
+.inx-rail-link.inx-rail-bottom{margin-top:auto}
+.inx-topbar{position:fixed;z-index:850;top:0;left:68px;right:0;height:76px;background:rgba(255,255,255,.96);border-bottom:1px solid var(--inx-line);display:flex;align-items:center;justify-content:space-between;padding:0 30px 0 32px;backdrop-filter:blur(10px)}
+.inx-mobile-menu-toggle{display:none;border:1px solid var(--inx-line);border-radius:5px;background:#fff;color:var(--inx-ink);width:38px;height:38px;place-items:center;cursor:pointer;padding:0}.inx-mobile-menu-toggle svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}.inx-mobile-menu-backdrop,.inx-mobile-menu{display:none}
+.inx-heading{display:flex;align-items:center;gap:18px;min-width:0}.inx-heading strong{font-size:20px;letter-spacing:-.02em}.inx-heading small{display:block;color:var(--inx-muted);font-size:11px;font-weight:500;margin-top:3px}.inx-heading .inx-slash{color:#c8c0bb;margin:0 5px}.inx-heading .inx-current{color:var(--inx-orange)}
+.container{width:calc(100% - 68px)!important;max-width:none!important;margin:0 0 0 68px!important;padding:102px 32px 42px 36px!important}
+.header,.nav-links{display:none!important}
+.page-header{background:var(--inx-panel);border:1px solid var(--inx-line);border-radius:14px;padding:20px 22px;margin:0 0 14px!important;box-shadow:0 3px 12px rgba(31,24,20,.035)}
+.breadcrumb{font-size:12px!important;color:var(--inx-muted)!important}.breadcrumb a{color:var(--inx-orange)!important}.breadcrumb .current{color:var(--inx-ink)!important}
+.action-buttons{gap:8px!important}.action-btn{border-radius:8px!important;padding:9px 14px!important;font-weight:650!important}.primary-action{background:var(--inx-orange)!important;color:#fff!important}.primary-action:hover{background:var(--inx-orange-dark)!important}.secondary-action{background:#f8f7f6!important;color:#4d555a!important;border:1px solid var(--inx-line)!important}
+.dropzone{border:1px dashed #e4dcd7!important;border-radius:10px!important;background:#fff!important;padding:18px 20px!important;margin-bottom:14px!important}.dropzone:hover,.dropzone.dragover{border-color:var(--inx-orange)!important;background:var(--inx-soft)!important}.dropzone-title{font-size:13px!important}.dropzone-hint{font-size:11.5px!important}
+.card{border:1px solid var(--inx-line)!important;border-radius:14px!important;padding:20px 22px!important;box-shadow:0 3px 12px rgba(31,24,20,.035)!important;background:#fff!important}.contents-header{padding-bottom:15px;margin-bottom:12px!important;border-bottom:1px solid var(--inx-line)}.contents-title{font-size:18px!important;font-weight:750!important;letter-spacing:-.02em}.summary-inline{color:var(--inx-muted)!important}
+.tabs{gap:4px!important}.tab-btn,.settings-section,.section-add-btn,.setting-control input,.setting-control select,.wifi-form-buttons button,.icon-btn,.wifi-form,.toast{border-radius:5px!important}.settings-section{border:1px solid var(--inx-line)!important;box-shadow:0 3px 12px rgba(31,24,32,.035)!important}.toggle-slider{border-radius:5px!important}.toggle-slider:before{border-radius:3px!important}.action-buttons .action-btn,.btn-primary,.btn-secondary{border-radius:5px!important}
+.file-row{border-bottom:1px solid var(--inx-line)!important;padding:12px 7px!important}.file-row:hover{background:#f7f7f7!important}.file-row .name,.name{color:var(--inx-ink)!important}.row-action{border-radius:7px!important}.row-action:hover{background:#eef0f1!important;color:var(--inx-orange-dark)!important}.select-box{accent-color:var(--inx-orange)!important}.epub-badge,.badge{background:#eef0f1!important;color:var(--inx-orange-dark)!important}
+.upload-status,.import-summary,.import-options{border-radius:10px!important;border-color:var(--inx-line)!important}.progress-fill{background:var(--inx-orange)!important}.bulk-actions{border-radius:9px!important;background:#f5f6f7!important;border-color:#e0e2e4!important}.bulk-delete-btn{border-radius:8px!important}.modal{border-radius:12px!important}.modal-btn{border-radius:8px!important}.modal-btn.primary{background:var(--inx-orange)!important}.toast{background:var(--inx-ink)!important;border-radius:8px!important}
+.inx-book-toolbar{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin:-2px 0 14px}.inx-book-search{height:38px;width:min(260px,38vw);border:1px solid var(--inx-line);border-radius:8px;background:#faf9f8;padding:0 12px;color:var(--inx-ink);font:inherit;font-size:12px}.inx-view-toggle{height:38px;min-width:38px;border:1px solid var(--inx-line);border-radius:8px;background:#f8f7f6;color:#697278;font:inherit;cursor:pointer}.inx-view-toggle.active{background:var(--inx-orange);border-color:var(--inx-orange);color:#fff}
+.file-list.inx-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:28px 26px}.inx-grid .book-card,.inx-grid .folder-card{position:relative;width:100%;min-width:0}.inx-grid .select-box{position:absolute;z-index:2;top:8px;left:8px;width:18px;height:18px}.inx-grid .book-open,.inx-grid .folder-open{display:block;width:100%;padding-top:30px;text-decoration:none;color:inherit}.inx-cover{width:100%;aspect-ratio:2/3;overflow:hidden;border-radius:8px;background:linear-gradient(145deg,#d9dcde,#73787c);box-shadow:0 9px 18px rgba(30,34,38,.13);display:grid;place-items:center;color:#fff;font-size:30px;font-weight:800}.inx-cover img{width:100%;height:100%;object-fit:contain;background:#f0f1f2;display:block}.inx-cover.placeholder{padding:16px;text-align:center;line-height:1.15}.inx-grid .folder-open .inx-folder-stack{width:100%;margin:0;aspect-ratio:5/4;height:auto}.inx-grid .folder-open .inx-folder-cover,.inx-grid .book-open .inx-cover{width:80%!important;max-width:80%!important;margin:0;aspect-ratio:5/4;height:auto}.inx-grid .book-open .inx-cover img{width:100%!important;height:100%!important;object-fit:contain!important;object-position:left center!important}.inx-grid .folder-open .inx-folder-cover{background:#f0f1f2}.inx-book-title{font-size:13px;font-weight:750;line-height:1.25;margin-top:9px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}.inx-book-meta{font-size:11px;color:var(--inx-muted);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.inx-card-actions{display:flex;justify-content:flex-end;gap:1px;margin-top:3px}.inx-card-actions .row-action{width:27px;height:27px}.inx-folder-cover{background:#eef0f1;color:#222;font-size:44px}.inx-grid .epub-badge{display:none}
+.file-list.inx-list{display:block}.inx-list .book-card,.inx-list .folder-card{display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--inx-line);padding:12px 7px}.inx-list .book-open,.inx-list .folder-open{display:flex;align-items:center;gap:12px;flex:1;min-width:0;text-decoration:none;color:inherit}.inx-list .inx-cover{width:42px;height:58px;aspect-ratio:auto;flex:0 0 42px;border-radius:5px;font-size:14px;box-shadow:0 3px 8px rgba(57,37,28,.1)}.inx-list .inx-book-title{margin:0;font-size:14px}.inx-list .inx-book-meta{margin-top:2px}.inx-list .inx-card-actions{margin:0}.inx-list .select-box{flex:0 0 auto}.inx-list .folder-open .inx-cover{font-size:23px}.inx-list .folder-open .inx-book-title{font-size:13px}
+.inx-grid .book-card,.inx-grid .folder-card{max-width:288px}.file-list.inx-grid{grid-template-columns:repeat(6,minmax(0,1fr));justify-content:start}.inx-grid .inx-card-actions{justify-content:flex-end}.inx-grid .folder-open .inx-folder-cover,.inx-grid .book-open .inx-cover{width:100%!important;max-width:100%!important}
+@media(max-width:760px){.inx-rail{display:none}.inx-topbar{left:0;height:64px;padding:0 14px;gap:12px}.inx-mobile-menu-toggle{display:grid;flex:0 0 38px}.inx-heading{flex:1}.inx-mobile-menu-backdrop{position:fixed;z-index:1080;inset:0;background:rgba(24,32,39,.16)}.inx-mobile-menu-backdrop.open{display:block}.inx-mobile-menu{position:fixed;z-index:1090;left:0;top:0;bottom:0;width:min(292px,86vw);display:none;background:#fff;border-right:1px solid var(--inx-line);box-shadow:8px 0 24px rgba(24,32,39,.14);padding:18px 12px}.inx-mobile-menu.open{display:block}.inx-mobile-menu-head{display:flex;align-items:center;justify-content:space-between;padding:0 6px 18px;border-bottom:1px solid var(--inx-line)}.inx-mobile-menu-head strong{font-size:18px}.inx-mobile-menu-close{border:0;background:transparent;color:var(--inx-muted);font-size:25px;line-height:1;cursor:pointer;padding:0 4px}.inx-mobile-menu-links{display:grid;gap:4px;padding-top:14px}.inx-mobile-menu-link{display:flex;align-items:center;gap:12px;padding:11px 10px;color:var(--inx-ink);text-decoration:none;border:1px solid transparent;border-radius:5px;font-size:14px;font-weight:650}.inx-mobile-menu-link svg{width:20px;height:20px;flex:0 0 20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.inx-mobile-menu-link:hover,.inx-mobile-menu-link.active{background:#f0f1f2;border-color:var(--inx-line)}.container{width:100%!important;margin:0!important;padding:82px 12px 28px!important}.page-header{padding:15px!important}.action-buttons{display:flex!important;overflow:auto}.action-btn{flex:0 0 auto}.card{padding:15px!important}.inx-book-toolbar{justify-content:stretch;flex-wrap:wrap}.inx-book-search{width:100%;order:-1}.file-list.inx-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 12px}.contents-header{align-items:flex-start}.summary-inline{font-size:11px}}
+.inx-rail-link,.inx-book-search,.inx-view-toggle,.page-header,.card,.dropzone,.upload-status,.import-summary,.import-options,.modal,.action-btn,.bulk-actions,.bulk-delete-btn,.modal-btn,.file-input,.text-input,.stat-card,.segmented,.segmented button,.identity-add,.card-stage,.row-action,.toast,.badge,.epub-badge{border-radius:5px!important}
+.file-row{border-radius:3px!important}.status-badge{border-radius:5px!important}.inx-cover{border-radius:5px!important}.inx-avatar{border-radius:50%!important}
+</style>)rawliteral";
+  if (page.indexOf("</head>") >= 0) {
+    page.replace("</head>", String(shellStyle) + "</head>");
+  } else {
+    page.replace("</style>", String("</style>") + shellStyle);
+  }
+
+  String label = "Library";
+  String active = "/";
+  if (page.indexOf("Inx — Dashboard") >= 0 || page.indexOf("Inx - Dashboard") >= 0) {
+    label = "Dashboard";
+    active = "/";
+  } else if (page.indexOf("Inx — Epub") >= 0 || page.indexOf("Inx - Epub") >= 0) {
+    label = "Book";
+    active = "/epub";
+  } else if (page.indexOf("Inx - Files") >= 0) {
+    label = "Files";
+    active = "/files";
+  } else if (page.indexOf("Inx — Fonts") >= 0 || page.indexOf("Inx - Fonts") >= 0) {
+    label = "Fonts";
+    active = "/font-manager";
+  } else if (page.indexOf("Inx — Language Manager") >= 0 || page.indexOf("Inx - Language Manager") >= 0) {
+    label = "Language";
+    active = "/language-manager";
+  } else if (page.indexOf("Inx — Settings") >= 0 || page.indexOf("Inx - Settings") >= 0) {
+    label = "Settings";
+    active = "/settings";
+  } else if (page.indexOf("Inx — Plugins") >= 0 || page.indexOf("Inx - Plugins") >= 0) {
+    label = "Plugins";
+    active = "/plugins";
+  }
+
+  const char* railItems[][3] = {
+      {"/", "<svg viewBox=\"0 0 24 24\"><path d=\"m3 10 9-7 9 7\"/><path d=\"M5 9v11h14V9\"/><path d=\"M9 20v-6h6v6\"/></svg>", "Dashboard"},
+      {"/files", "<svg viewBox=\"0 0 24 24\"><rect x=\"3\" y=\"4\" width=\"7\" height=\"7\"/><rect x=\"14\" y=\"4\" width=\"7\" height=\"7\"/><rect x=\"3\" y=\"14\" width=\"7\" height=\"7\"/><rect x=\"14\" y=\"14\" width=\"7\" height=\"7\"/></svg>", "Files"},
+      {"/epub", "<svg viewBox=\"0 0 24 24\"><path d=\"M5 4.5A2.5 2.5 0 0 1 7.5 2H19v17H7.5A2.5 2.5 0 0 1 5 16.5v-12Z\"/><path d=\"M5 16.5A2.5 2.5 0 0 1 7.5 14H19\"/></svg>", "Books"},
+      {"/font-manager", "<span class=inx-font-glyph>Aa</span>", "Fonts"},
+      {"/language-manager", "<svg viewBox=\"0 0 24 24\"><circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M3 12h18M12 3c2.3 2.5 3.4 5.5 3.4 9S14.3 18.5 12 21M12 3c-2.3 2.5-3.4 5.5-3.4 9S9.7 18.5 12 21\"/></svg>", "Language"},
+      {"/settings", "<svg viewBox=\"0 0 24 24\"><path d=\"M19.43 12.98c.04-.32.07-.65.07-.98s-.02-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.37-.31-.6-.22l-2.49 1a7.4 7.4 0 0 0-1.69-.98l-.38-2.65A.51.51 0 0 0 14 2h-4a.51.51 0 0 0-.5.42l-.38 2.65c-.61.25-1.17.58-1.69.98l-2.49-1c-.23-.08-.48 0-.6.22l-2 3.46c-.12.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98s.02.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.12.22.37.31.6.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.04.24.25.42.5.42h4c.25 0 .46-.18.5-.42l.38-2.65c.61-.25 1.17-.58 1.69-.98l2.49 1c.23.08.48 0 .6-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65Z\"/><circle cx=\"12\" cy=\"12\" r=\"3\"/></svg>", "Settings"},
+  };
+  String rail = "<aside class=inx-rail><a class=inx-brand href=/ aria-label=INX>▰</a>";
+  for (const auto& item : railItems) {
+    rail += "<a class=inx-rail-link";
+    if (active == item[0]) rail += " active";
+    rail += " href=\"";
+    rail += item[0];
+    rail += "\" title=\"";
+    rail += item[2];
+    rail += "\">";
+    rail += item[1];
+    rail += "</a>";
+  }
+  rail += "<a class=inx-plugin-launcher";
+  if (active == "/plugins") rail += " active";
+  rail += " href=/plugins title=Plugins aria-label=Plugins><svg viewBox=\"0 0 24 24\"><path d=\"M19 13a2 2 0 1 0 0-4h-1V5a2 2 0 0 0-2-2h-4v1a2 2 0 1 1-4 0V3H6a2 2 0 0 0-2 2v4h1a2 2 0 1 1 0 4H4v4a2 2 0 0 0 2 2h4v-1a2 2 0 1 1 4 0v1h4a2 2 0 0 0 2-2v-4Z\"/></svg></a>";
+  rail += "</aside><div class=inx-mobile-menu-backdrop id=inx-mobile-menu-backdrop></div><nav class=inx-mobile-menu id=inx-mobile-menu aria-label=Mobile navigation><div class=inx-mobile-menu-head><strong>INX</strong><button class=inx-mobile-menu-close id=inx-mobile-menu-close type=button aria-label=Close>×</button></div><div class=inx-mobile-menu-links>";
+  for (const auto& item : railItems) {
+    rail += "<a class=inx-mobile-menu-link";
+    if (active == item[0]) rail += " active";
+    rail += " href=\"";
+    rail += item[0];
+    rail += "\">";
+    rail += item[1];
+    rail += "<span>";
+    rail += item[2];
+    rail += "</span></a>";
+  }
+  rail += "<a class=inx-mobile-menu-link";
+  if (active == "/plugins") rail += " active";
+  rail += " href=/plugins><svg viewBox=\"0 0 24 24\"><path d=\"M19 13a2 2 0 1 0 0-4h-1V5a2 2 0 0 0-2-2h-4v1a2 2 0 1 1-4 0V3H6a2 2 0 0 0-2 2v4h1a2 2 0 1 1 0 4H4v4a2 2 0 0 0 2 2h4v-1a2 2 0 1 1 4 0v1h4a2 2 0 0 0 2-2v-4Z\"/></svg><span>Plugins</span></a></div></nav><script>(function(){var b=document.getElementById('inx-mobile-menu-toggle'),m=document.getElementById('inx-mobile-menu'),o=document.getElementById('inx-mobile-menu-backdrop'),c=document.getElementById('inx-mobile-menu-close');if(!b||!m||!o)return;function close(){b.setAttribute('aria-expanded','false');m.classList.remove('open');o.classList.remove('open')}function toggle(){var open=!m.classList.contains('open');b.setAttribute('aria-expanded',open?'true':'false');m.classList.toggle('open',open);o.classList.toggle('open',open)}b.addEventListener('click',toggle);o.addEventListener('click',close);if(c)c.addEventListener('click',close);document.addEventListener('keydown',function(e){if(e.key==='Escape')close()})})();</script><header class=inx-topbar><button class=inx-mobile-menu-toggle id=inx-mobile-menu-toggle type=button aria-label=Open menu aria-expanded=false><svg viewBox=\"0 0 24 24\"><path d=\"M4 6h16M4 12h16M4 18h16\"/></svg></button><div class=inx-heading><div><strong>";
+  rail += label;
+  rail += "</strong><small><span class=inx-current>Dashboard</span><span class=inx-slash>/</span>";
+  rail += label;
+  rail += "</small></div></div></header>";
+  rail += "<script>(function(){var b=document.getElementById('inx-mobile-menu-toggle'),m=document.getElementById('inx-mobile-menu'),o=document.getElementById('inx-mobile-menu-backdrop'),c=document.getElementById('inx-mobile-menu-close');if(!b||!m||!o)return;function close(){b.setAttribute('aria-expanded','false');m.classList.remove('open');o.classList.remove('open')}function toggle(){var open=!m.classList.contains('open');b.setAttribute('aria-expanded',open?'true':'false');m.classList.toggle('open',open);o.classList.toggle('open',open)}b.addEventListener('click',toggle);o.addEventListener('click',close);if(c)c.addEventListener('click',close);document.addEventListener('keydown',function(e){if(e.key==='Escape')close()})})();</script>";
+  if (page.indexOf("<body>") >= 0) {
+    page.replace("<body>", "<body>" + rail);
+  } else if (page.indexOf("<div class=container>") >= 0) {
+    page.replace("<div class=container>", rail + "<div class=container>");
+  } else if (page.indexOf("<div class=\"container\">") >= 0) {
+    page.replace("<div class=\"container\">", rail + "<div class=\"container\">");
+  } else if (page.indexOf("</html>") >= 0) {
+    page.replace("</html>", rail + "</html>");
+  }
+
+  // The EPUB page uses the same toolbar for search and the grid/list control.
+  // It is injected here so plugin pages and the older HTML assets remain compatible.
+  if (page.indexOf("id=file-table") >= 0 && page.indexOf("id=inx-book-toolbar") < 0) {
+    const String toolbar = "<div class=inx-book-toolbar id=inx-book-toolbar><input class=inx-book-search id=inx-book-search type=search placeholder=\"Search books\" aria-label=\"Search books\"><button class=inx-view-toggle id=inx-list-view-btn type=button title=List view aria-label=List view>☷</button><button class=inx-view-toggle id=inx-grid-view-btn type=button title=Grid view aria-label=Grid view>▦</button></div>";
+    page.replace("<div id=file-table>", toolbar + "<div id=file-table>");
+  }
+
+  if (page.indexOf("id=file-table") >= 0) {
+    const char* epubGridFinalStyle = R"rawliteral(<style id="inx-epub-grid-final-style">.inx-grid .folder-open .inx-folder-stack,.inx-grid .folder-open .inx-folder-cover,.inx-grid .book-open .inx-cover{width:80%!important;max-width:80%!important;height:auto!important;min-height:0!important;aspect-ratio:5/4!important;margin:0!important}.inx-grid .book-open .inx-cover{position:relative;display:block}.inx-grid .book-open .inx-cover img{position:absolute;inset:0;width:100%!important;height:100%!important;object-fit:contain!important;object-position:left center!important}.inx-grid .book-open .inx-cover,.inx-grid .folder-open .inx-cover,.inx-folder-stack,.inx-folder-stack-card,.inx-folder-stack-card img{border-radius:0!important}.inx-cover.has-thumbnail,.inx-folder-stack.has-thumbnail{background:transparent!important;box-shadow:none!important}.inx-cover.has-thumbnail img,.inx-folder-stack.has-thumbnail .inx-folder-stack-card,.inx-folder-stack.has-thumbnail .inx-folder-stack-card img{background:transparent!important;box-shadow:none!important}</style>)rawliteral";
+    page.replace("</html>", String(epubGridFinalStyle) + "</html>");
+    const char* epubGridSizingStyle = R"rawliteral(<style id="inx-epub-grid-sizing-style">.file-list.inx-grid{grid-template-columns:repeat(6,minmax(0,1fr));justify-content:start}.inx-grid .book-card,.inx-grid .folder-card{max-width:288px}.inx-grid .inx-card-actions{justify-content:flex-end}.inx-grid .folder-open .inx-folder-cover,.inx-grid .book-open .inx-cover{width:100%!important;max-width:100%!important}</style>)rawliteral";
+    page.replace("</html>", String(epubGridSizingStyle) + "</html>");
+  }
+
   return page;
 }
 
@@ -241,20 +419,6 @@ bool clockSettingsAvailable() {
 }
 
 #ifndef INX_SIMULATOR_WEB_ONLY
-struct IndexedBookInfo {
-  String path;
-  String title;
-  String folder;
-  String tag;
-};
-
-std::string lowerAscii(const String& value) {
-  std::string lowered = value.c_str();
-  std::transform(lowered.begin(), lowered.end(), lowered.begin(),
-                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-  return lowered;
-}
-
 String jsonEscape(const String& s) {
   String out;
   for (size_t i = 0; i < s.length(); ++i) {
@@ -283,352 +447,10 @@ String jsonEscape(const String& s) {
   return out;
 }
 
-bool readExactString(FsFile& file, size_t len, String& out) {
-  out = "";
-  if (len == 0) {
-    return true;
-  }
-  std::vector<char> buf(len + 1, 0);
-  if (file.read(buf.data(), len) != static_cast<int>(len)) {
-    return false;
-  }
-  out = String(buf.data());
-  return true;
-}
-
-String indexedFolderName(const String& path) {
-  if (path == "/" || path.length() == 0) {
-    return "Library";
-  }
-  int lastSlash = path.lastIndexOf('/');
-  if (lastSlash < 0) {
-    return path;
-  }
-  String name = path.substring(lastSlash + 1);
-  return name.length() ? name : "Library";
-}
-
-bool readIndexedBook(FsFile& idxFile, IndexedBookInfo& out) {
-  uint16_t pLen = 0;
-  if (idxFile.read(&pLen, sizeof(pLen)) != sizeof(pLen)) return false;
-  if (!readExactString(idxFile, pLen, out.path)) return false;
-
-  uint8_t nLen = 0;
-  if (idxFile.read(&nLen, sizeof(nLen)) != sizeof(nLen)) return false;
-  idxFile.seek(idxFile.position() + nLen);
-
-  uint8_t dLen = 0;
-  if (idxFile.read(&dLen, sizeof(dLen)) != sizeof(dLen)) return false;
-  if (!readExactString(idxFile, dLen, out.title)) return false;
-
-  uint8_t fLen = 0;
-  if (idxFile.read(&fLen, sizeof(fLen)) != sizeof(fLen)) return false;
-  if (!readExactString(idxFile, fLen, out.folder)) return false;
-  if (out.folder.length() == 0) {
-    int slash = out.path.lastIndexOf('/');
-    out.folder = slash <= 0 ? "Library" : indexedFolderName(out.path.substring(0, slash));
-  }
-  return true;
-}
-
-void skipIndexedDirectory(FsFile& idxFile) {
-  uint16_t pathLen = 0;
-  if (idxFile.read(&pathLen, sizeof(pathLen)) != sizeof(pathLen)) return;
-  idxFile.seek(idxFile.position() + pathLen);
-  uint16_t entryCount = 0;
-  idxFile.read(&entryCount, sizeof(entryCount));
-}
-
-bool loadIndexedBooksWithTags(std::vector<IndexedBookInfo>& books) {
-  books.clear();
-  FsFile idxFile = SdMan.open("/.metadata/library/library.idx", O_READ);
-  if (!idxFile) {
-    return false;
-  }
-
-  char magic[4] = {};
-  uint8_t version = 0;
-  if (idxFile.read(magic, 4) != 4 || memcmp(magic, "LIBX", 4) != 0 || idxFile.read(&version, 1) != 1) {
-    idxFile.close();
-    return false;
-  }
-
-  std::vector<BookTags::Entry> tags;
-  BookTags::load(tags);
-
-  while (idxFile.available()) {
-    uint8_t marker = 0;
-    if (idxFile.read(&marker, 1) != 1) break;
-    if (marker == 0x01) {
-      IndexedBookInfo book;
-      if (!readIndexedBook(idxFile, book)) break;
-      const std::string tag = BookTags::find(tags, book.path.c_str());
-      book.tag = tag.c_str();
-      books.push_back(book);
-      if ((books.size() % 64u) == 0u) {
-        yield();
-      }
-    } else if (marker == 0xFF) {
-      skipIndexedDirectory(idxFile);
-    }
-  }
-
-  idxFile.close();
-  return true;
-}
-
 std::string epubCachePathForBookPath(const std::string& bookPath) {
   return "/.metadata/epub/" + std::to_string(std::hash<std::string>{}(bookPath));
 }
 
-std::vector<std::string> epubCacheDirs() {
-  std::vector<std::string> out;
-  FsFile root = SdMan.open("/.metadata/epub");
-  if (!root || !root.isDirectory()) {
-    if (root) {
-      root.close();
-    }
-    return out;
-  }
-  char name[96];
-  for (FsFile f = root.openNextFile(); f; f = root.openNextFile()) {
-    if (f.isDirectory()) {
-      f.getName(name, sizeof(name));
-      out.push_back(std::string("/.metadata/epub/") + name);
-    }
-    f.close();
-  }
-  root.close();
-  return out;
-}
-
-struct ExportBookInfo {
-  std::string title;
-  std::string author;
-  std::string coverPath;
-};
-
-ExportBookInfo exportBookInfoForCachePath(const std::string& cachePath) {
-  ExportBookInfo info;
-  BookMetadataCache metadata(cachePath);
-  if (metadata.load()) {
-    info.title = metadata.coreMetadata.title;
-    info.author = metadata.coreMetadata.author;
-  }
-
-  RECENT_BOOKS.loadFromFile();
-  for (const RecentBook& book : RECENT_BOOKS.getBooks()) {
-    const std::string bookCache = book.cachePath.empty() ? epubCachePathForBookPath(book.path) : book.cachePath;
-    if (bookCache == cachePath) {
-      if (info.title.empty()) {
-        info.title = book.title;
-      }
-      if (info.author.empty()) {
-        info.author = book.author;
-      }
-      if (!info.title.empty()) {
-        break;
-      }
-      const size_t slash = book.path.find_last_of('/');
-      info.title = slash == std::string::npos ? book.path : book.path.substr(slash + 1);
-      break;
-    }
-  }
-
-  if (info.title.empty()) {
-    const size_t slash = cachePath.find_last_of('/');
-    info.title = slash == std::string::npos ? cachePath : cachePath.substr(slash + 1);
-  }
-  const size_t dot = info.title.find_last_of('.');
-  if (dot != std::string::npos) {
-    info.title.resize(dot);
-  }
-  const std::string coverJpeg = cachePath + "/cover.jpg";
-  const std::string thumbJpeg = cachePath + "/thumb.jpg";
-  const std::string coverBmp = cachePath + "/cover.bmp";
-  if (SdMan.exists(coverJpeg.c_str())) {
-    info.coverPath = coverJpeg;
-  } else if (SdMan.exists(thumbJpeg.c_str())) {
-    info.coverPath = thumbJpeg;
-  } else if (SdMan.exists(coverBmp.c_str())) {
-    info.coverPath = coverBmp;
-  }
-  return info;
-}
-
-std::string bookmarkPreviewText(const std::string& cachePath, const int spine, const int page) {
-  std::unique_ptr<Page> cachedPage = Section::loadCachedPage(cachePath, spine, page);
-  if (!cachedPage) {
-    return "";
-  }
-  return cachedPage->extractPlainText(1600);
-}
-
-void writeFileString(FsFile& file, const String& value) {
-  file.write(reinterpret_cast<const uint8_t*>(value.c_str()), value.length());
-}
-
-void writeFileString(FsFile& file, const char* value) {
-  file.write(reinterpret_cast<const uint8_t*>(value), strlen(value));
-}
-
-void writeExportNoteItem(FsFile& file, bool& first, int& total, const char* type, const ExportBookInfo& book,
-                         const std::string& chapter, const int spine, const int page, const int pageCount,
-                         const uint32_t timestamp, const std::string& text, const std::string& pageText = "") {
-  if (!first) {
-    writeFileString(file, ",");
-  }
-  first = false;
-  String row = "{\"type\":\"";
-  row += type;
-  row += "\",\"book\":\"";
-  row += jsonEscape(book.title.c_str());
-  row += "\",\"author\":\"";
-  row += jsonEscape(book.author.c_str());
-  row += "\",\"coverUrl\":\"";
-  if (!book.coverPath.empty()) {
-    String coverUrl = "/download?path=";
-    coverUrl += book.coverPath.c_str();
-    coverUrl += "&inline=1";
-    row += jsonEscape(coverUrl.c_str());
-  }
-  row += "\",\"chapter\":\"";
-  row += jsonEscape(chapter.c_str());
-  row += "\",\"spine\":";
-  row += spine;
-  row += ",\"page\":";
-  row += page;
-  row += ",\"pageCount\":";
-  row += pageCount;
-  row += ",\"timestamp\":";
-  row += timestamp;
-  row += ",\"text\":\"";
-  row += jsonEscape(text.c_str());
-  if (!pageText.empty()) {
-    row += "\",\"pageText\":\"";
-    row += jsonEscape(pageText.c_str());
-  }
-  row += "\"}";
-  writeFileString(file, row);
-  ++total;
-}
-
-bool buildExportNotesIndex() {
-  SdMan.mkdir("/.metadata");
-  SdMan.mkdir("/.metadata/epub");
-
-  FsFile index;
-  if (!SdMan.openFileForWrite("EXP", EpubNotesIndex::kPath, index)) {
-    return false;
-  }
-
-  const std::vector<std::string> caches = epubCacheDirs();
-  std::set<std::string> annotationKeys;
-  bool first = true;
-  int total = 0;
-  String header = "{\"ok\":true,\"version\":";
-  header += EpubNotesIndex::kVersion;
-  header += ",\"items\":[";
-  writeFileString(index, header);
-
-  for (const std::string& cachePath : caches) {
-    const ExportBookInfo book = exportBookInfoForCachePath(cachePath);
-    EpubBookmarks bookmarks;
-    bookmarks.load(cachePath);
-    for (const EpubBookmark& bookmark : bookmarks.entries()) {
-      const std::string text = bookmarkPreviewText(cachePath, bookmark.spineIndex, bookmark.pageNumber);
-      writeExportNoteItem(index, first, total, "bookmark", book, bookmark.chapterTitle, bookmark.spineIndex,
-                          bookmark.pageNumber, std::max<int>(1, bookmark.pageCount), bookmark.timestamp, text);
-    }
-
-    const std::string annDir = cachePath + "/" + EpubAnnotations::kSubdir;
-    if (SdMan.exists(annDir.c_str())) {
-      const std::vector<String> files = SdMan.listFiles(annDir.c_str());
-      EpubAnnotations annotations;
-      for (const String& file : files) {
-        int spine = 0;
-        int page = 0;
-        if (std::sscanf(file.c_str(), "s_%d_p_%d.bin", &spine, &page) != 2) {
-          continue;
-        }
-        annotations.ensurePageLoaded(cachePath, spine, page);
-        for (const EpubAnnotationRecord& rec : annotations.records()) {
-          const std::string key = cachePath + "|" + std::to_string(rec.timestamp) + "|" +
-                                  std::to_string(rec.startSpine) + "|" + std::to_string(rec.startPage) + "|" +
-                                  std::to_string(rec.endSpine) + "|" + std::to_string(rec.endPage) + "|" + rec.text +
-                                  "|" + rec.noteAudioPath + "|" + rec.note;
-          if (!annotationKeys.insert(key).second) {
-            continue;
-          }
-          const int startPage = rec.startPage == EpubAnnotations::kWildcard ? page : rec.startPage;
-          const int startSpine = rec.startSpine == EpubAnnotations::kWildcard ? spine : rec.startSpine;
-          const std::string pageText = bookmarkPreviewText(cachePath, startSpine, startPage);
-          std::string exportedText = rec.text;
-          if (!rec.note.empty()) {
-            exportedText += "\nNote: ";
-            exportedText += rec.note;
-          }
-          writeExportNoteItem(index, first, total, "annotation", book, "Highlight", startSpine, startPage, 0,
-                              rec.timestamp, exportedText, pageText);
-        }
-        yield();
-      }
-    }
-    yield();
-  }
-
-  writeFileString(index, "],\"count\":");
-  writeFileString(index, String(total));
-  writeFileString(index, "}");
-  index.close();
-  return true;
-}
-
-bool exportNotesIndexIsCurrent() {
-  FsFile index;
-  if (!SdMan.openFileForRead("EXP", EpubNotesIndex::kPath, index)) {
-    return false;
-  }
-  char buf[96] = {};
-  const int n = index.read(buf, sizeof(buf) - 1);
-  index.close();
-  if (n <= 0) {
-    return false;
-  }
-  String marker = "\"version\":";
-  marker += EpubNotesIndex::kVersion;
-  return strstr(buf, marker.c_str()) != nullptr;
-}
-
-void webLibraryIndexTask(void*) {
-  webLibraryIndexCurrent = 0;
-  webLibraryIndexTotal = 0;
-  webLibraryIndexPath[0] = '\0';
-
-  FsFile root = SdMan.open("/");
-  if (root) {
-    webLibraryIndexTotal = LibraryIndex::countBooks(root);
-    root.close();
-  }
-
-  vTaskDelay(pdMS_TO_TICKS(10));
-
-  LibraryIndex::indexAll([](int current, int total, const char* path) {
-    webLibraryIndexCurrent = current;
-    webLibraryIndexTotal = total;
-    if (path) {
-      strlcpy(webLibraryIndexPath, path, sizeof(webLibraryIndexPath));
-    }
-    if (current % 10 == 0) {
-      vTaskDelay(pdMS_TO_TICKS(1));
-    }
-  });
-
-  SETTINGS.useLibraryIndex = 1;
-  SETTINGS.saveToFile();
-  webLibraryIndexing = false;
-  vTaskDelete(nullptr);
-}
 #endif
 }
 
@@ -668,32 +490,32 @@ void LocalServer::begin() {
 
   INX_SERIAL.printf("[%lu] [WEB] Setting up routes...\n", millis());
   server->on("/", HTTP_GET, [this] { handleRoot(); });
+  server->on("/plugins", HTTP_GET, [this] { handlePluginsPage(); });
   server->on("/files", HTTP_GET, [this] { handleFileList(); });
   server->on("/epub", HTTP_GET, [this] { handleEpubPage(); });
-  server->on("/export", HTTP_GET, [this] { handleExportPage(); });
   server->on("/study", HTTP_GET, [this] { handlePluginPage(); });
+  server->on(UriGlob("/plugin-asset/*"), HTTP_GET, [this] { handlePluginAsset(); });
+  server->on(UriGlob("/plugin/*"), HTTP_GET, [this] { handlePluginPage(); });
   server->on("/font-manager", HTTP_GET, [this] { handleFontManagerPage(); });
   server->on("/language-manager", HTTP_GET, [this] { handleLanguageManagerPage(); });
-  server->on("/tags", HTTP_GET, [this] { handleTagsPage(); });
   server->on("/js/inx_font_pack.js", HTTP_GET, [this] { handleInxFontPackJs(); });
   server->on("/js/jszip.min.js", HTTP_GET, [this] { handleJsZipMinJs(); });
   server->on("/js/qr_creator_logo.min.js", HTTP_GET, [this] { handleQrCreatorLogoJs(); });
   server->on("/js/epub_page.js", HTTP_GET, [this] { handleEpubPageJs(); });
   server->on("/js/files_page.js", HTTP_GET, [this] { handleFilesPageJs(); });
   server->on("/js/study_page.js", HTTP_GET, [this] { handlePluginPageJs(); });
+  server->on(UriGlob("/js/plugin/*"), HTTP_GET, [this] { handlePluginPageJs(); });
 
   server->on("/api/status", HTTP_GET, [this] { handleStatus(); });
+  server->on("/api/recent", HTTP_GET, [this] { handleRecentBooksData(); });
+  server->on("/api/recent", HTTP_DELETE, [this] { handleRecentBookDelete(); });
+  server->on("/api/dashboard-stats", HTTP_GET, [this] { handleDashboardStats(); });
   server->on("/api/device-identity", HTTP_GET, [this] { handleDeviceIdentityGet(); });
   server->on("/api/device-identity", HTTP_POST, [this] { handleDeviceIdentityPost(); });
   server->on("/api/device-identity/photo", HTTP_GET, [this] { handleDeviceIdentityPhoto(); });
   server->on("/api/device-identity/card", HTTP_GET, [this] { handleDeviceIdentityCardImage(); });
   server->on("/api/files", HTTP_GET, [this] { handleFileListData(); });
-  server->on("/api/export-notes", HTTP_GET, [this] { handleExportNotesData(); });
   server->on(UriGlob("/api/plugin/*"), HTTP_GET, [this] { handlePluginApi(); });
-  server->on("/api/book-tags", HTTP_GET, [this] { handleBookTagsGet(); });
-  server->on("/api/book-tags", HTTP_POST, [this] { handleBookTagsPost(); });
-  server->on("/api/library-index/refresh", HTTP_POST, [this] { handleLibraryIndexRefresh(); });
-  server->on("/api/library-index/status", HTTP_GET, [this] { handleLibraryIndexStatus(); });
   server->on("/download", HTTP_GET, [this] { handleDownload(); });
 
   server->on("/upload", HTTP_POST, [this] { handleUploadPost(); }, [this] { handleUpload(); });
@@ -701,6 +523,7 @@ void LocalServer::begin() {
   server->on("/mkdir", HTTP_POST, [this] { handleCreateFolder(); });
 
   server->on("/delete", HTTP_POST, [this] { handleDelete(); });
+  server->on("/move", HTTP_POST, [this] { handleMove(); });
 
   server->on("/rename", HTTP_POST, [this] { handleRename(); });
 
@@ -858,6 +681,41 @@ void LocalServer::handleRoot() const {
   INX_SERIAL.printf("[%lu] [WEB] Served root page\n", millis());
 }
 
+void LocalServer::handlePluginsPage() const {
+  std::vector<PluginManager::WebLink> links;
+  PluginManager::listWebPlugins(links);
+
+  String page = R"rawliteral(<!doctype html><html lang="en"><meta charset="UTF-8"><meta content="width=device-width,initial-scale=1,viewport-fit=cover" name="viewport"><title>Inx — Plugins</title><style>
+*{box-sizing:border-box}.container{max-width:1180px;margin:0 auto;padding:34px 28px 48px}.header,.nav-links{display:none}.plugin-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}.plugin-card{display:flex;align-items:center;gap:13px;min-height:76px;padding:13px;text-decoration:none;color:#22272b;border:1px solid #d9dde0;border-radius:5px;background:#fff;transition:border-color .15s,box-shadow .15s,transform .15s}.plugin-card:hover{border-color:#8f979c;box-shadow:0 5px 12px rgba(22,28,32,.1);transform:translateY(-1px)}.plugin-card img,.plugin-card svg{width:38px;height:38px;flex:0 0 38px;object-fit:contain;fill:none;stroke:#697278;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.plugin-card-copy{min-width:0}.plugin-card-copy strong{display:block;overflow:hidden;font-size:14px;text-overflow:ellipsis;white-space:nowrap}.plugin-card-copy small{display:block;margin-top:4px;color:#737a7f;font-size:12px}.plugin-empty{padding:54px 20px;text-align:center;color:#777f84;font-size:15px}@media(max-width:760px){.container{padding:20px 16px 32px}.plugin-grid{grid-template-columns:1fr}}
+</style><div class="container"><div class="plugin-grid">)rawliteral";
+
+  if (links.empty()) {
+    page += "<div class=plugin-empty>No plugins installed.</div>";
+  } else {
+    for (const PluginManager::WebLink& link : links) {
+      page += "<a class=plugin-card href=\"";
+      page += link.path.c_str();
+      page += "\">";
+      if (!link.icon.empty()) {
+        page += "<img src=\"/plugin-asset/";
+        page += link.id.c_str();
+        page += "/";
+        page += link.icon.c_str();
+        page += "\" alt=\"\">";
+      } else {
+        page += "<svg viewBox=\"0 0 24 24\"><path d=\"M19 13a2 2 0 1 0 0-4h-1V5a2 2 0 0 0-2-2h-4v1a2 2 0 1 1-4 0V3H6a2 2 0 0 0-2 2v4h1a2 2 0 1 1 0 4H4v4a2 2 0 0 0 2 2h4v-1a2 2 0 1 1 4 0v1h4a2 2 0 0 0 2-2v-4Z\"/></svg>";
+      }
+      page += "<span class=plugin-card-copy><strong>";
+      page += escapeHtml(link.label);
+      page += "</strong><small>Open plugin</small></span></a>";
+    }
+  }
+
+  page += "</div></div></html>";
+  server->send(200, "text/html; charset=utf-8", addLanguageManagerNavLink(page.c_str()));
+  INX_SERIAL.printf("[%lu] [WEB] Served plugins page (%u plugins)\n", millis(), static_cast<unsigned>(links.size()));
+}
+
 void LocalServer::handleNotFound() const {
   String message = "404 Not Found\n\n";
   message += "URI: " + server->uri() + "\n";
@@ -883,6 +741,118 @@ void LocalServer::handleStatus() const {
   String json;
   serializeJson(doc, json);
   server->send(200, "application/json", json);
+}
+
+void LocalServer::handleDashboardStats() const {
+#ifdef INX_SIMULATOR_WEB_ONLY
+  server->send(200, "application/json", "{\"reading\":0,\"finished\":0,\"favorites\":0}");
+#else
+  const std::vector<BookState::Book> books = BOOK_STATE.getAllBooks();
+  size_t reading = 0;
+  size_t finished = 0;
+  size_t favorites = 0;
+  for (const BookState::Book& book : books) {
+    reading += book.isReading ? 1u : 0u;
+    finished += book.isFinished ? 1u : 0u;
+    favorites += book.isFavorite ? 1u : 0u;
+  }
+
+  JsonDocument doc;
+  doc["reading"] = reading;
+  doc["finished"] = finished;
+  doc["favorites"] = favorites;
+  String json;
+  serializeJson(doc, json);
+  server->send(200, "application/json", json);
+#endif
+}
+
+void LocalServer::handleRecentBookDelete() const {
+  String path = server->arg("path");
+  if (path.isEmpty() && server->hasArg("plain")) {
+    JsonDocument doc;
+    if (deserializeJson(doc, server->arg("plain")) == DeserializationError::Ok) {
+      path = doc["path"] | "";
+    }
+  }
+
+  if (path.isEmpty()) {
+    server->send(400, "text/plain", "Missing recent book path");
+    return;
+  }
+
+  RECENT_BOOKS.loadFromFile();
+  RECENT_BOOKS.removeBook(path.c_str());
+  server->send(200, "application/json", "{\"ok\":true}");
+}
+
+void LocalServer::handleRecentBooksData() const {
+  RECENT_BOOKS.loadFromFile();
+
+  server->setContentLength(CONTENT_LENGTH_UNKNOWN);
+  server->send(200, "application/json", "");
+  server->sendContent("[");
+
+  bool first = true;
+  const char* coverNames[] = {"thumb.jpg", "thumb.png", "thumb.bmp", "cover.jpg", "cover.png", "cover.bmp"};
+  for (const RecentBook& book : RECENT_BOOKS.getBooks()) {
+    if (book.path.empty()) {
+      continue;
+    }
+
+    std::string title = book.title;
+    if (title.empty()) {
+      const size_t slash = book.path.find_last_of('/');
+      title = slash == std::string::npos ? book.path : book.path.substr(slash + 1);
+      const size_t dot = title.find_last_of('.');
+      if (dot != std::string::npos) {
+        title.resize(dot);
+      }
+    }
+
+    const std::string cachePath = book.cachePath.empty() ? epubCachePathForBookPath(book.path) : book.cachePath;
+    std::string coverPath;
+    for (const char* coverName : coverNames) {
+      const std::string candidate = cachePath + "/" + coverName;
+      if (SdMan.exists(candidate.c_str())) {
+        coverPath = candidate;
+        break;
+      }
+    }
+
+    String row = "{\"path\":\"";
+    row += jsonEscape(book.path.c_str());
+    row += "\",\"title\":\"";
+    row += jsonEscape(title.c_str());
+    row += "\",\"author\":\"";
+    row += jsonEscape(book.author.c_str());
+    row += "\",\"progress\":";
+    if (book.progress >= 0.0f) {
+      row += String(book.progress, 4);
+    } else {
+      row += "null";
+    }
+    row += ",\"coverUrl\":";
+    if (coverPath.empty()) {
+      row += "null";
+    } else {
+      String coverUrl = "/download?path=";
+      coverUrl += coverPath.c_str();
+      coverUrl += "&inline=1";
+      row += "\"";
+      row += jsonEscape(coverUrl);
+      row += "\"";
+    }
+    row += "}";
+
+    if (!first) {
+      server->sendContent(",");
+    }
+    first = false;
+    server->sendContent(row);
+  }
+
+  server->sendContent("]");
 }
 
 void LocalServer::handleDeviceIdentityGet() const {
@@ -1018,21 +988,15 @@ void LocalServer::handleEpubPage() const {
   server->send(200, "text/html; charset=utf-8", addLanguageManagerNavLink(EpubPageHtml));
 }
 
-void LocalServer::handleExportPage() const {
-  server->send(200, "text/html; charset=utf-8", addLanguageManagerNavLink(ExportPageHtml));
-}
-
 void LocalServer::handlePluginPage() const {
-  std::string pluginId;
-  std::string pluginPage;
-  std::string pluginScript;
-  if (!PluginManager::findWebPlugin(pluginId, pluginPage, pluginScript)) {
+  PluginManager::WebLink plugin;
+  if (!findWebPluginForUri(server->uri(), plugin)) {
     server->send(404, "text/plain", "No plugin web page is installed");
     return;
   }
   std::string html;
   std::string error;
-  if (!PluginManager::readFile(pluginId.c_str(), pluginPage.c_str(), html, 64 * 1024, error)) {
+  if (!PluginManager::readFile(plugin.id.c_str(), plugin.page.c_str(), html, 64 * 1024, error)) {
     server->send(404, "text/plain", error.c_str());
     return;
   }
@@ -1046,8 +1010,6 @@ void LocalServer::handleFontManagerPage() const {
 void LocalServer::handleLanguageManagerPage() const {
   server->send(200, "text/html", addLanguageManagerNavLink(LanguageManagerPageHtml));
 }
-
-void LocalServer::handleTagsPage() const { server->send(200, "text/html", addLanguageManagerNavLink(TagsPageHtml)); }
 
 void LocalServer::handleInxFontPackJs() const {
   server->send_P(200, PSTR("text/javascript; charset=utf-8"), INX_FONT_PACK_JS, sizeof(INX_FONT_PACK_JS) - 1);
@@ -1070,20 +1032,72 @@ void LocalServer::handleFilesPageJs() const {
 }
 
 void LocalServer::handlePluginPageJs() const {
-  std::string pluginId;
-  std::string pluginPage;
-  std::string pluginScript;
-  if (!PluginManager::findWebPlugin(pluginId, pluginPage, pluginScript)) {
+  String requestUri = server->uri();
+  if (requestUri == "/js/study_page.js") requestUri = "/study";
+  else if (requestUri.startsWith("/js/plugin/")) requestUri = "/plugin/" + requestUri.substring(11);
+
+  PluginManager::WebLink plugin;
+  if (!findWebPluginForUri(requestUri, plugin)) {
     server->send(404, "text/plain", "No plugin web page is installed");
     return;
   }
   std::string script;
   std::string error;
-  if (!PluginManager::readFile(pluginId.c_str(), pluginScript.c_str(), script, 32 * 1024, error)) {
+  if (!PluginManager::readFile(plugin.id.c_str(), plugin.script.c_str(), script, 32 * 1024, error)) {
     server->send(404, "text/plain", error.c_str());
     return;
   }
   server->send(200, "text/javascript; charset=utf-8", script.c_str());
+}
+
+void LocalServer::handlePluginAsset() const {
+  const String prefix = "/plugin-asset/";
+  const String uri = server->uri();
+  if (!uri.startsWith(prefix)) {
+    server->send(404, "text/plain", "Plugin asset not found");
+    return;
+  }
+
+  const String route = uri.substring(prefix.length());
+  const int separator = route.indexOf('/');
+  if (separator <= 0 || separator >= route.length() - 1) {
+    server->send(400, "text/plain", "Invalid plugin asset path");
+    return;
+  }
+
+  const String pluginId = route.substring(0, separator);
+  const String filename = route.substring(separator + 1);
+  std::vector<PluginManager::WebLink> links;
+  bool allowed = false;
+  if (PluginManager::listWebPlugins(links)) {
+    for (const PluginManager::WebLink& link : links) {
+      if (pluginId == link.id.c_str() && filename == link.icon.c_str()) {
+        allowed = true;
+        break;
+      }
+    }
+  }
+  if (!allowed) {
+    server->send(404, "text/plain", "Plugin asset not found");
+    return;
+  }
+
+  std::string contents;
+  std::string error;
+  if (!PluginManager::readFile(pluginId.c_str(), filename.c_str(), contents, 64 * 1024, error)) {
+    server->send(404, "text/plain", error.c_str());
+    return;
+  }
+
+  const char* contentType = "application/octet-stream";
+  if (filename.endsWith(".png")) contentType = "image/png";
+  else if (filename.endsWith(".jpg") || filename.endsWith(".jpeg")) contentType = "image/jpeg";
+  else if (filename.endsWith(".svg")) contentType = "image/svg+xml";
+  else if (filename.endsWith(".webp")) contentType = "image/webp";
+
+  server->setContentLength(contents.size());
+  server->send(200, contentType, "");
+  server->sendContent(contents.c_str(), contents.size());
 }
 
 void LocalServer::handleFileListData() const {
@@ -1108,12 +1122,87 @@ void LocalServer::handleFileListData() const {
   bool seenFirst = false;
   JsonDocument doc;
 
-  scanFiles(currentPath.c_str(), [this, &output, &doc, seenFirst](const FileInfo& info) mutable {
+  scanFiles(currentPath.c_str(), [this, &output, &doc, seenFirst, currentPath](const FileInfo& info) mutable {
     doc.clear();
     doc["name"] = info.name;
     doc["size"] = info.size;
     doc["isDirectory"] = info.isDirectory;
     doc["isEpub"] = info.isEpub;
+    if (info.isDirectory) {
+      String folderPath = currentPath;
+      if (folderPath == "/") {
+        folderPath += info.name;
+      } else {
+        folderPath += "/";
+        folderPath += info.name;
+      }
+      std::vector<String> folderCoverUrls;
+      auto addFolderCover = [this, &folderCoverUrls](const String& bookPath) {
+        if (folderCoverUrls.size() >= 3) return;
+        const std::string cachePath = epubCachePathForBookPath(bookPath.c_str());
+        const char* coverNames[] = {"cover.jpg", "thumb.jpg", "cover.bmp", "thumb.png", "thumb.bmp"};
+        for (const char* coverName : coverNames) {
+          const std::string coverPath = cachePath + "/" + coverName;
+          if (!SdMan.exists(coverPath.c_str())) continue;
+          String coverUrl = "/download?path=";
+          coverUrl += coverPath.c_str();
+          coverUrl += "&inline=1";
+          folderCoverUrls.push_back(coverUrl);
+          break;
+        }
+      };
+
+      // Match the device library stack: prefer books directly in the folder,
+      // then fall back to books in nested folders when there are no direct covers.
+      uint8_t directChecked = 0;
+      scanFiles(folderPath.c_str(), [&](const FileInfo& child) {
+        if (directChecked >= 32 || !child.isEpub) return;
+        ++directChecked;
+        String bookPath = folderPath + "/" + child.name;
+        addFolderCover(bookPath);
+      });
+
+      if (folderCoverUrls.empty()) {
+        uint8_t nestedChecked = 0;
+        std::function<void(const String&)> scanNested = [&](const String& directory) {
+          if (folderCoverUrls.size() >= 3 || nestedChecked >= 64) return;
+          scanFiles(directory.c_str(), [&](const FileInfo& child) {
+            if (folderCoverUrls.size() >= 3 || nestedChecked >= 64) return;
+            ++nestedChecked;
+            const String childPath = directory + "/" + child.name;
+            if (child.isEpub) {
+              addFolderCover(childPath);
+            } else if (child.isDirectory) {
+              scanNested(childPath);
+            }
+          });
+        };
+        scanNested(folderPath);
+      }
+
+      for (size_t index = 0; index < folderCoverUrls.size() && index < 3; ++index) {
+        doc["coverUrls"][index] = folderCoverUrls[index];
+      }
+    } else if (info.isEpub) {
+      String bookPath = currentPath;
+      if (bookPath == "/") {
+        bookPath += info.name;
+      } else {
+        bookPath += "/";
+        bookPath += info.name;
+      }
+      const std::string cachePath = epubCachePathForBookPath(bookPath.c_str());
+      const char* coverNames[] = {"cover.jpg", "thumb.jpg", "cover.bmp", "thumb.png", "thumb.bmp"};
+      for (const char* coverName : coverNames) {
+        const std::string coverPath = cachePath + "/" + coverName;
+        if (!SdMan.exists(coverPath.c_str())) continue;
+        String coverUrl = "/download?path=";
+        coverUrl += coverPath.c_str();
+        coverUrl += "&inline=1";
+        doc["coverUrl"] = coverUrl;
+        break;
+      }
+    }
 
     const size_t written = serializeJson(doc, output, outputSize);
     if (written >= outputSize) {
@@ -1132,47 +1221,6 @@ void LocalServer::handleFileListData() const {
 
   server->sendContent("");
   INX_SERIAL.printf("[%lu] [WEB] Served file listing page for path: %s\n", millis(), currentPath.c_str());
-}
-
-void LocalServer::handleExportNotesData() const {
-#ifdef INX_SIMULATOR_WEB_ONLY
-  server->send(501, "application/json", "{\"ok\":false,\"error\":\"unavailable_in_simulator\"}");
-#else
-  const bool forceRefresh = server->hasArg("refresh") && server->arg("refresh") == "1";
-  if (forceRefresh) {
-    EpubNotesIndex::invalidate();
-  }
-
-  if (!exportNotesIndexIsCurrent()) {
-    EpubNotesIndex::invalidate();
-  }
-
-  if (!SdMan.exists(EpubNotesIndex::kPath) && !buildExportNotesIndex()) {
-    server->send(500, "application/json", "{\"ok\":false,\"error\":\"index_failed\"}");
-    return;
-  }
-
-  FsFile index;
-  if (!SdMan.openFileForRead("EXP", EpubNotesIndex::kPath, index)) {
-    server->send(500, "application/json", "{\"ok\":false,\"error\":\"index_unreadable\"}");
-    return;
-  }
-
-  server->setContentLength(CONTENT_LENGTH_UNKNOWN);
-  server->send(200, "application/json", "");
-  char buf[513];
-  while (index.available()) {
-    const int n = index.read(buf, sizeof(buf) - 1);
-    if (n <= 0) {
-      break;
-    }
-    buf[n] = '\0';
-    server->sendContent(buf);
-    yield();
-  }
-  index.close();
-  server->sendContent("");
-#endif
 }
 
 void LocalServer::handlePluginApi() const {
@@ -1199,153 +1247,6 @@ void LocalServer::handlePluginApi() const {
   // Plugin functions own their response format. Keep the host route generic;
   // download behavior and filenames belong to the plugin's web UI.
   server->send(200, "text/plain; charset=utf-8", output.c_str());
-}
-
-void LocalServer::handleBookTagsGet() const {
-#ifdef INX_SIMULATOR_WEB_ONLY
-  server->send(501, "application/json", "{\"ok\":false,\"error\":\"unavailable_in_simulator\"}");
-#else
-  std::vector<IndexedBookInfo> books;
-  const bool hasIndex = loadIndexedBooksWithTags(books);
-  std::vector<std::string> tags;
-  BookTags::loadTagList(tags);
-
-  std::sort(books.begin(), books.end(), [](const IndexedBookInfo& a, const IndexedBookInfo& b) {
-    return lowerAscii(a.title) < lowerAscii(b.title);
-  });
-
-  server->setContentLength(CONTENT_LENGTH_UNKNOWN);
-  server->send(200, "application/json", "");
-  server->sendContent("{\"indexed\":");
-  server->sendContent(hasIndex ? "true" : "false");
-  server->sendContent(",\"tags\":[");
-  for (size_t i = 0; i < tags.size(); ++i) {
-    if (i > 0) {
-      server->sendContent(",");
-    }
-    server->sendContent("\"" + jsonEscape(tags[i].c_str()) + "\"");
-  }
-  server->sendContent("],\"books\":[");
-  bool first = true;
-  for (const auto& book : books) {
-    if (!first) {
-      server->sendContent(",");
-    }
-    first = false;
-    String row = "{\"path\":\"" + jsonEscape(book.path) + "\",\"title\":\"" + jsonEscape(book.title) +
-                 "\",\"folder\":\"" + jsonEscape(book.folder) + "\",\"tag\":\"" + jsonEscape(book.tag) + "\"}";
-    server->sendContent(row);
-    yield();
-  }
-  server->sendContent("]}");
-  server->sendContent("");
-#endif
-}
-
-void LocalServer::handleLibraryIndexRefresh() const {
-#ifdef INX_SIMULATOR_WEB_ONLY
-  server->send(501, "application/json", "{\"ok\":false,\"error\":\"unavailable_in_simulator\"}");
-#else
-  if (webLibraryIndexing) {
-    server->send(200, "application/json", "{\"ok\":true,\"indexing\":true}");
-    return;
-  }
-
-  webLibraryIndexing = true;
-  webLibraryIndexCurrent = 0;
-  webLibraryIndexTotal = 0;
-  webLibraryIndexPath[0] = '\0';
-
-  BaseType_t created = xTaskCreate(webLibraryIndexTask, "WebLibIndex", 4096, nullptr, 1, nullptr);
-  if (created != pdPASS) {
-    webLibraryIndexing = false;
-    server->send(500, "application/json", "{\"ok\":false,\"error\":\"task\"}");
-    return;
-  }
-
-  server->send(200, "application/json", "{\"ok\":true,\"indexing\":true}");
-#endif
-}
-
-void LocalServer::handleLibraryIndexStatus() const {
-#ifdef INX_SIMULATOR_WEB_ONLY
-  server->send(200, "application/json", "{\"indexing\":false,\"current\":0,\"total\":0,\"path\":\"\"}");
-#else
-  String body = "{\"indexing\":";
-  body += webLibraryIndexing ? "true" : "false";
-  body += ",\"current\":";
-  body += String(webLibraryIndexCurrent);
-  body += ",\"total\":";
-  body += String(webLibraryIndexTotal);
-  body += ",\"path\":\"";
-  body += jsonEscape(String(webLibraryIndexPath));
-  body += "\"}";
-  server->send(200, "application/json", body);
-#endif
-}
-
-void LocalServer::handleBookTagsPost() const {
-#ifdef INX_SIMULATOR_WEB_ONLY
-  server->send(501, "application/json", "{\"ok\":false,\"error\":\"unavailable_in_simulator\"}");
-#else
-  if (!server->hasArg("plain")) {
-    server->send(400, "text/plain", "Missing JSON body");
-    return;
-  }
-
-  JsonDocument doc;
-  DeserializationError err = deserializeJson(doc, server->arg("plain"));
-  if (err) {
-    server->send(400, "text/plain", "Invalid JSON");
-    return;
-  }
-
-  const char* action = doc["action"] | "";
-  if (strcmp(action, "addTag") == 0) {
-    const char* tag = doc["tag"] | "";
-    if (!BookTags::addTag(tag)) {
-      server->send(500, "text/plain", "Failed to save tag");
-      return;
-    }
-    server->send(200, "application/json", "{\"ok\":true}");
-    return;
-  }
-
-  if (strcmp(action, "renameTag") == 0) {
-    const char* oldTag = doc["oldTag"] | "";
-    const char* newTag = doc["newTag"] | "";
-    if (!BookTags::renameTag(oldTag, newTag)) {
-      server->send(500, "text/plain", "Failed to rename tag");
-      return;
-    }
-    server->send(200, "application/json", "{\"ok\":true}");
-    return;
-  }
-
-  if (strcmp(action, "deleteTag") == 0) {
-    const char* tag = doc["tag"] | "";
-    if (!BookTags::deleteTag(tag)) {
-      server->send(500, "text/plain", "Failed to delete tag");
-      return;
-    }
-    server->send(200, "application/json", "{\"ok\":true}");
-    return;
-  }
-
-  const char* path = doc["path"] | "";
-  const char* tag = doc["tag"] | "";
-  if (!path[0]) {
-    server->send(400, "text/plain", "Missing path");
-    return;
-  }
-
-  if (!BookTags::set(path, tag)) {
-    server->send(500, "text/plain", "Failed to save tag");
-    return;
-  }
-
-  server->send(200, "application/json", "{\"ok\":true}");
-#endif
 }
 
 void LocalServer::handleDownload() const {
@@ -1729,6 +1630,90 @@ void LocalServer::handleDelete() const {
   }
 }
 
+void LocalServer::handleMove() const {
+  if (!server->hasArg("path") || !server->hasArg("destination")) {
+    server->send(400, "text/plain", "Missing path or destination");
+    return;
+  }
+
+  String itemPath = server->arg("path");
+  String destination = server->arg("destination");
+  itemPath.trim();
+  destination.trim();
+
+  if (itemPath.isEmpty() || itemPath == "/") {
+    server->send(400, "text/plain", "Cannot move root directory");
+    return;
+  }
+  if (!itemPath.startsWith("/")) itemPath = "/" + itemPath;
+  if (itemPath.length() > 1 && itemPath.endsWith("/")) itemPath.remove(itemPath.length() - 1);
+  if (!destination.startsWith("/")) destination = "/" + destination;
+  if (destination.length() > 1 && destination.endsWith("/")) destination.remove(destination.length() - 1);
+
+  const String itemName = itemPath.substring(itemPath.lastIndexOf('/') + 1);
+  if (itemName.startsWith(".")) {
+    server->send(403, "text/plain", "Cannot move system files");
+    return;
+  }
+  for (size_t i = 0; i < HIDDEN_ITEMS_COUNT; i++) {
+    if (itemName.equals(HIDDEN_ITEMS[i])) {
+      server->send(403, "text/plain", "Cannot move protected items");
+      return;
+    }
+  }
+  if (!SdMan.exists(itemPath.c_str())) {
+    server->send(404, "text/plain", "Item not found");
+    return;
+  }
+
+  FsFile destinationDir = SdMan.open(destination.c_str());
+  if (!destinationDir || !destinationDir.isDirectory()) {
+    if (destinationDir) destinationDir.close();
+    server->send(400, "text/plain", "Destination folder not found");
+    return;
+  }
+  destinationDir.close();
+
+  FsFile item = SdMan.open(itemPath.c_str());
+  const bool isDir = item && item.isDirectory();
+  if (item) item.close();
+
+  const String sourcePrefix = itemPath + "/";
+  if (isDir && (destination == itemPath || destination.startsWith(sourcePrefix))) {
+    server->send(400, "text/plain", "Cannot move a folder into itself");
+    return;
+  }
+
+  const String newPath = destination == "/" ? "/" + itemName : destination + "/" + itemName;
+  if (newPath == itemPath) {
+    server->send(200, "text/plain", "Already in that folder");
+    return;
+  }
+  if (SdMan.exists(newPath.c_str())) {
+    server->send(409, "text/plain", "An item with that name already exists in the destination folder");
+    return;
+  }
+
+  std::vector<std::pair<std::string, std::string>> epubRenames;
+  if (isDir) {
+    collectEpubRenames(itemPath.c_str(), newPath.c_str(), epubRenames);
+  } else if (isEpubFile(itemName)) {
+    epubRenames.emplace_back(itemPath.c_str(), newPath.c_str());
+  }
+
+  INX_SERIAL.printf("[%lu] [WEB] Moving %s -> %s\n", millis(), itemPath.c_str(), newPath.c_str());
+  if (!SdMan.rename(itemPath.c_str(), newPath.c_str())) {
+    server->send(500, "text/plain", "Failed to move item");
+    return;
+  }
+
+  for (const auto& renamePair : epubRenames) {
+    migrateEpubBookState(renamePair.first, renamePair.second);
+  }
+
+  server->send(200, "text/plain", "Moved successfully");
+}
+
 void LocalServer::collectEpubRenames(const std::string& oldDirPath, const std::string& newDirPath,
                                      std::vector<std::pair<std::string, std::string>>& out) const {
   scanFiles(oldDirPath.c_str(), [&](const FileInfo info) {
@@ -2012,6 +1997,7 @@ void LocalServer::handleSettingsGet() const {
   doc["hideBatteryPercentage"] = SETTINGS.hideBatteryPercentage;
   doc["recentLibraryMode"] = SETTINGS.recentLibraryMode;
   doc["libraryMode"] = SETTINGS.libraryMode;
+  doc["frontButtonLayout"] = SETTINGS.frontButtonLayout;
   doc["recentVisibleCount"] = SETTINGS.recentVisibleCount;
   doc["librarySortEnabled"] = SETTINGS.librarySortEnabled;
   doc["libraryShelfEnabled"] = SETTINGS.libraryShelfEnabled;
@@ -2187,10 +2173,17 @@ void LocalServer::handleSettingsUpdate() const {
       if (v >= SystemSetting::LIBRARY_MODE_COUNT) v = SystemSetting::LIBRARY_LIST;
       SETTINGS.libraryMode = v;
       changed = true;
+    } else if (strcmp(key, "frontButtonLayout") == 0) {
+      int v = static_cast<int>(value);
+      if (v < 0 || v >= SystemSetting::FRONT_BUTTON_LAYOUT_COUNT) {
+        v = SystemSetting::BACK_CONFIRM_LEFT_RIGHT;
+      }
+      SETTINGS.frontButtonLayout = static_cast<uint8_t>(v);
+      changed = true;
     } else if (strcmp(key, "recentVisibleCount") == 0) {
       int v = static_cast<int>(value);
       if (v < 1) v = 1;
-      if (v > 8) v = 8;
+      if (v > 9) v = 9;
       SETTINGS.recentVisibleCount = static_cast<uint8_t>(v);
       changed = true;
     } else if (strcmp(key, "librarySortEnabled") == 0) {

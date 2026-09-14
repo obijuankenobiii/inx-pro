@@ -1,4 +1,8 @@
 const SYSTEM_FOLDERS = ["fonts", "sleep"];
+let epubViewMode="grid",epubSearchText="";
+try{epubViewMode=localStorage.getItem("inxEpubViewMode")||"grid"}catch(e){}
+function updateEpubViewControls(){const e=document.getElementById("inx-list-view-btn"),t=document.getElementById("inx-grid-view-btn");e&&e.classList.toggle("active",epubViewMode==="list"),t&&t.classList.toggle("active",epubViewMode==="grid")}
+function setEpubViewMode(e){epubViewMode=e==="list"?"list":"grid";try{localStorage.setItem("inxEpubViewMode",epubViewMode)}catch(t){}updateEpubViewControls();hydrate()}
 let currentPath="/",generatePackagedThumbnail=!1,jszipLoadPromise=null;function loadJsZip(){return"undefined"!=typeof JSZip?Promise.resolve():(jszipLoadPromise||(jszipLoadPromise=new Promise(function(e,t){var o=document.createElement("script");o.src="/js/jszip.min.js";o.async=!0;o.onload=function(){"undefined"!=typeof JSZip?e():(jszipLoadPromise=null,t(new Error("JSZip init failed")))};o.onerror=function(){jszipLoadPromise=null,t(new Error("JSZip load failed"))};document.head.appendChild(o)})),jszipLoadPromise)}const epubThumbCheckbox=document.getElementById("epubGeneratePackagedThumbnailCheckbox");function isPackagedDeviceThumbnailPath(e){return typeof e=="string"&&e.replace(/\\/g,"/").toLowerCase()=="meta-inf/thumbnail.jpg"}function updateToggleUI(){epubThumbCheckbox&&(epubThumbCheckbox.checked=generatePackagedThumbnail);const e=document.getElementById("optimizerSummaryBanner");if(e){const t="Preserve formats: JPEG/JPG resized and re-encoded in place to max 480×800 at JPEG quality 100%; PNG and others unchanged.",o=generatePackagedThumbnail?" Embeds META-INF/thumbnail.jpg from a cover-like image for fast imports.":" Omits packaged thumbnail; reader builds thumb.bmp from cover on device.";e.textContent=t+o}}function toggleEpubGeneratePackagedThumbnail(){generatePackagedThumbnail=epubThumbCheckbox?epubThumbCheckbox.checked:!generatePackagedThumbnail,localStorage.setItem("epubGeneratePackagedThumbnail",generatePackagedThumbnail),updateToggleUI(),addModalLog("modalLog",generatePackagedThumbnail?"Device thumbnail: will embed META-INF/thumbnail.jpg on import.":"Device thumbnail: will not embed (and strips it if present when re-importing).","success")}function addModalLog(e,t,o="info"){const a=document.getElementById(e);if(a){e=(new Date).toLocaleTimeString();const n=document.createElement("div");n.className=o,n.innerHTML=`[${e}] ${t}`,a.appendChild(n),n.scrollIntoView({behavior:"smooth",block:"nearest"})}}function clearModalLog(e){const t=document.getElementById(e);t&&(t.innerHTML='<div class="info">Ready</div>')}function isCoverImage(e){var t=e.toLowerCase();for(const o of[/cover/i,/titlepage/i,/front[-_]?cover/i,/thumbnail/i,/\/cover\//i,/\/images\/cover/i,/\/img\/cover/i,/\/metadata\/cover/i,/^cover\./i,/^title\./i])if(o.test(t))return!0;return!1}async function resizeJpegInPlace(blob,path,opts){
 opts=opts||{};const maxW=void 0!==opts.maxW?opts.maxW:480,maxH=void 0!==opts.maxH?opts.maxH:800,quality=void 0!==opts.quality?opts.quality:1;const ab=await blob.arrayBuffer(),typed=new Blob([ab],{type:"image/jpeg"});let sw,sh,drawSrc;try{if(typeof createImageBitmap=="function"){drawSrc=await createImageBitmap(typed);sw=drawSrc.width;sh=drawSrc.height}else throw 0}catch(_){await new Promise((ok,err)=>{const I=new Image,u=URL.createObjectURL(typed);I.onload=()=>{URL.revokeObjectURL(u);drawSrc=I;sw=I.width;sh=I.height;ok()};I.onerror=()=>{URL.revokeObjectURL(u);err(new Error("Failed to load image: "+path))};I.src=u})}
 let tw=sw,th=sh;const needsResize=maxW<sw||maxH<sh;if(needsResize){const scale=Math.min(maxW/sw,maxH/sh);tw=Math.max(1,Math.floor(sw*scale));th=Math.max(1,Math.floor(sh*scale))}
@@ -92,6 +96,16 @@ function escapeHtml(s) {
 
 function escapeAttr(s) {
   return escapeHtml(s).replace(/"/g, "&quot;");
+}
+
+function folderCoverStack(item) {
+  const covers = Array.isArray(item.coverUrls) ? item.coverUrls.filter(Boolean).slice(0, 3) : [];
+  if (!covers.length) return '<div class="inx-cover inx-folder-cover">▱</div>';
+  let html = '<div class="inx-cover inx-folder-stack has-thumbnail" aria-hidden="true">';
+  covers.forEach((url, index) => {
+    html += '<span class="inx-folder-stack-card folder-stack-' + index + '"><img loading="lazy" src="' + escapeAttr(url) + '" alt=""></span>';
+  });
+  return html + '</div>';
 }
 
 function formatFileSize(bytes) {
@@ -359,6 +373,148 @@ async function promptDeleteItem(path, name, type) {
   }
 }
 
+let moveFolderCache = null;
+let movePickerState = null;
+
+function ensureMovePicker() {
+  if (document.getElementById("move-picker")) return document.getElementById("move-picker");
+  const style = document.createElement("style");
+  style.id = "move-picker-styles";
+  style.textContent =
+    ".inx-move-overlay{position:fixed;inset:0;z-index:1200;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(20,24,28,.42)}" +
+    ".inx-move-overlay.open{display:flex}" +
+    ".inx-move-dialog{width:min(460px,100%);background:#fff;border:1px solid #d9dde1;border-radius:7px;box-shadow:0 18px 50px rgba(25,30,35,.22);padding:20px;color:#202428}" +
+    ".inx-move-header{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:18px;font-weight:650}" +
+    ".inx-move-close{border:0;background:transparent;color:#687078;font-size:24px;line-height:1;cursor:pointer;padding:0 2px}" +
+    ".inx-move-copy{margin:8px 0 18px;color:#687078;font-size:13px;overflow-wrap:anywhere}" +
+    ".inx-move-label{display:block;color:#42484e;font-size:12px;font-weight:600;margin-bottom:7px}" +
+    ".inx-move-select{display:block;width:100%;height:42px;border:1px solid #cfd5da;border-radius:5px;background:#fff;color:#202428;padding:0 11px;font:inherit}" +
+    ".inx-move-error{min-height:18px;margin-top:8px;color:#b42318;font-size:12px}" +
+    ".inx-move-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}" +
+    ".inx-move-btn{border:1px solid #cfd5da;border-radius:5px;background:#fff;color:#202428;padding:9px 15px;font:inherit;cursor:pointer}" +
+    ".inx-move-btn.primary{border-color:#202428;background:#202428;color:#fff}" +
+    ".inx-move-btn:disabled{opacity:.48;cursor:wait}";
+  document.head.appendChild(style);
+
+  const overlay = document.createElement("div");
+  overlay.id = "move-picker";
+  overlay.className = "inx-move-overlay";
+  overlay.innerHTML =
+    '<div class="inx-move-dialog" role="dialog" aria-modal="true" aria-labelledby="move-picker-title">' +
+    '<div class="inx-move-header"><span id="move-picker-title">Move item</span><button type="button" class="inx-move-close" aria-label="Close">×</button></div>' +
+    '<div class="inx-move-copy"></div>' +
+    '<label class="inx-move-label" for="move-picker-select">Destination folder</label>' +
+    '<select id="move-picker-select" class="inx-move-select"></select>' +
+    '<div class="inx-move-error" aria-live="polite"></div>' +
+    '<div class="inx-move-actions"><button type="button" class="inx-move-btn cancel">Cancel</button><button type="button" class="inx-move-btn primary submit" disabled>Move here</button></div>' +
+    "</div>";
+  document.body.appendChild(overlay);
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay || event.target.closest(".inx-move-close,.inx-move-btn.cancel")) {
+      overlay.classList.remove("open");
+      movePickerState = null;
+    }
+  });
+  overlay.querySelector(".submit").addEventListener("click", submitMovePicker);
+  return overlay;
+}
+
+async function loadMoveFolders() {
+  if (moveFolderCache) return moveFolderCache;
+  const folders = new Set(["/"]);
+  const queue = ["/"];
+  let next = 0;
+  async function worker() {
+    while (next < queue.length) {
+      const folder = queue[next++];
+      try {
+        const response = await fetch("/api/files?path=" + encodeURIComponent(folder));
+        if (!response.ok) continue;
+        const items = await response.json();
+        for (const item of items) {
+          if (!item.isDirectory) continue;
+          const child = (folder === "/" ? "" : folder.replace(/\/$/, "")) + "/" + item.name;
+          if (!folders.has(child)) {
+            folders.add(child);
+            queue.push(child);
+          }
+        }
+      } catch (_) {
+        // Keep folders already discovered usable if one directory disappears while scanning.
+      }
+    }
+  }
+  await Promise.all([worker(), worker(), worker(), worker()]);
+  moveFolderCache = Array.from(folders).sort((a, b) => {
+    if (a === "/") return -1;
+    if (b === "/") return 1;
+    return a.localeCompare(b);
+  });
+  return moveFolderCache;
+}
+
+async function promptMove(path, name) {
+  const overlay = ensureMovePicker();
+  const select = overlay.querySelector(".inx-move-select");
+  const copy = overlay.querySelector(".inx-move-copy");
+  const error = overlay.querySelector(".inx-move-error");
+  const submit = overlay.querySelector(".submit");
+  movePickerState = { path, name };
+  copy.textContent = 'Choose where to move “' + name + '”.';
+  error.textContent = "";
+  select.disabled = true;
+  submit.disabled = true;
+  select.innerHTML = "<option>Loading folders…</option>";
+  overlay.classList.add("open");
+  try {
+    const folders = await loadMoveFolders();
+    if (!movePickerState || movePickerState.path !== path) return;
+    const source = path.replace(/\/+$/, "") || "/";
+    const valid = folders.filter((folder) => !(folder === source || (source !== "/" && folder.startsWith(source + "/"))));
+    select.innerHTML = "";
+    for (const folder of valid) {
+      const option = document.createElement("option");
+      option.value = folder;
+      option.textContent = folder;
+      select.appendChild(option);
+    }
+    if (!valid.length) throw new Error("No valid destination folders found.");
+    const preferred = valid.includes(currentPath) ? currentPath : "/";
+    select.value = preferred;
+    select.disabled = false;
+    submit.disabled = false;
+  } catch (moveError) {
+    select.innerHTML = "<option>Unable to load folders</option>";
+    error.textContent = moveError.message || "Unable to load folders.";
+  }
+}
+
+async function submitMovePicker() {
+  if (!movePickerState) return;
+  const overlay = document.getElementById("move-picker");
+  const select = overlay.querySelector(".inx-move-select");
+  const error = overlay.querySelector(".inx-move-error");
+  const submit = overlay.querySelector(".submit");
+  const destination = select.value;
+  if (!destination || !destination.startsWith("/")) return;
+  const formData = new FormData();
+  formData.append("path", movePickerState.path);
+  formData.append("destination", destination);
+  submit.disabled = true;
+  error.textContent = "Moving…";
+  try {
+    const res = await fetch("/move", { method: "POST", body: formData });
+    if (!res.ok) throw new Error((await res.text()) || "Unable to move item.");
+    overlay.classList.remove("open");
+    movePickerState = null;
+    moveFolderCache = null;
+    await hydrate();
+  } catch (moveError) {
+    submit.disabled = false;
+    error.textContent = moveError.message || "Unable to move item.";
+  }
+}
+
 function childPath(parent, name) {
   return String(parent || "/").replace(/\/$/, "") + "/" + name;
 }
@@ -598,8 +754,12 @@ async function hydrate() {
       a.isDirectory === b.isDirectory ? (a.name || "").localeCompare(b.name || "") : a.isDirectory ? -1 : 1
     );
 
-    let html = '<div class="file-list">';
-    for (const item of visible) {
+    const query = epubSearchText.trim().toLowerCase();
+    const filtered = query
+      ? visible.filter((item) => String(item.name || "").toLowerCase().includes(query))
+      : visible;
+    let html = '<div class="file-list inx-' + (epubViewMode === "grid" ? "grid" : "list") + '">';
+    for (const item of filtered) {
       const itemPath = currentPath.replace(/\/$/, "") + "/" + item.name;
       const itemPathAttr = escapeAttr(itemPath);
       const itemNameAttr = escapeAttr(item.name);
@@ -615,6 +775,34 @@ async function hydrate() {
         '<button type="button" class="row-action optimize-btn" data-path="' + itemPathAttr + '" data-name="' + itemNameAttr +
         '" onclick="promptOptimizeItem(this.dataset.path,this.dataset.name)" title="Re-optimize (resize/compress images)" aria-label="Re-optimize">' +
         '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2 4.5 11h4L8 18l6.5-9h-4L11 2Z"/></svg></button>';
+      const moveBtn =
+        '<button type="button" class="row-action move-btn" data-path="' + itemPathAttr + '" data-name="' + itemNameAttr +
+        '" onclick="promptMove(this.dataset.path,this.dataset.name)" title="Move to folder" aria-label="Move to folder">' +
+        '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3v14M3 10h14M6.5 6.5 10 3l3.5 3.5M6.5 13.5 10 17l3.5-3.5M6.5 6.5 3 10l3.5 3.5M13.5 6.5 17 10l-3.5 3.5"/></svg></button>';
+
+      if (epubViewMode === "grid") {
+        const title = escapeHtml(item.name.replace(/\.epub$/i, ""));
+        const initial = escapeHtml((item.name.replace(/\.epub$/i, "").trim()[0] || "B").toUpperCase());
+        const cover = item.coverUrl
+          ? '<div class="inx-cover has-thumbnail"><img loading="lazy" src="' + escapeAttr(item.coverUrl) + '" alt=""></div>'
+          : '<div class="inx-cover placeholder">' + initial + '</div>';
+        if (item.isDirectory) {
+          html +=
+            '<div class="folder-card folder-row" data-path="' + itemPathAttr + '">' +
+            '<input class="select-box" type="checkbox" data-path="' + itemPathAttr + '" data-name="' + itemNameAttr + '" data-type="folder" onchange="updateBulkActions()">' +
+            '<a class="folder-open" href="/epub?path=' + encodeURIComponent(itemPath) + '">' + folderCoverStack(item) +
+            '<div class="inx-book-title">' + escapeHtml(item.name) + '</div><div class="inx-book-meta">Folder</div></a>' +
+            '<div class="inx-card-actions">' + deleteBtn + moveBtn + renameBtn + '</div></div>';
+        } else {
+          html +=
+            '<div class="book-card epub-file">' +
+            '<input class="select-box" type="checkbox" data-path="' + itemPathAttr + '" data-name="' + itemNameAttr + '" data-type="file" onchange="updateBulkActions()">' +
+            '<a class="book-open" href="/epub-viewer.html?path=' + encodeURIComponent(itemPath) + '">' + cover +
+            '<div class="inx-book-title">' + title + '</div><div class="inx-book-meta">' + formatFileSize(item.size) + '</div></a>' +
+            '<div class="inx-card-actions">' + optimizeBtn + deleteBtn + moveBtn + renameBtn + '</div></div>';
+        }
+        continue;
+      }
 
       if (item.isDirectory) {
         html +=
@@ -624,7 +812,7 @@ async function hydrate() {
           '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4H10l2 2h5.5A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5v-10Z"/></svg>' +
           '<span class="name">' + escapeHtml(item.name) + '</span><span class="meta">Folder</span>' +
           '<svg class="chevron" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m7 4 6 6-6 6"/></svg></a>' +
-          renameBtn + deleteBtn + '</div>';
+          deleteBtn + moveBtn + renameBtn + '</div>';
       } else {
         html +=
           '<div class="file-row epub-file">' +
@@ -634,7 +822,7 @@ async function hydrate() {
           '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4.5h9.5A2.5 2.5 0 0 1 18 7v12.5H7.5A2.5 2.5 0 0 1 5 17V5.5A1 1 0 0 1 6 4.5Z"/><path d="M7.5 19.5A2.5 2.5 0 0 1 7.5 14H18"/></svg>' +
           '<span class="name">' + escapeHtml(item.name) + '<span class="epub-badge">EPUB</span></span>' +
           '<span class="meta">' + formatFileSize(item.size) + '</span></button>' +
-          optimizeBtn + renameBtn + deleteBtn + '</div>';
+          optimizeBtn + deleteBtn + moveBtn + renameBtn + '</div>';
       }
     }
     html += "</div>";
@@ -653,7 +841,29 @@ async function hydrate() {
   }
 }
 
+function ensureFolderStackStyles() {
+  if (document.getElementById("inx-folder-stack-styles")) return;
+  const style = document.createElement("style");
+  style.id = "inx-folder-stack-styles";
+  style.textContent =
+    ".inx-folder-stack{position:relative!important;z-index:0;display:block!important;overflow:hidden!important;background:transparent!important;box-shadow:none!important}" +
+    ".inx-folder-stack-card{position:absolute;overflow:hidden;border-radius:0!important;background:#d9dcde;box-shadow:0 5px 12px rgba(30,34,38,.16);transform-origin:center bottom}" +
+    ".inx-folder-stack-card img{width:100%;height:100%;object-fit:contain;object-position:left center;background:#f0f1f2;display:block}" +
+    ".folder-stack-0{left:0;top:0;width:100%;height:100%;z-index:3;background:transparent;box-shadow:none}" +
+    ".folder-stack-0 img{object-fit:contain;background:transparent}" +
+    ".folder-stack-1{left:10%;top:0;width:100%;height:100%;z-index:2}" +
+    ".folder-stack-1 img,.folder-stack-2 img{object-fit:contain;background:#f0f1f2}" +
+    ".folder-stack-2{left:20%;top:0;width:100%;height:100%;z-index:1}" +
+    ".inx-grid .folder-open .inx-folder-stack,.inx-grid .folder-open .inx-folder-cover,.inx-grid .book-open .inx-cover{width:80%!important;max-width:80%!important;height:auto!important;min-height:0!important;aspect-ratio:5/4!important;margin:0!important}" +
+    ".inx-grid .book-open .inx-cover{position:relative;display:block}" +
+    ".inx-grid .book-open .inx-cover img{position:absolute;inset:0;width:100%!important;height:100%!important;object-fit:contain!important;object-position:left center!important}" +
+    ".inx-grid .book-open .inx-cover,.inx-grid .folder-open .inx-cover,.inx-folder-stack,.inx-folder-stack-card,.inx-folder-stack-card img{border-radius:0!important}";
+  style.textContent += ".file-list.inx-grid{grid-template-columns:repeat(6,minmax(0,1fr));justify-content:start}.inx-grid .book-card,.inx-grid .folder-card{max-width:288px}.inx-grid .inx-card-actions{justify-content:flex-end}.inx-grid .folder-open .inx-folder-cover,.inx-grid .book-open .inx-cover{width:100%!important;max-width:100%!important}";
+  document.head.appendChild(style);
+}
+
 function init() {
+  ensureFolderStackStyles();
   try {
     generatePackagedThumbnail = localStorage.getItem("epubGeneratePackagedThumbnail") === "true";
   } catch (e) {
@@ -661,6 +871,19 @@ function init() {
   }
   updateToggleUI();
   initEpubDropzone();
+  const search = document.getElementById("inx-book-search");
+  if (search) {
+    search.value = epubSearchText;
+    search.addEventListener("input", () => {
+      epubSearchText = search.value;
+      hydrate();
+    });
+  }
+  const listButton = document.getElementById("inx-list-view-btn");
+  const gridButton = document.getElementById("inx-grid-view-btn");
+  if (listButton) listButton.addEventListener("click", () => setEpubViewMode("list"));
+  if (gridButton) gridButton.addEventListener("click", () => setEpubViewMode("grid"));
+  updateEpubViewControls();
   hydrate();
 }
 document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", init) : init();

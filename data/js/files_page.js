@@ -21,6 +21,8 @@ const ICONS = {
     '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 4v9m-3.5-3.5L10 13l3.5-3.5M4 16h12"/></svg>',
   trash:
     '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h12M8 3.5h4L13 6H7l1-2.5ZM6 6l.7 10h6.6L14 6M8.5 8.5v5M11.5 8.5v5"/></svg>',
+  move:
+    '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3v14M3 10h14M6.5 6.5 10 3l3.5 3.5M6.5 13.5 10 17l3.5-3.5M6.5 6.5 3 10l3.5 3.5M13.5 6.5 17 10l-3.5 3.5"/></svg>',
 };
 
 function getCurrentPath() {
@@ -203,6 +205,150 @@ function openRename(path, name, type) {
     const dot = type === "file" ? name.lastIndexOf(".") : -1;
     input.setSelectionRange(0, dot > 0 ? dot : name.length);
   });
+}
+
+let moveFolderCache = null;
+let movePickerState = null;
+
+function ensureMovePicker() {
+  if (document.getElementById("move-picker")) return document.getElementById("move-picker");
+  const style = document.createElement("style");
+  style.id = "move-picker-styles";
+  style.textContent =
+    ".inx-move-overlay{position:fixed;inset:0;z-index:1200;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(20,24,28,.42)}" +
+    ".inx-move-overlay.open{display:flex}" +
+    ".inx-move-dialog{width:min(460px,100%);background:#fff;border:1px solid #d9dde1;border-radius:7px;box-shadow:0 18px 50px rgba(25,30,35,.22);padding:20px;color:#202428}" +
+    ".inx-move-header{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:18px;font-weight:650}" +
+    ".inx-move-close{border:0;background:transparent;color:#687078;font-size:24px;line-height:1;cursor:pointer;padding:0 2px}" +
+    ".inx-move-copy{margin:8px 0 18px;color:#687078;font-size:13px;overflow-wrap:anywhere}" +
+    ".inx-move-label{display:block;color:#42484e;font-size:12px;font-weight:600;margin-bottom:7px}" +
+    ".inx-move-select{display:block;width:100%;height:42px;border:1px solid #cfd5da;border-radius:5px;background:#fff;color:#202428;padding:0 11px;font:inherit}" +
+    ".inx-move-error{min-height:18px;margin-top:8px;color:#b42318;font-size:12px}" +
+    ".inx-move-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}" +
+    ".inx-move-btn{border:1px solid #cfd5da;border-radius:5px;background:#fff;color:#202428;padding:9px 15px;font:inherit;cursor:pointer}" +
+    ".inx-move-btn.primary{border-color:#202428;background:#202428;color:#fff}" +
+    ".inx-move-btn:disabled{opacity:.48;cursor:wait}";
+  document.head.appendChild(style);
+
+  const overlay = document.createElement("div");
+  overlay.id = "move-picker";
+  overlay.className = "inx-move-overlay";
+  overlay.innerHTML =
+    '<div class="inx-move-dialog" role="dialog" aria-modal="true" aria-labelledby="move-picker-title">' +
+    '<div class="inx-move-header"><span id="move-picker-title">Move item</span><button type="button" class="inx-move-close" aria-label="Close">×</button></div>' +
+    '<div class="inx-move-copy"></div>' +
+    '<label class="inx-move-label" for="move-picker-select">Destination folder</label>' +
+    '<select id="move-picker-select" class="inx-move-select"></select>' +
+    '<div class="inx-move-error" aria-live="polite"></div>' +
+    '<div class="inx-move-actions"><button type="button" class="inx-move-btn cancel">Cancel</button><button type="button" class="inx-move-btn primary submit" disabled>Move here</button></div>' +
+    "</div>";
+  document.body.appendChild(overlay);
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay || event.target.closest(".inx-move-close,.inx-move-btn.cancel")) {
+      overlay.classList.remove("open");
+      movePickerState = null;
+    }
+  });
+  overlay.querySelector(".submit").addEventListener("click", submitMovePicker);
+  return overlay;
+}
+
+async function loadMoveFolders() {
+  if (moveFolderCache) return moveFolderCache;
+  const folders = new Set(["/"]);
+  const queue = ["/"];
+  let next = 0;
+  async function worker() {
+    while (next < queue.length) {
+      const folder = queue[next++];
+      try {
+        const response = await fetch("/api/files?path=" + encodeURIComponent(folder));
+        if (!response.ok) continue;
+        const items = await response.json();
+        for (const item of items) {
+          if (!item.isDirectory) continue;
+          const child = joinPath(folder, item.name);
+          if (!folders.has(child)) {
+            folders.add(child);
+            queue.push(child);
+          }
+        }
+      } catch (_) {
+        // Keep folders already discovered usable if one directory disappears while scanning.
+      }
+    }
+  }
+  await Promise.all([worker(), worker(), worker(), worker()]);
+  moveFolderCache = Array.from(folders).sort((a, b) => {
+    if (a === "/") return -1;
+    if (b === "/") return 1;
+    return a.localeCompare(b);
+  });
+  return moveFolderCache;
+}
+
+async function promptMove(path, name) {
+  const overlay = ensureMovePicker();
+  const select = overlay.querySelector(".inx-move-select");
+  const copy = overlay.querySelector(".inx-move-copy");
+  const error = overlay.querySelector(".inx-move-error");
+  const submit = overlay.querySelector(".submit");
+  movePickerState = { path, name };
+  copy.textContent = 'Choose where to move “' + name + '”.';
+  error.textContent = "";
+  select.disabled = true;
+  submit.disabled = true;
+  select.innerHTML = "<option>Loading folders…</option>";
+  overlay.classList.add("open");
+  try {
+    const folders = await loadMoveFolders();
+    if (!movePickerState || movePickerState.path !== path) return;
+    const source = path.replace(/\/+$/, "") || "/";
+    const valid = folders.filter((folder) => !(folder === source || (source !== "/" && folder.startsWith(source + "/"))));
+    select.innerHTML = "";
+    for (const folder of valid) {
+      const option = document.createElement("option");
+      option.value = folder;
+      option.textContent = folder;
+      select.appendChild(option);
+    }
+    if (!valid.length) throw new Error("No valid destination folders found.");
+    const preferred = valid.includes(currentPath) ? currentPath : "/";
+    select.value = preferred;
+    select.disabled = false;
+    submit.disabled = false;
+  } catch (moveError) {
+    select.innerHTML = "<option>Unable to load folders</option>";
+    error.textContent = moveError.message || "Unable to load folders.";
+  }
+}
+
+async function submitMovePicker() {
+  if (!movePickerState) return;
+  const overlay = document.getElementById("move-picker");
+  const select = overlay.querySelector(".inx-move-select");
+  const error = overlay.querySelector(".inx-move-error");
+  const submit = overlay.querySelector(".submit");
+  const destination = select.value;
+  if (!destination || !destination.startsWith("/")) return;
+  const form = new FormData();
+  form.append("path", movePickerState.path);
+  form.append("destination", destination);
+  submit.disabled = true;
+  error.textContent = "Moving…";
+  try {
+    const response = await fetch("/move", { method: "POST", body: form });
+    if (!response.ok) throw new Error((await response.text()) || "Unable to move item.");
+    const name = movePickerState.name;
+    overlay.classList.remove("open");
+    movePickerState = null;
+    moveFolderCache = null;
+    showToast("Moved " + name, false);
+    await hydrate();
+  } catch (moveError) {
+    submit.disabled = false;
+    error.textContent = moveError.message || "Unable to move item.";
+  }
 }
 
 async function submitRename() {
@@ -539,8 +685,9 @@ async function hydrate() {
       } else {
         html += actionButton("download", path, item.name, type, ICONS.download, "Download", false);
       }
-      html += actionButton("rename", path, item.name, type, ICONS.rename, "Rename", false);
       html += actionButton("delete", path, item.name, type, ICONS.trash, "Delete", true);
+      html += actionButton("move", path, item.name, type, ICONS.move, "Move to folder", false);
+      html += actionButton("rename", path, item.name, type, ICONS.rename, "Rename", false);
       html += "</div></div>";
     }
     html += "</div>";
@@ -554,6 +701,7 @@ async function hydrate() {
         const type = button.dataset.type;
         if (action === "rename") openRename(path, name, type);
         if (action === "delete") openDelete(path, name, type);
+        if (action === "move") promptMove(path, name);
         if (action === "thumbnail") uploadFolderThumbnail(path);
         if (action === "download") window.location.href = "/download?path=" + encodeURIComponent(path);
       })

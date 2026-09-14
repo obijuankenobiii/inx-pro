@@ -170,7 +170,7 @@ void ReaderButtonBindings::dispatch(EpubActivity& act, const uint8_t action) {
     case SystemSetting::BTN_ACTION_PAGE_REFRESH:
       act.invalidatePreparedPage();
       act.renderer.syncWriteBufferFromActive();
-      act.renderer.displayBuffer(HalDisplay::MANUAL_REFRESH);
+      act.renderer.displayBuffer(FREEINK_DEVICE_X4PRO ? HalDisplay::FULL_REFRESH : HalDisplay::MANUAL_REFRESH);
       act.updateRequired = true;
       break;
     case SystemSetting::BTN_ACTION_CHAPTER_SKIP_NEXT:
