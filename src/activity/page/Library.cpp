@@ -197,10 +197,12 @@ std::string authorKey(const std::string& value) {
 
 }
 
-Library::Library(GfxRenderer& renderer, MappedInputManager& mappedInput, std::string path, const bool seriesMode)
+Library::Library(GfxRenderer& renderer, MappedInputManager& mappedInput, std::string path,
+                 PluginManager::LibraryMenuLink pluginMenu)
     : Page("Library", renderer, mappedInput),
       path(cleanPath(std::move(path))),
-      seriesMode_(seriesMode),
+      pluginMenu_(std::move(pluginMenu)),
+      pluginMode_(!pluginMenu_.id.empty()),
       grid(renderer, mappedInput, items, [this](const int index, const bool longPress) { select(index, longPress); },
            [this](const LibraryIndex::Book& book) { return isFavorite(book); },
            [this](const int x, const int y) { routeMenuAction(navigation::Menu::handleTap(x, y)); },
@@ -220,7 +222,7 @@ Library::Library(GfxRenderer& renderer, MappedInputManager& mappedInput, std::st
             [this](const LibraryIndex::Book& book) {
               return stateFilter == StateFilter::Author && book.type == LibraryIndex::Book::Type::FOLDER;
             },
-            [this](const LibraryIndex::Book& group, const int limit) { return seriesCovers(group, limit); }) {}
+            [this](const LibraryIndex::Book& group, const int limit) { return pluginGroupCovers(group, limit); }) {}
 
 void Library::onEnter() {
   Page::onEnter();
@@ -252,12 +254,12 @@ void Library::onEnter() {
   popupBook = -1;
   folderDeleteConfirm = false;
   sidebarOpen = false;
-  stateFilter = seriesMode_ ? StateFilter::Series : StateFilter::None;
-  activeSeriesGroup_.clear();
+  stateFilter = pluginMode_ ? StateFilter::Plugin : StateFilter::None;
+  activePluginGroup_.clear();
   authorFolder.clear();
   authorFolderKey.clear();
   authorIndexAvailable = false;
-  allBooksMode = !seriesMode_ && path == "/" && SETTINGS.libraryViewMode == SystemSetting::LIBRARY_VIEW_BOOKS;
+  allBooksMode = !pluginMode_ && path == "/" && SETTINGS.libraryViewMode == SystemSetting::LIBRARY_VIEW_BOOKS;
   if (path != "/" && SETTINGS.libraryViewMode != SystemSetting::LIBRARY_VIEW_FOLDERS) {
     SETTINGS.libraryViewMode = SystemSetting::LIBRARY_VIEW_FOLDERS;
     SETTINGS.saveToFile();
@@ -269,19 +271,19 @@ void Library::load() {
   items.clear();
   resetViews();
   books.clear();
-  seriesNameByPath_.clear();
-  seriesOrderByPath_.clear();
-  seriesBooksByGroup_.clear();
-  seriesNameByGroup_.clear();
+  pluginGroupByPath_.clear();
+  pluginOrderByPath_.clear();
+  pluginBooksByGroup_.clear();
+  pluginNameByGroup_.clear();
   favorites.clear();
   authorIndexAvailable = false;
   for (const BookState::Book& book : BOOK_STATE.getFavoriteBooks()) {
     favorites.insert(book.path);
   }
-  if (stateFilter == StateFilter::Series) {
+  if (stateFilter == StateFilter::Plugin) {
     std::string output;
     std::string error;
-    if (!PluginManager::invokeString("series", "library_json", nullptr, output, error)) return;
+    if (!PluginManager::invokeString(pluginMenu_.id.c_str(), pluginMenu_.function.c_str(), nullptr, output, error)) return;
 
     JsonDocument document;
     if (deserializeJson(document, output) != DeserializationError::Ok || !document.is<JsonArray>()) return;
@@ -299,19 +301,20 @@ void Library::load() {
       if (titleValue && titleValue[0]) item.title = titleValue;
       if (authorValue && authorValue[0]) item.author = authorValue;
 
-      const char* seriesValue = record["series"] | "";
-      const std::string seriesName = seriesValue ? seriesValue : "";
-      if (seriesName.empty()) continue;
-      seriesNameByPath_[bookPath] = seriesName;
-      seriesOrderByPath_[bookPath] = record["order"] | 0;
-      groupedBooks[seriesName].push_back(std::move(item));
+      const char* groupValue = record[pluginMenu_.groupField.c_str()] | "";
+      const std::string groupName = groupValue ? groupValue : "";
+      if (groupName.empty()) continue;
+      pluginGroupByPath_[bookPath] = groupName;
+      pluginOrderByPath_[bookPath] = record[pluginMenu_.orderField.c_str()] | 0;
+      groupedBooks[groupName].push_back(std::move(item));
     }
 
     for (auto& group : groupedBooks) {
-      const std::string groupPath = "/.metadata/series/" + std::to_string(std::hash<std::string>{}(group.first));
-      seriesBooksByGroup_[groupPath] = group.second;
-      seriesNameByGroup_[groupPath] = group.first;
-      if (activeSeriesGroup_.empty()) {
+      const std::string groupPath = "/.metadata/plugin-groups/" + pluginMenu_.id + "/" +
+                                    std::to_string(std::hash<std::string>{}(group.first));
+      pluginBooksByGroup_[groupPath] = group.second;
+      pluginNameByGroup_[groupPath] = group.first;
+      if (activePluginGroup_.empty()) {
         LibraryIndex::Book folder;
         folder.type = LibraryIndex::Book::Type::FOLDER;
         folder.path = groupPath;
@@ -320,7 +323,7 @@ void Library::load() {
         folder.bookCount = static_cast<uint16_t>(std::min<size_t>(group.second.size(), 65535));
         folder.hasMetadata = true;
         items.push_back(std::move(folder));
-      } else if (activeSeriesGroup_ == groupPath) {
+      } else if (activePluginGroup_ == groupPath) {
         items = group.second;
       }
     }
@@ -440,18 +443,18 @@ void Library::load() {
 
   std::stable_sort(items.begin(), items.end(), [this](const LibraryIndex::Book& left,
                                                        const LibraryIndex::Book& right) {
-    if (stateFilter == StateFilter::Series) {
+    if (stateFilter == StateFilter::Plugin) {
       const std::string leftPath = cleanPath(left.path);
       const std::string rightPath = cleanPath(right.path);
-      const auto leftSeries = seriesNameByPath_.find(leftPath);
-      const auto rightSeries = seriesNameByPath_.find(rightPath);
-      const std::string leftName = leftSeries == seriesNameByPath_.end() ? "" : leftSeries->second;
-      const std::string rightName = rightSeries == seriesNameByPath_.end() ? "" : rightSeries->second;
+      const auto leftGroup = pluginGroupByPath_.find(leftPath);
+      const auto rightGroup = pluginGroupByPath_.find(rightPath);
+      const std::string leftName = leftGroup == pluginGroupByPath_.end() ? "" : leftGroup->second;
+      const std::string rightName = rightGroup == pluginGroupByPath_.end() ? "" : rightGroup->second;
       if (leftName != rightName) return leftName < rightName;
-      const auto leftOrder = seriesOrderByPath_.find(leftPath);
-      const auto rightOrder = seriesOrderByPath_.find(rightPath);
-      const int leftValue = leftOrder == seriesOrderByPath_.end() ? 0 : leftOrder->second;
-      const int rightValue = rightOrder == seriesOrderByPath_.end() ? 0 : rightOrder->second;
+      const auto leftOrder = pluginOrderByPath_.find(leftPath);
+      const auto rightOrder = pluginOrderByPath_.find(rightPath);
+      const int leftValue = leftOrder == pluginOrderByPath_.end() ? 0 : leftOrder->second;
+      const int rightValue = rightOrder == pluginOrderByPath_.end() ? 0 : rightOrder->second;
       if (leftValue != rightValue) return leftValue < rightValue;
     }
     const std::string leftTitle = lower(left.title);
@@ -483,9 +486,9 @@ void Library::open(const int index) {
   if (index < 0 || index >= static_cast<int>(items.size())) return;
   const LibraryIndex::Book& item = items[static_cast<size_t>(index)];
   if (item.type == LibraryIndex::Book::Type::FOLDER) {
-    if (stateFilter == StateFilter::Series && activeSeriesGroup_.empty() &&
-        seriesBooksByGroup_.find(item.path) != seriesBooksByGroup_.end()) {
-      activeSeriesGroup_ = item.path;
+    if (stateFilter == StateFilter::Plugin && activePluginGroup_.empty() &&
+        pluginBooksByGroup_.find(item.path) != pluginBooksByGroup_.end()) {
+      activePluginGroup_ = item.path;
       thumb.setPage(0);
       load();
       updateRequired = true;
@@ -543,8 +546,8 @@ void Library::loop() {
   const bool horizontalSwipe = mappedInput.wasTouchSwipeLeft() || mappedInput.wasTouchSwipeRight();
 
   if (!filterOpen && !sortOpen && !isOpen() && horizontalSwipe) {
-    if (stateFilter == StateFilter::Series && !activeSeriesGroup_.empty() && mappedInput.wasTouchSwipeRight()) {
-      activeSeriesGroup_.clear();
+    if (stateFilter == StateFilter::Plugin && !activePluginGroup_.empty() && mappedInput.wasTouchSwipeRight()) {
+      activePluginGroup_.clear();
       thumb.setPage(0);
       load();
       updateRequired = true;
@@ -638,8 +641,8 @@ void Library::loop() {
 
 void Library::content() {
   if (items.empty()) {
-    const char* message = stateFilter == StateFilter::Series
-                              ? "No books in any series"
+    const char* message = stateFilter == StateFilter::Plugin
+                              ? "No items in this plugin view"
                               : (stateFilter == StateFilter::Author && !authorIndexAvailable
                                      ? "Generate authors in Settings first"
                                      : (LibraryIndex::hasIndex() ? "No books in this folder"
@@ -660,13 +663,13 @@ void Library::content() {
   }
 }
 
-std::vector<std::string> Library::seriesCovers(const LibraryIndex::Book& group, const int limit) const {
+std::vector<std::string> Library::pluginGroupCovers(const LibraryIndex::Book& group, const int limit) const {
   std::vector<std::string> covers;
-  if (stateFilter != StateFilter::Series || group.type != LibraryIndex::Book::Type::FOLDER || limit <= 0) {
+  if (stateFilter != StateFilter::Plugin || group.type != LibraryIndex::Book::Type::FOLDER || limit <= 0) {
     return covers;
   }
-  const auto booksForGroup = seriesBooksByGroup_.find(group.path);
-  if (booksForGroup == seriesBooksByGroup_.end()) return covers;
+  const auto booksForGroup = pluginBooksByGroup_.find(group.path);
+  if (booksForGroup == pluginBooksByGroup_.end()) return covers;
   const char* names[] = {"cover.jpg", "thumb.jpg", "cover.bmp", "thumb.png", "thumb.bmp"};
   for (const LibraryIndex::Book& book : booksForGroup->second) {
     const std::string directory = dataPath(book.path);
@@ -1094,10 +1097,11 @@ bool Library::handleSidebarInput() {
     load();
     updateRequired = true;
   } else if (hasPluginMenu && item == 5) {
-    stateFilter = StateFilter::Series;
+    pluginMenu_ = pluginMenu;
+    pluginMode_ = true;
+    stateFilter = StateFilter::Plugin;
     path = "/";
-    seriesMode_ = true;
-    activeSeriesGroup_.clear();
+    activePluginGroup_.clear();
     allBooksMode = false;
     sortOpen = false;
     filterOpen = false;

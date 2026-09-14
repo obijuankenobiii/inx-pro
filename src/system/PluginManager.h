@@ -33,6 +33,15 @@ class PluginManager {
     std::string id;
     std::string label;
     std::string function;
+    std::string groupField = "group";
+    std::string orderField = "order";
+  };
+
+  struct ReaderSuggestionLink {
+    std::string id;
+    std::string label;
+    std::string function;
+    std::string groupField = "group";
   };
 
   using ProgressCallback = std::function<void(size_t downloaded, size_t total)>;
@@ -69,7 +78,7 @@ class PluginManager {
   static bool findReaderSelectionPlugin(std::string& id, std::string& label, std::string& function);
 
   /** Find an installed plugin that contributes a next-book reader suggestion. */
-  static bool findReaderSuggestionPlugin(std::string& id, std::string& function);
+  static bool findReaderSuggestionPlugin(ReaderSuggestionLink& link);
 
   /** Find an installed plugin that contributes an item to the library sidebar. */
   static bool findLibraryMenuPlugin(LibraryMenuLink& link);

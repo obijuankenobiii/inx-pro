@@ -637,10 +637,11 @@ bool EpubActivity::slowPath() {
 void EpubActivity::onEnter() {
   ActivityWithSubactivity::onEnter();
   bookFinished_ = false;
-  nextSeriesAvailable_ = false;
-  nextSeriesPath_.clear();
-  nextSeriesTitle_.clear();
-  nextSeriesName_.clear();
+  readerSuggestionAvailable_ = false;
+  readerSuggestionPath_.clear();
+  readerSuggestionTitle_.clear();
+  readerSuggestionGroup_.clear();
+  readerSuggestionLabel_.clear();
   btnBindings_.reset();
   epub->setupCacheDir();
 
@@ -2206,11 +2207,11 @@ void EpubActivity::renderScreen(const bool clearFramebuffer) {
     renderer.clearScreen(0xFF);
     if (!bookFinished_) {
       bookFinished_ = true;
-      loadNextSeriesSuggestion();
+      loadReaderSuggestion();
     }
     displayBookStats();
     BOOK_STATE.setFinished(epub->getPath(), true);
-    renderNextSeriesSuggestion();
+    renderReaderSuggestion();
     return;
   }
 
@@ -2234,11 +2235,11 @@ void EpubActivity::renderScreen(const bool clearFramebuffer) {
         renderer.clearScreen(0xFF);
         if (!bookFinished_) {
           bookFinished_ = true;
-          loadNextSeriesSuggestion();
+          loadReaderSuggestion();
         }
         displayBookStats();
         BOOK_STATE.setFinished(epub->getPath(), true);
-        renderNextSeriesSuggestion();
+        renderReaderSuggestion();
         return;
       }
       if (wasLayoutReload) {
@@ -2841,16 +2842,16 @@ void EpubActivity::displayBookStats() {
   }
 }
 
-void EpubActivity::loadNextSeriesSuggestion() {
-  nextSeriesAvailable_ = false;
-  nextSeriesPath_.clear();
-  nextSeriesTitle_.clear();
-  nextSeriesName_.clear();
+void EpubActivity::loadReaderSuggestion() {
+  readerSuggestionAvailable_ = false;
+  readerSuggestionPath_.clear();
+  readerSuggestionTitle_.clear();
+  readerSuggestionGroup_.clear();
+  readerSuggestionLabel_.clear();
   if (!epub) return;
 
-  std::string pluginId;
-  std::string function;
-  if (!PluginManager::findReaderSuggestionPlugin(pluginId, function)) return;
+  PluginManager::ReaderSuggestionLink link;
+  if (!PluginManager::findReaderSuggestionPlugin(link)) return;
 
   JsonDocument arguments;
   arguments["path"] = epub->getPath();
@@ -2861,30 +2862,33 @@ void EpubActivity::loadNextSeriesSuggestion() {
 
   std::string output;
   std::string error;
-  if (!PluginManager::invokeStringJson(pluginId.c_str(), function.c_str(), argumentJson, output, error)) return;
+  if (!PluginManager::invokeStringJson(link.id.c_str(), link.function.c_str(), argumentJson, output, error)) return;
 
   JsonDocument next;
   if (deserializeJson(next, output) != DeserializationError::Ok || !next.is<JsonObject>()) return;
   const char* path = next["path"] | "";
   if (!path || !path[0]) return;
-  nextSeriesPath_ = path;
-  nextSeriesTitle_ = next["title"] | nextSeriesPath_.c_str();
-  nextSeriesName_ = next["series"] | "Series";
-  nextSeriesAvailable_ = true;
-  INX_SERIAL.printf("[%lu] [PLUGIN] next-book plugin=%s path=%s\n", millis(), pluginId.c_str(), path);
+  readerSuggestionPath_ = path;
+  readerSuggestionTitle_ = next["title"] | readerSuggestionPath_.c_str();
+  readerSuggestionGroup_ = next[link.groupField.c_str()] | "";
+  readerSuggestionLabel_ = link.label.empty() ? "Open suggested book" : link.label;
+  readerSuggestionAvailable_ = true;
+  INX_SERIAL.printf("[%lu] [PLUGIN] reader-suggestion plugin=%s path=%s\n", millis(), link.id.c_str(), path);
 }
 
-void EpubActivity::renderNextSeriesSuggestion() {
-  if (!nextSeriesAvailable_) return;
+void EpubActivity::renderReaderSuggestion() {
+  if (!readerSuggestionAvailable_) return;
   const int font = systemFontId();
   const int width = renderer.getScreenWidth();
   const int height = renderer.getScreenHeight();
-  const std::string label = "Next in " + nextSeriesName_;
-  renderer.text.centered(MONTSERRAT_10_FONT_ID, height - Button::height - 58, label.c_str(), true);
-  const int buttonWidth = Button::width(renderer, "Open next book", font);
+  if (!readerSuggestionGroup_.empty()) {
+    renderer.text.centered(MONTSERRAT_10_FONT_ID, height - Button::height - 58,
+                           readerSuggestionGroup_.c_str(), true);
+  }
+  const int buttonWidth = Button::width(renderer, readerSuggestionLabel_.c_str(), font);
   const ButtonBounds button{(width - buttonWidth) / 2, height - Button::height - 20, buttonWidth, Button::height};
-  Button::render(renderer, button, "Open next book", true, font);
-  renderer.text.centered(MONTSERRAT_8_FONT_ID, height - 8, nextSeriesTitle_.c_str(), true);
+  Button::render(renderer, button, readerSuggestionLabel_.c_str(), true, font);
+  renderer.text.centered(MONTSERRAT_8_FONT_ID, height - 8, readerSuggestionTitle_.c_str(), true);
   renderer.displayBuffer(HalDisplay::FAST_REFRESH);
 }
 
@@ -2895,7 +2899,7 @@ bool EpubActivity::handleFinishedBookInput() {
   }
 
   const int font = systemFontId();
-  const int buttonWidth = Button::width(renderer, "Open next book", font);
+  const int buttonWidth = Button::width(renderer, readerSuggestionLabel_.c_str(), font);
   const ButtonBounds button{(renderer.getScreenWidth() - buttonWidth) / 2,
                             renderer.getScreenHeight() - Button::height - 20, buttonWidth, Button::height};
   bool open = mappedInput.wasReleased(MappedInputManager::Button::Confirm);
@@ -2908,8 +2912,8 @@ bool EpubActivity::handleFinishedBookInput() {
       open = x >= button.x && x < button.x + button.width && y >= button.y && y < button.y + button.height;
     }
   }
-  if (open && nextSeriesAvailable_) {
-    const std::string path = nextSeriesPath_;
+  if (open && readerSuggestionAvailable_) {
+    const std::string path = readerSuggestionPath_;
     openReaderFromCallback(path, onGoBack);
     return true;
   }

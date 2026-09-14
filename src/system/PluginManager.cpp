@@ -141,9 +141,7 @@ bool readWebLink(const char* candidate, PluginManager::WebLink& link) {
   const char* configuredPath = web["path"] | "";
   const char* icon = web["icon"] | "";
   if (icon && icon[0] && !safeEntryName(icon)) return false;
-  const std::string path = configuredPath && configuredPath[0]
-                               ? configuredPath
-                               : (id == "study-cards" ? "/study" : "/plugin/" + id);
+  const std::string path = configuredPath && configuredPath[0] ? configuredPath : "/plugin/" + id;
   if (!safeWebPath(path)) return false;
 
   link.id = id;
@@ -768,9 +766,8 @@ bool PluginManager::findReaderSelectionPlugin(std::string& id, std::string& labe
   });
 }
 
-bool PluginManager::findReaderSuggestionPlugin(std::string& id, std::string& function) {
-  id.clear();
-  function.clear();
+bool PluginManager::findReaderSuggestionPlugin(ReaderSuggestionLink& link) {
+  link = {};
   if (!SdMan.ready()) return false;
   SdIoMutex::Lock ioLock;
   return forEachInstalledPlugin([&](const char* candidate) {
@@ -779,8 +776,10 @@ bool PluginManager::findReaderSuggestionPlugin(std::string& id, std::string& fun
     const JsonObject hook = document["reader_suggestion"].as<JsonObject>();
     const std::string candidateFunction = hook["function"] | "";
     if (candidateFunction.empty()) return false;
-    id = candidate;
-    function = candidateFunction;
+    link.id = candidate;
+    link.label = hook["label"] | "Open suggested book";
+    link.function = candidateFunction;
+    link.groupField = hook["group_field"] | "group";
     return true;
   });
 }
@@ -799,6 +798,8 @@ bool PluginManager::findLibraryMenuPlugin(LibraryMenuLink& link) {
     link.id = candidate;
     link.label = label;
     link.function = function;
+    link.groupField = menu["group_field"] | "group";
+    link.orderField = menu["order_field"] | "order";
     return true;
   });
 }

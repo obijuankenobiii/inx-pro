@@ -312,10 +312,11 @@ class EpubActivity final : public ActivityWithSubactivity {
   std::string pageNoteVoicePath_;
   uint32_t readerPopupExpiresAt_ = 0;
   bool bookFinished_ = false;
-  bool nextSeriesAvailable_ = false;
-  std::string nextSeriesPath_;
-  std::string nextSeriesTitle_;
-  std::string nextSeriesName_;
+  bool readerSuggestionAvailable_ = false;
+  std::string readerSuggestionPath_;
+  std::string readerSuggestionTitle_;
+  std::string readerSuggestionGroup_;
+  std::string readerSuggestionLabel_;
   OrientationPickerUi orientationPicker_;
   PresetPickerUi presetPicker_;
   QuickActionsMenuUi quickActionsUi_;
@@ -389,7 +390,7 @@ class EpubActivity final : public ActivityWithSubactivity {
   void fastPath();
   bool slowPath();
   void displayBookStats();
-  void loadNextSeriesSuggestion();
-  void renderNextSeriesSuggestion();
+  void loadReaderSuggestion();
+  void renderReaderSuggestion();
   bool handleFinishedBookInput();
 };

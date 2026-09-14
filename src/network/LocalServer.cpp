@@ -124,10 +124,6 @@ bool findWebPluginForUri(const String& uri, PluginManager::WebLink& result) {
       result = link;
       return true;
     }
-    if (uri == "/study" && link.id == "study-cards") {
-      result = link;
-      return true;
-    }
   }
   return false;
 }
@@ -187,9 +183,7 @@ body{background:var(--inx-page)!important;color:var(--inx-ink)!important;font-fa
 @media(max-width:760px){.inx-rail{display:none}.inx-topbar{left:0;height:64px;padding:0 14px;gap:12px}.inx-mobile-menu-toggle{display:grid;flex:0 0 38px}.inx-heading{flex:1}.inx-mobile-menu-backdrop{position:fixed;z-index:1080;inset:0;background:rgba(24,32,39,.16)}.inx-mobile-menu-backdrop.open{display:block}.inx-mobile-menu{position:fixed;z-index:1090;left:0;top:0;bottom:0;width:min(292px,86vw);display:none;background:#fff;border-right:1px solid var(--inx-line);box-shadow:8px 0 24px rgba(24,32,39,.14);padding:18px 12px}.inx-mobile-menu.open{display:block}.inx-mobile-menu-head{display:flex;align-items:center;justify-content:space-between;padding:0 6px 18px;border-bottom:1px solid var(--inx-line)}.inx-mobile-menu-head strong{font-size:18px}.inx-mobile-menu-close{border:0;background:transparent;color:var(--inx-muted);font-size:25px;line-height:1;cursor:pointer;padding:0 4px}.inx-mobile-menu-links{display:grid;gap:4px;padding-top:14px}.inx-mobile-menu-link{display:flex;align-items:center;gap:12px;padding:11px 10px;color:var(--inx-ink);text-decoration:none;border:1px solid transparent;border-radius:5px;font-size:14px;font-weight:650}.inx-mobile-menu-link svg{width:20px;height:20px;flex:0 0 20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.inx-mobile-menu-link:hover,.inx-mobile-menu-link.active{background:#f0f1f2;border-color:var(--inx-line)}.container{width:100%!important;margin:0!important;padding:82px 12px 28px!important}.page-header{padding:15px!important}.action-buttons{display:flex!important;overflow:auto}.action-btn{flex:0 0 auto}.card{padding:15px!important}.inx-book-toolbar{justify-content:stretch;flex-wrap:wrap}.inx-book-search{width:100%;order:-1}.file-list.inx-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 12px}.contents-header{align-items:flex-start}.summary-inline{font-size:11px}}
 .inx-rail-link,.inx-book-search,.inx-view-toggle,.page-header,.card,.dropzone,.upload-status,.import-summary,.import-options,.modal,.action-btn,.bulk-actions,.bulk-delete-btn,.modal-btn,.file-input,.text-input,.stat-card,.segmented,.segmented button,.identity-add,.card-stage,.row-action,.toast,.badge,.epub-badge{border-radius:5px!important}
 .inx-mobile-menu-link.active{background:var(--inx-orange)!important;color:#fff!important;border-color:var(--inx-orange)!important}
-.series-page{width:calc(100% - 68px)!important;max-width:none!important;margin:0 0 0 68px!important;padding:102px 32px 42px 36px!important}
-@media(max-width:760px){.series-page{width:100%!important;margin:0!important;padding:82px 12px 28px!important}}
-.file-row{border-radius:3px!important}.status-badge{border-radius:5px!important}.inx-cover{border-radius:5px!important}.inx-avatar{border-radius:50%!important}
+.file-row{border-radius:3px!important}.status-badge{border-radius:5px!important}.inx-cover{border-radius:5px!important}.inx-avatar{border-radius:50%!important}.inx-mobile-menu-toggle{border:0!important;border-radius:0!important;background:transparent!important;padding:0!important;aspect-ratio:1/1}.inx-mobile-menu-toggle svg{width:20px!important;height:20px!important;aspect-ratio:1/1;display:block}.inx-plugin-launcher{width:42px!important;height:42px!important;aspect-ratio:1/1;border:0!important;border-radius:5px!important;padding:0!important}.inx-plugin-launcher svg{width:19px!important;height:19px!important;aspect-ratio:1/1;display:block}.plugin-card img,.plugin-card svg{width:38px!important;height:38px!important;aspect-ratio:1/1;flex:0 0 38px;display:block;object-fit:contain}
 </style>)rawliteral";
   if (page.indexOf("</head>") >= 0) {
     page.replace("</head>", String(shellStyle) + "</head>");
@@ -330,7 +324,7 @@ body{background:var(--inx-page)!important;color:var(--inx-ink)!important;font-fa
   rail += "</strong><small><span class=inx-current>Dashboard</span><span class=inx-slash>/</span>";
   rail += label;
   rail += "</small></div></div></header>";
-  rail += "<script>(function(){var b=document.getElementById('inx-mobile-menu-toggle'),m=document.getElementById('inx-mobile-menu'),o=document.getElementById('inx-mobile-menu-backdrop'),c=document.getElementById('inx-mobile-menu-close');if(!b||!m||!o)return;function close(){b.setAttribute('aria-expanded','false');m.classList.remove('open');o.classList.remove('open')}function toggle(){var open=!m.classList.contains('open');b.setAttribute('aria-expanded',open?'true':'false');m.classList.toggle('open',open);o.classList.toggle('open',open)}b.addEventListener('click',toggle);o.addEventListener('click',close);if(c)c.addEventListener('click',close);document.addEventListener('keydown',function(e){if(e.key==='Escape')close()})})();</script><script>(function(){function normalize(path){path=path||'/';if(path.length>1&&path.charAt(path.length-1)==='/')path=path.slice(0,-1);return path||'/'}var current=normalize(window.location.pathname);document.querySelectorAll('.inx-rail-link,.inx-plugin-launcher,.inx-mobile-menu-link').forEach(function(link){var href=link.getAttribute('href')||'/';var route=normalize(new URL(href,window.location.href).pathname);var plugin=link.classList.contains('inx-plugin-launcher')||route==='/plugins'||route.indexOf('/plugin/')===0||route==='/study'||route==='/series';var match=route===current||(route==='/epub'&&current==='/epub-viewer.html')||(plugin&&(current==='/plugins'||current.indexOf('/plugin/')===0||current==='/study'||current==='/series'));link.classList.toggle('active',match);if(match)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current')})})();</script>";
+  rail += "<script>(function(){var b=document.getElementById('inx-mobile-menu-toggle'),m=document.getElementById('inx-mobile-menu'),o=document.getElementById('inx-mobile-menu-backdrop'),c=document.getElementById('inx-mobile-menu-close');if(!b||!m||!o)return;function close(){b.setAttribute('aria-expanded','false');m.classList.remove('open');o.classList.remove('open')}function toggle(){var open=!m.classList.contains('open');b.setAttribute('aria-expanded',open?'true':'false');m.classList.toggle('open',open);o.classList.toggle('open',open)}b.addEventListener('click',toggle);o.addEventListener('click',close);if(c)c.addEventListener('click',close);document.addEventListener('keydown',function(e){if(e.key==='Escape')close()})})();</script><script>(function(){function normalize(path){path=path||'/';if(path.length>1&&path.charAt(path.length-1)==='/')path=path.slice(0,-1);return path||'/'}var current=normalize(window.location.pathname);document.querySelectorAll('.inx-rail-link,.inx-plugin-launcher,.inx-mobile-menu-link').forEach(function(link){var href=link.getAttribute('href')||'/';var route=normalize(new URL(href,window.location.href).pathname);var plugin=link.classList.contains('inx-plugin-launcher')||route==='/plugins'||route.indexOf('/plugin/')===0;var match=route===current||(route==='/epub'&&current==='/epub-viewer.html')||(plugin&&(current==='/plugins'||current.indexOf('/plugin/')===0));link.classList.toggle('active',match);if(match)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current')})})();</script>";
   if (page.indexOf("<body>") >= 0) {
     page.replace("<body>", "<body>" + rail);
   } else if (page.indexOf("<div class=container>") >= 0) {
@@ -571,7 +565,6 @@ void LocalServer::begin() {
   server->on("/plugins", HTTP_GET, [this] { handlePluginsPage(); });
   server->on("/files", HTTP_GET, [this] { handleFileList(); });
   server->on("/epub", HTTP_GET, [this] { handleEpubPage(); });
-  server->on("/study", HTTP_GET, [this] { handlePluginPage(); });
   server->on(UriGlob("/plugin-asset/*"), HTTP_GET, [this] { handlePluginAsset(); });
   server->on(UriGlob("/plugin/*"), HTTP_GET, [this] { handlePluginPage(); });
   server->on("/font-manager", HTTP_GET, [this] { handleFontManagerPage(); });
@@ -581,7 +574,6 @@ void LocalServer::begin() {
   server->on("/js/qr_creator_logo.min.js", HTTP_GET, [this] { handleQrCreatorLogoJs(); });
   server->on("/js/epub_page.js", HTTP_GET, [this] { handleEpubPageJs(); });
   server->on("/js/files_page.js", HTTP_GET, [this] { handleFilesPageJs(); });
-  server->on("/js/study_page.js", HTTP_GET, [this] { handlePluginPageJs(); });
   server->on(UriGlob("/js/plugin/*"), HTTP_GET, [this] { handlePluginPageJs(); });
 
   server->on("/api/status", HTTP_GET, [this] { handleStatus(); });
@@ -800,8 +792,8 @@ void LocalServer::handlePluginsPage() const {
 
 void LocalServer::handleNotFound() const {
   // Web plugins declare their own routes in manifest.json. Core routes are
-  // registered statically, so resolve plugin paths here before returning the
-  // generic 404 page (for example, /series).
+  // registered statically, so resolve manifest-declared plugin paths here
+  // before returning the generic 404 page.
   PluginManager::WebLink plugin;
   if (findWebPluginForUri(server->uri(), plugin)) {
     handlePluginPage();
@@ -1123,8 +1115,7 @@ void LocalServer::handleFilesPageJs() const {
 
 void LocalServer::handlePluginPageJs() const {
   String requestUri = server->uri();
-  if (requestUri == "/js/study_page.js") requestUri = "/study";
-  else if (requestUri.startsWith("/js/plugin/")) requestUri = "/plugin/" + requestUri.substring(11);
+  if (requestUri.startsWith("/js/plugin/")) requestUri = "/plugin/" + requestUri.substring(11);
 
   PluginManager::WebLink plugin;
   if (!findWebPluginForUri(requestUri, plugin)) {

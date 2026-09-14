@@ -37,7 +37,6 @@
 #include "activity/page/Statistics.h"
 #include "activity/page/HeatmapReport.h"
 #include "activity/page/SyncActivity.h"
-#include "activity/PluginLibraryActivity.h"
 #include "activity/settings/StoreActivity.h"
 #include "activity/reader/ImageViewerActivity.h"
 #include "activity/reader/ReaderActivity.h"
@@ -94,7 +93,7 @@ void onGoToFileTransfer();
 void onGoToSettings();
 void onGoToStore();
 void onGoToLibrary(const std::string& path = "/");
-void onGoToSeries();
+void onGoToPluginLibrary();
 void setupDisplayAndFonts();
 void onNetworkModeSelected(NetworkMode mode);
 void openReaderFromCallback(const std::string& path, std::function<void()> returnToCaller);
@@ -299,13 +298,13 @@ void onGoToLibrary(const std::string& path) {
   switchTo<Library>(render, input, path);
 }
 
-void onGoToSeries() {
+void onGoToPluginLibrary() {
   PluginManager::LibraryMenuLink link;
   if (!PluginManager::findLibraryMenuPlugin(link)) {
     onGoToLibrary("/");
     return;
   }
-  switchTo<Library>(render, input, "/", true);
+  switchTo<Library>(render, input, "/", std::move(link));
 }
 
 /**

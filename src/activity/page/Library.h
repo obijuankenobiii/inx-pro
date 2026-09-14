@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "Page.h"
+#include "system/PluginManager.h"
 #include "util/LibraryIndex.h"
 #include "views/Library/Grid.h"
 #include "views/Library/List.h"
@@ -15,7 +16,7 @@
 class Library final : public Page {
  public:
   Library(GfxRenderer& renderer, MappedInputManager& mappedInput, std::string path = "/",
-          bool seriesMode = false);
+          PluginManager::LibraryMenuLink pluginMenu = {});
 
   const char* name() const override { return "Library"; }
   const std::string& currentPath() const { return path; }
@@ -36,14 +37,15 @@ class Library final : public Page {
   enum class Sort { TitleAZ, TitleZA, FolderAZ, FolderZA, AuthorAZ, AuthorZA };
   enum class View { List, Grid, Thumb };
   enum class FilterTab { Title, Type, Options };
-  enum class StateFilter { None, Favorites, Reading, Finished, Author, Series };
+  enum class StateFilter { None, Favorites, Reading, Finished, Author, Plugin };
 
   static constexpr int buttonSize = 40;
   static constexpr int buttonGap = 25;
   static constexpr int refreshTouchPadding = 16;
 
   std::string path;
-  bool seriesMode_ = false;
+  PluginManager::LibraryMenuLink pluginMenu_;
+  bool pluginMode_ = false;
   std::vector<LibraryIndex::Book> items;
   std::vector<LibraryIndex::Book> books;
   views::library::Grid grid;
@@ -69,11 +71,11 @@ class Library final : public Page {
   std::string authorFolderKey;
   bool authorIndexAvailable = false;
   std::unordered_set<std::string> favorites;
-  std::unordered_map<std::string, std::string> seriesNameByPath_;
-  std::unordered_map<std::string, int> seriesOrderByPath_;
-  std::unordered_map<std::string, std::vector<LibraryIndex::Book>> seriesBooksByGroup_;
-  std::unordered_map<std::string, std::string> seriesNameByGroup_;
-  std::string activeSeriesGroup_;
+  std::unordered_map<std::string, std::string> pluginGroupByPath_;
+  std::unordered_map<std::string, int> pluginOrderByPath_;
+  std::unordered_map<std::string, std::vector<LibraryIndex::Book>> pluginBooksByGroup_;
+  std::unordered_map<std::string, std::string> pluginNameByGroup_;
+  std::string activePluginGroup_;
 
   void load();
   void open(int index);
@@ -108,5 +110,5 @@ class Library final : public Page {
   bool handleSidebarInput();
   bool handleSidebarTap();
   void drawSidebar() const;
-  std::vector<std::string> seriesCovers(const LibraryIndex::Book& group, int limit) const;
+  std::vector<std::string> pluginGroupCovers(const LibraryIndex::Book& group, int limit) const;
 };
