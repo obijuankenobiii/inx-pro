@@ -28,6 +28,7 @@ class PluginManagerActivity final : public ActivityWithSubactivity {
 
   const std::function<void()> goBack_;
   std::vector<PluginManager::Package> packages_;
+  size_t selectedPackage_ = 0;
   std::string status_;
   volatile State state_ = State::Ready;
   volatile size_t downloaded_ = 0;

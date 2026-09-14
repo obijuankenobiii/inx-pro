@@ -42,6 +42,7 @@ struct StaticPackage {
 
 constexpr StaticPackage kStaticPackages[] = {
     {"study-cards", "Anki Export", "Adds anki supported export", "plugin/study-cards.zip"},
+    {"series", "Series", "Group books into reading series", "plugin/series.zip"},
 };
 
 bool safeId(const std::string& id) {
@@ -289,6 +290,34 @@ int luaStorageAppendText(lua_State* state) {
   return 1;
 }
 
+int luaStorageWriteText(lua_State* state) {
+  const char* filename = luaL_checkstring(state, 1);
+  size_t length = 0;
+  const char* text = luaL_checklstring(state, 2, &length);
+  const std::string name(filename ? filename : "");
+  if (!safeEntryName(name) || name.size() > 64) return luaL_error(state, "invalid storage filename");
+
+  lua_getfield(state, LUA_REGISTRYINDEX, kPluginIdRegistryKey);
+  const char* pluginId = lua_tostring(state, -1);
+  if (!pluginId || !safeId(pluginId)) {
+    lua_pop(state, 1);
+    return luaL_error(state, "plugin identity is unavailable");
+  }
+  const std::string path = pluginPath(pluginId) + "/" + name;
+  lua_pop(state, 1);
+
+  SdIoMutex::Lock ioLock;
+  FsFile file = SdMan.open(path.c_str(), O_WRITE | O_CREAT | O_TRUNC);
+  if (!file) {
+    lua_pushboolean(state, 0);
+    return 1;
+  }
+  const size_t written = file.write(reinterpret_cast<const uint8_t*>(text), length);
+  file.close();
+  lua_pushboolean(state, written == length);
+  return 1;
+}
+
 int luaStorageReadAll(lua_State* state) {
   const char* filename = luaL_checkstring(state, 1);
   const std::string name(filename ? filename : "");
@@ -335,6 +364,8 @@ void registerLuaApi(lua_State* state, const std::string& id) {
   lua_setfield(state, -2, "append_json");
   lua_pushcfunction(state, luaStorageAppendText);
   lua_setfield(state, -2, "append_text");
+  lua_pushcfunction(state, luaStorageWriteText);
+  lua_setfield(state, -2, "write_text");
   lua_pushcfunction(state, luaStorageReadAll);
   lua_setfield(state, -2, "read_all");
   lua_setfield(state, -2, "storage");
@@ -637,6 +668,66 @@ bool PluginManager::invokeString(const char* id, const char* function, const Lua
   return true;
 }
 
+namespace {
+
+bool pushJsonValue(lua_State* state, JsonVariantConst value, const int depth) {
+  if (depth > 6) return false;
+  if (value.isNull()) {
+    lua_pushnil(state);
+    return true;
+  }
+  if (value.is<bool>()) {
+    lua_pushboolean(state, value.as<bool>() ? 1 : 0);
+    return true;
+  }
+  if (value.is<long>() || value.is<int>() || value.is<int64_t>()) {
+    lua_pushinteger(state, static_cast<lua_Integer>(value.as<int64_t>()));
+    return true;
+  }
+  if (value.is<float>() || value.is<double>()) {
+    lua_pushnumber(state, static_cast<lua_Number>(value.as<double>()));
+    return true;
+  }
+  if (value.is<const char*>()) {
+    const char* text = value.as<const char*>();
+    lua_pushstring(state, text ? text : "");
+    return true;
+  }
+  if (value.is<JsonArrayConst>()) {
+    lua_newtable(state);
+    int index = 1;
+    for (JsonVariantConst item : value.as<JsonArrayConst>()) {
+      if (!pushJsonValue(state, item, depth + 1)) return false;
+      lua_rawseti(state, -2, index++);
+    }
+    return true;
+  }
+  if (value.is<JsonObjectConst>()) {
+    lua_newtable(state);
+    for (JsonPairConst pair : value.as<JsonObjectConst>()) {
+      if (!pushJsonValue(state, pair.value(), depth + 1)) return false;
+      lua_setfield(state, -2, pair.key().c_str());
+    }
+    return true;
+  }
+  return false;
+}
+
+}  // namespace
+
+bool PluginManager::invokeStringJson(const char* id, const char* function, const std::string& jsonArguments,
+                                     std::string& result, std::string& error) {
+  JsonDocument document;
+  if (jsonArguments.empty() || deserializeJson(document, jsonArguments) != DeserializationError::Ok ||
+      !document.is<JsonObject>()) {
+    error = "Plugin arguments must be a JSON object";
+    return false;
+  }
+  return invokeString(id, function,
+                      [&document](lua_State* state) { pushJsonValue(state, document.as<JsonObjectConst>(), 0); },
+                      result, error);
+}
+
 bool PluginManager::readFile(const char* id, const char* filename, std::string& contents, const size_t maxBytes,
                              std::string& error) {
   contents.clear();
@@ -673,6 +764,41 @@ bool PluginManager::findReaderSelectionPlugin(std::string& id, std::string& labe
     id = candidate;
     label = candidateLabel;
     function = candidateFunction;
+    return true;
+  });
+}
+
+bool PluginManager::findReaderSuggestionPlugin(std::string& id, std::string& function) {
+  id.clear();
+  function.clear();
+  if (!SdMan.ready()) return false;
+  SdIoMutex::Lock ioLock;
+  return forEachInstalledPlugin([&](const char* candidate) {
+    JsonDocument document;
+    if (!readInstalledManifest(candidate, document)) return false;
+    const JsonObject hook = document["reader_suggestion"].as<JsonObject>();
+    const std::string candidateFunction = hook["function"] | "";
+    if (candidateFunction.empty()) return false;
+    id = candidate;
+    function = candidateFunction;
+    return true;
+  });
+}
+
+bool PluginManager::findLibraryMenuPlugin(LibraryMenuLink& link) {
+  link = {};
+  if (!SdMan.ready()) return false;
+  SdIoMutex::Lock ioLock;
+  return forEachInstalledPlugin([&](const char* candidate) {
+    JsonDocument document;
+    if (!readInstalledManifest(candidate, document)) return false;
+    const JsonObject menu = document["library_menu"].as<JsonObject>();
+    const std::string label = menu["label"] | "";
+    const std::string function = menu["function"] | "";
+    if (label.empty() || function.empty()) return false;
+    link.id = candidate;
+    link.label = label;
+    link.function = function;
     return true;
   });
 }

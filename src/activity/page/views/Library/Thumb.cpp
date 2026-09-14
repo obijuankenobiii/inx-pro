@@ -163,7 +163,7 @@ int folderBookCount(const std::string& folder, const std::vector<LibraryIndex::B
 }
 
 int folderBookCount(const LibraryIndex::Book& folder, const std::vector<LibraryIndex::Book>& books) {
-  return books.empty() && folder.hasMetadata ? folder.bookCount : folderBookCount(folder.path, books);
+  return folder.hasMetadata ? folder.bookCount : folderBookCount(folder.path, books);
 }
 
 const LibraryIndex::Book* singleBookInFolder(const std::string& folder,
@@ -312,10 +312,20 @@ Thumb::Thumb(GfxRenderer& renderer, MappedInputManager& mappedInput,
              std::function<void(int, bool)> select,
              std::function<bool(const LibraryIndex::Book&)> isFavorite,
              std::function<void(int, int)> outsideTap,
-             std::function<bool(const LibraryIndex::Book&)> isAuthorFolder)
+             std::function<bool(const LibraryIndex::Book&)> isAuthorFolder,
+             std::function<std::vector<std::string>(const LibraryIndex::Book&, int)> folderCovers)
     : renderer(renderer), mappedInput(mappedInput), items(items), books(books), select(std::move(select)),
       isFavorite(std::move(isFavorite)),
-      outsideTap(std::move(outsideTap)), isAuthorFolder(std::move(isAuthorFolder)) {}
+      outsideTap(std::move(outsideTap)), isAuthorFolder(std::move(isAuthorFolder)),
+      customFolderCovers(std::move(folderCovers)) {}
+
+std::vector<std::string> Thumb::coversForFolder(const LibraryIndex::Book& folder, const int limit) const {
+  if (customFolderCovers) {
+    const std::vector<std::string> custom = customFolderCovers(folder, limit);
+    if (!custom.empty()) return custom;
+  }
+  return folderCovers(folder.path, books, limit);
+}
 
 void Thumb::getThumbnailSize(GfxRenderer& renderer, int& width, int& height) {
   const int availableWidth = renderer.getScreenWidth() - sideMargin * 2;
@@ -379,7 +389,7 @@ void Thumb::load() {
         });
         if (item != items.end()) {
           if (item->type == LibraryIndex::Book::Type::FOLDER) {
-            const std::vector<std::string> covers = folderCovers(item->path, books, 3);
+            const std::vector<std::string> covers = coversForFolder(*item, 3);
             if (!covers.empty()) thumbnail.first = covers[0];
             if (covers.size() > 1) thumbnail.second = covers[1];
             if (covers.size() > 2) thumbnail.third = covers[2];
@@ -432,7 +442,7 @@ bool Thumb::loadNext() {
       });
       if (item != items.end()) {
         if (item->type == LibraryIndex::Book::Type::FOLDER) {
-          const std::vector<std::string> covers = folderCovers(item->path, books, 3);
+          const std::vector<std::string> covers = coversForFolder(*item, 3);
           if (!covers.empty()) thumbnail.first = covers[0];
           if (covers.size() > 1) thumbnail.second = covers[1];
           if (covers.size() > 2) thumbnail.third = covers[2];
@@ -483,7 +493,7 @@ bool Thumb::prefetchNextPage() {
     {
       SdIoMutex::Lock lock;
       if (item.type == LibraryIndex::Book::Type::FOLDER) {
-        const std::vector<std::string> covers = folderCovers(item.path, books, 3);
+        const std::vector<std::string> covers = coversForFolder(item, 3);
         if (!covers.empty()) thumbnail.first = covers[0];
         if (covers.size() > 1) thumbnail.second = covers[1];
         if (covers.size() > 2) thumbnail.third = covers[2];

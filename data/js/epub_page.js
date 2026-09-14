@@ -101,11 +101,11 @@ function escapeAttr(s) {
 function folderCoverStack(item) {
   const covers = Array.isArray(item.coverUrls) ? item.coverUrls.filter(Boolean).slice(0, 3) : [];
   if (!covers.length) return '<div class="inx-cover inx-folder-cover">▱</div>';
-  let html = '<div class="inx-cover inx-folder-stack has-thumbnail" aria-hidden="true">';
-  covers.forEach((url, index) => {
-    html += '<span class="inx-folder-stack-card folder-stack-' + index + '"><img loading="lazy" src="' + escapeAttr(url) + '" alt=""></span>';
-  });
-  return html + '</div>';
+  return '<div class="inx-cover inx-folder-stack has-thumbnail" aria-hidden="true">' +
+    '<span class="inx-folder-stack-card folder-stack-2"></span>' +
+    '<span class="inx-folder-stack-card folder-stack-1"></span>' +
+    '<span class="inx-folder-stack-card folder-stack-0"><img loading="lazy" src="' + escapeAttr(covers[0]) + '" alt=""></span>' +
+    '</div>';
 }
 
 function formatFileSize(bytes) {
@@ -771,6 +771,7 @@ async function hydrate() {
         '<button type="button" class="row-action danger delete-btn" data-path="' + itemPathAttr + '" data-name="' + itemNameAttr +
         '" data-type="' + (item.isDirectory ? "folder" : "file") + '" onclick="promptDeleteItem(this.dataset.path,this.dataset.name,this.dataset.type)" title="Delete" aria-label="Delete">' +
         '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h12M8 3.5h4L13 6H7l1-2.5ZM6 6l.7 10h6.6L14 6M8.5 8.5v5M11.5 8.5v5"/></svg></button>';
+      const gridDeleteBtn = deleteBtn.replace('class="row-action danger delete-btn"', 'class="row-action danger delete-btn inx-grid-delete"');
       const optimizeBtn =
         '<button type="button" class="row-action optimize-btn" data-path="' + itemPathAttr + '" data-name="' + itemNameAttr +
         '" onclick="promptOptimizeItem(this.dataset.path,this.dataset.name)" title="Re-optimize (resize/compress images)" aria-label="Re-optimize">' +
@@ -791,15 +792,15 @@ async function hydrate() {
             '<div class="folder-card folder-row" data-path="' + itemPathAttr + '">' +
             '<input class="select-box" type="checkbox" data-path="' + itemPathAttr + '" data-name="' + itemNameAttr + '" data-type="folder" onchange="updateBulkActions()">' +
             '<a class="folder-open" href="/epub?path=' + encodeURIComponent(itemPath) + '">' + folderCoverStack(item) +
-            '<div class="inx-book-title">' + escapeHtml(item.name) + '</div><div class="inx-book-meta">Folder</div></a>' +
-            '<div class="inx-card-actions">' + deleteBtn + moveBtn + renameBtn + '</div></div>';
+            '<div class="inx-book-title">' + escapeHtml(item.name) + '</div><div class="inx-book-meta">Folder</div></a>' + gridDeleteBtn +
+            '<div class="inx-card-actions">' + moveBtn + renameBtn + '</div></div>';
         } else {
           html +=
             '<div class="book-card epub-file">' +
             '<input class="select-box" type="checkbox" data-path="' + itemPathAttr + '" data-name="' + itemNameAttr + '" data-type="file" onchange="updateBulkActions()">' +
             '<a class="book-open" href="/epub-viewer.html?path=' + encodeURIComponent(itemPath) + '">' + cover +
-            '<div class="inx-book-title">' + title + '</div><div class="inx-book-meta">' + formatFileSize(item.size) + '</div></a>' +
-            '<div class="inx-card-actions">' + optimizeBtn + deleteBtn + moveBtn + renameBtn + '</div></div>';
+            '<div class="inx-book-title">' + title + '</div><div class="inx-book-meta">' + formatFileSize(item.size) + '</div></a>' + gridDeleteBtn +
+            '<div class="inx-card-actions">' + optimizeBtn + moveBtn + renameBtn + '</div></div>';
         }
         continue;
       }
@@ -847,18 +848,19 @@ function ensureFolderStackStyles() {
   style.id = "inx-folder-stack-styles";
   style.textContent =
     ".inx-folder-stack{position:relative!important;z-index:0;display:block!important;overflow:hidden!important;background:transparent!important;box-shadow:none!important}" +
-    ".inx-folder-stack-card{position:absolute;overflow:hidden;border-radius:0!important;background:#d9dcde;box-shadow:0 5px 12px rgba(30,34,38,.16);transform-origin:center bottom}" +
-    ".inx-folder-stack-card img{width:100%;height:100%;object-fit:contain;object-position:left center;background:#f0f1f2;display:block}" +
+    ".inx-folder-stack-card{position:absolute;overflow:hidden;border-radius:0!important;background:#d9dcde;box-shadow:none;transform-origin:center bottom}" +
+    ".inx-folder-stack-card img{width:100%;height:100%;object-fit:contain;object-position:left center;background:transparent;display:block}" +
     ".folder-stack-0{left:0;top:0;width:100%;height:100%;z-index:3;background:transparent;box-shadow:none}" +
     ".folder-stack-0 img{object-fit:contain;background:transparent}" +
     ".folder-stack-1{left:10%;top:0;width:100%;height:100%;z-index:2}" +
-    ".folder-stack-1 img,.folder-stack-2 img{object-fit:contain;background:#f0f1f2}" +
     ".folder-stack-2{left:20%;top:0;width:100%;height:100%;z-index:1}" +
-    ".inx-grid .folder-open .inx-folder-stack,.inx-grid .folder-open .inx-folder-cover,.inx-grid .book-open .inx-cover{width:80%!important;max-width:80%!important;height:auto!important;min-height:0!important;aspect-ratio:5/4!important;margin:0!important}" +
+    ".inx-grid .folder-open .inx-folder-stack,.inx-grid .folder-open .inx-folder-cover,.inx-grid .book-open .inx-cover{width:100%!important;max-width:100%!important;height:auto!important;min-height:0!important;aspect-ratio:2/3!important;margin:0!important}" +
     ".inx-grid .book-open .inx-cover{position:relative;display:block}" +
     ".inx-grid .book-open .inx-cover img{position:absolute;inset:0;width:100%!important;height:100%!important;object-fit:contain!important;object-position:left center!important}" +
-    ".inx-grid .book-open .inx-cover,.inx-grid .folder-open .inx-cover,.inx-folder-stack,.inx-folder-stack-card,.inx-folder-stack-card img{border-radius:0!important}";
-  style.textContent += ".file-list.inx-grid{grid-template-columns:repeat(6,minmax(0,1fr));justify-content:start}.inx-grid .book-card,.inx-grid .folder-card{max-width:288px}.inx-grid .inx-card-actions{justify-content:flex-end}.inx-grid .folder-open .inx-folder-cover,.inx-grid .book-open .inx-cover{width:100%!important;max-width:100%!important}";
+    ".inx-grid .book-open .inx-cover,.inx-grid .folder-open .inx-cover,.inx-folder-stack,.inx-folder-stack-card,.inx-folder-stack-card img{border-radius:0!important}" +
+    ".inx-grid .inx-grid-delete{position:absolute;z-index:4;top:38px;right:7px;width:30px;height:30px;background:rgba(255,255,255,.94);border:1px solid rgba(255,255,255,.9);box-shadow:0 2px 6px rgba(30,34,38,.18);border-radius:4px!important}" +
+    ".inx-folder-stack.has-thumbnail .folder-stack-1,.inx-folder-stack.has-thumbnail .folder-stack-2{background:#d9dcde!important;box-shadow:none!important}";
+  style.textContent += ".file-list.inx-grid{grid-template-columns:repeat(7,minmax(0,1fr));justify-content:start}.inx-grid .book-card,.inx-grid .folder-card{max-width:288px}.inx-grid .inx-card-actions{justify-content:flex-end}.inx-grid .folder-open .inx-folder-cover,.inx-grid .book-open .inx-cover{width:100%!important;max-width:100%!important}";
   document.head.appendChild(style);
 }
 

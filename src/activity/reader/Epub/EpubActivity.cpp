@@ -6,6 +6,7 @@
 #include "EpubActivity.h"
 
 #include <Bitmap.h>
+#include <ArduinoJson.h>
 #include <Epub/Page.h>
 #include <Epub/PageWordIndex.h>
 #include <GfxRenderer.h>
@@ -57,6 +58,8 @@
 extern "C" {
 #include "lua.h"
 }
+
+extern void openReaderFromCallback(const std::string& path, std::function<void()> returnToCaller);
 
 namespace {
 constexpr unsigned long goHomeMs = 1000;
@@ -633,6 +636,11 @@ bool EpubActivity::slowPath() {
  */
 void EpubActivity::onEnter() {
   ActivityWithSubactivity::onEnter();
+  bookFinished_ = false;
+  nextSeriesAvailable_ = false;
+  nextSeriesPath_.clear();
+  nextSeriesTitle_.clear();
+  nextSeriesName_.clear();
   btnBindings_.reset();
   epub->setupCacheDir();
 
@@ -1428,6 +1436,11 @@ void EpubActivity::loop() {
     return;
   }
 
+  if (bookFinished_) {
+    if (handleFinishedBookInput()) return;
+    return;
+  }
+
   if (readerPopupExpiresAt_ != 0 && static_cast<int32_t>(millis() - readerPopupExpiresAt_) >= 0) {
     readerPopupExpiresAt_ = 0;
     updateRequired = false;
@@ -2191,8 +2204,13 @@ void EpubActivity::renderScreen(const bool clearFramebuffer) {
 
   if (currentSpineIndex >= totalSpine) {
     renderer.clearScreen(0xFF);
+    if (!bookFinished_) {
+      bookFinished_ = true;
+      loadNextSeriesSuggestion();
+    }
     displayBookStats();
     BOOK_STATE.setFinished(epub->getPath(), true);
+    renderNextSeriesSuggestion();
     return;
   }
 
@@ -2214,8 +2232,13 @@ void EpubActivity::renderScreen(const bool clearFramebuffer) {
                     currentSpineIndex, totalSpine);
       if (currentSpineIndex >= totalSpine) {
         renderer.clearScreen(0xFF);
+        if (!bookFinished_) {
+          bookFinished_ = true;
+          loadNextSeriesSuggestion();
+        }
         displayBookStats();
         BOOK_STATE.setFinished(epub->getPath(), true);
+        renderNextSeriesSuggestion();
         return;
       }
       if (wasLayoutReload) {
@@ -2816,4 +2839,79 @@ void EpubActivity::displayBookStats() {
   if (epub) {
     readingStats_.display(renderer, *epub);
   }
+}
+
+void EpubActivity::loadNextSeriesSuggestion() {
+  nextSeriesAvailable_ = false;
+  nextSeriesPath_.clear();
+  nextSeriesTitle_.clear();
+  nextSeriesName_.clear();
+  if (!epub) return;
+
+  std::string pluginId;
+  std::string function;
+  if (!PluginManager::findReaderSuggestionPlugin(pluginId, function)) return;
+
+  JsonDocument arguments;
+  arguments["path"] = epub->getPath();
+  arguments["title"] = epub->getTitle();
+  arguments["author"] = epub->getAuthor();
+  std::string argumentJson;
+  serializeJson(arguments, argumentJson);
+
+  std::string output;
+  std::string error;
+  if (!PluginManager::invokeStringJson(pluginId.c_str(), function.c_str(), argumentJson, output, error)) return;
+
+  JsonDocument next;
+  if (deserializeJson(next, output) != DeserializationError::Ok || !next.is<JsonObject>()) return;
+  const char* path = next["path"] | "";
+  if (!path || !path[0]) return;
+  nextSeriesPath_ = path;
+  nextSeriesTitle_ = next["title"] | nextSeriesPath_.c_str();
+  nextSeriesName_ = next["series"] | "Series";
+  nextSeriesAvailable_ = true;
+  INX_SERIAL.printf("[%lu] [PLUGIN] next-book plugin=%s path=%s\n", millis(), pluginId.c_str(), path);
+}
+
+void EpubActivity::renderNextSeriesSuggestion() {
+  if (!nextSeriesAvailable_) return;
+  const int font = systemFontId();
+  const int width = renderer.getScreenWidth();
+  const int height = renderer.getScreenHeight();
+  const std::string label = "Next in " + nextSeriesName_;
+  renderer.text.centered(MONTSERRAT_10_FONT_ID, height - Button::height - 58, label.c_str(), true);
+  const int buttonWidth = Button::width(renderer, "Open next book", font);
+  const ButtonBounds button{(width - buttonWidth) / 2, height - Button::height - 20, buttonWidth, Button::height};
+  Button::render(renderer, button, "Open next book", true, font);
+  renderer.text.centered(MONTSERRAT_8_FONT_ID, height - 8, nextSeriesTitle_.c_str(), true);
+  renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+}
+
+bool EpubActivity::handleFinishedBookInput() {
+  if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+    onGoBack();
+    return true;
+  }
+
+  const int font = systemFontId();
+  const int buttonWidth = Button::width(renderer, "Open next book", font);
+  const ButtonBounds button{(renderer.getScreenWidth() - buttonWidth) / 2,
+                            renderer.getScreenHeight() - Button::height - 20, buttonWidth, Button::height};
+  bool open = mappedInput.wasReleased(MappedInputManager::Button::Confirm);
+  if (mappedInput.hasTouch()) {
+    float nx = 0.0f;
+    float ny = 0.0f;
+    if (mappedInput.wasTouchTapInScreen(renderer, nx, ny)) {
+      const int x = static_cast<int>(nx * renderer.getScreenWidth());
+      const int y = static_cast<int>(ny * renderer.getScreenHeight());
+      open = x >= button.x && x < button.x + button.width && y >= button.y && y < button.y + button.height;
+    }
+  }
+  if (open && nextSeriesAvailable_) {
+    const std::string path = nextSeriesPath_;
+    openReaderFromCallback(path, onGoBack);
+    return true;
+  }
+  return false;
 }

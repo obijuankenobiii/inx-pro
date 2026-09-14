@@ -13,6 +13,7 @@
 #include "images/Anki.h"
 #include "images/Check.h"
 #include "images/Download.h"
+#include "images/Series.h"
 #include "images/Trash.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
@@ -33,6 +34,7 @@ void PluginManagerActivity::onEnter() {
   state_ = State::Ready;
   status_.clear();
   packages_.clear();
+  selectedPackage_ = 0;
   downloaded_ = 0;
   total_ = 0;
   showCompletionCheck_ = false;
@@ -76,7 +78,7 @@ void PluginManagerActivity::loadPackages() {
 
 void PluginManagerActivity::installSelected() {
   if (packages_.empty() || state_ == State::Downloading) return;
-  const auto& package = packages_.front();
+  const auto& package = packages_[std::min(selectedPackage_, packages_.size() - 1)];
   std::string error;
   if (PluginManager::isInstalled(package)) {
     if (PluginManager::remove(package, error)) {
@@ -160,7 +162,8 @@ void PluginManagerActivity::displayTaskTrampoline(void* param) {
   std::string error;
   bool installed = false;
   if (!packages_.empty()) {
-    installed = PluginManager::install(packages_.front(), error, [this](const size_t downloaded, const size_t total) {
+    installed = PluginManager::install(packages_[std::min(selectedPackage_, packages_.size() - 1)], error,
+                                       [this](const size_t downloaded, const size_t total) {
       downloaded_ = downloaded;
       total_ = total;
       const int percent = total > 0 ? static_cast<int>((downloaded * 100) / total) : 0;
@@ -168,7 +171,7 @@ void PluginManagerActivity::displayTaskTrampoline(void* param) {
         lastPercent_ = percent;
         updateRequired_ = true;
       }
-    });
+                                       });
   }
   if (!shuttingDown_) {
     state_ = installed ? State::Ready : State::Failed;
@@ -208,7 +211,7 @@ void PluginManagerActivity::render() {
   const int screenH = renderer.getScreenHeight();
   const int font = systemFontId();
   if (state_ == State::Downloading) {
-    const auto& package = packages_.front();
+    const auto& package = packages_[std::min(selectedPackage_, packages_.size() - 1)];
     constexpr int listTopGap = 20;
     const int rowY = top + listTopGap;
     const int percent = total_ > 0 ? std::max(0, std::min(100, static_cast<int>((downloaded_ * 100) / total_))) : 0;
@@ -223,7 +226,8 @@ void PluginManagerActivity::render() {
     const int descriptionY = titleY + renderer.text.getLineHeight(font) + 5;
     const int maxNameWidth = screenW - kTextX - kSideMargin - percentWidth - 20;
     const std::string name = renderer.text.truncate(font, package.name.c_str(), maxNameWidth);
-    renderer.bitmap.icon(Anki, kLogoX, rowY + (kRowHeight - kLogoSize) / 2, kLogoSize, kLogoSize);
+    renderer.bitmap.icon(package.id == "series" ? Series : Anki, kLogoX, rowY + (kRowHeight - kLogoSize) / 2,
+                         kLogoSize, kLogoSize);
     renderer.text.render(font, kTextX, titleY, name.c_str(), true, EpdFontFamily::BOLD);
     renderer.text.render(descriptionFont, kTextX, descriptionY, description.c_str(), true,
                          EpdFontFamily::REGULAR);
@@ -236,23 +240,29 @@ void PluginManagerActivity::render() {
   }
 
   if (!packages_.empty()) {
-    const auto& package = packages_.front();
-    const int y = top + 20;
-    const bool installed = PluginManager::isInstalled(package);
     const int iconX = screenW - kSideMargin - kIconSize;
-    const int descriptionMaxWidth = std::max(1, iconX - kTextX - 16);
-    const std::string description = renderer.text.truncate(
-        MONTSERRAT_8_FONT_ID, package.description.c_str(), descriptionMaxWidth, EpdFontFamily::REGULAR);
-    const int descriptionFont = MONTSERRAT_8_FONT_ID;
-    const int contentHeight = renderer.text.getLineHeight(font) + 5 + renderer.text.getLineHeight(descriptionFont);
-    const int titleY = y + (kRowHeight - contentHeight) / 2;
-    const int descriptionY = titleY + renderer.text.getLineHeight(font) + 5;
-    renderer.bitmap.icon(Anki, kLogoX, y + (kRowHeight - kLogoSize) / 2, kLogoSize, kLogoSize);
-    renderer.text.render(font, kTextX, titleY, package.name.c_str(), true, EpdFontFamily::BOLD);
-    renderer.text.render(descriptionFont, kTextX, descriptionY, description.c_str(), true, EpdFontFamily::REGULAR);
-    renderer.bitmap.icon(installed && showCompletionCheck_ ? Check : (installed ? Trash : Download), iconX,
-                         y + (kRowHeight - kIconSize) / 2, kIconSize, kIconSize);
-    mappedInput.mapLabels("\xC2\xAB Back", installed ? "Disable" : "Install", "", "");
+    for (size_t index = 0; index < packages_.size(); ++index) {
+      const auto& package = packages_[index];
+      const int y = top + 20 + static_cast<int>(index) * kRowHeight;
+      const bool installed = PluginManager::isInstalled(package);
+      const int descriptionMaxWidth = std::max(1, iconX - kTextX - 16);
+      const std::string description = renderer.text.truncate(
+          MONTSERRAT_8_FONT_ID, package.description.c_str(), descriptionMaxWidth, EpdFontFamily::REGULAR);
+      const int descriptionFont = MONTSERRAT_8_FONT_ID;
+      const int contentHeight = renderer.text.getLineHeight(font) + 5 + renderer.text.getLineHeight(descriptionFont);
+      const int titleY = y + (kRowHeight - contentHeight) / 2;
+      const int descriptionY = titleY + renderer.text.getLineHeight(font) + 5;
+      renderer.bitmap.icon(package.id == "series" ? Series : Anki, kLogoX, y + (kRowHeight - kLogoSize) / 2,
+                           kLogoSize, kLogoSize);
+      renderer.text.render(font, kTextX, titleY, package.name.c_str(), true, EpdFontFamily::BOLD);
+      renderer.text.render(descriptionFont, kTextX, descriptionY, description.c_str(), true,
+                           EpdFontFamily::REGULAR);
+      renderer.bitmap.icon(installed && index == selectedPackage_ && showCompletionCheck_ ? Check
+                                                                                           : (installed ? Trash : Download),
+                           iconX, y + (kRowHeight - kIconSize) / 2, kIconSize, kIconSize);
+    }
+    const auto& selected = packages_[std::min(selectedPackage_, packages_.size() - 1)];
+    mappedInput.mapLabels("\xC2\xAB Back", PluginManager::isInstalled(selected) ? "Disable" : "Install", "", "");
   } else {
     const int center = top + (screenH - top) / 2;
     renderer.text.centered(font, center, status_.c_str(), true, EpdFontFamily::BOLD);
@@ -273,9 +283,26 @@ void PluginManagerActivity::loop() {
     float ny = 0.0f;
     if (mappedInput.wasTouchTapInScreen(renderer, nx, ny)) {
       const int y = static_cast<int>(ny * renderer.getScreenHeight());
-      if (y >= SubPage::header(renderer, "Plugin Manager") && y < renderer.getScreenHeight() - 80) installSelected();
+      const int top = SubPage::header(renderer, "Plugin Manager");
+      if (y >= top + 20 && y < top + 20 + static_cast<int>(packages_.size()) * kRowHeight) {
+        const size_t index = static_cast<size_t>((y - top - 20) / kRowHeight);
+        if (index < packages_.size()) {
+          selectedPackage_ = index;
+          installSelected();
+        }
+      }
       return;
     }
+  }
+  if (mappedInput.wasPressed(MappedInputManager::Button::Up) && !packages_.empty()) {
+    selectedPackage_ = (selectedPackage_ + packages_.size() - 1) % packages_.size();
+    render();
+    return;
+  }
+  if (mappedInput.wasPressed(MappedInputManager::Button::Down) && !packages_.empty()) {
+    selectedPackage_ = (selectedPackage_ + 1) % packages_.size();
+    render();
+    return;
   }
   if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
     installSelected();

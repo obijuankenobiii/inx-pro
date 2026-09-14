@@ -37,6 +37,7 @@
 #include "activity/page/Statistics.h"
 #include "activity/page/HeatmapReport.h"
 #include "activity/page/SyncActivity.h"
+#include "activity/PluginLibraryActivity.h"
 #include "activity/settings/StoreActivity.h"
 #include "activity/reader/ImageViewerActivity.h"
 #include "activity/reader/ReaderActivity.h"
@@ -51,6 +52,7 @@
 #include "system/Fonts.h"
 #include "system/ScreenComponents.h"
 #include "system/MappedInputManager.h"
+#include "system/PluginManager.h"
 #include "util/LibraryIndexRefresh.h"
 #include "util/StringUtils.h"
 
@@ -92,6 +94,7 @@ void onGoToFileTransfer();
 void onGoToSettings();
 void onGoToStore();
 void onGoToLibrary(const std::string& path = "/");
+void onGoToSeries();
 void setupDisplayAndFonts();
 void onNetworkModeSelected(NetworkMode mode);
 void openReaderFromCallback(const std::string& path, std::function<void()> returnToCaller);
@@ -294,6 +297,15 @@ void onGoToStore() {
 void onGoToLibrary(const std::string& path) {
   INX_SERIAL.printf("[STICKY][NAV] Library path=%s\n", path.c_str());
   switchTo<Library>(render, input, path);
+}
+
+void onGoToSeries() {
+  PluginManager::LibraryMenuLink link;
+  if (!PluginManager::findLibraryMenuPlugin(link)) {
+    onGoToLibrary("/");
+    return;
+  }
+  switchTo<Library>(render, input, "/", true);
 }
 
 /**

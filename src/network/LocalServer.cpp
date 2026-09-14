@@ -51,7 +51,14 @@
 #include "state/NetworkCredential.h"
 #ifndef INX_SIMULATOR_WEB_ONLY
 #include "state/OpdsServerStore.h"
+#include "util/LibraryIndex.h"
+#include "util/LibraryIndexRefresh.h"
 #endif
+
+class Activity;
+class GfxRenderer;
+extern Activity* currentActivity;
+extern GfxRenderer& render;
 
 namespace {
 
@@ -125,7 +132,7 @@ bool findWebPluginForUri(const String& uri, PluginManager::WebLink& result) {
   return false;
 }
 
-String addLanguageManagerNavLink(const char* pageHtml) {
+String addLanguageManagerNavLink(const char* pageHtml, const char* currentUri = nullptr) {
   String page = pageHtml;
   if (page.indexOf("/language-manager") < 0) {
     page.replace("</nav>", "<a class=nav-btn href=/language-manager>Language</a></nav>");
@@ -156,7 +163,7 @@ body{background:var(--inx-page)!important;color:var(--inx-ink)!important;font-fa
 .inx-brand{width:38px;height:38px;display:grid;place-items:center;margin-bottom:18px;color:var(--inx-orange);font-size:25px;font-weight:850;line-height:1}
 .inx-brand:before{content:"▰";transform:skew(-14deg);display:block}
 .inx-rail-link{width:42px;height:42px;display:grid;place-items:center;border:1px solid transparent;border-radius:10px;color:#758087;text-decoration:none;font-size:19px;font-weight:650;line-height:1;transition:.15s ease}.inx-rail-link svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.inx-font-glyph{font-size:14px;letter-spacing:-.08em}
-.inx-plugin-launcher{width:42px;height:42px;display:grid;place-items:center;margin-top:4px;border:1px solid transparent;border-top:1px solid var(--inx-line);border-radius:5px;background:transparent;color:#758087;cursor:pointer;padding:9px 0 0;text-decoration:none;transition:.15s ease}.inx-plugin-launcher svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.inx-plugin-launcher:hover,.inx-plugin-launcher.active{color:var(--inx-orange);background:#f0f1f2}
+.inx-plugin-launcher{width:42px;height:42px;display:grid;place-items:center;margin-top:4px;border:1px solid transparent;border-top:1px solid var(--inx-line);border-radius:5px;background:transparent;color:#758087;cursor:pointer;padding:9px 0 0;text-decoration:none;transition:.15s ease}.inx-plugin-launcher svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.inx-plugin-launcher:hover{color:var(--inx-orange);background:#f0f1f2}.inx-plugin-launcher.active{background:var(--inx-orange);color:#fff;box-shadow:0 5px 12px rgba(24,32,39,.18)}
 .inx-rail-link:hover{color:var(--inx-orange);background:#f0f1f2}
 .inx-rail-link.active{background:var(--inx-orange);color:#fff;box-shadow:0 5px 12px rgba(24,32,39,.18)}
 .inx-rail-link.inx-rail-bottom{margin-top:auto}
@@ -176,9 +183,12 @@ body{background:var(--inx-page)!important;color:var(--inx-ink)!important;font-fa
 .inx-book-toolbar{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin:-2px 0 14px}.inx-book-search{height:38px;width:min(260px,38vw);border:1px solid var(--inx-line);border-radius:8px;background:#faf9f8;padding:0 12px;color:var(--inx-ink);font:inherit;font-size:12px}.inx-view-toggle{height:38px;min-width:38px;border:1px solid var(--inx-line);border-radius:8px;background:#f8f7f6;color:#697278;font:inherit;cursor:pointer}.inx-view-toggle.active{background:var(--inx-orange);border-color:var(--inx-orange);color:#fff}
 .file-list.inx-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:28px 26px}.inx-grid .book-card,.inx-grid .folder-card{position:relative;width:100%;min-width:0}.inx-grid .select-box{position:absolute;z-index:2;top:8px;left:8px;width:18px;height:18px}.inx-grid .book-open,.inx-grid .folder-open{display:block;width:100%;padding-top:30px;text-decoration:none;color:inherit}.inx-cover{width:100%;aspect-ratio:2/3;overflow:hidden;border-radius:8px;background:linear-gradient(145deg,#d9dcde,#73787c);box-shadow:0 9px 18px rgba(30,34,38,.13);display:grid;place-items:center;color:#fff;font-size:30px;font-weight:800}.inx-cover img{width:100%;height:100%;object-fit:contain;background:#f0f1f2;display:block}.inx-cover.placeholder{padding:16px;text-align:center;line-height:1.15}.inx-grid .folder-open .inx-folder-stack{width:100%;margin:0;aspect-ratio:5/4;height:auto}.inx-grid .folder-open .inx-folder-cover,.inx-grid .book-open .inx-cover{width:80%!important;max-width:80%!important;margin:0;aspect-ratio:5/4;height:auto}.inx-grid .book-open .inx-cover img{width:100%!important;height:100%!important;object-fit:contain!important;object-position:left center!important}.inx-grid .folder-open .inx-folder-cover{background:#f0f1f2}.inx-book-title{font-size:13px;font-weight:750;line-height:1.25;margin-top:9px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}.inx-book-meta{font-size:11px;color:var(--inx-muted);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.inx-card-actions{display:flex;justify-content:flex-end;gap:1px;margin-top:3px}.inx-card-actions .row-action{width:27px;height:27px}.inx-folder-cover{background:#eef0f1;color:#222;font-size:44px}.inx-grid .epub-badge{display:none}
 .file-list.inx-list{display:block}.inx-list .book-card,.inx-list .folder-card{display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--inx-line);padding:12px 7px}.inx-list .book-open,.inx-list .folder-open{display:flex;align-items:center;gap:12px;flex:1;min-width:0;text-decoration:none;color:inherit}.inx-list .inx-cover{width:42px;height:58px;aspect-ratio:auto;flex:0 0 42px;border-radius:5px;font-size:14px;box-shadow:0 3px 8px rgba(57,37,28,.1)}.inx-list .inx-book-title{margin:0;font-size:14px}.inx-list .inx-book-meta{margin-top:2px}.inx-list .inx-card-actions{margin:0}.inx-list .select-box{flex:0 0 auto}.inx-list .folder-open .inx-cover{font-size:23px}.inx-list .folder-open .inx-book-title{font-size:13px}
-.inx-grid .book-card,.inx-grid .folder-card{max-width:288px}.file-list.inx-grid{grid-template-columns:repeat(6,minmax(0,1fr));justify-content:start}.inx-grid .inx-card-actions{justify-content:flex-end}.inx-grid .folder-open .inx-folder-cover,.inx-grid .book-open .inx-cover{width:100%!important;max-width:100%!important}
+.inx-grid .book-card,.inx-grid .folder-card{max-width:288px}.file-list.inx-grid{grid-template-columns:repeat(7,minmax(0,1fr));justify-content:start}.inx-grid .inx-card-actions{justify-content:flex-end}.inx-grid .folder-open .inx-folder-cover,.inx-grid .book-open .inx-cover{width:100%!important;max-width:100%!important}
 @media(max-width:760px){.inx-rail{display:none}.inx-topbar{left:0;height:64px;padding:0 14px;gap:12px}.inx-mobile-menu-toggle{display:grid;flex:0 0 38px}.inx-heading{flex:1}.inx-mobile-menu-backdrop{position:fixed;z-index:1080;inset:0;background:rgba(24,32,39,.16)}.inx-mobile-menu-backdrop.open{display:block}.inx-mobile-menu{position:fixed;z-index:1090;left:0;top:0;bottom:0;width:min(292px,86vw);display:none;background:#fff;border-right:1px solid var(--inx-line);box-shadow:8px 0 24px rgba(24,32,39,.14);padding:18px 12px}.inx-mobile-menu.open{display:block}.inx-mobile-menu-head{display:flex;align-items:center;justify-content:space-between;padding:0 6px 18px;border-bottom:1px solid var(--inx-line)}.inx-mobile-menu-head strong{font-size:18px}.inx-mobile-menu-close{border:0;background:transparent;color:var(--inx-muted);font-size:25px;line-height:1;cursor:pointer;padding:0 4px}.inx-mobile-menu-links{display:grid;gap:4px;padding-top:14px}.inx-mobile-menu-link{display:flex;align-items:center;gap:12px;padding:11px 10px;color:var(--inx-ink);text-decoration:none;border:1px solid transparent;border-radius:5px;font-size:14px;font-weight:650}.inx-mobile-menu-link svg{width:20px;height:20px;flex:0 0 20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.inx-mobile-menu-link:hover,.inx-mobile-menu-link.active{background:#f0f1f2;border-color:var(--inx-line)}.container{width:100%!important;margin:0!important;padding:82px 12px 28px!important}.page-header{padding:15px!important}.action-buttons{display:flex!important;overflow:auto}.action-btn{flex:0 0 auto}.card{padding:15px!important}.inx-book-toolbar{justify-content:stretch;flex-wrap:wrap}.inx-book-search{width:100%;order:-1}.file-list.inx-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 12px}.contents-header{align-items:flex-start}.summary-inline{font-size:11px}}
 .inx-rail-link,.inx-book-search,.inx-view-toggle,.page-header,.card,.dropzone,.upload-status,.import-summary,.import-options,.modal,.action-btn,.bulk-actions,.bulk-delete-btn,.modal-btn,.file-input,.text-input,.stat-card,.segmented,.segmented button,.identity-add,.card-stage,.row-action,.toast,.badge,.epub-badge{border-radius:5px!important}
+.inx-mobile-menu-link.active{background:var(--inx-orange)!important;color:#fff!important;border-color:var(--inx-orange)!important}
+.series-page{width:calc(100% - 68px)!important;max-width:none!important;margin:0 0 0 68px!important;padding:102px 32px 42px 36px!important}
+@media(max-width:760px){.series-page{width:100%!important;margin:0!important;padding:82px 12px 28px!important}}
 .file-row{border-radius:3px!important}.status-badge{border-radius:5px!important}.inx-cover{border-radius:5px!important}.inx-avatar{border-radius:50%!important}
 </style>)rawliteral";
   if (page.indexOf("</head>") >= 0) {
@@ -212,6 +222,64 @@ body{background:var(--inx-page)!important;color:var(--inx-ink)!important;font-fa
     active = "/plugins";
   }
 
+  // The document title is not a reliable route identifier (plugin pages can
+  // reuse titles and some pages are served from shared HTML). Prefer the
+  // actual request URI whenever the handler supplied it, so the selected
+  // item stays active on desktop and mobile navigation alike.
+  if (currentUri != nullptr) {
+    const String uri(currentUri);
+    if (uri == "/") {
+      label = "Dashboard";
+      active = "/";
+    } else if (uri == "/epub") {
+      label = "Book";
+      active = "/epub";
+    } else if (uri == "/files") {
+      label = "Files";
+      active = "/files";
+    } else if (uri == "/font-manager") {
+      label = "Fonts";
+      active = "/font-manager";
+    } else if (uri == "/language-manager") {
+      label = "Language";
+      active = "/language-manager";
+    } else if (uri == "/settings") {
+      label = "Settings";
+      active = "/settings";
+    } else if (uri == "/plugins") {
+      label = "Plugins";
+      active = "/plugins";
+    }
+  }
+
+  // Plugin pages are served through the same shell, but their page titles are
+  // supplied by the package. Treat the matching plugin route as the active
+  // destination so the shared puzzle/Plugins rail item has the same dark
+  // active state as the core pages.
+  String activePluginHref = "/plugins";
+  String activePluginLabel = "Plugins";
+  bool pluginPageActive = active == "/plugins";
+  for (const PluginManager::WebLink& link : links) {
+    String titleMarker = "<title>Inx — ";
+    titleMarker += link.label.c_str();
+    titleMarker += "</title>";
+    String titleMarkerAscii = "<title>Inx - ";
+    titleMarkerAscii += link.label.c_str();
+    titleMarkerAscii += "</title>";
+    String pluginAlias = "/plugin/";
+    pluginAlias += link.id.c_str();
+    const bool uriMatch = currentUri != nullptr &&
+        (String(currentUri) == link.path.c_str() || String(currentUri) == pluginAlias);
+    if (uriMatch || page.indexOf(titleMarker) >= 0 || page.indexOf(titleMarkerAscii) >= 0) {
+      label = link.label.c_str();
+      active = link.path.c_str();
+      activePluginHref = link.path.c_str();
+      activePluginLabel = link.label.c_str();
+      pluginPageActive = true;
+      break;
+    }
+  }
+
   const char* railItems[][3] = {
       {"/", "<svg viewBox=\"0 0 24 24\"><path d=\"m3 10 9-7 9 7\"/><path d=\"M5 9v11h14V9\"/><path d=\"M9 20v-6h6v6\"/></svg>", "Dashboard"},
       {"/files", "<svg viewBox=\"0 0 24 24\"><rect x=\"3\" y=\"4\" width=\"7\" height=\"7\"/><rect x=\"14\" y=\"4\" width=\"7\" height=\"7\"/><rect x=\"3\" y=\"14\" width=\"7\" height=\"7\"/><rect x=\"14\" y=\"14\" width=\"7\" height=\"7\"/></svg>", "Files"},
@@ -223,7 +291,7 @@ body{background:var(--inx-page)!important;color:var(--inx-ink)!important;font-fa
   String rail = "<aside class=inx-rail><a class=inx-brand href=/ aria-label=INX>▰</a>";
   for (const auto& item : railItems) {
     rail += "<a class=inx-rail-link";
-    if (active == item[0]) rail += " active";
+    if (active == item[0]) rail += " active aria-current=page";
     rail += " href=\"";
     rail += item[0];
     rail += "\" title=\"";
@@ -233,12 +301,18 @@ body{background:var(--inx-page)!important;color:var(--inx-ink)!important;font-fa
     rail += "</a>";
   }
   rail += "<a class=inx-plugin-launcher";
-  if (active == "/plugins") rail += " active";
-  rail += " href=/plugins title=Plugins aria-label=Plugins><svg viewBox=\"0 0 24 24\"><path d=\"M19 13a2 2 0 1 0 0-4h-1V5a2 2 0 0 0-2-2h-4v1a2 2 0 1 1-4 0V3H6a2 2 0 0 0-2 2v4h1a2 2 0 1 1 0 4H4v4a2 2 0 0 0 2 2h4v-1a2 2 0 1 1 4 0v1h4a2 2 0 0 0 2-2v-4Z\"/></svg></a>";
+  if (pluginPageActive) rail += " active aria-current=page";
+  rail += " href=\"";
+  rail += activePluginHref;
+  rail += "\" title=\"";
+  rail += activePluginLabel;
+  rail += "\" aria-label=\"";
+  rail += activePluginLabel;
+  rail += "\"><svg viewBox=\"0 0 24 24\"><path d=\"M19 13a2 2 0 1 0 0-4h-1V5a2 2 0 0 0-2-2h-4v1a2 2 0 1 1-4 0V3H6a2 2 0 0 0-2 2v4h1a2 2 0 1 1 0 4H4v4a2 2 0 0 0 2 2h4v-1a2 2 0 1 1 4 0v1h4a2 2 0 0 0 2-2v-4Z\"/></svg></a>";
   rail += "</aside><div class=inx-mobile-menu-backdrop id=inx-mobile-menu-backdrop></div><nav class=inx-mobile-menu id=inx-mobile-menu aria-label=Mobile navigation><div class=inx-mobile-menu-head><strong>INX</strong><button class=inx-mobile-menu-close id=inx-mobile-menu-close type=button aria-label=Close>×</button></div><div class=inx-mobile-menu-links>";
   for (const auto& item : railItems) {
     rail += "<a class=inx-mobile-menu-link";
-    if (active == item[0]) rail += " active";
+    if (active == item[0]) rail += " active aria-current=page";
     rail += " href=\"";
     rail += item[0];
     rail += "\">";
@@ -248,13 +322,15 @@ body{background:var(--inx-page)!important;color:var(--inx-ink)!important;font-fa
     rail += "</span></a>";
   }
   rail += "<a class=inx-mobile-menu-link";
-  if (active == "/plugins") rail += " active";
-  rail += " href=/plugins><svg viewBox=\"0 0 24 24\"><path d=\"M19 13a2 2 0 1 0 0-4h-1V5a2 2 0 0 0-2-2h-4v1a2 2 0 1 1-4 0V3H6a2 2 0 0 0-2 2v4h1a2 2 0 1 1 0 4H4v4a2 2 0 0 0 2 2h4v-1a2 2 0 1 1 4 0v1h4a2 2 0 0 0 2-2v-4Z\"/></svg><span>Plugins</span></a></div></nav><script>(function(){var b=document.getElementById('inx-mobile-menu-toggle'),m=document.getElementById('inx-mobile-menu'),o=document.getElementById('inx-mobile-menu-backdrop'),c=document.getElementById('inx-mobile-menu-close');if(!b||!m||!o)return;function close(){b.setAttribute('aria-expanded','false');m.classList.remove('open');o.classList.remove('open')}function toggle(){var open=!m.classList.contains('open');b.setAttribute('aria-expanded',open?'true':'false');m.classList.toggle('open',open);o.classList.toggle('open',open)}b.addEventListener('click',toggle);o.addEventListener('click',close);if(c)c.addEventListener('click',close);document.addEventListener('keydown',function(e){if(e.key==='Escape')close()})})();</script><header class=inx-topbar><button class=inx-mobile-menu-toggle id=inx-mobile-menu-toggle type=button aria-label=Open menu aria-expanded=false><svg viewBox=\"0 0 24 24\"><path d=\"M4 6h16M4 12h16M4 18h16\"/></svg></button><div class=inx-heading><div><strong>";
+  if (pluginPageActive) rail += " active aria-current=page";
+  rail += " href=\"";
+  rail += activePluginHref;
+  rail += "\"><svg viewBox=\"0 0 24 24\"><path d=\"M19 13a2 2 0 1 0 0-4h-1V5a2 2 0 0 0-2-2h-4v1a2 2 0 1 1-4 0V3H6a2 2 0 0 0-2 2v4h1a2 2 0 1 1 0 4H4v4a2 2 0 0 0 2 2h4v-1a2 2 0 1 1 4 0v1h4a2 2 0 0 0 2-2v-4Z\"/></svg><span>Plugins</span></a></div></nav><script>(function(){var b=document.getElementById('inx-mobile-menu-toggle'),m=document.getElementById('inx-mobile-menu'),o=document.getElementById('inx-mobile-menu-backdrop'),c=document.getElementById('inx-mobile-menu-close');if(!b||!m||!o)return;function close(){b.setAttribute('aria-expanded','false');m.classList.remove('open');o.classList.remove('open')}function toggle(){var open=!m.classList.contains('open');b.setAttribute('aria-expanded',open?'true':'false');m.classList.toggle('open',open);o.classList.toggle('open',open)}b.addEventListener('click',toggle);o.addEventListener('click',close);if(c)c.addEventListener('click',close);document.addEventListener('keydown',function(e){if(e.key==='Escape')close()})})();</script><header class=inx-topbar><button class=inx-mobile-menu-toggle id=inx-mobile-menu-toggle type=button aria-label=Open menu aria-expanded=false><svg viewBox=\"0 0 24 24\"><path d=\"M4 6h16M4 12h16M4 18h16\"/></svg></button><div class=inx-heading><div><strong>";
   rail += label;
   rail += "</strong><small><span class=inx-current>Dashboard</span><span class=inx-slash>/</span>";
   rail += label;
   rail += "</small></div></div></header>";
-  rail += "<script>(function(){var b=document.getElementById('inx-mobile-menu-toggle'),m=document.getElementById('inx-mobile-menu'),o=document.getElementById('inx-mobile-menu-backdrop'),c=document.getElementById('inx-mobile-menu-close');if(!b||!m||!o)return;function close(){b.setAttribute('aria-expanded','false');m.classList.remove('open');o.classList.remove('open')}function toggle(){var open=!m.classList.contains('open');b.setAttribute('aria-expanded',open?'true':'false');m.classList.toggle('open',open);o.classList.toggle('open',open)}b.addEventListener('click',toggle);o.addEventListener('click',close);if(c)c.addEventListener('click',close);document.addEventListener('keydown',function(e){if(e.key==='Escape')close()})})();</script>";
+  rail += "<script>(function(){var b=document.getElementById('inx-mobile-menu-toggle'),m=document.getElementById('inx-mobile-menu'),o=document.getElementById('inx-mobile-menu-backdrop'),c=document.getElementById('inx-mobile-menu-close');if(!b||!m||!o)return;function close(){b.setAttribute('aria-expanded','false');m.classList.remove('open');o.classList.remove('open')}function toggle(){var open=!m.classList.contains('open');b.setAttribute('aria-expanded',open?'true':'false');m.classList.toggle('open',open);o.classList.toggle('open',open)}b.addEventListener('click',toggle);o.addEventListener('click',close);if(c)c.addEventListener('click',close);document.addEventListener('keydown',function(e){if(e.key==='Escape')close()})})();</script><script>(function(){function normalize(path){path=path||'/';if(path.length>1&&path.charAt(path.length-1)==='/')path=path.slice(0,-1);return path||'/'}var current=normalize(window.location.pathname);document.querySelectorAll('.inx-rail-link,.inx-plugin-launcher,.inx-mobile-menu-link').forEach(function(link){var href=link.getAttribute('href')||'/';var route=normalize(new URL(href,window.location.href).pathname);var plugin=link.classList.contains('inx-plugin-launcher')||route==='/plugins'||route.indexOf('/plugin/')===0||route==='/study'||route==='/series';var match=route===current||(route==='/epub'&&current==='/epub-viewer.html')||(plugin&&(current==='/plugins'||current.indexOf('/plugin/')===0||current==='/study'||current==='/series'));link.classList.toggle('active',match);if(match)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current')})})();</script>";
   if (page.indexOf("<body>") >= 0) {
     page.replace("<body>", "<body>" + rail);
   } else if (page.indexOf("<div class=container>") >= 0) {
@@ -275,8 +351,10 @@ body{background:var(--inx-page)!important;color:var(--inx-ink)!important;font-fa
   if (page.indexOf("id=file-table") >= 0) {
     const char* epubGridFinalStyle = R"rawliteral(<style id="inx-epub-grid-final-style">.inx-grid .folder-open .inx-folder-stack,.inx-grid .folder-open .inx-folder-cover,.inx-grid .book-open .inx-cover{width:80%!important;max-width:80%!important;height:auto!important;min-height:0!important;aspect-ratio:5/4!important;margin:0!important}.inx-grid .book-open .inx-cover{position:relative;display:block}.inx-grid .book-open .inx-cover img{position:absolute;inset:0;width:100%!important;height:100%!important;object-fit:contain!important;object-position:left center!important}.inx-grid .book-open .inx-cover,.inx-grid .folder-open .inx-cover,.inx-folder-stack,.inx-folder-stack-card,.inx-folder-stack-card img{border-radius:0!important}.inx-cover.has-thumbnail,.inx-folder-stack.has-thumbnail{background:transparent!important;box-shadow:none!important}.inx-cover.has-thumbnail img,.inx-folder-stack.has-thumbnail .inx-folder-stack-card,.inx-folder-stack.has-thumbnail .inx-folder-stack-card img{background:transparent!important;box-shadow:none!important}</style>)rawliteral";
     page.replace("</html>", String(epubGridFinalStyle) + "</html>");
-    const char* epubGridSizingStyle = R"rawliteral(<style id="inx-epub-grid-sizing-style">.file-list.inx-grid{grid-template-columns:repeat(6,minmax(0,1fr));justify-content:start}.inx-grid .book-card,.inx-grid .folder-card{max-width:288px}.inx-grid .inx-card-actions{justify-content:flex-end}.inx-grid .folder-open .inx-folder-cover,.inx-grid .book-open .inx-cover{width:100%!important;max-width:100%!important}</style>)rawliteral";
+    const char* epubGridSizingStyle = R"rawliteral(<style id="inx-epub-grid-sizing-style">.file-list.inx-grid{grid-template-columns:repeat(7,minmax(0,1fr));justify-content:start}.inx-grid .book-card,.inx-grid .folder-card{max-width:288px}.inx-grid .inx-card-actions{justify-content:flex-end}.inx-grid .folder-open .inx-folder-cover,.inx-grid .book-open .inx-cover{width:100%!important;max-width:100%!important}</style>)rawliteral";
     page.replace("</html>", String(epubGridSizingStyle) + "</html>");
+    const char* epubGridVisualStyle = R"rawliteral(<style id="inx-epub-grid-visual-style">.inx-grid .folder-open .inx-folder-stack,.inx-grid .folder-open .inx-folder-cover,.inx-grid .book-open .inx-cover{width:100%!important;max-width:100%!important;aspect-ratio:2/3!important}.inx-grid .inx-grid-delete{position:absolute;z-index:4;top:38px;right:7px;width:30px;height:30px;background:rgba(255,255,255,.94);border:1px solid rgba(255,255,255,.9);box-shadow:0 2px 6px rgba(30,34,38,.18);border-radius:4px!important}.inx-folder-stack.has-thumbnail .folder-stack-1,.inx-folder-stack.has-thumbnail .folder-stack-2{background:#d9dcde!important;box-shadow:none!important}.inx-folder-stack-card img{background:transparent!important}</style>)rawliteral";
+    page.replace("</html>", String(epubGridVisualStyle) + "</html>");
   }
 
   return page;
@@ -515,7 +593,11 @@ void LocalServer::begin() {
   server->on("/api/device-identity/photo", HTTP_GET, [this] { handleDeviceIdentityPhoto(); });
   server->on("/api/device-identity/card", HTTP_GET, [this] { handleDeviceIdentityCardImage(); });
   server->on("/api/files", HTTP_GET, [this] { handleFileListData(); });
+  server->on("/api/library-index", HTTP_GET, [this] { handleLibraryIndexData(); });
+  server->on("/api/library-index/refresh", HTTP_POST, [this] { handleLibraryIndexRefresh(); });
+  server->on("/api/library-index/status", HTTP_GET, [this] { handleLibraryIndexStatus(); });
   server->on(UriGlob("/api/plugin/*"), HTTP_GET, [this] { handlePluginApi(); });
+  server->on(UriGlob("/api/plugin/*"), HTTP_POST, [this] { handlePluginApi(); });
   server->on("/download", HTTP_GET, [this] { handleDownload(); });
 
   server->on("/upload", HTTP_POST, [this] { handleUploadPost(); }, [this] { handleUpload(); });
@@ -677,7 +759,7 @@ LocalServer::WsUploadStatus LocalServer::getWsUploadStatus() const {
 }
 
 void LocalServer::handleRoot() const {
-  server->send(200, "text/html", addLanguageManagerNavLink(HomePageHtml));
+  server->send(200, "text/html", addLanguageManagerNavLink(HomePageHtml, "/"));
   INX_SERIAL.printf("[%lu] [WEB] Served root page\n", millis());
 }
 
@@ -712,11 +794,19 @@ void LocalServer::handlePluginsPage() const {
   }
 
   page += "</div></div></html>";
-  server->send(200, "text/html; charset=utf-8", addLanguageManagerNavLink(page.c_str()));
+  server->send(200, "text/html; charset=utf-8", addLanguageManagerNavLink(page.c_str(), "/plugins"));
   INX_SERIAL.printf("[%lu] [WEB] Served plugins page (%u plugins)\n", millis(), static_cast<unsigned>(links.size()));
 }
 
 void LocalServer::handleNotFound() const {
+  // Web plugins declare their own routes in manifest.json. Core routes are
+  // registered statically, so resolve plugin paths here before returning the
+  // generic 404 page (for example, /series).
+  PluginManager::WebLink plugin;
+  if (findWebPluginForUri(server->uri(), plugin)) {
+    handlePluginPage();
+    return;
+  }
   String message = "404 Not Found\n\n";
   message += "URI: " + server->uri() + "\n";
   server->send(404, "text/plain", message);
@@ -982,10 +1072,10 @@ bool LocalServer::isEpubFile(const String& filename) const {
   return lower.size() >= 5 && lower.compare(lower.size() - 5, 5, ".epub") == 0;
 }
 
-void LocalServer::handleFileList() const { server->send(200, "text/html", addLanguageManagerNavLink(FilesPageHtml)); }
+void LocalServer::handleFileList() const { server->send(200, "text/html", addLanguageManagerNavLink(FilesPageHtml, "/files")); }
 
 void LocalServer::handleEpubPage() const {
-  server->send(200, "text/html; charset=utf-8", addLanguageManagerNavLink(EpubPageHtml));
+  server->send(200, "text/html; charset=utf-8", addLanguageManagerNavLink(EpubPageHtml, "/epub"));
 }
 
 void LocalServer::handlePluginPage() const {
@@ -1000,15 +1090,15 @@ void LocalServer::handlePluginPage() const {
     server->send(404, "text/plain", error.c_str());
     return;
   }
-  server->send(200, "text/html; charset=utf-8", addLanguageManagerNavLink(html.c_str()));
+  server->send(200, "text/html; charset=utf-8", addLanguageManagerNavLink(html.c_str(), server->uri().c_str()));
 }
 
 void LocalServer::handleFontManagerPage() const {
-  server->send(200, "text/html", addLanguageManagerNavLink(FontManagerPageHtml));
+  server->send(200, "text/html", addLanguageManagerNavLink(FontManagerPageHtml, "/font-manager"));
 }
 
 void LocalServer::handleLanguageManagerPage() const {
-  server->send(200, "text/html", addLanguageManagerNavLink(LanguageManagerPageHtml));
+  server->send(200, "text/html", addLanguageManagerNavLink(LanguageManagerPageHtml, "/language-manager"));
 }
 
 void LocalServer::handleInxFontPackJs() const {
@@ -1223,6 +1313,84 @@ void LocalServer::handleFileListData() const {
   INX_SERIAL.printf("[%lu] [WEB] Served file listing page for path: %s\n", millis(), currentPath.c_str());
 }
 
+void LocalServer::handleLibraryIndexData() const {
+#ifndef INX_SIMULATOR_WEB_ONLY
+  if (!LibraryIndex::hasIndex()) {
+    server->send(404, "text/plain", "Library index unavailable");
+    return;
+  }
+
+  std::vector<LibraryIndex::Book> entries;
+  if (!LibraryIndex::search("", entries, LibraryIndex::all)) {
+    server->send(500, "text/plain", "Could not read library index");
+    return;
+  }
+
+  server->setContentLength(CONTENT_LENGTH_UNKNOWN);
+  server->send(200, "application/json", "");
+  server->sendContent("[");
+  JsonDocument document;
+  bool first = true;
+  for (const LibraryIndex::Book& entry : entries) {
+    if (entry.type != LibraryIndex::Book::Type::BOOK) continue;
+    document.clear();
+    document["path"] = entry.path;
+    document["name"] = entry.title.empty() ? entry.path : entry.title;
+    document["title"] = entry.title;
+    document["author"] = entry.author;
+
+    const std::string cachePath = epubCachePathForBookPath(entry.path.c_str());
+    const char* coverNames[] = {"cover.jpg", "thumb.jpg", "cover.bmp", "thumb.png", "thumb.bmp"};
+    for (const char* coverName : coverNames) {
+      const std::string coverPath = cachePath + "/" + coverName;
+      if (!SdMan.exists(coverPath.c_str())) continue;
+      String coverUrl = "/download?path=";
+      coverUrl += coverPath.c_str();
+      coverUrl += "&inline=1";
+      document["coverUrl"] = coverUrl;
+      break;
+    }
+
+    String output;
+    serializeJson(document, output);
+    if (!first) server->sendContent(",");
+    first = false;
+    server->sendContent(output);
+  }
+  server->sendContent("]");
+  server->sendContent("");
+#else
+  server->send(404, "text/plain", "Library index unavailable");
+#endif
+}
+
+void LocalServer::handleLibraryIndexRefresh() const {
+#ifndef INX_SIMULATOR_WEB_ONLY
+  if (LibraryIndexRefresh::isRunning()) {
+    server->send(409, "text/plain", "Library index refresh already running");
+    return;
+  }
+  LibraryIndexRefresh::start(render, currentActivity);
+  server->send(202, "text/plain", "Library index refresh started");
+#else
+  server->send(503, "text/plain", "Library index refresh unavailable");
+#endif
+}
+
+void LocalServer::handleLibraryIndexStatus() const {
+  JsonDocument document;
+#ifndef INX_SIMULATOR_WEB_ONLY
+  document["available"] = LibraryIndex::hasIndex();
+  document["refreshing"] = LibraryIndexRefresh::isRunning();
+#else
+  document["available"] = false;
+  document["refreshing"] = false;
+#endif
+  String output;
+  serializeJson(document, output);
+  server->send(200, "application/json", output);
+}
+
 void LocalServer::handlePluginApi() const {
   const String prefix = "/api/plugin/";
   const String uri = server->uri();
@@ -1238,9 +1406,26 @@ void LocalServer::handlePluginApi() const {
   }
   const String pluginId = route.substring(0, separator);
   const String function = route.substring(separator + 1);
+  JsonDocument arguments;
+  if (server->hasArg("plain") && !server->arg("plain").isEmpty()) {
+    if (deserializeJson(arguments, server->arg("plain")) != DeserializationError::Ok ||
+        !arguments.is<JsonObject>()) {
+      server->send(400, "text/plain", "Plugin arguments must be a JSON object");
+      return;
+    }
+  } else {
+    JsonObject query = arguments.to<JsonObject>();
+    for (int index = 0; index < server->args(); ++index) {
+      const String name = server->argName(index);
+      if (name == "plain") continue;
+      query[name.c_str()] = server->arg(index);
+    }
+  }
+  String argumentJson;
+  serializeJson(arguments, argumentJson);
   std::string output;
   std::string error;
-  if (!PluginManager::invokeString(pluginId.c_str(), function.c_str(), nullptr, output, error)) {
+  if (!PluginManager::invokeStringJson(pluginId.c_str(), function.c_str(), argumentJson.c_str(), output, error)) {
     server->send(404, "text/plain", error.c_str());
     return;
   }
@@ -1970,7 +2155,7 @@ void LocalServer::onWebSocketEvent(uint8_t num, WStype_t type, uint8_t* payload,
 }
 
 void LocalServer::handleSettingsPage() const {
-  server->send(200, "text/html", addLanguageManagerNavLink(SettingsPageHtml));
+  server->send(200, "text/html", addLanguageManagerNavLink(SettingsPageHtml, "/settings"));
   INX_SERIAL.printf("[%lu] [WEB] Served settings page\n", millis());
 }
 

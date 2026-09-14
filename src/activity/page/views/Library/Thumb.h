@@ -21,7 +21,8 @@ class Thumb final {
         std::function<void(int, bool)> select,
         std::function<bool(const LibraryIndex::Book&)> isFavorite,
         std::function<void(int, int)> outsideTap,
-        std::function<bool(const LibraryIndex::Book&)> isAuthorFolder);
+        std::function<bool(const LibraryIndex::Book&)> isAuthorFolder,
+        std::function<std::vector<std::string>(const LibraryIndex::Book&, int)> folderCovers);
 
   static void getThumbnailSize(GfxRenderer& renderer, int& width, int& height);
 
@@ -79,6 +80,7 @@ class Thumb final {
   std::function<bool(const LibraryIndex::Book&)> isFavorite;
   std::function<void(int, int)> outsideTap;
   std::function<bool(const LibraryIndex::Book&)> isAuthorFolder;
+  std::function<std::vector<std::string>(const LibraryIndex::Book&, int)> customFolderCovers;
   bool root = true;
   int page = 0;
   unsigned long loadAt = 0;
@@ -92,6 +94,7 @@ class Thumb final {
                 bool authorFolder) const;
   void itemBounds(int index, int& x, int& y, int& width, int& height) const;
   int itemAt(int x, int y) const;
+  std::vector<std::string> coversForFolder(const LibraryIndex::Book& folder, int limit) const;
 };
 
 }

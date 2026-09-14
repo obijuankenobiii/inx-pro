@@ -89,6 +89,9 @@ class LocalServer {
   void handleEpubPage() const;
   void handlePluginPage() const;
   void handleFileListData() const;
+  void handleLibraryIndexData() const;
+  void handleLibraryIndexRefresh() const;
+  void handleLibraryIndexStatus() const;
   void handlePluginApi() const;
   void handleDownload() const;
   void handleUpload() const;

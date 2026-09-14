@@ -1,6 +1,7 @@
 #include "Library.h"
 #include "system/UiLayout.h"
 
+#include <ArduinoJson.h>
 #include <BitmapRender.h>
 #include <GfxRenderer.h>
 #include <SDCardManager.h>
@@ -38,6 +39,7 @@
 #include "util/AuthorIndex.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
+#include "system/PluginManager.h"
 #include "util/LibraryIndexRefresh.h"
 #include "util/SdIoMutex.h"
 
@@ -195,9 +197,10 @@ std::string authorKey(const std::string& value) {
 
 }
 
-Library::Library(GfxRenderer& renderer, MappedInputManager& mappedInput, std::string path)
+Library::Library(GfxRenderer& renderer, MappedInputManager& mappedInput, std::string path, const bool seriesMode)
     : Page("Library", renderer, mappedInput),
       path(cleanPath(std::move(path))),
+      seriesMode_(seriesMode),
       grid(renderer, mappedInput, items, [this](const int index, const bool longPress) { select(index, longPress); },
            [this](const LibraryIndex::Book& book) { return isFavorite(book); },
            [this](const int x, const int y) { routeMenuAction(navigation::Menu::handleTap(x, y)); },
@@ -216,7 +219,8 @@ Library::Library(GfxRenderer& renderer, MappedInputManager& mappedInput, std::st
             [this](const int x, const int y) { routeMenuAction(navigation::Menu::handleTap(x, y)); },
             [this](const LibraryIndex::Book& book) {
               return stateFilter == StateFilter::Author && book.type == LibraryIndex::Book::Type::FOLDER;
-            }) {}
+            },
+            [this](const LibraryIndex::Book& group, const int limit) { return seriesCovers(group, limit); }) {}
 
 void Library::onEnter() {
   Page::onEnter();
@@ -248,11 +252,12 @@ void Library::onEnter() {
   popupBook = -1;
   folderDeleteConfirm = false;
   sidebarOpen = false;
-  stateFilter = StateFilter::None;
+  stateFilter = seriesMode_ ? StateFilter::Series : StateFilter::None;
+  activeSeriesGroup_.clear();
   authorFolder.clear();
   authorFolderKey.clear();
   authorIndexAvailable = false;
-  allBooksMode = path == "/" && SETTINGS.libraryViewMode == SystemSetting::LIBRARY_VIEW_BOOKS;
+  allBooksMode = !seriesMode_ && path == "/" && SETTINGS.libraryViewMode == SystemSetting::LIBRARY_VIEW_BOOKS;
   if (path != "/" && SETTINGS.libraryViewMode != SystemSetting::LIBRARY_VIEW_FOLDERS) {
     SETTINGS.libraryViewMode = SystemSetting::LIBRARY_VIEW_FOLDERS;
     SETTINGS.saveToFile();
@@ -264,12 +269,62 @@ void Library::load() {
   items.clear();
   resetViews();
   books.clear();
+  seriesNameByPath_.clear();
+  seriesOrderByPath_.clear();
+  seriesBooksByGroup_.clear();
+  seriesNameByGroup_.clear();
   favorites.clear();
   authorIndexAvailable = false;
   for (const BookState::Book& book : BOOK_STATE.getFavoriteBooks()) {
     favorites.insert(book.path);
   }
-  if (stateFilter == StateFilter::Author) {
+  if (stateFilter == StateFilter::Series) {
+    std::string output;
+    std::string error;
+    if (!PluginManager::invokeString("series", "library_json", nullptr, output, error)) return;
+
+    JsonDocument document;
+    if (deserializeJson(document, output) != DeserializationError::Ok || !document.is<JsonArray>()) return;
+    std::unordered_map<std::string, std::vector<LibraryIndex::Book>> groupedBooks;
+    for (JsonObject record : document.as<JsonArray>()) {
+      const char* pathValue = record["path"] | "";
+      if (!pathValue || !pathValue[0]) continue;
+      const std::string bookPath = cleanPath(pathValue);
+      LibraryIndex::Book item;
+      item.type = LibraryIndex::Book::Type::BOOK;
+      item.path = bookPath;
+      item.folder = parent(bookPath);
+      const char* titleValue = record["title"] | "";
+      const char* authorValue = record["author"] | "";
+      if (titleValue && titleValue[0]) item.title = titleValue;
+      if (authorValue && authorValue[0]) item.author = authorValue;
+
+      const char* seriesValue = record["series"] | "";
+      const std::string seriesName = seriesValue ? seriesValue : "";
+      if (seriesName.empty()) continue;
+      seriesNameByPath_[bookPath] = seriesName;
+      seriesOrderByPath_[bookPath] = record["order"] | 0;
+      groupedBooks[seriesName].push_back(std::move(item));
+    }
+
+    for (auto& group : groupedBooks) {
+      const std::string groupPath = "/.metadata/series/" + std::to_string(std::hash<std::string>{}(group.first));
+      seriesBooksByGroup_[groupPath] = group.second;
+      seriesNameByGroup_[groupPath] = group.first;
+      if (activeSeriesGroup_.empty()) {
+        LibraryIndex::Book folder;
+        folder.type = LibraryIndex::Book::Type::FOLDER;
+        folder.path = groupPath;
+        folder.title = group.first;
+        folder.folder = "/";
+        folder.bookCount = static_cast<uint16_t>(std::min<size_t>(group.second.size(), 65535));
+        folder.hasMetadata = true;
+        items.push_back(std::move(folder));
+      } else if (activeSeriesGroup_ == groupPath) {
+        items = group.second;
+      }
+    }
+  } else if (stateFilter == StateFilter::Author) {
     std::vector<AuthorIndex::Entry> authorEntries;
     authorIndexAvailable = AuthorIndex::load(authorEntries);
     if (!authorIndexAvailable || !LibraryIndex::search("", items, LibraryIndex::all)) return;
@@ -385,6 +440,20 @@ void Library::load() {
 
   std::stable_sort(items.begin(), items.end(), [this](const LibraryIndex::Book& left,
                                                        const LibraryIndex::Book& right) {
+    if (stateFilter == StateFilter::Series) {
+      const std::string leftPath = cleanPath(left.path);
+      const std::string rightPath = cleanPath(right.path);
+      const auto leftSeries = seriesNameByPath_.find(leftPath);
+      const auto rightSeries = seriesNameByPath_.find(rightPath);
+      const std::string leftName = leftSeries == seriesNameByPath_.end() ? "" : leftSeries->second;
+      const std::string rightName = rightSeries == seriesNameByPath_.end() ? "" : rightSeries->second;
+      if (leftName != rightName) return leftName < rightName;
+      const auto leftOrder = seriesOrderByPath_.find(leftPath);
+      const auto rightOrder = seriesOrderByPath_.find(rightPath);
+      const int leftValue = leftOrder == seriesOrderByPath_.end() ? 0 : leftOrder->second;
+      const int rightValue = rightOrder == seriesOrderByPath_.end() ? 0 : rightOrder->second;
+      if (leftValue != rightValue) return leftValue < rightValue;
+    }
     const std::string leftTitle = lower(left.title);
     const std::string rightTitle = lower(right.title);
     const std::string leftFolder = lower(left.folder.empty() ? parent(left.path) : left.folder);
@@ -414,6 +483,14 @@ void Library::open(const int index) {
   if (index < 0 || index >= static_cast<int>(items.size())) return;
   const LibraryIndex::Book& item = items[static_cast<size_t>(index)];
   if (item.type == LibraryIndex::Book::Type::FOLDER) {
+    if (stateFilter == StateFilter::Series && activeSeriesGroup_.empty() &&
+        seriesBooksByGroup_.find(item.path) != seriesBooksByGroup_.end()) {
+      activeSeriesGroup_ = item.path;
+      thumb.setPage(0);
+      load();
+      updateRequired = true;
+      return;
+    }
     if (view == View::Thumb && stateFilter == StateFilter::None && !allBooksMode) {
       if (const LibraryIndex::Book* book = singleBookInFolder(item.path, books)) {
         const std::string libraryPath = path;
@@ -466,6 +543,13 @@ void Library::loop() {
   const bool horizontalSwipe = mappedInput.wasTouchSwipeLeft() || mappedInput.wasTouchSwipeRight();
 
   if (!filterOpen && !sortOpen && !isOpen() && horizontalSwipe) {
+    if (stateFilter == StateFilter::Series && !activeSeriesGroup_.empty() && mappedInput.wasTouchSwipeRight()) {
+      activeSeriesGroup_.clear();
+      thumb.setPage(0);
+      load();
+      updateRequired = true;
+      return;
+    }
     if (stateFilter == StateFilter::Author && !authorFolder.empty() && mappedInput.wasTouchSwipeRight()) {
       authorFolder.clear();
       authorFolderKey.clear();
@@ -554,9 +638,12 @@ void Library::loop() {
 
 void Library::content() {
   if (items.empty()) {
-    const char* message = stateFilter == StateFilter::Author && !authorIndexAvailable
-                              ? "Generate authors in Settings first"
-                              : (LibraryIndex::hasIndex() ? "No books in this folder" : "Build the library index first");
+    const char* message = stateFilter == StateFilter::Series
+                              ? "No books in any series"
+                              : (stateFilter == StateFilter::Author && !authorIndexAvailable
+                                     ? "Generate authors in Settings first"
+                                     : (LibraryIndex::hasIndex() ? "No books in this folder"
+                                                                  : "Build the library index first"));
     renderer.text.centered(systemFontId(), renderer.getScreenHeight() / 2, message);
     return;
   }
@@ -571,6 +658,27 @@ void Library::content() {
       thumb.render();
       break;
   }
+}
+
+std::vector<std::string> Library::seriesCovers(const LibraryIndex::Book& group, const int limit) const {
+  std::vector<std::string> covers;
+  if (stateFilter != StateFilter::Series || group.type != LibraryIndex::Book::Type::FOLDER || limit <= 0) {
+    return covers;
+  }
+  const auto booksForGroup = seriesBooksByGroup_.find(group.path);
+  if (booksForGroup == seriesBooksByGroup_.end()) return covers;
+  const char* names[] = {"cover.jpg", "thumb.jpg", "cover.bmp", "thumb.png", "thumb.bmp"};
+  for (const LibraryIndex::Book& book : booksForGroup->second) {
+    const std::string directory = dataPath(book.path);
+    for (const char* name : names) {
+      const std::string coverPath = directory + "/" + name;
+      if (!SdMan.exists(coverPath.c_str())) continue;
+      covers.push_back(coverPath);
+      break;
+    }
+    if (static_cast<int>(covers.size()) >= limit) break;
+  }
+  return covers;
 }
 
 void Library::title() const {
@@ -920,7 +1028,10 @@ bool Library::handleSidebarInput() {
     return true;
   }
 
-  const int item = Sidebar::hitTest(renderer, tapX, tapY, 6);
+  PluginManager::LibraryMenuLink pluginMenu;
+  const bool hasPluginMenu = PluginManager::findLibraryMenuPlugin(pluginMenu);
+  const size_t sidebarItemCount = hasPluginMenu ? 6 : 5;
+  const int item = Sidebar::hitTest(renderer, tapX, tapY, sidebarItemCount);
   if (item == 0) {
     stateFilter = StateFilter::None;
     if (allBooksMode) {
@@ -982,14 +1093,30 @@ bool Library::handleSidebarInput() {
     sidebarOpen = false;
     load();
     updateRequired = true;
+  } else if (hasPluginMenu && item == 5) {
+    stateFilter = StateFilter::Series;
+    path = "/";
+    seriesMode_ = true;
+    activeSeriesGroup_.clear();
+    allBooksMode = false;
+    sortOpen = false;
+    filterOpen = false;
+    popupBook = -1;
+    thumb.setPage(0);
+    sidebarOpen = false;
+    load();
+    updateRequired = true;
   }
   return true;
 }
 
 void Library::drawSidebar() const {
-  const char* labels[] = {allBooksMode ? "Folders" : "All books", "Favorites", "Reading", "Finished", "Author"};
+  PluginManager::LibraryMenuLink pluginMenu;
+  const bool hasPluginMenu = PluginManager::findLibraryMenuPlugin(pluginMenu);
+  const char* labels[6] = {allBooksMode ? "Folders" : "All books", "Favorites", "Reading", "Finished", "Author", nullptr};
+  if (hasPluginMenu) labels[5] = pluginMenu.label.c_str();
   Sidebar::renderFrame(renderer, "Library");
-  Sidebar::renderTextList(renderer, labels, 5);
+  Sidebar::renderTextList(renderer, labels, hasPluginMenu ? 6 : 5);
 }
 
 navigation::Menu::Action Library::centerTap(const int tapX, const int tapY) const {

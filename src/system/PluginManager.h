@@ -29,6 +29,12 @@ class PluginManager {
     int order = 0;
   };
 
+  struct LibraryMenuLink {
+    std::string id;
+    std::string label;
+    std::string function;
+  };
+
   using ProgressCallback = std::function<void(size_t downloaded, size_t total)>;
   using LuaArgumentPusher = std::function<void(lua_State* state)>;
 
@@ -51,6 +57,9 @@ class PluginManager {
                      std::string& error);
   static bool invokeString(const char* id, const char* function, const LuaArgumentPusher& pushArguments,
                            std::string& result, std::string& error);
+  /** Invoke a plugin function with a JSON object as its single Lua table argument. */
+  static bool invokeStringJson(const char* id, const char* function, const std::string& jsonArguments,
+                               std::string& result, std::string& error);
 
   /** Read a file shipped inside an installed plugin package. */
   static bool readFile(const char* id, const char* filename, std::string& contents, size_t maxBytes,
@@ -58,6 +67,12 @@ class PluginManager {
 
   /** Find an installed plugin that contributes a reader-selection action. */
   static bool findReaderSelectionPlugin(std::string& id, std::string& label, std::string& function);
+
+  /** Find an installed plugin that contributes a next-book reader suggestion. */
+  static bool findReaderSuggestionPlugin(std::string& id, std::string& function);
+
+  /** Find an installed plugin that contributes an item to the library sidebar. */
+  static bool findLibraryMenuPlugin(LibraryMenuLink& link);
 
   /** Find an installed plugin that contributes a web page and script. */
   static bool findWebPlugin(std::string& id, std::string& page, std::string& script);
