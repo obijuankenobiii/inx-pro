@@ -21,6 +21,8 @@ class LibraryIndex {
     std::string title;
     std::string folder;
     std::string author;
+    /** Optional transient UI badge supplied by a plugin-backed library view. */
+    std::string badge;
     uint16_t bookCount = 0;
     uint16_t folderCount = 0;
     bool hasMetadata = false;

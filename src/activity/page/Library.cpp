@@ -310,6 +310,15 @@ void Library::load() {
     }
 
     for (auto& group : groupedBooks) {
+      const int groupSize = static_cast<int>(group.second.size());
+      for (size_t index = 0; index < group.second.size(); ++index) {
+        LibraryIndex::Book& book = group.second[index];
+        const auto order = pluginOrderByPath_.find(cleanPath(book.path));
+        const int position = order != pluginOrderByPath_.end() && order->second > 0
+                                 ? order->second
+                                 : static_cast<int>(index) + 1;
+        book.badge = "#" + std::to_string(position) + "/" + std::to_string(groupSize);
+      }
       const std::string groupPath = "/.metadata/plugin-groups/" + pluginMenu_.id + "/" +
                                     std::to_string(std::hash<std::string>{}(group.first));
       pluginBooksByGroup_[groupPath] = group.second;

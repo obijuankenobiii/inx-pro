@@ -74,6 +74,23 @@ void drawFolderBookCountBadge(const GfxRenderer& renderer, const int x, const in
   renderer.text.render(font, badgeX + paddingX, badgeY + paddingY, label.c_str(), false);
 }
 
+void drawItemBadge(const GfxRenderer& renderer, const int x, const int y, const int width,
+                   const std::string& label) {
+  if (label.empty() || width < 8) return;
+  constexpr int paddingX = 6;
+  constexpr int paddingY = 4;
+  constexpr int margin = 5;
+  constexpr int font = MONTSERRAT_8_FONT_ID;
+  const int badgeWidth = renderer.text.getWidth(font, label.c_str()) + paddingX * 2;
+  const int badgeHeight = renderer.text.getLineHeight(font) + paddingY * 2;
+  const int badgeX = x + std::max(0, width - badgeWidth - margin);
+  const int badgeY = y + margin;
+  renderer.rectangle.fill(badgeX, badgeY, badgeWidth, badgeHeight,
+                          static_cast<int>(GfxRenderer::FillTone::Ink), true);
+  renderer.rectangle.render(badgeX, badgeY, badgeWidth, badgeHeight, false, true);
+  renderer.text.render(font, badgeX + paddingX, badgeY + paddingY, label.c_str(), false);
+}
+
 std::string parent(const std::string& path) {
   const size_t slash = path.find_last_of('/');
   if (slash == std::string::npos || slash == 0) return "/";
@@ -577,6 +594,7 @@ void Thumb::drawItem(const LibraryIndex::Book& item, const int x, const int y, c
         const int coverX = x + (width - coverWidth) / 2;
         cover(renderer, thumbnail->first, coverX, imageY, coverWidth, frontHeight, rounded);
         drawFavoriteBadge(renderer, coverX, imageY, coverWidth, favorite);
+        drawItemBadge(renderer, coverX, imageY, coverWidth, item.badge);
         if (!hideTitle) {
           folderLabel(renderer, thumbnail->singleBookTitle.empty() ? bookTitle(item) : thumbnail->singleBookTitle,
                       coverX, coverWidth, y, height);
@@ -649,6 +667,7 @@ void Thumb::drawItem(const LibraryIndex::Book& item, const int x, const int y, c
               hasSize || evenThumbnails, evenThumbnails)) {
       if (!hideTitle) drawTitle(renderer, bookTitle(item), imageX, y + height - titleHeight, imageWidth, font);
       drawFavoriteBadge(renderer, imageX, imageY, imageWidth, favorite);
+      drawItemBadge(renderer, imageX, imageY, imageWidth, item.badge);
       return;
     }
   }
@@ -665,6 +684,7 @@ void Thumb::drawItem(const LibraryIndex::Book& item, const int x, const int y, c
               hideTitle ? bookTitle(item) : "");
   if (!hideTitle) drawTitle(renderer, bookTitle(item), placeholderX, y + height - titleHeight, placeholderWidth, font);
   drawFavoriteBadge(renderer, placeholderX, imageAreaY, placeholderWidth, favorite);
+  drawItemBadge(renderer, placeholderX, imageAreaY, placeholderWidth, item.badge);
 }
 
 void Thumb::itemBounds(const int index, int& x, int& y, int& width, int& height) const {

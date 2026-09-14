@@ -95,6 +95,23 @@ void titleLines(const GfxRenderer& renderer, const std::string& value, const int
   second = renderer.text.truncate(font, value.substr(best).c_str(), width);
 }
 
+void drawItemBadge(const GfxRenderer& renderer, const int x, const int y, const int width,
+                   const std::string& label) {
+  if (label.empty() || width < 8) return;
+  constexpr int paddingX = 5;
+  constexpr int paddingY = 3;
+  constexpr int margin = 5;
+  constexpr int font = MONTSERRAT_8_FONT_ID;
+  const int badgeWidth = renderer.text.getWidth(font, label.c_str()) + paddingX * 2;
+  const int badgeHeight = renderer.text.getLineHeight(font) + paddingY * 2;
+  const int badgeX = x + std::max(0, width - badgeWidth - margin);
+  const int badgeY = y + margin;
+  renderer.rectangle.fill(badgeX, badgeY, badgeWidth, badgeHeight,
+                          static_cast<int>(GfxRenderer::FillTone::Ink), true);
+  renderer.rectangle.render(badgeX, badgeY, badgeWidth, badgeHeight, false, true);
+  renderer.text.render(font, badgeX + paddingX, badgeY + paddingY, label.c_str(), false);
+}
+
 void drawItem(const GfxRenderer& renderer, const LibraryIndex::Book& item, const int x, const int y,
               const int width, const int height, const bool favorite, const bool authorFolder) {
   constexpr int labelGap = 4;
@@ -112,6 +129,7 @@ void drawItem(const GfxRenderer& renderer, const LibraryIndex::Book& item, const
                                   ? ImageLarge
                                   : (isPdf(item.path) ? Pdf72 : (isTxt(item.path) ? Txt72 : BookLarge)));
   renderer.bitmap.icon(icon, drawX, drawY, iconSize, iconSize);
+  drawItemBadge(renderer, x, y, width, item.badge);
   if (favorite) renderer.bitmap.icon(Star, x + width - 30, y + 6, 24, 24);
   const int font = systemFontId();
   const int available = std::max(20, width - 10);
