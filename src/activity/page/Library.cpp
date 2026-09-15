@@ -743,6 +743,7 @@ void Library::popup() const {
                                              ? std::vector<std::string>{"Delete"}
                                              : std::vector<std::string>{
                                                    isFavorite(book) ? "Remove favorite" : "Mark as favorite",
+                                                   "Mark as completed",
                                                    "Delete Book", "Reset"};
   const PopUpBounds box = PopUp::bounds(renderer, static_cast<int>(actions.size()));
   PopUp::background(renderer, box);
@@ -791,7 +792,7 @@ bool Library::popupInput() {
   }
 
   const bool folder = book.type == LibraryIndex::Book::Type::FOLDER;
-  const int actionCount = folder ? 1 : 3;
+  const int actionCount = folder ? 1 : 4;
   const PopUpBounds box = PopUp::bounds(renderer, actionCount);
   const int x = static_cast<int>(tapX * renderer.getScreenWidth());
   const int y = static_cast<int>(tapY * renderer.getScreenHeight());
@@ -814,6 +815,8 @@ bool Library::popupInput() {
   if (action == 0) {
     markFavorite(book);
   } else if (action == 1) {
+    markCompleted(book);
+  } else if (action == 2) {
     erase(book);
   } else {
     reset(book);
@@ -834,6 +837,14 @@ void Library::markFavorite(const LibraryIndex::Book& book) {
     favorites.insert(book.path);
   }
   popupBook = -1;
+  updateRequired = true;
+}
+
+void Library::markCompleted(const LibraryIndex::Book& book) {
+  BOOK_STATE.setFinished(book.path, true, book.title);
+  RECENT_BOOKS.updateProgress(book.path, 1.0f);
+  popupBook = -1;
+  load();
   updateRequired = true;
 }
 

@@ -84,6 +84,7 @@ class Library final : public Page {
   bool popupInput();
   bool isFavorite(const LibraryIndex::Book& book) const;
   void markFavorite(const LibraryIndex::Book& book);
+  void markCompleted(const LibraryIndex::Book& book);
   void reset(const LibraryIndex::Book& book);
   void erase(const LibraryIndex::Book& book);
   void eraseFolder(const LibraryIndex::Book& folder);

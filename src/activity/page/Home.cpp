@@ -407,7 +407,7 @@ void Home::popup() const {
   const std::vector<std::string> items = heatmapPopupOpen
                                              ? std::vector<std::string>{"View Report"}
                                              : (favoritePopupOpen ? std::vector<std::string>{"Remove favorite"}
-                                                                   : std::vector<std::string>{"View description", "Remove Recent", "Delete cache"});
+                                                                   : std::vector<std::string>{"View description", "Mark as completed", "Remove Recent", "Delete cache"});
   const PopUpBounds box = PopUp::bounds(renderer, static_cast<int>(items.size()));
   PopUp::background(renderer, box);
   PopUp::title(renderer, box, heatmapPopupOpen ? "Heatmap" : (favoritePopupOpen ? "Favorite" : "Book"));
@@ -431,7 +431,7 @@ bool Home::popupInput() {
   float tapY = 0.0f;
   if (!mappedInput.wasTouchTapInScreen(renderer, tapX, tapY)) return false;
 
-  const PopUpBounds box = PopUp::bounds(renderer, heatmapPopupOpen || favoritePopupOpen ? 1 : 3);
+  const PopUpBounds box = PopUp::bounds(renderer, heatmapPopupOpen || favoritePopupOpen ? 1 : 4);
   const int x = static_cast<int>(tapX * renderer.getScreenWidth());
   const int y = static_cast<int>(tapY * renderer.getScreenHeight());
   if (x < box.x || x >= box.x + box.width || y < box.y || y >= box.y + box.height) {
@@ -470,11 +470,24 @@ bool Home::popupInput() {
       openHomeDescription(bookPath, bookCachePath);
     }
   } else if (item == 1) {
-    removeRecent();
+    markCompleted();
   } else if (item == 2) {
+    removeRecent();
+  } else if (item == 3) {
     deleteCache();
   }
   return true;
+}
+
+void Home::markCompleted() {
+  const std::vector<RecentBook>& books = RECENT_BOOKS.getBooks();
+  if (popupBook >= 0 && popupBook < static_cast<int>(books.size())) {
+    const RecentBook& book = books[static_cast<size_t>(popupBook)];
+    BOOK_STATE.setFinished(book.path, true, book.title);
+    RECENT_BOOKS.updateProgress(book.path, 1.0f);
+  }
+  popupBook = -1;
+  updateRequired = true;
 }
 
 void Home::removeRecent() {

@@ -156,8 +156,7 @@ String addLanguageManagerNavLink(const char* pageHtml, const char* currentUri = 
 *{box-sizing:border-box}
 body{background:var(--inx-page)!important;color:var(--inx-ink)!important;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif!important;min-height:100vh;overflow-x:hidden}
 .inx-rail{position:fixed;z-index:900;inset:0 auto 0 0;width:68px;background:#fff;border-right:1px solid var(--inx-line);display:flex;flex-direction:column;align-items:center;padding:18px 10px;gap:9px}
-.inx-brand{width:38px;height:38px;display:grid;place-items:center;margin-bottom:18px;color:var(--inx-orange);font-size:25px;font-weight:850;line-height:1}
-.inx-brand:before{content:"▰";transform:skew(-14deg);display:block}
+.inx-brand{width:48px;height:38px;display:grid;place-items:center;margin-bottom:18px;color:var(--inx-orange);font-family:"Avenir Next","Gill Sans","Trebuchet MS",sans-serif;font-size:16px;font-weight:900;letter-spacing:.08em;line-height:1;text-transform:uppercase;white-space:nowrap}
 .inx-rail-link{width:42px;height:42px;display:grid;place-items:center;border:1px solid transparent;border-radius:10px;color:#758087;text-decoration:none;font-size:19px;font-weight:650;line-height:1;transition:.15s ease}.inx-rail-link svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.inx-font-glyph{font-size:14px;letter-spacing:-.08em}
 .inx-plugin-launcher{width:42px;height:42px;display:grid;place-items:center;margin-top:4px;border:1px solid transparent;border-top:1px solid var(--inx-line);border-radius:5px;background:transparent;color:#758087;cursor:pointer;padding:9px 0 0;text-decoration:none;transition:.15s ease}.inx-plugin-launcher svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.inx-plugin-launcher:hover{color:var(--inx-orange);background:#f0f1f2}.inx-plugin-launcher.active{background:var(--inx-orange);color:#fff;box-shadow:0 5px 12px rgba(24,32,39,.18)}
 .inx-rail-link:hover{color:var(--inx-orange);background:#f0f1f2}
@@ -282,7 +281,7 @@ body{background:var(--inx-page)!important;color:var(--inx-ink)!important;font-fa
       {"/language-manager", "<svg viewBox=\"0 0 24 24\"><circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M3 12h18M12 3c2.3 2.5 3.4 5.5 3.4 9S14.3 18.5 12 21M12 3c-2.3 2.5-3.4 5.5-3.4 9S9.7 18.5 12 21\"/></svg>", "Language"},
       {"/settings", "<svg viewBox=\"0 0 24 24\"><path d=\"M19.43 12.98c.04-.32.07-.65.07-.98s-.02-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.37-.31-.6-.22l-2.49 1a7.4 7.4 0 0 0-1.69-.98l-.38-2.65A.51.51 0 0 0 14 2h-4a.51.51 0 0 0-.5.42l-.38 2.65c-.61.25-1.17.58-1.69.98l-2.49-1c-.23-.08-.48 0-.6.22l-2 3.46c-.12.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98s.02.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.12.22.37.31.6.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.04.24.25.42.5.42h4c.25 0 .46-.18.5-.42l.38-2.65c.61-.25 1.17-.58 1.69-.98l2.49 1c.23.08.48 0 .6-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65Z\"/><circle cx=\"12\" cy=\"12\" r=\"3\"/></svg>", "Settings"},
   };
-  String rail = "<aside class=inx-rail><a class=inx-brand href=/ aria-label=INX>▰</a>";
+  String rail = "<aside class=inx-rail><a class=inx-brand href=/ aria-label=INX>INX</a>";
   for (const auto& item : railItems) {
     rail += "<a class=inx-rail-link";
     if (active == item[0]) rail += " active aria-current=page";
