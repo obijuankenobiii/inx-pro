@@ -10,6 +10,7 @@
 #include <HardwareSerial.h>
 #include <OpdsStream.h>
 #include <WiFi.h>
+#include <esp_heap_caps.h>
 
 #include "activity/page/SubPage.h"
 #include "activity/page/components/global/Button.h"
@@ -23,6 +24,7 @@
 #include "util/UrlUtils.h"
 
 namespace {
+constexpr uint32_t kDisplayTaskStack = 8192;
 constexpr int PAGE_ITEMS = 8;
 constexpr int SKIP_PAGE_MS = 700;
 constexpr int kListItemHeight = Page::LIST_ITEM_HEIGHT;
@@ -94,7 +96,8 @@ void OpdsBookBrowserActivity::onEnter() {
     checkAndConnectWifi();
   }
 
-  xTaskCreate(&OpdsBookBrowserActivity::taskTrampoline, "OpdsBookBrowserTask", 4096, this, 1, &displayTaskHandle);
+  xTaskCreateWithCaps(&OpdsBookBrowserActivity::taskTrampoline, "OpdsBookBrowserTask", kDisplayTaskStack, this, 1,
+                      &displayTaskHandle, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 
   if (wifiAlreadyConnected) {
     checkAndConnectWifi();
@@ -109,7 +112,7 @@ void OpdsBookBrowserActivity::onExit() {
 
   xSemaphoreTake(renderingMutex, portMAX_DELAY);
   if (displayTaskHandle) {
-    vTaskDelete(displayTaskHandle);
+    vTaskDeleteWithCaps(displayTaskHandle);
     displayTaskHandle = nullptr;
   }
   vSemaphoreDelete(renderingMutex);

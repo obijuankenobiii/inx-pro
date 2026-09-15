@@ -7,6 +7,7 @@
 #include "system/UiLayout.h"
 
 #include <GfxRenderer.h>
+#include <esp_heap_caps.h>
 
 #include <cstring>
 
@@ -20,6 +21,7 @@
 constexpr int LIST_ITEM_HEIGHT = Page::LIST_ITEM_HEIGHT;
 
 namespace {
+constexpr uint32_t kDisplayTaskStack = 8192;
 constexpr int MENU_ITEMS = 6;
 const char* menuNames[MENU_ITEMS] = {"Username", "Password", "Sync Server URL", "Document Matching", "Sign Up",
                                      "Authenticate"};
@@ -38,7 +40,8 @@ void KOReaderSettingsActivity::onEnter() {
   selectedVisible = false;
   updateRequired = true;
 
-  xTaskCreate(&KOReaderSettingsActivity::taskTrampoline, "KOReaderSettingsTask", 4096, this, 1, &displayTaskHandle);
+  xTaskCreateWithCaps(&KOReaderSettingsActivity::taskTrampoline, "KOReaderSettingsTask", kDisplayTaskStack, this,
+                      1, &displayTaskHandle, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 }
 
 void KOReaderSettingsActivity::onExit() {
@@ -46,7 +49,7 @@ void KOReaderSettingsActivity::onExit() {
 
   xSemaphoreTake(renderingMutex, portMAX_DELAY);
   if (displayTaskHandle) {
-    vTaskDelete(displayTaskHandle);
+    vTaskDeleteWithCaps(displayTaskHandle);
     displayTaskHandle = nullptr;
   }
   vSemaphoreDelete(renderingMutex);

@@ -82,10 +82,11 @@ void renderPanelTab(const GfxRenderer& renderer, const int x, const int y, const
   }
 
   const int font = systemFontId();
-  const int textWidth = renderer.text.getWidth(font, label ? label : "");
+  const std::string shown = renderer.text.truncate(font, label ? label : "", std::max(1, width - 16));
+  const int textWidth = renderer.text.getUntranslatedWidth(font, shown.c_str());
   const int textY = y + (height - renderer.text.getLineHeight(font)) / 2;
   const int textX = x + (width - textWidth) / 2;
-  renderer.text.render(font, textX, textY, label ? label : "", !selected, EpdFontFamily::REGULAR);
+  renderer.text.renderUntranslated(font, textX, textY, shown.c_str(), !selected, EpdFontFamily::REGULAR);
 }
 
 std::vector<SettingInfo> buildSystemSettings() {

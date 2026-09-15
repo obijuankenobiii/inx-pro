@@ -16,10 +16,13 @@
 #include "../../freeink-sdk/libs/book/FreeInkBook/third_party/stb/stb_truetype.h"
 
 /** Construct an ExternalFont with no font loaded. */
-ExternalFont::ExternalFont() : m_fontData(nullptr) {}
+ExternalFont::ExternalFont() : m_fontData(nullptr) { allocateMetaCache(); }
 
 /** Unload the font and release its resources. */
-ExternalFont::~ExternalFont() { unload(); }
+ExternalFont::~ExternalFont() {
+  unload();
+  releaseMetaCache();
+}
 
 ExternalFont::GlyphBitmapCacheSlot* ExternalFont::s_bitmapCache = nullptr;
 uint32_t ExternalFont::s_bitmapCacheGen = 0;
@@ -29,6 +32,9 @@ ExternalFont::TtfSharedCacheSlot ExternalFont::s_ttfSharedCache[ExternalFont::kT
 uint32_t ExternalFont::s_ttfSharedCacheGeneration = 0;
 
 namespace {
+
+constexpr uint32_t kPackedFontMagic = 0x45504446u;
+constexpr uint32_t kPackedFontVersion = 1u;
 
 uint8_t* allocateFontBuffer(const size_t bytes, bool* inPsram) {
   if (inPsram) *inPsram = false;
@@ -83,12 +89,41 @@ float ttfScaleForPointSize(const stbtt_fontinfo* font, const uint16_t pointSize)
 
 /** Clear the per-instance glyph metadata cache. */
 void ExternalFont::metaCacheClear() {
+  if (!m_metaCache) return;
   for (size_t i = 0; i < kGlyphMetaCacheSlots; ++i) {
     m_metaCache[i].cp = 0xFFFFFFFFu;
     m_metaCache[i].stamp = 0;
     m_metaCache[i].glyph = EpdGlyph{};
   }
   m_metaCacheGen = 0;
+}
+
+void ExternalFont::allocateMetaCache() {
+#if defined(ARDUINO_ARCH_ESP32)
+  m_metaCache = static_cast<GlyphMetaCacheSlot*>(
+      heap_caps_calloc(kGlyphMetaCacheSlots, sizeof(GlyphMetaCacheSlot), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  m_metaCacheInPsram = m_metaCache != nullptr;
+#endif
+  if (!m_metaCache) {
+    m_metaCache = new (std::nothrow) GlyphMetaCacheSlot[kGlyphMetaCacheSlots]();
+    m_metaCacheInPsram = false;
+  }
+  metaCacheClear();
+}
+
+void ExternalFont::releaseMetaCache() {
+  if (!m_metaCache) return;
+#if defined(ARDUINO_ARCH_ESP32)
+  if (m_metaCacheInPsram) {
+    heap_caps_free(m_metaCache);
+  } else {
+    delete[] m_metaCache;
+  }
+#else
+  delete[] m_metaCache;
+#endif
+  m_metaCache = nullptr;
+  m_metaCacheInPsram = false;
 }
 
 /** Clear this font's entries from the shared bitmap cache. */
@@ -161,6 +196,7 @@ void ExternalFont::unload() {
   m_glyphTableStart = 0;
   m_glyphCount = 0;
   m_bitmapDataStart = 0;
+  m_fileSize = 0;
   m_hasAntiAliasData = false;
   metaCacheClear();
 }
@@ -188,21 +224,44 @@ bool ExternalFont::load(const char* path, const bool enableGlyphBitmapCache, con
   m_file = SdMan.open(path, FILE_READ);
   if (!m_file) return false;
 
+  const uint64_t fileSize = m_file.size();
+  if (fileSize == 0 || fileSize > UINT32_MAX) {
+    INX_SERIAL.printf("[ExternalFont] Invalid packed font size: %s\n", path);
+    return false;
+  }
+  m_fileSize = static_cast<uint32_t>(fileSize);
+
+  const auto readExact = [this](void* destination, const size_t length) {
+    return m_file.read(static_cast<uint8_t*>(destination), length) == length;
+  };
+
   uint32_t magic, version;
-  m_file.read(reinterpret_cast<uint8_t*>(&magic), 4);
-  m_file.read(reinterpret_cast<uint8_t*>(&version), 4);
+  if (!readExact(&magic, sizeof(magic)) || !readExact(&version, sizeof(version)) || magic != kPackedFontMagic ||
+      version != kPackedFontVersion) {
+    INX_SERIAL.printf("[ExternalFont] Invalid packed font header: %s\n", path);
+    return false;
+  }
 
   uint16_t nameLen;
-  m_file.read(reinterpret_cast<uint8_t*>(&nameLen), 2);
-  m_file.seek(m_file.position() + nameLen);
+  if (!readExact(&nameLen, sizeof(nameLen)) || nameLen > m_fileSize - m_file.position() ||
+      !m_file.seek(m_file.position() + nameLen)) {
+    INX_SERIAL.printf("[ExternalFont] Invalid packed font name: %s\n", path);
+    return false;
+  }
 
-  m_fontData = new EpdFontData();
+  m_fontData = new (std::nothrow) EpdFontData();
+  if (!m_fontData) return false;
   int16_t lineHeight, ascender, descender;
-  m_file.read(reinterpret_cast<uint8_t*>(&lineHeight), 2);
-  m_file.read(reinterpret_cast<uint8_t*>(&ascender), 2);
-  m_file.read(reinterpret_cast<uint8_t*>(&descender), 2);
+  if (!readExact(&lineHeight, sizeof(lineHeight)) || !readExact(&ascender, sizeof(ascender)) ||
+      !readExact(&descender, sizeof(descender))) {
+    INX_SERIAL.printf("[ExternalFont] Truncated packed font metrics: %s\n", path);
+    return false;
+  }
   uint8_t is2Bit;
-  m_file.read(&is2Bit, 1);
+  if (!readExact(&is2Bit, sizeof(is2Bit))) {
+    INX_SERIAL.printf("[ExternalFont] Truncated packed font format: %s\n", path);
+    return false;
+  }
 
   int lh = static_cast<int>(lineHeight);
   if (lh < 1) lh = 12;
@@ -218,15 +277,23 @@ bool ExternalFont::load(const char* path, const bool enableGlyphBitmapCache, con
   m_fontData->intervalCount = 0;
 
   uint16_t intervalCount;
-  m_file.read(reinterpret_cast<uint8_t*>(&intervalCount), 2);
-  m_file.seek(m_file.position() + (intervalCount * 12));
+  if (!readExact(&intervalCount, sizeof(intervalCount)) ||
+      static_cast<uint64_t>(intervalCount) * 12u > m_fileSize - m_file.position() ||
+      !m_file.seek(m_file.position() + (intervalCount * 12u))) {
+    INX_SERIAL.printf("[ExternalFont] Invalid packed font intervals: %s\n", path);
+    return false;
+  }
 
-  m_file.read(reinterpret_cast<uint8_t*>(&m_glyphCount), 4);
+  if (!readExact(&m_glyphCount, sizeof(m_glyphCount))) {
+    INX_SERIAL.printf("[ExternalFont] Missing packed font glyph count: %s\n", path);
+    return false;
+  }
   m_glyphTableStart = m_file.position();
 
-  const uint32_t tableBytes = m_glyphCount * 24u;
-  if (!m_file.seek(m_glyphTableStart + tableBytes)) {
-    INX_SERIAL.println("[ExternalFont] Seek past glyph table failed");
+  const uint64_t tableBytes = static_cast<uint64_t>(m_glyphCount) * 24u;
+  if (tableBytes > m_fileSize - m_glyphTableStart ||
+      !m_file.seek(m_glyphTableStart + static_cast<uint32_t>(tableBytes))) {
+    INX_SERIAL.printf("[ExternalFont] Invalid packed font glyph table: %s\n", path);
     return false;
   }
   m_bitmapDataStart = m_file.position();
@@ -237,16 +304,20 @@ bool ExternalFont::load(const char* path, const bool enableGlyphBitmapCache, con
   bitmapCacheClear();
   if (m_bitmapCacheEnabled) {
     INX_SERIAL.printf(
-        "[ExternalFont] On-demand glyph table: %u glyphs, mode=%s, aa=%d, meta %u-slot (~%u B), bitmap %u-slot x %u B "
-        "(~%u B)\n",
+        "[ExternalFont] On-demand glyph table: %u glyphs, mode=%s, aa=%d, meta %u-slot (~%u B, %s), bitmap %u-slot x "
+        "%u B (~%u B)\n",
         m_glyphCount, m_fontData->is2Bit ? "2bit" : "1bit", m_hasAntiAliasData ? 1 : 0,
-        static_cast<unsigned>(kGlyphMetaCacheSlots), static_cast<unsigned>(sizeof(m_metaCache)),
+        static_cast<unsigned>(kGlyphMetaCacheSlots),
+        static_cast<unsigned>(kGlyphMetaCacheSlots * sizeof(GlyphMetaCacheSlot)),
+        m_metaCacheInPsram ? "PSRAM" : "internal",
         static_cast<unsigned>(kGlyphBitmapCacheSlots), static_cast<unsigned>(kGlyphBitmapCacheMaxBytes),
         static_cast<unsigned>(kGlyphBitmapCacheSlots * sizeof(GlyphBitmapCacheSlot)));
   } else {
-    INX_SERIAL.printf("[ExternalFont] On-demand glyph table: %u glyphs, mode=%s, aa=0, meta %u-slot (~%u B), bitmap cache off\n",
-                  m_glyphCount, m_fontData->is2Bit ? "2bit" : "1bit",
-                  static_cast<unsigned>(kGlyphMetaCacheSlots), static_cast<unsigned>(sizeof(m_metaCache)));
+    INX_SERIAL.printf(
+        "[ExternalFont] On-demand glyph table: %u glyphs, mode=%s, aa=0, meta %u-slot (~%u B, %s), bitmap cache off\n",
+        m_glyphCount, m_fontData->is2Bit ? "2bit" : "1bit", static_cast<unsigned>(kGlyphMetaCacheSlots),
+        static_cast<unsigned>(kGlyphMetaCacheSlots * sizeof(GlyphMetaCacheSlot)),
+        m_metaCacheInPsram ? "PSRAM" : "internal");
   }
   return true;
 }
@@ -525,6 +596,7 @@ void ExternalFont::decodeGlyphRow(const uint8_t entry[24], EpdGlyph& out) const 
 
 /** Look up a glyph's metadata in the per-instance metadata cache. */
 bool ExternalFont::metaCacheLookup(uint32_t cp, EpdGlyph& out) {
+  if (!m_metaCache) return false;
   for (size_t i = 0; i < kGlyphMetaCacheSlots; ++i) {
     if (m_metaCache[i].cp == cp) {
       out = m_metaCache[i].glyph;
@@ -536,6 +608,7 @@ bool ExternalFont::metaCacheLookup(uint32_t cp, EpdGlyph& out) {
 }
 
 size_t ExternalFont::metaCacheStore(uint32_t cp, const EpdGlyph& g) {
+  if (!m_metaCache) return 0;
   size_t slot = 0;
   uint32_t bestStamp = 0xFFFFFFFFu;
   for (size_t i = 0; i < kGlyphMetaCacheSlots; ++i) {
@@ -613,6 +686,7 @@ bool ExternalFont::getGlyphMetadata(uint32_t cp, EpdGlyph& out) {
   if (m_glyphCount == 0) {
     return false;
   }
+  if (!m_metaCache) return false;
 
   if (metaCacheLookup(cp, out)) {
     return true;
@@ -650,6 +724,12 @@ bool ExternalFont::getGlyphMetadata(uint32_t cp, EpdGlyph& out) {
     return false;
   }
   decodeGlyphRow(entry, out);
+  const uint64_t pixelCount = static_cast<uint64_t>(out.width) * out.height;
+  const uint64_t requiredBytes = m_fontData->is2Bit ? (pixelCount + 3u) / 4u : (pixelCount + 7u) / 8u;
+  if (out.dataOffset > m_fileSize || out.dataLength < requiredBytes ||
+      out.dataLength > m_fileSize - out.dataOffset) {
+    return false;
+  }
   metaCacheStore(cp, out);
   return true;
 }
@@ -657,6 +737,7 @@ bool ExternalFont::getGlyphMetadata(uint32_t cp, EpdGlyph& out) {
 /** Build EpdGlyph metadata from the TrueType/OpenType face at the configured pixel size. */
 bool ExternalFont::getTtfGlyphMetadata(const uint32_t cp, EpdGlyph& out) {
   if (!m_isTtf || !m_fontData || !m_ttfData) return false;
+  if (!m_metaCache) return false;
   if (metaCacheLookup(cp, out)) return true;
 
   auto* font = reinterpret_cast<stbtt_fontinfo*>(m_ttfFontInfo);
@@ -756,6 +837,12 @@ bool ExternalFont::getTtfGlyphBitmap(const uint32_t offset, const uint32_t lengt
 bool ExternalFont::getGlyphBitmap(uint32_t absoluteOffset, uint32_t length, uint8_t* buffer) {
   if (length == 0) return true;
   if (!buffer) return false;
+
+  if (!m_isTtf && (absoluteOffset > m_fileSize || length > m_fileSize - absoluteOffset)) {
+    INX_SERIAL.printf("[ExternalFont] ERR: Glyph bitmap outside file bounds (%u + %u > %u)\n", absoluteOffset, length,
+                      m_fileSize);
+    return false;
+  }
 
   if (bitmapCacheLookup(absoluteOffset, length, buffer)) {
     return true;

@@ -45,6 +45,10 @@ class ExternalFont {
   bool metaCacheLookup(uint32_t cp, EpdGlyph& out);
   /** Store a glyph's metadata in the per-instance metadata cache, evicting the oldest entry if full. */
   size_t metaCacheStore(uint32_t cp, const EpdGlyph& g);
+  /** Allocate the large per-font metadata cache in PSRAM when available. */
+  void allocateMetaCache();
+  /** Release the per-font metadata cache. */
+  void releaseMetaCache();
   /** Clear the per-instance glyph metadata cache. */
   void metaCacheClear();
   /** Look up cached bitmap data for this font at offset/length, copying it into outputBuffer if found. */
@@ -85,7 +89,8 @@ class ExternalFont {
     uint32_t stamp = 0;
     EpdGlyph glyph{};
   };
-  GlyphMetaCacheSlot m_metaCache[kGlyphMetaCacheSlots];
+  GlyphMetaCacheSlot* m_metaCache = nullptr;
+  bool m_metaCacheInPsram = false;
   uint32_t m_metaCacheGen = 0;
 
   static constexpr size_t kGlyphBitmapCacheMaxBytes = 512;
@@ -105,6 +110,7 @@ class ExternalFont {
   EpdFontData* m_fontData;
   std::string m_filePath;
   FsFile m_file;
+  uint32_t m_fileSize = 0;
   uint32_t m_glyphTableStart = 0;
   uint32_t m_glyphCount = 0;
   uint32_t m_bitmapDataStart = 0;

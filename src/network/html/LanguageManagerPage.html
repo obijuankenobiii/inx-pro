@@ -10,22 +10,68 @@
     .container { max-width: 820px; margin: 0 auto; padding: 28px 18px 42px; }
     h1 { margin: 0 0 22px; text-align: center; font-size: 26px; color: #111; }
     .nav-links { display: flex; justify-content: center; gap: 2px; flex-wrap: wrap; margin-bottom: 22px; padding-bottom: 8px; border-bottom: 1px solid #ebebeb; }
-    .nav-btn { padding: 6px 12px; border-radius: 6px; color: #555; text-decoration: none; font-size: 13px; font-weight: 500; }
+    .nav-btn { padding: 6px 12px; border-radius: 5px; color: #555; text-decoration: none; font-size: 13px; font-weight: 500; }
     .nav-btn:hover { background: #eee; color: #111; }
     .nav-btn.active { background: #111; color: #fff; }
-    .card { margin-bottom: 18px; padding: 20px; border: 1px solid #eee; border-radius: 12px; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.05); }
+    .card { margin-bottom: 18px; padding: 20px; border: 1px solid #eee; border-radius: 5px; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.05); }
     .card h2 { margin: 0 0 5px; font-size: 18px; color: #1d1d1f; }
+    .section-heading, .editor-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+    .section-heading .hint, .editor-heading .hint { margin-bottom: 0; }
+    .editor-heading { margin-bottom: 18px; }
+    .editor-heading h2 { margin: 0 0 5px; }
+    .editor[hidden] { display: none; }
+    .editor { min-height: calc(100vh - 84px); }
+    .wizard { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 24px; align-items: start; }
+    .wizard-steps { position: sticky; top: 16px; padding: 12px 0; }
+    .wizard-step { position: relative; display: grid; grid-template-columns: 34px 1fr; gap: 10px; width: 100%; padding: 8px 0; border: 0; border-radius: 0; background: transparent; color: #555; text-align: left; }
+    .wizard-step:not(:last-child)::after { position: absolute; top: 42px; left: 16px; width: 1px; height: calc(100% - 5px); background: #d9d9dd; content: ''; }
+    .wizard-step.active { color: #111; }
+    .wizard-step.done { color: #555; }
+    .step-number { z-index: 1; display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid #c8c8ce; border-radius: 50%; background: #fafafa; font-size: 13px; font-weight: 700; }
+    .wizard-step.active .step-number { border-color: #111; background: #111; color: #fff; }
+    .wizard-step.done .step-number { border-color: #111; background: #fff; color: #111; }
+    .wizard-step strong, .wizard-step small { display: block; }
+    .wizard-step strong { padding-top: 1px; font-size: 14px; }
+    .wizard-step small { margin-top: 2px; color: #777; font-size: 11px; font-weight: 400; }
+    .wizard-main { display: flex; min-width: 0; flex-direction: column; }
+    .wizard-kicker { margin-bottom: 5px; color: #687386; font-size: 13px; }
+    .wizard-panel[hidden] { display: none; }
+    .wizard-actions { display: flex; justify-content: space-between; gap: 10px; margin-top: 16px; }
+    .wizard-actions .next { margin-left: auto; }
+    .radio-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 16px; }
+    .radio-card { display: flex; align-items: flex-start; gap: 10px; margin: 0; padding: 13px 14px; border: 1px solid #d9d9dd; border-radius: 5px; background: #fff; color: #333; cursor: pointer; font-size: 13px; font-weight: 400; }
+    .radio-card:has(input:checked) { border-color: #111; box-shadow: 0 0 0 1px #111; }
+    .radio-card input { flex: 0 0 auto; width: 17px; height: 17px; margin: 1px 0 0; accent-color: #111; }
+    .radio-card strong, .radio-card small { display: block; }
+    .radio-card strong { color: #111; font-size: 13px; }
+    .radio-card small { margin-top: 3px; color: #777; font-size: 11px; font-weight: 400; }
+    .translation-mode-panel[hidden] { display: none; }
+    .ai-prompt { margin-top: 16px; padding: 12px 14px; border: 1px solid #eee; border-radius: 5px; background: #fafafa; }
+    .ai-prompt p { margin: 0; color: #555; font-size: 12px; }
+    .ai-prompt .actions { margin-top: 10px; }
+    .menu-details.card > summary { padding: 0 0 9px; }
+    .menu-details.card .details-body { padding: 0 0 10px; }
+    .review-translations-body { max-height: calc(100vh - 300px); overflow-y: auto; }
+    .translation-editor[hidden] { display: none; }
+    details.card > summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; cursor: pointer; list-style: none; }
+    details.card > summary::-webkit-details-marker { display: none; }
+    details.card > summary::after { content: '+'; color: #777; font-size: 22px; line-height: 1; }
+    details.card[open] > summary::after { content: '−'; }
+    .details-body { padding: 0 14px 14px; }
     .hint { margin: 0 0 15px; color: #777; font-size: 12.5px; }
     .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     label { display: block; margin-bottom: 5px; color: #555; font-size: 12px; font-weight: 650; }
-    input[type=text], input[type=file] { width: 100%; padding: 10px 11px; border: 1px solid #d9d9dd; border-radius: 8px; background: #fff; color: #111; font: inherit; }
+    input[type=text], input[type=file] { width: 100%; padding: 10px 11px; border: 1px solid #d9d9dd; border-radius: 5px; background: #fff; color: #111; font: inherit; }
     input[type=file] { padding: 8px; font-size: 13px; }
     .translation-row { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(220px, 1.5fr); gap: 12px; align-items: center; padding: 8px 0; border-bottom: 1px solid #f0f0f0; }
     .translation-row:last-child { border-bottom: 0; }
     .translation-label { color: #555; font-size: 13px; }
     .translation-key { display: block; margin-top: 2px; color: #999; font-size: 10px; font-family: ui-monospace, monospace; }
     .actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; margin-top: 16px; }
-    button { padding: 10px 16px; border: 0; border-radius: 999px; background: #e8e8ed; color: #222; font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; }
+    .build-actions { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
+    .build-actions button { flex: 0 0 auto; }
+    .build-actions .progress { flex: 1 1 180px; margin-top: 0; }
+    button { padding: 10px 16px; border: 0; border-radius: 5px; background: #e8e8ed; color: #222; font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; }
     button:hover { background: #dcdce0; }
     button.primary { background: #111; color: #fff; }
     button.primary:hover { background: #333; }
@@ -35,76 +81,198 @@
     .status { min-height: 20px; margin-top: 12px; color: #666; font-size: 12px; }
     .status.error { color: #b3261e; }
     .status.success { color: #287b39; }
+    .progress { height: 4px; margin-top: 12px; overflow: hidden; border-radius: 3px; background: #ececf0; }
+    .progress-bar { width: 0; height: 100%; border-radius: inherit; background: #111; transition: width .18s ease; }
     .file-note { margin: 6px 0 0; color: #888; font-size: 11px; }
-    .custom-row { display: flex; gap: 8px; margin-top: 12px; }
-    .custom-row input { flex: 1; }
+    .font-coverage { margin-top: 16px; padding: 12px 14px; border: 1px solid #eee; border-radius: 5px; background: #fafafa; }
+    .font-coverage strong { color: #333; font-size: 12px; }
+    .font-coverage p { margin: 5px 0 0; color: #666; font-size: 11.5px; }
+    .font-language-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px 18px; margin: 7px 0 0; padding-left: 18px; color: #555; font-size: 11.5px; }
+    .custom-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .custom-row input { flex: 1 1 240px; min-width: 0; }
     .installed-language-list { display: grid; gap: 8px; }
     .installed-language-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid #f0f0f0; color: #333; font-size: 13px; }
     .installed-language-row:last-child { border-bottom: 0; }
+    #installedLanguagesPanel > .status:empty { display: none; }
     .installed-language-row input { width: 17px; height: 17px; }
+    .language-row-info { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .language-row-info span { min-width: 0; }
+    .language-row-actions { display: flex; align-items: center; gap: 10px; }
+    .language-row-actions button { padding: 7px 12px; font-size: 12px; }
+    .language-row-actions .delete { background: #fcebea; color: #b3261e; }
+    .language-row-actions .delete:hover { background: #f8d7d5; }
     @media (max-width: 650px) {
+      .wizard { grid-template-columns: 1fr; gap: 8px; }
+      .editor { min-height: calc(100vh - 48px); }
+      .wizard-steps { position: static; display: grid; grid-template-columns: repeat(7, minmax(86px, 1fr)); gap: 4px; overflow-x: auto; padding: 0 0 10px; }
+      .wizard-step { display: block; min-width: 86px; padding: 4px; text-align: center; }
+      .wizard-step:not(:last-child)::after { display: none; }
+      .step-number { margin: 0 auto 4px; }
+      .wizard-step strong { font-size: 11px; }
+      .wizard-step small { display: none; }
+      .radio-grid { grid-template-columns: 1fr; }
+      .section-heading, .editor-heading { align-items: stretch; flex-direction: column; gap: 10px; }
+      .section-heading > button, .editor-heading > button { align-self: flex-start; }
       .grid, .translation-row { grid-template-columns: 1fr; gap: 5px; }
+      .font-language-list { grid-template-columns: 1fr; }
       .translation-row { padding: 10px 0; }
       .actions button { flex: 1 1 140px; }
+      .build-actions { align-items: stretch; flex-wrap: wrap; }
+      .build-actions button, .build-actions .progress { flex: 1 1 100%; }
     }
   </style>
 </head>
 <body>
   <main class="container">
-    <section class="card">
-      <h2>Installed languages</h2>
-      <p class="hint">Languages with a translate.yml file on the device appear here. Enable one to use it for device menus, or turn it off to use English.</p>
+    <section id="installedLanguagesPanel" class="card">
+      <div class="section-heading">
+        <div>
+          <h2>Installed languages</h2>
+          <p class="hint">Enable a language for device menus, or choose Edit to update its translations and fonts.</p>
+        </div>
+        <button class="primary" type="button" onclick="beginAddLanguage()">Add language</button>
+      </div>
       <div id="installedLanguageList" class="installed-language-list"><div class="file-note">Loading languages...</div></div>
       <div id="languageSelectionStatus" class="status"></div>
     </section>
 
-    <section class="card">
-      <h2>Language package</h2>
-      <p class="hint">Create one package containing translations, language fonts, and optional hyphenation data.</p>
-      <div class="grid">
-        <div><label for="languageCode">Language code</label><input id="languageCode" type="text" value="cjk" placeholder="cjk or zh-CN"></div>
-        <div><label for="languageName">Display name</label><input id="languageName" type="text" value="CJK" placeholder="CJK"></div>
+    <div id="languageEditor" class="editor" hidden>
+      <div class="wizard">
+        <aside class="wizard-steps" aria-label="Language package steps">
+          <button type="button" class="wizard-step active" data-step="1" onclick="goToLanguageStep(1)"><span class="step-number">1</span><span><strong>Language details</strong><small>Code and display name</small></span></button>
+          <button type="button" class="wizard-step" data-step="2" onclick="goToLanguageStep(2)"><span class="step-number">2</span><span><strong>Upload or edit</strong><small>Translations</small></span></button>
+          <button type="button" class="wizard-step" data-step="3" onclick="goToLanguageStep(3)"><span class="step-number">3</span><span><strong>Review</strong><small>Translations</small></span></button>
+          <button type="button" class="wizard-step" data-step="4" onclick="goToLanguageStep(4)"><span class="step-number">4</span><span><strong>Fonts</strong><small>Optional</small></span></button>
+          <button type="button" class="wizard-step" data-step="5" onclick="goToLanguageStep(5)"><span class="step-number">5</span><span><strong>Hyphenation</strong><small>Optional</small></span></button>
+          <button type="button" class="wizard-step" data-step="6" onclick="goToLanguageStep(6)"><span class="step-number">6</span><span><strong>Build</strong><small>Copy to SD</small></span></button>
+          <button type="button" class="wizard-step" data-step="7" onclick="goToLanguageStep(7)"><span class="step-number">7</span><span><strong>Share</strong><small>Feature request</small></span></button>
+        </aside>
+
+        <section class="wizard-main">
+          <div class="wizard-kicker">Step <span id="wizardStepNumber">1</span> / 7</div>
+          <div class="editor-heading">
+            <div>
+              <h2 id="editorTitle">Add language</h2>
+              <p class="hint">Create or edit one language package step by step.</p>
+            </div>
+            <button type="button" onclick="closeLanguageEditor()">Back</button>
+          </div>
+
+          <div id="languageStep1" class="wizard-panel">
+            <section class="card">
+              <h2>Language details</h2>
+              <p class="hint">Set the language code and display name first. These details are included in the AI translation prompt and package.</p>
+              <div class="grid">
+                <div><label for="languageCode">Language code</label><input id="languageCode" type="text" value="" placeholder="e.g. de-DE"></div>
+                <div><label for="languageName">Display name</label><input id="languageName" type="text" value="" placeholder="Language name"></div>
+              </div>
+              <div id="translationStatusStep1" class="status"></div>
+            </section>
+          </div>
+
+          <div id="languageStep2" class="wizard-panel" hidden>
+            <section class="card">
+              <h2>Upload or edit manually</h2>
+              <p class="hint">Choose how you want to create the translations.</p>
+              <div class="radio-grid" role="radiogroup" aria-label="Translation input method">
+                <label class="radio-card"><input type="radio" name="translationMode" value="upload" checked onchange="setTranslationMode(this.value)"><span><strong>Upload translated YAML</strong><small>Use Gemini, ChatGPT, or another AI translator.</small></span></label>
+                <label class="radio-card"><input type="radio" name="translationMode" value="manual" onchange="setTranslationMode(this.value)"><span><strong>Edit manually</strong><small>Translate each menu value in the editor.</small></span></label>
+              </div>
+              <div id="translationUploadPanel" class="translation-mode-panel">
+                <div class="custom-row template-actions"><input id="translationYamlFile" type="file" accept=".yml,.yaml,text/yaml"><button type="button" onclick="loadTranslationYaml()">Upload from template</button><button type="button" onclick="downloadYamlTemplate()">Download Template</button></div>
+                <div class="ai-prompt">
+                  <p>Download the template, upload it to Gemini or ChatGPT, and ask it to translate only the values. Keep every key, placeholder, punctuation mark, and YAML structure unchanged.</p>
+                  <div class="actions"><button type="button" onclick="copyTranslationPrompt()">Copy AI translation prompt</button></div>
+                </div>
+                <p class="file-note">After the AI returns the translated YAML, choose it above and load it for review.</p>
+              </div>
+              <div id="translationStatusStep2" class="status"></div>
+            </section>
+          </div>
+
+          <div id="languageStep3" class="wizard-panel" hidden>
+            <section class="card">
+              <h2>Review</h2>
+              <p class="hint">Review the language details and translation values before continuing.</p>
+              <div class="grid">
+                <div><label>Language code</label><div id="reviewLanguageCode" class="file-note">—</div></div>
+                <div><label>Display name</label><div id="reviewLanguageName" class="file-note">—</div></div>
+              </div>
+            </section>
+          </div>
+
+          <details id="manualTranslationPanel" class="card menu-details translation-editor" hidden open>
+            <summary><h2>Translations</h2></summary>
+            <div class="details-body review-translations-body">
+              <p class="hint">English defaults are shown for reference. Edit the right-hand fields, then add any project-specific labels below.</p>
+              <div id="translationList"></div>
+              <div class="custom-row"><input id="customKey" type="text" placeholder="Custom key, e.g. menu.new_label"><input id="customLabel" type="text" placeholder="English label"><button type="button" onclick="addCustomTranslation()">Add label</button></div>
+            </div>
+          </details>
+
+          <div id="languageStep4" class="wizard-panel" hidden>
+            <section class="card">
+              <h2>Language fonts</h2>
+              <p class="hint">Optional. Selected TTF/OTF files are rasterized in the browser into 1-bit device .bin files at 10–18 pt.</p>
+              <div class="grid">
+                <div><label for="languageFontRegular">Regular</label><input id="languageFontRegular" type="file" accept=".ttf,.otf,.TTF,.OTF"></div>
+                <div><label for="languageFontBold">Bold</label><input id="languageFontBold" type="file" accept=".ttf,.otf,.TTF,.OTF"></div>
+                <div><label for="languageFontItalic">Italic</label><input id="languageFontItalic" type="file" accept=".ttf,.otf,.TTF,.OTF"></div>
+                <div><label for="languageFontBoldItalic">Bold italic</label><input id="languageFontBoldItalic" type="file" accept=".ttf,.otf,.TTF,.OTF"></div>
+              </div>
+              <label class="check"><input id="oneBit" type="checkbox" checked> Generate 1-bit glyphs instead of 2-bit grayscale</label>
+              <div class="font-coverage">
+                <strong>Languages that need an uploaded font</strong>
+                <p>The packer reads the uploaded font's glyph map and includes its non-ASCII glyphs. The reader's built-in fonts already cover common A–Z/ASCII characters, so upload a font for scripts such as:</p>
+                <ul class="font-language-list">
+                  <li>Cyrillic</li><li>Greek</li>
+                  <li>Vietnamese</li><li>Chinese (Simplified/Traditional)</li>
+                  <li>Japanese</li><li>Korean</li>
+                  <li>Arabic</li><li>Hebrew</li>
+                  <li>Hindi and other Indic scripts</li><li>Thai, Khmer, and Myanmar</li>
+                  <li>Georgian, Armenian, and Ethiopic</li>
+                </ul>
+              </div>
+            </section>
+          </div>
+
+          <div id="languageStep5" class="wizard-panel" hidden>
+            <section class="card">
+              <h2>Optional hyphenation</h2>
+              <p class="hint">Upload a hypher-generated binary trie. It is validated in the browser and copied unchanged as <code>hyphenation.bin</code>.</p>
+              <input id="hyphenationFile" type="file" accept=".bin,.trie.bin">
+            </section>
+          </div>
+
+          <div id="languageStep6" class="wizard-panel" hidden>
+            <section class="card">
+              <h2>Build package</h2>
+              <p class="hint">Build the package and copy it to the device.</p>
+              <div class="build-actions">
+                <div class="progress" aria-label="Build progress"><div id="progressBar" class="progress-bar"></div></div>
+                <button id="buildButton" class="primary" type="button" onclick="buildLanguagePackage()">Build &amp; copy to SD</button>
+              </div>
+              <div id="status" class="status"></div>
+            </section>
+          </div>
+
+          <div id="languageStep7" class="wizard-panel" hidden>
+            <section class="card">
+              <h2>Share your language</h2>
+              <p class="hint">Share your language to Inx so it can be added. Download the package, then create a <a href="https://github.com/obijuankenobiii/inx-store" target="_blank" rel="noopener noreferrer">GitHub</a> feature request and attach the ZIP file.</p>
+              <div class="actions">
+                <button id="shareDownloadButton" class="primary" type="button" onclick="downloadLanguageZip()" disabled>Download language package</button>
+              </div>
+            </section>
+          </div>
+
+          <div class="wizard-actions">
+            <button id="wizardBackButton" type="button" onclick="previousLanguageStep()">Back</button>
+            <button id="wizardNextButton" class="primary next" type="button" onclick="nextLanguageStep()">Next</button>
+          </div>
+        </section>
       </div>
-      <div class="custom-row"><input id="translationYamlFile" type="file" accept=".yml,.yaml,text/yaml"><button type="button" onclick="loadTranslationYaml()">Load prebuilt YAML</button></div>
-      <p class="file-note">Load a YAML file translated by an AI agent or prepared elsewhere, then review it before building the package.</p>
-    </section>
-
-    <section class="card">
-      <h2>Menu translations</h2>
-      <p class="hint">English defaults are shown for reference. Edit the right-hand fields, then add any project-specific labels below.</p>
-      <div id="translationList"></div>
-      <div class="custom-row"><input id="customKey" type="text" placeholder="Custom key, e.g. menu.new_label"><input id="customLabel" type="text" placeholder="English label"><button type="button" onclick="addCustomTranslation()">Add label</button></div>
-      <div class="actions"><button type="button" onclick="downloadYamlTemplate()">Download YAML template</button></div>
-    </section>
-
-    <section class="card">
-      <h2>Language fonts</h2>
-      <p class="hint">Optional. Leave fonts empty when updating an existing translation; selected fonts are converted to the device’s compiled format at 10–18 pt.</p>
-      <div class="grid">
-        <div><label for="languageFontRegular">Regular</label><input id="languageFontRegular" type="file" accept=".ttf,.otf,.TTF,.OTF"></div>
-        <div><label for="languageFontBold">Bold</label><input id="languageFontBold" type="file" accept=".ttf,.otf,.TTF,.OTF"></div>
-        <div><label for="languageFontItalic">Italic</label><input id="languageFontItalic" type="file" accept=".ttf,.otf,.TTF,.OTF"></div>
-        <div><label for="languageFontBoldItalic">Bold italic</label><input id="languageFontBoldItalic" type="file" accept=".ttf,.otf,.TTF,.OTF"></div>
-      </div>
-      <label class="check"><input id="cjkGlyphs" type="checkbox" checked> Include CJK glyph ranges (large package; use a licensed CJK font)</label>
-      <label class="check"><input id="oneBit" type="checkbox"> Generate 1-bit glyphs instead of 2-bit grayscale</label>
-      <p class="file-note">CJK ranges include punctuation, kana, common and extension-A ideographs, compatibility ideographs, and full-width forms.</p>
-    </section>
-
-    <section class="card">
-      <h2>Optional hyphenation</h2>
-      <p class="hint">Upload a hypher-generated binary trie. The existing Python helper converts this .bin into a firmware header; it does not generate the trie on the device.</p>
-      <input id="hyphenationFile" type="file" accept=".bin,.trie.bin">
-    </section>
-
-    <section class="card">
-      <div class="actions">
-        <button id="buildButton" class="primary" type="button" onclick="buildLanguagePackage()">Build files</button>
-        <button id="saveButton" type="button" onclick="saveLanguageToDevice()" disabled>Copy to SD</button>
-        <button id="downloadButton" type="button" onclick="downloadLanguageZip()" disabled>Download ZIP</button>
-      </div>
-      <div id="status" class="status"></div>
-    </section>
+    </div>
   </main>
   <script src="/js/inx_font_pack.js"></script>
   <script>
@@ -140,11 +308,15 @@
       ['library.type', 'Type'], ['library.options', 'Options'], ['library.hide_finished', 'Hide finished books'],
       ['action.yes', 'Yes'], ['action.no', 'No'], ['library.mark_favorite', 'Mark as favorite'],
       ['library.delete_book', 'Delete Book'], ['action.reset', 'Reset'],
-      ['wifi.networks', 'WiFi Networks'], ['wifi.searching', 'Searching for connections...'],
+      ['wifi.networks', 'WiFi Networks'], ['wifi.enter_password', 'Enter WiFi Password'],
+      ['wifi.searching', 'Searching for connections...'],
       ['wifi.no_networks', 'No networks found'], ['wifi.scan_again', 'Press Connect to scan again'],
       ['wifi.locked', '(Locked)'], ['action.connect', 'Connect'], ['wifi.connecting', 'Connecting to'],
       ['wifi.please_wait', 'Please wait...'], ['wifi.network', 'Network:'], ['action.continue', 'Continue'],
       ['wifi.forget_prompt', 'Forget network and remove saved password?'], ['wifi.forget', 'Forget network'],
+      ['wifi.cancel_selected', '[Cancel]'], ['wifi.forget_selected', '[Forget network]'],
+      ['wifi.error_general', 'Error: General failure'], ['wifi.error_network_not_found', 'Error: Network not found'],
+      ['wifi.error_timeout', 'Error: Connection timeout'],
       ['wifi.mac_address', 'MAC address: %02x-%02x-%02x-%02x-%02x-%02x'],
       ['wifi.networks_found', '%zu networks found'],
       ['wifi.hotspot', 'Hotspot'], ['wifi.hotspot_start_failed', 'Could not start hotspot'],
@@ -155,6 +327,62 @@
       ['wifi.press_back_return', 'Press Back to return'], ['wifi.calibre', 'CALIBRE'],
       ['wifi.download_and_install', 'Download and install'], ['wifi.crosspoint_calibre', 'CrossPoint Calibre'],
       ['wifi.plugin', 'plugin'], ['wifi.calibre_instruction', 'Choose Send to device in Calibre'],
+      ['opds.server', 'OPDS Server'], ['opds.add_server', 'Add OPDS server'],
+      ['opds.server_name', 'OPDS Server Name'], ['opds.server_url', 'OPDS Server URL'],
+      ['opds.username', 'OPDS Username'], ['opds.password', 'OPDS Password'],
+      ['opds.checking_wifi', 'Checking WiFi...'], ['opds.loading', 'Loading...'], ['opds.error', 'Error:'],
+      ['opds.downloading', 'Downloading...'], ['opds.no_entries', 'No entries found'],
+      ['opds.no_server_url', 'No server URL configured'], ['opds.fetch_failed', 'Failed to fetch feed'],
+      ['opds.parse_failed', 'Failed to parse feed'], ['opds.download_failed', 'Download failed'],
+      ['opds.wifi_failed', 'WiFi connection failed'],
+      ['backup.create', 'Create backup'], ['backup.restore', 'Restore backup'],
+      ['backup.creating', 'Creating backup'], ['backup.restoring', 'Restoring backup'],
+      ['backup.complete', 'Backup complete'], ['backup.incomplete', 'Backup incomplete'],
+      ['backup.restore_complete', 'Restore complete'], ['backup.restore_incomplete', 'Restore incomplete'],
+      ['backup.saved', 'Saved in /.system/backup'], ['backup.restored', 'State restored from backup'],
+      ['backup.copy_failed', 'Some files could not be copied'], ['backup.copy_summary', '%d copied, %d skipped, %d failed'],
+      ['action.menu', 'Menu'],
+      ['koreader.title', 'KOReader'], ['koreader.username', 'Username'], ['koreader.password', 'Password'],
+      ['koreader.server_url', 'Sync Server URL'], ['koreader.document_matching', 'Document Matching'],
+      ['koreader.sign_up', 'Sign Up'], ['koreader.authenticate', 'Authenticate'],
+      ['koreader.not_set', 'Not Set'], ['koreader.set', 'Set'], ['koreader.filename', 'Filename'],
+      ['koreader.binary', 'Binary'],
+      ['koreader.credentials_required', 'Set credentials first'],
+      ['koreader.username_prompt', 'KOReader Username'], ['koreader.password_prompt', 'KOReader Password'],
+      ['koreader.sign_up_title', 'KOReader Sign Up'], ['koreader.auth_title', 'KOReader Auth'],
+      ['koreader.creating_account', 'Creating account...'], ['koreader.authenticating', 'Authenticating...'],
+      ['koreader.account_created', 'Account created!'], ['koreader.authenticated', 'Successfully authenticated!'],
+      ['koreader.username_exists', 'Username is already registered'], ['koreader.success', 'Success!'],
+      ['koreader.ready', 'KOReader sync is ready to use'], ['koreader.sign_up_failed', 'Sign-up failed'],
+      ['koreader.auth_failed', 'Authentication Failed'], ['action.done', 'Done'],
+      ['ota.update', 'Update'], ['ota.installing_title', 'INSTALLING UPDATE'],
+      ['ota.installing_firmware', 'Installing firmware'], ['ota.keep_powered', 'Please keep the device powered on.'],
+      ['ota.preparing', 'Preparing package'], ['ota.online', 'Online update'], ['ota.sd_firmware', 'SD card firmware'],
+      ['ota.choose_network', 'Choose a network above.'], ['ota.wait', 'This may take a moment.'],
+      ['ota.package', 'Firmware package'], ['ota.current_version', 'CURRENT VERSION'],
+      ['ota.available_update', 'AVAILABLE UPDATE'], ['ota.package_label', 'PACKAGE'],
+      ['ota.no_files', 'No firmware .bin files found.'], ['ota.put_files', 'Put .bin files in / or /firmware.'],
+      ['ota.sd_firmware_title', 'SD FIRMWARE'], ['ota.install_question', 'Install update?'],
+      ['ota.keep_powered_install', 'Keep the device powered on during install.'],
+      ['ota.file_missing', 'Firmware file is missing.'], ['ota.no_update', 'No update available'],
+      ['ota.failed', 'Update failed'], ['ota.complete', 'Update complete'],
+      ['ota.power_cycle', 'Press and hold power button to turn back on'],
+      ['dictionary.choose', 'Choose dictionary'], ['dictionary.none', 'No dictionaries found.'],
+      ['dictionary.install_hint', 'Put StarDict folders under /dictionaries/'],
+      ['device_info.firmware', 'FIRMWARE'], ['device_info.board', 'BOARD'], ['device_info.display', 'DISPLAY'],
+      ['device_info.chip', 'CHIP'], ['device_info.flash', 'FLASH'], ['device_info.psram', 'PSRAM'],
+      ['device_info.free_heap', 'FREE HEAP'], ['device_info.esp_idf', 'ESP-IDF'],
+      ['device_info.mac_address', 'MAC ADDRESS'], ['device_info.unknown', 'Unknown'],
+      ['time.select_timezone', 'Select timezone'], ['time.sync', 'Sync time'],
+      ['time.search_timezone', 'Search timezone'], ['time.no_matching_timezones', 'No matching timezones'],
+      ['time.select_network', 'Select network'], ['time.loading_timezones', 'Loading timezones'],
+      ['time.synced', 'Time synced'], ['time.sync_failed', 'Time sync failed'],
+      ['time.select_wifi', 'Select a WiFi network'], ['time.wifi_not_connected', 'WiFi was not connected'],
+      ['time.downloading_timezones', 'Downloading complete timezone list'],
+      ['time.load_failed', 'Could not load timezones'], ['time.automatic_network', 'Automatic (network)'],
+      ['time.applying_timezone', 'Applying timezone'], ['time.apply_failed', 'Could not apply timezone'],
+      ['time.syncing', 'Syncing from pool.ntp.org'], ['time.ntp_failed', 'NTP did not return time'],
+      ['time.saved_to_rtc', '%02u:%02u saved to RTC'], ['time.synced_at', '%02u:%02u synced'],
       ['menu.button_gestures', 'Button & Gestures'], ['menu.font_family', 'Font Family'],
       ['menu.text_antialiasing', 'Text Anti-Aliasing'], ['menu.sleep_screen', 'Sleep Screen'],
       ['menu.time_to_sleep', 'Time to Sleep'], ['menu.boot_mode', 'Boot Mode'], ['menu.theme', 'Theme'],
@@ -191,9 +419,13 @@
       ['action.generate_authors', 'Generate Authors'], ['action.new_preset', 'New preset +'],
       ['action.choose_sleep_image', 'Choose sleep image'], ['action.save', 'Save'], ['action.cancel', 'Cancel'],
       ['action.edit', 'Edit'], ['action.rename', 'Rename'], ['action.delete', 'Delete'], ['action.default', 'Default'],
-      ['action.retry', 'Retry'], ['action.download', 'Download'], ['action.back', 'Back'], ['action.open', 'Open'],
+      ['action.retry', 'Retry'], ['action.download', 'Download'], ['action.back', 'Back'], ['action.previous', 'Prev'],
+      ['action.open', 'Open'],
       ['action.page_previous', 'Page -'], ['action.page_next', 'Page +'],
       ['action.up', 'Up'], ['action.down', 'Down'], ['action.select', 'Select'], ['action.toggle', 'Toggle'],
+      ['keyboard.space', 'SPACE'], ['keyboard.delete', 'DEL'],
+      ['keyboard.caps', 'CAPS'], ['keyboard.shift', 'SHIFT'], ['keyboard.num', 'NUM'],
+      ['keyboard.symbol', 'SYMBOL'],
       ['action.discard', 'Discard'],
       ['action.no_actions', 'No actions available.'],
       ['preset.name_prompt', 'Name this preset'], ['preset.rename_prompt', 'Rename preset'],
@@ -256,11 +488,76 @@
       ['value.80_min', '80 min'], ['value.85_min', '85 min'], ['value.90_min', '90 min'],
       ['value.95_min', '95 min'], ['value.100_min', '100 min'], ['value.105_min', '105 min'],
       ['value.110_min', '110 min'], ['value.115_min', '115 min'], ['value.120_min', '120 min'],
+      ['library.mark_completed', 'Mark as completed'], ['library.favorites', 'Favorites'],
+      ['library.no_plugin_items', 'No items in this plugin view'],
+      ['library.generate_authors_first', 'Generate authors in Settings first'],
+      ['library.no_books_in_folder', 'No books in this folder'],
+      ['library.build_index_first', 'Build the library index first'],
+      ['search.no_matching_books', 'No matching books'], ['home.view_description', 'View description'],
+      ['heatmap.tap_day', 'Tap a heatmap day'], ['heatmap.no_books_recorded', 'No books recorded'],
+      ['statistics.books_read', 'Books read'], ['statistics.of_your_books', 'of your books'],
+      ['statistics.are_finished', 'are finished.'], ['statistics.books_finished', 'Books finished'],
+      ['statistics.books_opened', 'Books opened'], ['statistics.no_recent_book', 'No recent book'],
+      ['statistics.book_progress', 'Book progress: %.0f%%'], ['action.ok', 'OK'],
+      ['action.install', 'Install'], ['action.disable', 'Disable'],
+      ['menu.store', 'Store'], ['menu.plugin_manager', 'Plugin Manager'],
+      ['store.font', 'Font'], ['store.font_description', 'Browse and install reading fonts'],
+      ['store.language_description', 'Add translations and system languages'],
+      ['store.dictionary', 'Dictionary'], ['store.dictionary_description', 'Browse and install dictionaries'],
+      ['store.plugins', 'Plugins'], ['store.plugins_description', 'Explore optional reading extensions'],
+      ['store.coming_soon', 'Coming soon...'],
+      ['plugin.study_cards.name', 'Anki Export'],
+      ['plugin.study_cards.description', 'Adds anki supported export'],
+      ['plugin.study_cards.add', 'Add to study'], ['plugin.series.name', 'Series'],
+      ['plugin.series.description', 'Group books into reading series'],
+      ['plugin.series.description_full', 'Group books into reading series and open the next book.'],
+      ['plugin.series.open_next', 'Open next book'], ['plugin.tap_to_install', 'Tap a plugin to install it.'],
+      ['plugin.no_plugins', 'No plugins available.'],
+      ['plugin.disabled', 'Plugin disabled. Card data was kept.'],
+      ['plugin.remove_failed', 'Plugin removal failed.'], ['plugin.installed', 'Plugin installed.'],
+      ['plugin.install_failed', 'Plugin installation failed.'],
+      ['plugin.download_start_failed', 'Could not start download.'],
+      ['plugin.downloading', 'Downloading and installing...'],
+      ['plugin.series.web.title', 'Series'], ['plugin.series.web.no_series', 'No series yet'],
+      ['plugin.series.web.new_series_name', 'New series name'], ['plugin.series.web.new_series', 'New series'],
+      ['plugin.series.web.refresh', 'Refresh'], ['plugin.series.web.building_index', 'Building library index…'],
+      ['plugin.series.web.loading_index', 'Loading library index…'],
+      ['plugin.series.web.index_unavailable', 'Library index is not available. Build it before grouping books.'],
+      ['plugin.series.web.index_unavailable_short', 'The library index is not available.'],
+      ['plugin.series.web.build_index', 'Build library index'], ['plugin.series.web.books', 'Books'],
+      ['plugin.series.web.collapse', 'Collapse'], ['plugin.series.web.show_books', 'Show books'],
+      ['plugin.series.web.search_books', 'Search books'], ['plugin.series.web.choose_series', 'Choose or create a series'],
+      ['plugin.series.web.empty_prompt', 'Choose an existing series or create one, then drag books here.'],
+      ['plugin.series.web.drag_order', 'Drag books to set the order'],
+      ['plugin.series.web.save_changes', 'Save changes'], ['plugin.series.web.no_matching_books', 'No matching books.'],
+      ['plugin.series.web.in_series', 'In this series'], ['plugin.series.web.not_in_series', 'Not in a series'],
+      ['plugin.series.web.add_book', 'Add book'], ['plugin.series.web.remove_book', 'Remove book'],
+      ['plugin.series.web.drop_books', 'Drop books here to build this series.'],
+      ['plugin.series.web.saving', 'Saving series…'], ['plugin.series.web.saved', 'Series saved.'],
+      ['plugin.series.web.created', 'Series created'],
+      ['plugin.series.web.create_prompt', 'Create a series to begin.'],
+      ['plugin.series.web.drag_prompt', 'Drag books into a series, reorder them, then save once.'],
+      ['plugin.series.web.name_required', 'Enter a series name first.'],
+      ['plugin.series.web.discard_prompt', 'Discard unsaved series changes?'],
+      ['plugin.series.web.refresh_running', 'Library index refresh is still running. Tap again when it finishes.'],
+      ['plugin.study_cards.web.title', 'Anki Export'], ['plugin.study_cards.web.loading_summary', 'Loading...'],
+      ['plugin.study_cards.web.download_json', 'Download JSON'],
+      ['plugin.study_cards.web.download_anki', 'Download for Anki'],
+      ['plugin.study_cards.web.loading', 'Loading cards...'], ['plugin.study_cards.web.front', 'Front'],
+      ['plugin.study_cards.web.back', 'Back / answer'],
+      ['plugin.study_cards.web.answer_placeholder', 'Write the answer shown on the back of this card'],
+      ['plugin.study_cards.web.save_answer', 'Save answer'], ['plugin.study_cards.web.saved', 'Saved'],
+      ['plugin.study_cards.web.empty', 'No study cards yet. Select text in a book and choose “Add to study”.'],
+      ['plugin.study_cards.web.unavailable', 'Unavailable'],
+      ['plugin.study_cards.web.load_failed', 'Could not load cards'],
+      ['plugin.study_cards.web.save_failed', 'Could not save answer'],
+      ['plugin.study_cards.web.export_failed', 'Could not export cards'],
       ['value.on', 'On']
     ];
-    const CJK_RANGES = [[0x3000, 0x303f], [0x3040, 0x30ff], [0x3400, 0x4dbf], [0x4e00, 0x9fff], [0xf900, 0xfaff], [0xff00, 0xffef]];
     const customTranslations = [];
     let generated = null;
+    let translationInputReady = false;
+    let currentWizardStep = 1;
 
     function esc(value) { return String(value || '').replace(/[&<>\"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c])); }
     function renderTranslations() {
@@ -270,6 +567,207 @@
         const label = Array.isArray(item) ? item[1] : item.label;
         return '<div class="translation-row"><div class="translation-label">' + esc(label) + '<span class="translation-key">' + esc(key) + '</span></div><input type="text" data-translation-index="' + index + '" data-translation-key="' + esc(key) + '" value="' + esc(label) + '"></div>';
       }).join('');
+    }
+    function resetEditorFiles() {
+      ['translationYamlFile', 'languageFontRegular', 'languageFontBold', 'languageFontItalic', 'languageFontBoldItalic', 'hyphenationFile'].forEach(id => {
+        const input = document.getElementById(id);
+        if (input) input.value = '';
+      });
+    }
+    function setTranslationMode(mode) {
+      const manual = mode === 'manual';
+      document.getElementById('translationUploadPanel').hidden = manual;
+      updateTranslationEditorVisibility();
+    }
+    function updateTranslationEditorVisibility() {
+      const panel = document.getElementById('manualTranslationPanel');
+      const mode = document.querySelector('input[name="translationMode"]:checked');
+      if (!panel) return;
+      panel.hidden = currentWizardStep !== 3 && !(currentWizardStep === 2 && mode && mode.value === 'manual');
+    }
+    function setTranslationStatus(message, error, success) {
+      const status = ['translationStatusStep1', 'translationStatusStep2']
+        .map(id => document.getElementById(id))
+        .find(element => element && !element.closest('[hidden]'));
+      if (!status) return;
+      status.textContent = message || '';
+      status.className = 'status' + (error ? ' error' : success ? ' success' : '');
+    }
+    async function copyText(text) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        return;
+      }
+      const area = document.createElement('textarea');
+      area.value = text;
+      area.style.position = 'fixed';
+      area.style.opacity = '0';
+      document.body.appendChild(area);
+      area.focus();
+      area.select();
+      if (!document.execCommand('copy')) throw new Error('Clipboard access is unavailable.');
+      area.remove();
+    }
+    async function copyTranslationPrompt() {
+      let code;
+      try {
+        code = packageCode();
+      } catch (error) {
+        return setTranslationStatus(error.message, true);
+      }
+      const name = document.getElementById('languageName').value.trim();
+      if (!name) return setTranslationStatus('Enter a display name before copying the AI prompt.', true);
+      const prompt = 'Translate the attached Inx language YAML template into ' + name + ' (' + code + ').\n\n' +
+        'Create a downloadable file named translate.yml containing the complete valid YAML. Do not answer with an explanation or plain prose. If your AI interface cannot attach a file, return only the complete YAML in one code block so it can be saved as translate.yml. Translate only values under translations:; do not translate, remove, rename, reorder, or add keys. Preserve every placeholder (including %zu, %.0f%%, and %02x), punctuation, capitalization rules, and newline escapes. Keep the code and name fields valid. If a value is a technical label or proper name, keep it clear and natural for the target language.';
+      try {
+        await copyText(prompt);
+        setTranslationStatus('AI translation prompt copied. Paste it into Gemini or ChatGPT with the downloaded YAML template.', false, true);
+      } catch (error) {
+        setTranslationStatus(error.message || 'Could not copy the AI translation prompt.', true);
+      }
+    }
+    function updateReviewSummary() {
+      const code = document.getElementById('languageCode');
+      const name = document.getElementById('languageName');
+      const reviewCode = document.getElementById('reviewLanguageCode');
+      const reviewName = document.getElementById('reviewLanguageName');
+      if (reviewCode) reviewCode.textContent = code && code.value.trim() ? code.value.trim() : '—';
+      if (reviewName) reviewName.textContent = name && name.value.trim() ? name.value.trim() : '—';
+    }
+    function validateTranslationInput() {
+      const mode = document.querySelector('input[name="translationMode"]:checked');
+      if (!validateLanguageDetails()) return false;
+      if (mode && mode.value === 'manual') {
+        translationInputReady = true;
+      } else if (!translationInputReady) {
+        setTranslationStatus('Upload a translated YAML template before continuing to Review.', true);
+        return false;
+      }
+      updateReviewSummary();
+      return true;
+    }
+    function validateLanguageDetails() {
+      try {
+        packageCode();
+        if (!document.getElementById('languageName').value.trim()) throw new Error('Enter a display name.');
+      } catch (error) {
+        setTranslationStatus(error.message, true);
+        return false;
+      }
+      updateReviewSummary();
+      return true;
+    }
+    function updateLanguageWizard() {
+      document.querySelectorAll('.wizard-panel').forEach(panel => {
+        panel.hidden = panel.id !== 'languageStep' + currentWizardStep;
+      });
+      document.querySelectorAll('.wizard-step').forEach(step => {
+        const number = Number(step.dataset.step);
+        step.classList.toggle('active', number === currentWizardStep);
+        step.classList.toggle('done', number < currentWizardStep);
+        step.setAttribute('aria-current', number === currentWizardStep ? 'step' : 'false');
+      });
+      document.getElementById('wizardStepNumber').textContent = currentWizardStep;
+      document.getElementById('wizardBackButton').hidden = currentWizardStep === 1;
+      document.getElementById('wizardNextButton').textContent = currentWizardStep === 7 ? 'Done' : 'Next';
+      document.getElementById('shareDownloadButton').disabled = !generated || !generated.zipBlob;
+      updateTranslationEditorVisibility();
+      updateReviewSummary();
+    }
+    function goToLanguageStep(step) {
+      const nextStep = Math.max(1, Math.min(7, Number(step) || 1));
+      if (nextStep >= 2 && currentWizardStep === 1 && !validateLanguageDetails()) return;
+      if (nextStep >= 3 && currentWizardStep <= 2 && !validateTranslationInput()) return;
+      if (nextStep === 7 && !generated) {
+        return setStatus('Build the language package before sharing it.', true);
+      }
+      currentWizardStep = nextStep;
+      updateLanguageWizard();
+    }
+    function nextLanguageStep() {
+      if (currentWizardStep === 1 && !validateLanguageDetails()) return;
+      if (currentWizardStep === 2 && !validateTranslationInput()) return;
+      if (currentWizardStep === 6 && !generated) {
+        return setStatus('Build and copy the language package before continuing.', true);
+      }
+      if (currentWizardStep === 7) return closeLanguageEditor();
+      goToLanguageStep(currentWizardStep + 1);
+    }
+    function previousLanguageStep() {
+      if (currentWizardStep > 1) goToLanguageStep(currentWizardStep - 1);
+    }
+    function openLanguageEditor(title) {
+      const editor = document.getElementById('languageEditor');
+      document.getElementById('installedLanguagesPanel').hidden = true;
+      document.getElementById('editorTitle').textContent = title;
+      editor.hidden = false;
+      currentWizardStep = 1;
+      updateLanguageWizard();
+      editor.scrollIntoView({behavior: 'smooth', block: 'start'});
+    }
+    function closeLanguageEditor() {
+      document.getElementById('languageEditor').hidden = true;
+      document.getElementById('installedLanguagesPanel').hidden = false;
+      generated = null;
+      translationInputReady = false;
+      currentWizardStep = 1;
+      setStatus('');
+      updateInstalledLanguages();
+    }
+    function beginAddLanguage() {
+      generated = null;
+      translationInputReady = false;
+      document.getElementById('languageCode').value = '';
+      document.getElementById('languageName').value = '';
+      customTranslations.length = 0;
+      resetEditorFiles();
+      renderTranslations();
+      document.querySelector('input[name="translationMode"][value="upload"]').checked = true;
+      setTranslationMode('upload');
+      setTranslationStatus('');
+      document.getElementById('manualTranslationPanel').open = true;
+      document.getElementById('progressBar').style.width = '0%';
+      document.getElementById('shareDownloadButton').disabled = true;
+      openLanguageEditor('Add language');
+    }
+    function applyTranslationData(parsed) {
+      if (!parsed.code || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/.test(parsed.code)) {
+        throw new Error('The YAML must contain a valid code field.');
+      }
+      document.getElementById('languageCode').value = parsed.code;
+      document.getElementById('languageName').value = parsed.name || parsed.code;
+      customTranslations.length = 0;
+      const knownKeys = new Set(TRANSLATIONS.map(item => item[0]));
+      Object.keys(parsed.translations || {}).forEach(key => {
+        if (key && !knownKeys.has(key)) customTranslations.push({key, label: key});
+      });
+      renderTranslations();
+      Object.entries(parsed.translations || {}).forEach(([key, value]) => {
+        const input = Array.from(document.querySelectorAll('[data-translation-key]')).find(element => element.dataset.translationKey === key);
+        if (input) input.value = value;
+      });
+      translationInputReady = true;
+      updateReviewSummary();
+    }
+    async function beginEditLanguage(code) {
+      generated = null;
+      translationInputReady = false;
+      openLanguageEditor('Edit language');
+      setStatus('Loading ' + code + '…');
+      try {
+        const response = await fetch('/api/language/package?code=' + encodeURIComponent(code));
+        if (!response.ok) throw new Error(await response.text() || 'Could not load the language package.');
+        applyTranslationData(parseTranslationYaml(await response.text()));
+        resetEditorFiles();
+        document.querySelector('input[name="translationMode"][value="manual"]').checked = true;
+        setTranslationMode('manual');
+        document.getElementById('manualTranslationPanel').open = true;
+        document.getElementById('progressBar').style.width = '0%';
+        setTranslationStatus('Loaded ' + code + '. Review and edit the translation values in Translations.', false, true);
+      } catch (error) {
+        closeLanguageEditor();
+        setLanguageSelectionStatus(error.message || 'Could not load the language package.', true);
+      }
     }
     function addCustomTranslation() {
       const key = document.getElementById('customKey').value.trim();
@@ -312,23 +810,10 @@
       if (!file) return setStatus('Choose a .yml or .yaml file first.', true);
       try {
         const parsed = parseTranslationYaml(await file.text());
-        if (!parsed.code || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/.test(parsed.code)) {
-          throw new Error('The YAML must contain a valid code field.');
-        }
-        document.getElementById('languageCode').value = parsed.code;
-        document.getElementById('languageName').value = parsed.name || parsed.code;
-        customTranslations.length = 0;
-        const knownKeys = new Set(TRANSLATIONS.map(item => item[0]));
-        Object.keys(parsed.translations).forEach(key => {
-          if (key && !knownKeys.has(key)) customTranslations.push({key, label: key});
-        });
-        renderTranslations();
-        Object.entries(parsed.translations).forEach(([key, value]) => {
-          const input = Array.from(document.querySelectorAll('[data-translation-key]')).find(element => element.dataset.translationKey === key);
-          if (input) input.value = value;
-        });
-        setStatus('Loaded ' + Object.keys(parsed.translations).length + ' translations from ' + file.name + '.', false, true);
-      } catch (error) { setStatus('Could not load YAML: ' + (error.message || error), true); }
+        applyTranslationData(parsed);
+        document.getElementById('manualTranslationPanel').open = true;
+        setTranslationStatus('Loaded ' + Object.keys(parsed.translations).length + ' translations from ' + file.name + '. Continue to Review the values in Translations.', false, true);
+      } catch (error) { setTranslationStatus('Could not load YAML: ' + (error.message || error), true); }
     }
     function setStatus(message, error, success) {
       const status = document.getElementById('status');
@@ -350,7 +835,9 @@
           const code = language.code || '';
           const name = code ? (language.name || code) : 'English';
           const marker = code ? code : 'default';
-          return '<label class="installed-language-row"><span>' + esc(name) + '<small class="translation-key">' + esc(marker) + '</small></span><input type="checkbox" data-language-code="' + esc(code) + '" ' + (code === activeLanguageCode ? 'checked' : '') + ' onchange="setActiveLanguage(this)"></label>';
+          const edit = code ? '<button type="button" onclick="beginEditLanguage(\'' + esc(code) + '\')">Edit</button>' : '';
+          const remove = code ? '<button class="delete" type="button" onclick="deleteInstalledLanguage(\'' + esc(code) + '\')">Delete</button>' : '';
+          return '<div class="installed-language-row"><label class="language-row-info"><input type="checkbox" data-language-code="' + esc(code) + '" ' + (code === activeLanguageCode ? 'checked' : '') + ' onchange="setActiveLanguage(this)"><span>' + esc(name) + '<small class="translation-key">' + esc(marker) + '</small></span></label><div class="language-row-actions">' + edit + remove + '</div></div>';
         }).join('');
       } catch (error) {
         list.innerHTML = '<div class="file-note">' + esc(error.message || 'Unable to load installed languages.') + '</div>';
@@ -370,6 +857,19 @@
       } catch (error) {
         setLanguageSelectionStatus(error.message || 'Could not select language.', true);
         await updateInstalledLanguages();
+      }
+    }
+    async function deleteInstalledLanguage(code) {
+      const language = Array.from(document.querySelectorAll('[data-language-code]')).find(input => input.dataset.languageCode === code);
+      const name = language ? language.parentElement.querySelector('span').firstChild.textContent.trim() : code;
+      if (!window.confirm('Delete ' + name + ' (' + code + ')? This removes its translations and fonts from the device.')) return;
+      try {
+        const response = await fetch('/api/language', {method: 'DELETE', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({code})});
+        if (!response.ok) throw new Error(await response.text() || 'Could not remove language.');
+        setLanguageSelectionStatus('Language removed.', false, true);
+        await updateInstalledLanguages();
+      } catch (error) {
+        setLanguageSelectionStatus(error.message || 'Could not remove language.', true);
       }
     }
     function setLanguageSelectionStatus(message, error, success) {
@@ -394,8 +894,13 @@
       return new Blob([yaml], {type: 'text/yaml'});
     }
     function downloadYamlTemplate() {
-      let code = document.getElementById('languageCode').value.trim();
-      if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/.test(code)) code = 'xx';
+      let code;
+      try {
+        code = packageCode();
+        if (!document.getElementById('languageName').value.trim()) throw new Error('Enter a display name before downloading the template.');
+      } catch (error) {
+        return setTranslationStatus(error.message, true);
+      }
       const blob = buildYaml(code, true);
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
@@ -404,13 +909,31 @@
       setTimeout(() => URL.revokeObjectURL(link.href), 1000);
       setStatus('Downloaded translate-template.yml. You can give it to an AI agent to translate.', false, true);
     }
+    function setBuildProgress(percent, message) {
+      const value = Math.max(0, Math.min(100, Math.round(percent || 0)));
+      document.getElementById('progressBar').style.width = value + '%';
+      if (message) setStatus(value + '% — ' + message, false, value >= 100);
+    }
+    async function prepareHyphenationFile(file) {
+      if (!file) return null;
+      const bytes = await file.arrayBuffer();
+      if (bytes.byteLength < 8) throw new Error('Hyphenation file is too small.');
+      const view = new DataView(bytes);
+      const rootOffset = view.getUint32(0, false);
+      if (rootOffset < 4 || rootOffset >= bytes.byteLength) {
+        throw new Error('Invalid hypher trie: root offset is outside the file.');
+      }
+      return new Blob([bytes], {type: 'application/octet-stream'});
+    }
     async function buildLanguagePackage() {
       const regular = document.getElementById('languageFontRegular').files[0];
+      const hyphenation = document.getElementById('hyphenationFile').files[0];
       let code;
       try { code = packageCode(); } catch (error) { return setStatus(error.message, true); }
       const button = document.getElementById('buildButton');
       button.disabled = true;
-      setStatus(regular ? 'Rasterizing language font; CJK packages may take several minutes…' : 'Preparing translation-only package…');
+      document.getElementById('shareDownloadButton').disabled = true;
+      setBuildProgress(0, regular ? 'Preparing font rasterization…' : 'Preparing language package…');
       try {
         const bins = regular ? await InxFontPack.buildAllBins({
             regular,
@@ -418,17 +941,23 @@
             italic: document.getElementById('languageFontItalic').files[0] || null,
             boldItalic: document.getElementById('languageFontBoldItalic').files[0] || null,
             oneBit: document.getElementById('oneBit').checked,
-            codepointRanges: document.getElementById('cjkGlyphs').checked ? CJK_RANGES : undefined,
-            onLog: message => setStatus(message, false, true)
+            onProgress: (done, total, label) => {
+              const fraction = total ? done / total : 0;
+              setBuildProgress(fraction * 92, label);
+            },
+            onLog: () => {}
           }) : [];
-        generated = {code, yaml: buildYaml(code), bins, hyphenation: document.getElementById('hyphenationFile').files[0] || null};
-        document.getElementById('saveButton').disabled = false;
-        document.getElementById('downloadButton').disabled = false;
-        setStatus(regular ? 'Built ' + bins.length + ' font files' + (generated.hyphenation ? ' and hyphenation data.' : '.') : 'Built translation-only package.', false, true);
+        setBuildProgress(100, regular ? 'Fonts built.' : 'Language package prepared.');
+        generated = {code, yaml: buildYaml(code), bins, hyphenation: await prepareHyphenationFile(hyphenation), zipBlob: null};
+        setStatus('Preparing download package…');
+        generated.zipBlob = await createLanguageZip(generated);
+        setBuildProgress(99, 'Copying language files to SD…');
+        if (!await saveLanguageToDevice()) throw new Error('Could not copy the language package to SD.');
+        document.getElementById('shareDownloadButton').disabled = !generated.zipBlob;
+        setBuildProgress(100, 'Installed');
       } catch (error) {
         generated = null;
-        document.getElementById('saveButton').disabled = true;
-        document.getElementById('downloadButton').disabled = true;
+        document.getElementById('shareDownloadButton').disabled = true;
         setStatus('Build failed: ' + (error.message || error), true);
       } finally { button.disabled = false; }
     }
@@ -445,7 +974,6 @@
     }
     async function saveLanguageToDevice() {
       if (!generated) return setStatus('Build the language files first.', true);
-      const saveButton = document.getElementById('saveButton'); saveButton.disabled = true;
       try {
         const code = generated.code;
         await mkdirQuiet('/', '.system'); await mkdirQuiet('/.system', 'lang'); await mkdirQuiet('/.system/lang', code);
@@ -458,24 +986,28 @@
         const active = await fetch('/api/language', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({code})});
         if (!active.ok) throw new Error(await active.text() || 'Could not activate language');
         await updateInstalledLanguages();
-        setStatus('Language files copied to /.system/lang/' + code + '/ and /fonts/lang/' + code + '/.', false, true);
+        return true;
       } catch (error) { setStatus('Copy failed: ' + (error.message || error), true); }
-      finally { saveButton.disabled = false; }
+      return false;
     }
     async function loadZipLibrary() {
       if (window.JSZip) return;
       await new Promise((resolve, reject) => { const script = document.createElement('script'); script.src = '/js/jszip.min.js'; script.onload = resolve; script.onerror = () => reject(new Error('ZIP library unavailable')); document.head.appendChild(script); });
     }
+    async function createLanguageZip(packageData) {
+      await loadZipLibrary();
+      const zip = new JSZip();
+      zip.file('lang/' + packageData.code + '/translate.yml', packageData.yaml);
+      for (const bin of packageData.bins) zip.file('fonts/lang/' + packageData.code + '/' + bin.filename, bin.blob);
+      if (packageData.hyphenation) zip.file('lang/' + packageData.code + '/hyphenation.bin', packageData.hyphenation);
+      return zip.generateAsync({type: 'blob', compression: 'DEFLATE'});
+    }
     async function downloadLanguageZip() {
       if (!generated) return setStatus('Build the language files first.', true);
-      const button = document.getElementById('downloadButton'); button.disabled = true;
+      const button = document.getElementById('shareDownloadButton'); button.disabled = true;
       try {
-        await loadZipLibrary();
-        const zip = new JSZip();
-        zip.file('lang/' + generated.code + '/translate.yml', generated.yaml);
-        for (const bin of generated.bins) zip.file('fonts/lang/' + generated.code + '/' + bin.filename, bin.blob);
-        if (generated.hyphenation) zip.file('lang/' + generated.code + '/hyphenation.bin', generated.hyphenation);
-        const blob = await zip.generateAsync({type: 'blob', compression: 'DEFLATE'});
+        const blob = generated.zipBlob || await createLanguageZip(generated);
+        generated.zipBlob = blob;
         const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = generated.code + '.zip'; link.click();
         setTimeout(() => URL.revokeObjectURL(link.href), 1000);
         setStatus('Downloaded ' + generated.code + '.zip.', false, true);

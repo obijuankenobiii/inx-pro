@@ -12,6 +12,9 @@ class TextRender {
   explicit TextRender(GfxRenderer& g) : gfx(g) {}
 
   int getWidth(int fontId, const char* text, EpdFontFamily::Style style = EpdFontFamily::REGULAR) const;
+  /** Measures the source text without applying the active UI translation. */
+  int getUntranslatedWidth(int fontId, const char* text,
+                           EpdFontFamily::Style style = EpdFontFamily::REGULAR) const;
   int getHeight(int fontId) const;
   int getFontAscenderSize(int fontId) const;
   int getLineHeight(int fontId) const;
@@ -28,6 +31,9 @@ class TextRender {
                    EpdFontFamily::Style style = EpdFontFamily::REGULAR) const;
   void render(int fontId, int x, int y, const char* text, bool black = true,
               EpdFontFamily::Style style = EpdFontFamily::REGULAR) const;
+  /** Renders source text without applying the active UI translation. */
+  void renderUntranslated(int fontId, int x, int y, const char* text, bool black = true,
+                          EpdFontFamily::Style style = EpdFontFamily::REGULAR) const;
   /** Renders text as a light checkerboard gray in the 1-bit framebuffer. */
   void renderGray(int fontId, int x, int y, const char* text, bool black = true,
                   EpdFontFamily::Style style = EpdFontFamily::REGULAR) const;

@@ -260,6 +260,10 @@ void PluginManagerActivity::render() {
       renderer.bitmap.icon(installed && index == selectedPackage_ && showCompletionCheck_ ? Check
                                                                                            : (installed ? Trash : Download),
                            iconX, y + (kRowHeight - kIconSize) / 2, kIconSize, kIconSize);
+      if (index + 1 < packages_.size()) {
+        renderer.line.render(kSideMargin, y + kRowHeight - 1, screenW - kSideMargin, y + kRowHeight - 1, true,
+                             LineRender::Style::Dotted);
+      }
     }
     const auto& selected = packages_[std::min(selectedPackage_, packages_.size() - 1)];
     mappedInput.mapLabels("\xC2\xAB Back", PluginManager::isInstalled(selected) ? "Disable" : "Install", "", "");

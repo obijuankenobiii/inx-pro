@@ -1,6 +1,7 @@
 #include "OpdsServerListActivity.h"
 
 #include <GfxRenderer.h>
+#include <esp_heap_caps.h>
 
 #include "activity/page/SubPage.h"
 #include "activity/util/KeyboardEntryActivity.h"
@@ -12,6 +13,7 @@
 #include "system/UiLayout.h"
 
 namespace {
+constexpr uint32_t kDisplayTaskStack = 8192;
 constexpr int kListItemHeight = Page::LIST_ITEM_HEIGHT;
 }
 
@@ -37,7 +39,8 @@ void OpdsServerListActivity::onEnter() {
 
   renderer.syncWriteBufferFromActive();
 
-  xTaskCreate(&OpdsServerListActivity::taskTrampoline, "OpdsServerListTask", 4096, this, 1, &displayTaskHandle);
+  xTaskCreateWithCaps(&OpdsServerListActivity::taskTrampoline, "OpdsServerListTask", kDisplayTaskStack, this, 1,
+                      &displayTaskHandle, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 }
 
 /** Stops the display task and cleans up rendering resources. */
@@ -46,7 +49,7 @@ void OpdsServerListActivity::onExit() {
 
   xSemaphoreTake(renderingMutex, portMAX_DELAY);
   if (displayTaskHandle) {
-    vTaskDelete(displayTaskHandle);
+    vTaskDeleteWithCaps(displayTaskHandle);
     displayTaskHandle = nullptr;
   }
   vSemaphoreDelete(renderingMutex);

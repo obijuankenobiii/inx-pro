@@ -22,6 +22,7 @@
 #include "state/RecentBooks.h"
 #include "state/SystemSetting.h"
 #include "system/Fonts.h"
+#include "system/LanguageManager.h"
 #include "system/MappedInputManager.h"
 
 namespace {
@@ -275,7 +276,8 @@ void BackupRestoreActivity::renderDone() {
                          true, EpdFontFamily::BOLD);
 
   char line[80];
-  snprintf(line, sizeof(line), "%d copied, %d skipped, %d failed", copiedCount_, skippedCount_, failedCount_);
+  snprintf(line, sizeof(line), LanguageManager::translateText("%d copied, %d skipped, %d failed"), copiedCount_,
+           skippedCount_, failedCount_);
   renderer.text.centered(systemFontId(), centerY, line, true);
   renderer.text.centered(kMetaFont, centerY + 34,
                          ok ? (action_ == Action::Backup ? "Saved in /.system/backup" : "State restored from backup")

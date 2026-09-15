@@ -699,8 +699,10 @@ void Library::title() const {
   const int font = MONTSERRAT_16_FONT_ID;
   const int textY = navigation::Menu::topPadding +
                     (navigation::Menu::iconSize - renderer.text.getLineHeight(font)) / 2;
-  renderer.text.render(font, navigation::Menu::leftMargin + navigation::Menu::iconSize + 12, textY, "Library", true,
-                       EpdFontFamily::BOLD);
+  const int textX = navigation::Menu::leftMargin + navigation::Menu::iconSize + 12;
+  const int maxTextWidth = std::max(1, buttonX(0) - 12 - textX);
+  const std::string shown = renderer.text.truncate(font, "Library", maxTextWidth, EpdFontFamily::BOLD);
+  renderer.text.renderUntranslated(font, textX, textY, shown.c_str(), true, EpdFontFamily::BOLD);
 }
 
 void Library::select(const int index, const bool longPress) {
@@ -1380,9 +1382,11 @@ void Library::filterPopup() const {
     const bool selected = static_cast<int>(filterTab) == tab;
     const EpdFontFamily::Style style = selected ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR;
     const int columnX = tabAreaX + tab * tabColumnWidth;
-    const int textWidth = renderer.text.getWidth(font, kTabLabels[tab], style);
+    const int maxTextWidth = std::max(1, tabColumnWidth - 8);
+    const std::string shown = renderer.text.truncate(font, kTabLabels[tab], maxTextWidth, style);
+    const int textWidth = renderer.text.getUntranslatedWidth(font, shown.c_str(), style);
     const int textX = columnX + (tabColumnWidth - textWidth) / 2;
-    renderer.text.render(font, textX, tabTextY, kTabLabels[tab], true, style);
+    renderer.text.renderUntranslated(font, textX, tabTextY, shown.c_str(), true, style);
   }
 
   if (filterTab == FilterTab::Title) {
@@ -1414,10 +1418,12 @@ void Library::filterPopup() const {
     renderer.bitmap.icon(LibraryFilterRight, rightX, arrowY, arrowSize, arrowSize);
     const bool allSelected = filterIndex == 9;
     if (allSelected) renderer.rectangle.fill(allX, allY, selectorSize, selectorSize, true, true, true);
-    const int allWidth = renderer.text.getWidth(font, "All", EpdFontFamily::BOLD);
+    const std::string allLabel = renderer.text.truncate(font, "All", std::max(1, selectorSize - 8),
+                                                        EpdFontFamily::BOLD);
+    const int allWidth = renderer.text.getUntranslatedWidth(font, allLabel.c_str(), EpdFontFamily::BOLD);
     const int allYText = allY + (selectorSize - renderer.text.getLineHeight(font)) / 2;
-    renderer.text.render(font, panelX + (panelWidth - allWidth) / 2, allYText, "All", !allSelected,
-                         EpdFontFamily::BOLD);
+    renderer.text.renderUntranslated(font, panelX + (panelWidth - allWidth) / 2, allYText, allLabel.c_str(),
+                                     !allSelected, EpdFontFamily::BOLD);
   } else if (filterTab == FilterTab::Type) {
     constexpr int typeOptionCount = 5;
     for (int index = 0; index < typeOptionCount; ++index) {
@@ -1430,18 +1436,23 @@ void Library::filterPopup() const {
       const bool selected = index == typeFilterIndex;
       if (selected) renderer.rectangle.fill(selectorX, selectorY, selectorSize, selectorSize, true, true, true);
       const char* label = typeFilterLabel(index);
-      const int textWidth = renderer.text.getWidth(font, label, EpdFontFamily::BOLD);
+      const std::string shown = renderer.text.truncate(font, label, std::max(1, cellWidth - 8),
+                                                       EpdFontFamily::BOLD);
+      const int textWidth = renderer.text.getUntranslatedWidth(font, shown.c_str(), EpdFontFamily::BOLD);
       const int textY = cellY + (cellHeight - renderer.text.getLineHeight(font)) / 2;
-      renderer.text.render(font, cellX + (cellWidth - textWidth) / 2, textY, label, !selected,
-                           EpdFontFamily::BOLD);
+      renderer.text.renderUntranslated(font, cellX + (cellWidth - textWidth) / 2, textY, shown.c_str(), !selected,
+                                       EpdFontFamily::BOLD);
     }
   } else {
     const int rowY = gridY;
     const int rowHeight = cellHeight;
     const int textY = rowY + (rowHeight - renderer.text.getLineHeight(font)) / 2;
-    renderer.text.render(font, panelX + padding, textY, "Hide finished books", true, EpdFontFamily::REGULAR);
-    Toggle::render(renderer, panelX + panelWidth - padding, rowY, rowHeight,
-                   SETTINGS.hideFinishedBooks != 0);
+    const ToggleBounds toggle = Toggle::bounds(panelX + panelWidth - padding, rowY, rowHeight);
+    const int maxTextWidth = std::max(1, toggle.x - (panelX + padding) - 10);
+    const std::string shown = renderer.text.truncate(font, "Hide finished books", maxTextWidth,
+                                                     EpdFontFamily::REGULAR);
+    renderer.text.renderUntranslated(font, panelX + padding, textY, shown.c_str(), true, EpdFontFamily::REGULAR);
+    Toggle::render(renderer, toggle, SETTINGS.hideFinishedBooks != 0);
   }
 }
 

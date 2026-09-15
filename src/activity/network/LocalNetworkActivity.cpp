@@ -9,6 +9,7 @@
 #include <GfxRenderer.h>
 #include <WiFi.h>
 #include <esp_task_wdt.h>
+#include <esp_heap_caps.h>
 #include <qrcode.h>
 
 #include "activity/page/SubPage.h"
@@ -84,7 +85,9 @@ void LocalNetworkActivity::onEnter() {
   enterNewActivity(
       new WifiSelectionActivity(renderer, mappedInput, [this](bool connected) { onWifiSelectionComplete(connected); }));
 
-  xTaskCreate(&LocalNetworkActivity::taskTrampoline, "LocalNetTask", 4096, this, 1, &displayTaskHandle);
+  constexpr uint32_t LOCALNET_DISPLAY_TASK_STACK = 8192;
+  xTaskCreateWithCaps(&LocalNetworkActivity::taskTrampoline, "LocalNetTask", LOCALNET_DISPLAY_TASK_STACK, this, 1,
+                      &displayTaskHandle, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 }
 
 /**
@@ -95,11 +98,12 @@ void LocalNetworkActivity::onExit() {
 
   stopWebServer();
   MDNS.end();
+  wifiSelectionResultPending = false;
 
   if (renderingMutex) {
     xSemaphoreTake(renderingMutex, portMAX_DELAY);
     if (displayTaskHandle) {
-      vTaskDelete(displayTaskHandle);
+      vTaskDeleteWithCaps(displayTaskHandle);
       displayTaskHandle = nullptr;
     }
     vSemaphoreDelete(renderingMutex);
@@ -112,28 +116,12 @@ void LocalNetworkActivity::onExit() {
  * @param connected True if WiFi connection successful
  */
 void LocalNetworkActivity::onWifiSelectionComplete(const bool connected) {
-  if (!connected) {
-    INX_SERIAL.printf("[%lu] [LOCALNET] WiFi selection cancelled\n", millis());
-    if (onGoBack) onGoBack();
-    return;
-  }
-
-  if (subActivity) {
-    connectedIP = static_cast<WifiSelectionActivity*>(subActivity.get())->getConnectedIP();
-  }
-  connectedSSID = WiFi.SSID().c_str();
-
-  INX_SERIAL.printf("[%lu] [LOCALNET] Connected to %s, IP: %s\n", millis(), connectedSSID.c_str(), connectedIP.c_str());
-
-  exitActivity();
-  state = LocalNetworkState::SERVER_STARTING;
-  updateRequired = true;
-
-  if (MDNS.begin(AP_HOSTNAME)) {
-    INX_SERIAL.printf("[%lu] [LOCALNET] mDNS started: http://%s.local/\n", millis(), AP_HOSTNAME);
-  }
-
-  startWebServer();
+  // The callback is invoked from inside WifiSelectionActivity::loop(). Defer
+  // destroying that child until its loop has returned to avoid freeing the
+  // object while it is still unwinding its connection-success path.
+  wifiSelectionConnected = connected;
+  wifiSelectionResultPending = true;
+  INX_SERIAL.printf("[%lu] [LOCALNET] WiFi selection result queued connected=%d\n", millis(), connected);
 }
 
 /**
@@ -175,6 +163,30 @@ void LocalNetworkActivity::stopWebServer() {
 void LocalNetworkActivity::loop() {
   if (subActivity) {
     subActivity->loop();
+    if (wifiSelectionResultPending) {
+      const bool connected = wifiSelectionConnected;
+      wifiSelectionResultPending = false;
+      if (!connected) {
+        INX_SERIAL.printf("[%lu] [LOCALNET] WiFi selection cancelled\n", millis());
+        exitActivity();
+        if (onGoBack) onGoBack();
+        return;
+      }
+
+      connectedIP = static_cast<WifiSelectionActivity*>(subActivity.get())->getConnectedIP();
+      connectedSSID = WiFi.SSID().c_str();
+      INX_SERIAL.printf("[%lu] [LOCALNET] Connected to %s, IP: %s\n", millis(), connectedSSID.c_str(),
+                        connectedIP.c_str());
+      exitActivity();
+      state = LocalNetworkState::SERVER_STARTING;
+      updateRequired = true;
+
+      if (MDNS.begin(AP_HOSTNAME)) {
+        INX_SERIAL.printf("[%lu] [LOCALNET] mDNS started: http://%s.local/\n", millis(), AP_HOSTNAME);
+      }
+
+      startWebServer();
+    }
     return;
   }
 

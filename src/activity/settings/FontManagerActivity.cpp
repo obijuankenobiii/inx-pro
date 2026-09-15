@@ -211,11 +211,12 @@ bool FontManagerActivity::matchesCategory(const FontPackageManager::Package& pac
 }
 
 ButtonBounds FontManagerActivity::categoryFilterBounds() const {
-  return {kSideMargin, pageBodyTop(), kCategoryFilterWidth, kFilterHeight};
+  return {renderer.getScreenWidth() - kSideMargin - kCategoryFilterWidth, pageBodyTop(), kCategoryFilterWidth,
+          kFilterHeight};
 }
 
 void FontManagerActivity::categoryFilterDropdown() const {
-  const int x = kSideMargin;
+  const int x = renderer.getScreenWidth() - kSideMargin - kCategoryFilterWidth;
   const int y = pageBodyTop() + kFilterHeight;
   const int height = categoryFilterCount() * kCategoryFilterRowHeight + 1;
   const char* labels[] = {"All", "Sans Serif", "Serif"};
@@ -235,7 +236,7 @@ void FontManagerActivity::categoryFilterDropdown() const {
 }
 
 void FontManagerActivity::handleCategoryFilterTap(const int tapX, const int tapY) {
-  const int x = kSideMargin;
+  const int x = renderer.getScreenWidth() - kSideMargin - kCategoryFilterWidth;
   const int y = pageBodyTop() + kFilterHeight;
   const int height = categoryFilterCount() * kCategoryFilterRowHeight + 1;
   if (tapX >= x && tapX < x + kCategoryFilterWidth && tapY >= y && tapY < y + height) {

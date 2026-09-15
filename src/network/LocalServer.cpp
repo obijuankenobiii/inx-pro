@@ -27,6 +27,7 @@
 #include "../state/SystemSetting.h"
 #include "../system/LanguageManager.h"
 #include "../system/PluginManager.h"
+#include "../util/SdIoMutex.h"
 #ifndef INX_SIMULATOR_WEB_ONLY
 #include "activity/reader/Epub/GeminiTranscription.h"
 #endif
@@ -41,6 +42,7 @@
 #include "html/JsZipMinJs.generated.h"
 #include "html/QrCreatorLogoJs.generated.h"
 #include "html/SettingsPageHtml.generated.h"
+#include "system/LanguagePackageManager.h"
 #ifndef INX_SIMULATOR_WEB_ONLY
 #include "state/BookState.h"
 #include "state/RecentBooks.h"
@@ -605,6 +607,8 @@ void LocalServer::begin() {
   server->on("/api/settings", HTTP_POST, [this] { handleSettingsUpdate(); });
   server->on("/api/language", HTTP_GET, [this] { handleLanguageGet(); });
   server->on("/api/language", HTTP_POST, [this] { handleLanguageUpdate(); });
+  server->on("/api/language", HTTP_DELETE, [this] { handleLanguageDelete(); });
+  server->on("/api/language/package", HTTP_GET, [this] { handleLanguagePackageGet(); });
 
   server->on("/api/wifi", HTTP_GET, [this] { handleWifiGet(); });
   server->on("/api/wifi", HTTP_POST, [this] { handleWifiPost(); });
@@ -2157,39 +2161,26 @@ void LocalServer::handleSettingsGet() const {
                                   : SETTINGS.sleepScreen;
 
   doc["clockAvailable"] = clockAvailable;
+  doc["flickPageTurnAvailable"] =
+#if FREEINK_DEVICE_STICKY
+      true;
+#else
+      false;
+#endif
   doc["sleepScreen"] = sleepScreen;
   doc["sleepScreenCoverMode"] = SETTINGS.sleepScreenCoverMode;
   doc["sleepScreenCoverFilter"] = SETTINGS.sleepScreenCoverFilter;
   doc["sleepImageQuality"] = SETTINGS.sleepImageQuality;
-  doc["sleepScreenCoverGrayscale"] = SETTINGS.sleepImageQuality;
-  doc["sleepImageTwoBit"] = SETTINGS.sleepImageQuality != SystemSetting::SLEEP_IMAGE_LOW;
   doc["sleepCustomBmp"] = SETTINGS.sleepCustomBmp;
   if (clockAvailable) {
     doc["sleepClockStyle"] = SETTINGS.sleepClockStyle;
     doc["sleepClockTimeFormat"] = SETTINGS.sleepClockTimeFormat;
-    doc["timeZoneQuarterOffset"] = SETTINGS.timeZoneQuarterOffset;
   }
   doc["hideBatteryPercentage"] = SETTINGS.hideBatteryPercentage;
-  doc["recentLibraryMode"] = SETTINGS.recentLibraryMode;
-  doc["libraryMode"] = SETTINGS.libraryMode;
-  doc["frontButtonLayout"] = SETTINGS.frontButtonLayout;
-  doc["recentVisibleCount"] = SETTINGS.recentVisibleCount;
-  doc["librarySortEnabled"] = SETTINGS.librarySortEnabled;
-  doc["libraryShelfEnabled"] = SETTINGS.libraryShelfEnabled;
-  doc["librarySortMode"] = SETTINGS.librarySortMode;
-
-  doc["fontFamily"] = READER_SETTINGS.fontFamily;
-  doc["fontSize"] = READER_SETTINGS.fontSize;
-
-  doc["lineHeight"] = READER_SETTINGS.lineHeight;
-  doc["textSpace"] = READER_SETTINGS.textSpace;
-  doc["screenMargin"] = READER_SETTINGS.screenMargin;
-  doc["paragraphAlignment"] = READER_SETTINGS.paragraphAlignment;
-  doc["paragraphCssIndentEnabled"] = READER_SETTINGS.paragraphCssIndentEnabled;
-  doc["extraParagraphSpacing"] = READER_SETTINGS.extraParagraphSpacing;
-  doc["orientation"] = READER_SETTINGS.orientation;
-  doc["hyphenationEnabled"] = READER_SETTINGS.hyphenationEnabled;
-  doc["bionicReadingEnabled"] = READER_SETTINGS.bionicReadingEnabled;
+  doc["keyboardLayout"] = SETTINGS.keyboardLayout;
+  doc["systemTextSize"] = SETTINGS.systemTextSize;
+  doc["hideThumbnailTitles"] = SETTINGS.hideThumbnailTitles;
+  doc["thumbnailSize"] = SETTINGS.thumbnailSize;
 
   doc["shakePageTurn"] = SETTINGS.shakePageTurn;
   doc["shakePageTurnSensitivity"] = SETTINGS.shakePageTurnSensitivity;
@@ -2197,25 +2188,13 @@ void LocalServer::handleSettingsGet() const {
   doc["textAntiAliasing"] = READER_SETTINGS.textAntiAliasing;
   doc["refreshFrequency"] = READER_SETTINGS.refreshFrequency;
   doc["readerImageGrayscale"] = READER_SETTINGS.readerImageGrayscale;
-  doc["readerSmartRefreshOnImages"] = READER_SETTINGS.readerSmartRefreshOnImages;
-  doc["statusBar"] = READER_SETTINGS.statusBar;
-  doc["statusBarLeft"] = READER_SETTINGS.statusBarLeft;
-  doc["statusBarMiddle"] = READER_SETTINGS.statusBarMiddle;
-  doc["statusBarRight"] = READER_SETTINGS.statusBarRight;
-  doc["statusBarFullStyle"] = READER_SETTINGS.statusBarFullStyle;
 
   doc["shortPwrBtn"] = SETTINGS.shortPwrBtn;
 
   doc["sleepTimeout"] = SETTINGS.sleepTimeout;
-  doc["useLibraryIndex"] = SETTINGS.useLibraryIndex;
   doc["bootSetting"] = SETTINGS.bootSetting;
-
-  doc["refreshOnLoadRecent"] = SETTINGS.refreshOnLoadRecent;
-  doc["refreshOnLoadLibrary"] = SETTINGS.refreshOnLoadLibrary;
-  doc["refreshOnLoadSettings"] = SETTINGS.refreshOnLoadSettings;
-  doc["refreshOnLoadSync"] = SETTINGS.refreshOnLoadSync;
-  doc["refreshOnLoadStatistics"] = SETTINGS.refreshOnLoadStatistics;
   doc["pageAutoTurnSeconds"] = READER_SETTINGS.pageAutoTurnSeconds;
+  doc["dailyReadingGoalMinutes"] = READER_SETTINGS.dailyReadingGoalMinutes;
   doc["bitmapRoundedCorners"] = SETTINGS.bitmapRoundedCorners;
   doc["opdsServerUrl"] = SETTINGS.opdsServerUrl;
   doc["opdsUsername"] = SETTINGS.opdsUsername;
@@ -2241,6 +2220,38 @@ void LocalServer::handleLanguageGet() const {
   server->send(200, "application/json", json);
 }
 
+void LocalServer::handleLanguagePackageGet() const {
+  if (!server->hasArg("code")) {
+    server->send(400, "text/plain", "Missing language code");
+    return;
+  }
+
+  const String code = server->arg("code");
+  if (code.isEmpty() || !LanguageManager::isInstalled(code.c_str())) {
+    server->send(404, "text/plain", "Language is not installed");
+    return;
+  }
+
+  const String path = "/.system/lang/" + code + "/translate.yml";
+  SdIoMutex::Lock ioLock;
+  FsFile file = SdMan.open(path.c_str(), O_READ);
+  if (!file || file.isDirectory()) {
+    if (file) file.close();
+    server->send(404, "text/plain", "Translation file not found");
+    return;
+  }
+
+  String yaml;
+  yaml.reserve(file.size());
+  while (file.available()) {
+    const int value = file.read();
+    if (value < 0) break;
+    yaml += static_cast<char>(value);
+  }
+  file.close();
+  server->send(200, "text/yaml; charset=utf-8", yaml);
+}
+
 void LocalServer::handleLanguageUpdate() const {
   if (!server->hasArg("plain")) {
     server->send(400, "text/plain", "Missing JSON body");
@@ -2255,6 +2266,39 @@ void LocalServer::handleLanguageUpdate() const {
   const char* code = doc["code"] | "";
   if (!LanguageManager::setLanguage(code)) {
     server->send(400, "text/plain", "Language is not installed");
+    return;
+  }
+  server->send(200, "application/json", "{\"status\":\"ok\"}");
+}
+
+void LocalServer::handleLanguageDelete() const {
+  if (!server->hasArg("plain")) {
+    server->send(400, "text/plain", "Missing JSON body");
+    return;
+  }
+
+  JsonDocument doc;
+  if (deserializeJson(doc, server->arg("plain"))) {
+    server->send(400, "text/plain", "Invalid JSON");
+    return;
+  }
+
+  const char* code = doc["code"] | "";
+  if (!LanguageManager::isInstalled(code)) {
+    server->send(404, "text/plain", "Language is not installed");
+    return;
+  }
+
+  if (std::strcmp(LanguageManager::activeLanguageCode(), code) == 0 && !LanguageManager::setLanguage("")) {
+    server->send(409, "text/plain", "Could not switch to English before removing language");
+    return;
+  }
+
+  LanguagePackageManager::Package package;
+  package.code = code;
+  std::string error;
+  if (!LanguagePackageManager::remove(package, error)) {
+    server->send(500, "text/plain", error.empty() ? "Language removal failed" : error.c_str());
     return;
   }
   server->send(200, "application/json", "{\"status\":\"ok\"}");
@@ -2291,23 +2335,19 @@ void LocalServer::handleSettingsUpdate() const {
       SETTINGS.sleepScreen = v;
       changed = true;
     } else if (strcmp(key, "sleepScreenCoverMode") == 0) {
-      SETTINGS.sleepScreenCoverMode = (uint8_t)value;
+      SETTINGS.sleepScreenCoverMode = (value >= 0 && value < SystemSetting::SLEEP_SCREEN_COVER_MODE_COUNT)
+                                          ? static_cast<uint8_t>(value)
+                                          : SystemSetting::FIT;
       changed = true;
     } else if (strcmp(key, "sleepScreenCoverFilter") == 0) {
-      SETTINGS.sleepScreenCoverFilter = (uint8_t)value;
-      changed = true;
-    } else if (strcmp(key, "sleepScreenCoverGrayscale") == 0) {
-      SETTINGS.sleepImageQuality = (value >= 0 && value < SystemSetting::SLEEP_IMAGE_QUALITY_COUNT)
-                                       ? static_cast<uint8_t>(value)
-                                       : SystemSetting::SLEEP_IMAGE_LOW;
+      SETTINGS.sleepScreenCoverFilter = (value >= 0 && value < SystemSetting::SLEEP_SCREEN_COVER_FILTER_COUNT)
+                                            ? static_cast<uint8_t>(value)
+                                            : SystemSetting::NO_FILTER;
       changed = true;
     } else if (strcmp(key, "sleepImageQuality") == 0) {
       SETTINGS.sleepImageQuality = (value >= 0 && value < SystemSetting::SLEEP_IMAGE_QUALITY_COUNT)
                                        ? static_cast<uint8_t>(value)
                                        : SystemSetting::SLEEP_IMAGE_LOW;
-      changed = true;
-    } else if (strcmp(key, "sleepImageTwoBit") == 0) {
-      SETTINGS.sleepImageQuality = (uint8_t)value ? SystemSetting::SLEEP_IMAGE_MEDIUM : SystemSetting::SLEEP_IMAGE_LOW;
       changed = true;
     } else if (strcmp(key, "sleepCustomBmp") == 0) {
       if (kv.value().isNull()) {
@@ -2326,88 +2366,32 @@ void LocalServer::handleSettingsUpdate() const {
       if (v >= SystemSetting::CLOCK_TIME_FORMAT_COUNT) v = SystemSetting::CLOCK_24_HOUR;
       SETTINGS.sleepClockTimeFormat = v;
       changed = true;
-    } else if (clockAvailable && strcmp(key, "timeZoneQuarterOffset") == 0) {
-      int v = static_cast<int>(value);
-      if (v < 0) v = 0;
-      if (v > 104) v = 104;
-      SETTINGS.timeZoneQuarterOffset = static_cast<uint8_t>(v);
-      SETTINGS.timeZoneAutoDetectEnabled = 0;
-      SETTINGS.timeZoneId[0] = '\0';
-      changed = true;
-    } else if (clockAvailable && strcmp(key, "timeZoneAutoDetectEnabled") == 0) {
-      SETTINGS.timeZoneAutoDetectEnabled = value ? 1 : 0;
-      changed = true;
     } else if (strcmp(key, "hideBatteryPercentage") == 0) {
-      SETTINGS.hideBatteryPercentage = (uint8_t)value;
+      SETTINGS.hideBatteryPercentage = (value >= 0 && value < SystemSetting::HIDE_BATTERY_PERCENTAGE_COUNT)
+                                           ? static_cast<uint8_t>(value)
+                                           : SystemSetting::HIDE_NEVER;
       changed = true;
-    } else if (strcmp(key, "recentLibraryMode") == 0) {
-      SETTINGS.recentLibraryMode = (uint8_t)value;
+    } else if (strcmp(key, "keyboardLayout") == 0) {
+      const int v = static_cast<int>(value);
+      SETTINGS.keyboardLayout = (v >= 0 && v < SystemSetting::KEYBOARD_LAYOUT_COUNT)
+                                    ? static_cast<uint8_t>(v)
+                                    : SystemSetting::KEYBOARD_QWERTY;
       changed = true;
-    } else if (strcmp(key, "libraryMode") == 0) {
-      uint8_t v = static_cast<uint8_t>(value);
-      if (v >= SystemSetting::LIBRARY_MODE_COUNT) v = SystemSetting::LIBRARY_LIST;
-      SETTINGS.libraryMode = v;
+    } else if (strcmp(key, "systemTextSize") == 0) {
+      const int v = static_cast<int>(value);
+      SETTINGS.systemTextSize = (v >= 0 && v < SystemSetting::SYSTEM_TEXT_SIZE_COUNT)
+                                    ? static_cast<uint8_t>(v)
+                                    : SystemSetting::SYSTEM_TEXT_MEDIUM;
       changed = true;
-    } else if (strcmp(key, "frontButtonLayout") == 0) {
-      int v = static_cast<int>(value);
-      if (v < 0 || v >= SystemSetting::FRONT_BUTTON_LAYOUT_COUNT) {
-        v = SystemSetting::BACK_CONFIRM_LEFT_RIGHT;
-      }
-      SETTINGS.frontButtonLayout = static_cast<uint8_t>(v);
+    } else if (strcmp(key, "hideThumbnailTitles") == 0) {
+      SETTINGS.hideThumbnailTitles = value ? 1 : 0;
       changed = true;
-    } else if (strcmp(key, "recentVisibleCount") == 0) {
-      int v = static_cast<int>(value);
-      if (v < 1) v = 1;
-      if (v > 9) v = 9;
-      SETTINGS.recentVisibleCount = static_cast<uint8_t>(v);
+    } else if (strcmp(key, "thumbnailSize") == 0) {
+      const int v = static_cast<int>(value);
+      SETTINGS.thumbnailSize = (v >= 0 && v < SystemSetting::THUMBNAIL_SIZE_COUNT)
+                                   ? static_cast<uint8_t>(v)
+                                   : SystemSetting::THUMBNAIL_ACTUAL;
       changed = true;
-    } else if (strcmp(key, "librarySortEnabled") == 0) {
-      SETTINGS.librarySortEnabled = (uint8_t)value ? 1 : 0;
-      changed = true;
-    } else if (strcmp(key, "librarySortMode") == 0) {
-      int v = static_cast<int>(value);
-      if (v < 0) v = 0;
-      if (v > 6) v = 0;
-      SETTINGS.librarySortMode = static_cast<uint8_t>(v);
-      changed = true;
-    } else if (strcmp(key, "fontFamily") == 0) {
-      READER_SETTINGS.fontFamily = (uint8_t)value;
-      readerChanged = true;
-    } else if (strcmp(key, "fontSize") == 0) {
-      READER_SETTINGS.fontSize = (uint8_t)value;
-      readerChanged = true;
-    } else if (strcmp(key, "lineHeight") == 0) {
-      uint8_t v = (uint8_t)value;
-      READER_SETTINGS.lineHeight = (v < 10 || v > 200) ? 100 : v;
-      readerChanged = true;
-    } else if (strcmp(key, "textSpace") == 0) {
-      uint8_t v = (uint8_t)value;
-      READER_SETTINGS.textSpace = (v < 10 || v > 200) ? 100 : v;
-      readerChanged = true;
-    } else if (strcmp(key, "screenMargin") == 0) {
-      READER_SETTINGS.screenMargin = (uint8_t)value;
-      readerChanged = true;
-    } else if (strcmp(key, "paragraphAlignment") == 0) {
-      READER_SETTINGS.paragraphAlignment = (uint8_t)value;
-      if (READER_SETTINGS.paragraphAlignment >= SystemSetting::PARAGRAPH_ALIGNMENT_COUNT) {
-        READER_SETTINGS.paragraphAlignment = SystemSetting::JUSTIFIED;
-      }
-      readerChanged = true;
-    } else if (strcmp(key, "extraParagraphSpacing") == 0) {
-      READER_SETTINGS.extraParagraphSpacing = (uint8_t)value;
-      readerChanged = true;
-    } else if (strcmp(key, "paragraphCssIndentEnabled") == 0) {
-      READER_SETTINGS.paragraphCssIndentEnabled = (uint8_t)value ? 1 : 0;
-      readerChanged = true;
-    } else if (strcmp(key, "orientation") == 0) {
-      READER_SETTINGS.orientation = (uint8_t)value;
-      readerChanged = true;
-    } else if (strcmp(key, "hyphenationEnabled") == 0) {
-      READER_SETTINGS.hyphenationEnabled = (uint8_t)value;
-      readerChanged = true;
-    } else if (strcmp(key, "bionicReadingEnabled") == 0) {
-      READER_SETTINGS.bionicReadingEnabled = (uint8_t)value ? 1 : 0;
-      readerChanged = true;
     } else if (strcmp(key, "shakePageTurn") == 0) {
       const int motionMode = static_cast<int>(value);
       SETTINGS.shakePageTurn = static_cast<uint8_t>(motionMode < 0 ? 0 : motionMode > 2 ? 2 : motionMode);
@@ -2420,63 +2404,29 @@ void LocalServer::handleSettingsUpdate() const {
       READER_SETTINGS.textAntiAliasing = (uint8_t)value;
       readerChanged = true;
     } else if (strcmp(key, "refreshFrequency") == 0) {
-      READER_SETTINGS.refreshFrequency = (uint8_t)value;
+      READER_SETTINGS.refreshFrequency = (value >= 0 && value < SystemSetting::REFRESH_FREQUENCY_COUNT)
+                                             ? static_cast<uint8_t>(value)
+                                             : SystemSetting::REFRESH_OFF;
       readerChanged = true;
     } else if (strcmp(key, "readerImageGrayscale") == 0) {
       READER_SETTINGS.readerImageGrayscale = (value >= 0 && value < SystemSetting::READER_IMAGE_QUALITY_COUNT)
                                           ? (uint8_t)value
                                           : SystemSetting::READER_IMAGE_LOW;
       readerChanged = true;
-    } else if (strcmp(key, "readerSmartRefreshOnImages") == 0) {
-      READER_SETTINGS.readerSmartRefreshOnImages = (uint8_t)value ? 1 : 0;
-      readerChanged = true;
-    } else if (strcmp(key, "statusBar") == 0) {
-      READER_SETTINGS.statusBar = (uint8_t)value;
-      readerChanged = true;
-    } else if (strcmp(key, "statusBarLeft") == 0) {
-      READER_SETTINGS.statusBarLeft = (uint8_t)value;
-      readerChanged = true;
-    } else if (strcmp(key, "statusBarMiddle") == 0) {
-      READER_SETTINGS.statusBarMiddle = (uint8_t)value;
-      readerChanged = true;
-    } else if (strcmp(key, "statusBarRight") == 0) {
-      READER_SETTINGS.statusBarRight = (uint8_t)value;
-      readerChanged = true;
-    } else if (strcmp(key, "statusBarFullStyle") == 0) {
-      READER_SETTINGS.statusBarFullStyle = (uint8_t)value;
-      readerChanged = true;
     } else if (strcmp(key, "shortPwrBtn") == 0) {
-      SETTINGS.shortPwrBtn = (uint8_t)value;
+      SETTINGS.shortPwrBtn = value == SystemSetting::SHORT_PWRBTN::SLEEP
+                                 ? SystemSetting::SHORT_PWRBTN::SLEEP
+                                 : SystemSetting::SHORT_PWRBTN::PAGE_REFRESH;
       changed = true;
     } else if (strcmp(key, "sleepTimeout") == 0) {
-      SETTINGS.sleepTimeout = (uint8_t)value;
-      changed = true;
-    } else if (strcmp(key, "useLibraryIndex") == 0) {
-      SETTINGS.useLibraryIndex = (uint8_t)value;
-      changed = true;
-    } else if (strcmp(key, "libraryShelfEnabled") == 0) {
-      SETTINGS.libraryShelfEnabled = (uint8_t)value ? 1 : 0;
-      if (!SETTINGS.libraryShelfEnabled && SETTINGS.libraryViewMode == SystemSetting::LIBRARY_VIEW_SHELF) {
-        SETTINGS.libraryViewMode = SystemSetting::LIBRARY_VIEW_FOLDERS;
-      }
+      SETTINGS.sleepTimeout = (value >= 0 && value < SystemSetting::SLEEP_TIMEOUT_COUNT)
+                                  ? static_cast<uint8_t>(value)
+                                  : SystemSetting::SLEEP_10_MIN;
       changed = true;
     } else if (strcmp(key, "bootSetting") == 0) {
-      SETTINGS.bootSetting = (uint8_t)value;
-      changed = true;
-    } else if (strcmp(key, "refreshOnLoadRecent") == 0) {
-      SETTINGS.refreshOnLoadRecent = (uint8_t)value ? 1 : 0;
-      changed = true;
-    } else if (strcmp(key, "refreshOnLoadLibrary") == 0) {
-      SETTINGS.refreshOnLoadLibrary = (uint8_t)value ? 1 : 0;
-      changed = true;
-    } else if (strcmp(key, "refreshOnLoadSettings") == 0) {
-      SETTINGS.refreshOnLoadSettings = (uint8_t)value ? 1 : 0;
-      changed = true;
-    } else if (strcmp(key, "refreshOnLoadSync") == 0) {
-      SETTINGS.refreshOnLoadSync = (uint8_t)value ? 1 : 0;
-      changed = true;
-    } else if (strcmp(key, "refreshOnLoadStatistics") == 0) {
-      SETTINGS.refreshOnLoadStatistics = (uint8_t)value ? 1 : 0;
+      SETTINGS.bootSetting = (value >= 0 && value < SystemSetting::BOOT_SETTING_COUNT)
+                                 ? static_cast<uint8_t>(value)
+                                 : SystemSetting::RECENT_PAGE;
       changed = true;
     } else if (strcmp(key, "pageAutoTurnSeconds") == 0) {
       int v = static_cast<int>(value);
@@ -2484,6 +2434,13 @@ void LocalServer::handleSettingsUpdate() const {
       if (v > 180) v = 180;
       v = (v / 10) * 10;
       READER_SETTINGS.pageAutoTurnSeconds = static_cast<uint8_t>(v);
+      readerChanged = true;
+    } else if (strcmp(key, "dailyReadingGoalMinutes") == 0) {
+      int v = static_cast<int>(value);
+      if (v < 0) v = 0;
+      if (v > 120) v = 120;
+      v = (v / 5) * 5;
+      READER_SETTINGS.dailyReadingGoalMinutes = static_cast<uint8_t>(v);
       readerChanged = true;
     } else if (strcmp(key, "bitmapRoundedCorners") == 0) {
       int cornerStyle = static_cast<int>(value);

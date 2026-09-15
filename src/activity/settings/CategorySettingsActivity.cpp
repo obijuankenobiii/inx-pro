@@ -24,6 +24,7 @@
 #include "AuthorGeneratorActivity.h"
 #include "ClearCacheActivity.h"
 #include "ClockStylePickerActivity.h"
+#include "LanguageManagerActivity.h"
 #include "TimeSyncActivity.h"
 #include "activity/page/components/global/PopUp.h"
 #include "ReaderFontSettingsDraw.h"
@@ -111,7 +112,6 @@ void CategorySettingsActivity::onEnter() {
   renderingMutex = xSemaphoreCreateMutex();
 
   halfRefreshOnLoadApplied_ = false;
-  comingSoonPopup_ = false;
   selectedIndex = -1;
   scrollOffset = 0;
   updateRequired = true;
@@ -346,18 +346,11 @@ void CategorySettingsActivity::renderGroupPage() {
     const MenuEntry& entry = menuItems[static_cast<size_t>(index)];
     const int itemY = listTop + i * rowHeight;
     const bool selected = index == selectedIndex;
-    const bool comingSoon = entry.name && strcmp(entry.name, "Language") == 0;
-    if (selected && !comingSoon) {
+    if (selected) {
       renderer.rectangle.fill(0, itemY, pageWidth, rowHeight, static_cast<int>(GfxRenderer::FillTone::Ink));
     }
     const int textY = itemY + (rowHeight - renderer.text.getLineHeight(itemFont)) / 2;
-    if (comingSoon) {
-      renderer.text.renderGray(itemFont, 20, textY, entry.name ? entry.name : "", true,
-                               EpdFontFamily::REGULAR);
-    } else {
-      renderer.text.render(itemFont, 20, textY, entry.name ? entry.name : "", !selected,
-                           EpdFontFamily::REGULAR);
-    }
+    renderer.text.render(itemFont, 20, textY, entry.name ? entry.name : "", !selected, EpdFontFamily::REGULAR);
     if (entry.type == SettingType::TOGGLE && entry.valuePtr) {
       ReaderFontSettingsDraw::drawToggleCheckbox(renderer, pageWidth - 24, itemY, rowHeight, selected,
                                                   SETTINGS.*(entry.valuePtr) != 0);
@@ -457,14 +450,6 @@ void CategorySettingsActivity::setupMenu() {
                     return settingPtr->enumValues[i].c_str();
                   }
                 }
-                if (settingPtr->valuePtr == &SystemSetting::recentLibraryMode &&
-                    (current == SystemSetting::RECENT_LIST_DEPRECATED || current == SystemSetting::RECENT_SIMPLE)) {
-                  for (size_t i = 0; i < settingPtr->enumOptionValues.size(); ++i) {
-                    if (settingPtr->enumOptionValues[i] == SystemSetting::RECENT_FLOW) {
-                      return settingPtr->enumValues[i].c_str();
-                    }
-                  }
-                }
                 return "Unknown";
               }
               if (current >= 0 && current < (int)settingPtr->enumValues.size()) {
@@ -481,15 +466,6 @@ void CategorySettingsActivity::setupMenu() {
                   if (settingPtr->enumOptionValues[i] == current) {
                     currentIndex = static_cast<int>(i);
                     break;
-                  }
-                }
-                if (settingPtr->valuePtr == &SystemSetting::recentLibraryMode &&
-                    (current == SystemSetting::RECENT_LIST_DEPRECATED || current == SystemSetting::RECENT_SIMPLE)) {
-                  for (size_t i = 0; i < settingPtr->enumOptionValues.size(); ++i) {
-                    if (settingPtr->enumOptionValues[i] == SystemSetting::RECENT_FLOW) {
-                      currentIndex = static_cast<int>(i);
-                      break;
-                    }
                   }
                 }
                 int newIndex = currentIndex + delta;
@@ -568,7 +544,11 @@ void CategorySettingsActivity::setupMenu() {
               return;
             }
             if (strcmp(settingPtr->name, "Language") == 0) {
-              showComingSoon();
+              exitActivity();
+              enterNewActivity(new LanguageManagerActivity(renderer, mappedInput, [this] {
+                exitActivity();
+                updateRequired = true;
+              }));
               return;
             }
             if (strcmp(settingPtr->name, "Theme") == 0) {
@@ -632,14 +612,6 @@ int CategorySettingsActivity::selectedOptionIndex(const MenuEntry& entry) const 
     for (size_t i = 0; i < setting->enumOptionValues.size(); ++i) {
       if (setting->enumOptionValues[i] == current) {
         return static_cast<int>(i);
-      }
-    }
-    if (entry.valuePtr == &SystemSetting::recentLibraryMode &&
-        (current == SystemSetting::RECENT_LIST_DEPRECATED || current == SystemSetting::RECENT_SIMPLE)) {
-      for (size_t i = 0; i < setting->enumOptionValues.size(); ++i) {
-        if (setting->enumOptionValues[i] == SystemSetting::RECENT_FLOW) {
-          return static_cast<int>(i);
-        }
       }
     }
     return 0;
@@ -879,18 +851,6 @@ void CategorySettingsActivity::closeSelector(const bool save) {
  * @brief Main loop handling input and state updates
  */
 void CategorySettingsActivity::loop() {
-  if (comingSoonPopup_) {
-    float tapNx = 0.0f;
-    float tapNy = 0.0f;
-    if (mappedInput.wasPressed(MappedInputManager::Button::Back) ||
-        mappedInput.wasPressed(MappedInputManager::Button::Confirm) ||
-        (mappedInput.hasTouch() && mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy))) {
-      comingSoonPopup_ = false;
-      updateRequired = true;
-    }
-    return;
-  }
-
   if (subActivity) {
     subActivity->loop();
     return;
@@ -1264,11 +1224,6 @@ void CategorySettingsActivity::renderSelectorOverlay() {
 void CategorySettingsActivity::render() {
   renderer.clearScreen();
 
-  if (comingSoonPopup_) {
-    renderComingSoon();
-    return;
-  }
-
   if (embedded && selectorOpen) {
     if (groupOpen) {
       renderGroupPage();
@@ -1333,19 +1288,14 @@ void CategorySettingsActivity::render() {
       continue;
     }
 
-    const bool comingSoon = entry.name && strcmp(entry.name, "Language") == 0;
-    if (isSelected && !comingSoon) {
+    if (isSelected) {
       renderer.rectangle.fill(0, itemY, pageWidth, itemHeight, static_cast<int>(GfxRenderer::FillTone::Ink));
     }
 
     int textX = entry.group == GroupType::NONE ? 20 : 28;
     int textY = itemY + (itemHeight - renderer.text.getLineHeight(systemFontId())) / 2;
 
-    if (comingSoon) {
-      renderer.text.renderGray(systemFontId(), textX, textY, entry.name, true);
-    } else {
-      renderer.text.render(systemFontId(), textX, textY, entry.name, !isSelected);
-    }
+    renderer.text.render(systemFontId(), textX, textY, entry.name, !isSelected);
 
     const bool useCheckbox = (entry.type == SettingType::TOGGLE && entry.valuePtr);
     if (useCheckbox) {
@@ -1387,18 +1337,4 @@ void CategorySettingsActivity::render() {
     renderSelectorOverlay();
   }
 
-}
-
-void CategorySettingsActivity::showComingSoon() {
-  comingSoonPopup_ = true;
-  updateRequired = true;
-}
-
-void CategorySettingsActivity::renderComingSoon() {
-  const PopUpBounds box = PopUp::bounds(renderer, 1);
-  PopUp::background(renderer, box);
-  PopUp::title(renderer, box, "Coming soon...");
-  PopUp::list(renderer, box, std::vector<std::string>{"OK"}, 0, 0);
-  PopUp::border(renderer, box);
-  renderer.displayBuffer();
 }

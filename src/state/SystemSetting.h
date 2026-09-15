@@ -47,15 +47,6 @@ class SystemSetting {
 
   enum CLOCK_TIME_FORMAT { CLOCK_12_HOUR = 0, CLOCK_24_HOUR = 1, CLOCK_TIME_FORMAT_COUNT };
 
-  enum SLEEP_CLOCK_REFRESH_INTERVAL {
-    CLOCK_REFRESH_OFF = 0,
-    CLOCK_REFRESH_10_MIN = 1,
-    CLOCK_REFRESH_15_MIN = 2,
-    CLOCK_REFRESH_30_MIN = 3,
-    CLOCK_REFRESH_60_MIN = 4,
-    CLOCK_REFRESH_INTERVAL_COUNT
-  };
-
   /**
    * @brief Sleep screen cover scaling modes
    */
@@ -83,16 +74,6 @@ class SystemSetting {
   };
 
   /**
-   * @brief Navigation disable modes
-   */
-  enum DISABLE_NAVIGATION_MODE {
-    NAV_NONE = 0,    ///< Navigation enabled
-    LEFT_RIGHT = 1,  ///< Disable left/right
-    UP_DOWN = 2,     ///< Disable up/down
-    DISABLE_NAVIGATION_MODE_COUNT
-  };
-
-  /**
    * @brief Status bar item types for configurable sections
    */
   enum STATUS_BAR_ITEM {
@@ -115,7 +96,7 @@ class SystemSetting {
   };
 
   /**
-   * @brief Legacy status bar mode (kept for backward compatibility)
+   * @brief Text-reader status bar mode
    */
   enum STATUS_BAR_MODE {
     NONE = 0,                    ///< No status bar
@@ -138,18 +119,6 @@ class SystemSetting {
     INVERTED = 2,       ///< Inverted portrait
     LANDSCAPE_CCW = 3,  ///< Landscape counter-clockwise
     ORIENTATION_COUNT
-  };
-
-  /**
-   * @brief Front button layout configurations
-   */
-  enum FRONT_BUTTON_LAYOUT {
-    BACK_CONFIRM_LEFT_RIGHT = 0,  ///< Back/Confirm on left, Prev/Next on right
-    LEFT_RIGHT_BACK_CONFIRM = 1,  ///< Prev/Next on left, Back/Confirm on right
-    LEFT_BACK_CONFIRM_RIGHT = 2,  ///< Prev on left, Back/Confirm in middle, Next on right
-    BACK_CONFIRM_RIGHT_LEFT = 3,  ///< Back/Confirm on right, Prev/Next on left
-    LEFT_RIGHT_CONFIRM_BACK = 4,  ///< Prev/Next on left, Confirm/Back on right
-    FRONT_BUTTON_LAYOUT_COUNT
   };
 
   /**
@@ -183,15 +152,6 @@ class SystemSetting {
   };
 
   /**
-   * @brief UI chrome theme.
-   */
-  enum UI_THEME {
-    UI_THEME_CLASSIC = 0,      ///< Current Inx layout: tab bar at the top
-    UI_THEME_BOTTOM_TABS = 1,  ///< Main menu tab bar at the bottom
-    UI_THEME_COUNT
-  };
-
-  /**
    * @brief System UI text size options.
    *
    * These affect the device UI only; reader font sizing remains in ReaderSetting.
@@ -201,17 +161,6 @@ class SystemSetting {
     SYSTEM_TEXT_MEDIUM = 1,
     SYSTEM_TEXT_LARGE = 2,
     SYSTEM_TEXT_SIZE_COUNT
-  };
-
-  /**
-   * @brief Reader menu button assignment
-   */
-  enum READER_MENU_BUTTON {
-    MENU_UP = 0,     ///< Menu on up button
-    MENU_DOWN = 1,   ///< Menu on down button
-    MENU_LEFT = 2,   ///< Menu on left button
-    MENU_RIGHT = 3,  ///< Menu on right button
-    READER_MENU_BUTTON_COUNT
   };
 
   /**
@@ -235,11 +184,6 @@ class SystemSetting {
     EXTRA_LARGE = 4,  ///< Extra large font
     FONT_SIZE_COUNT
   };
-
-  /**
-   * @brief Reader line height (vertical rhythm): scales font advanceY × multiplier when laying out EPUB lines.
-   */
-  enum LINE_COMPRESSION { TIGHT = 0, NORMAL = 1, WIDE = 2, EXTRA_WIDE = 3, LOOSE = 4, LINE_COMPRESSION_COUNT };
 
   /**
    * @brief Paragraph alignment options
@@ -298,19 +242,6 @@ class SystemSetting {
   };
 
   /**
-   * @brief Reader-specific short power button behavior
-   */
-  enum READER_SHORT_PWRBTN {
-    READER_PAGE_TURN = 0,     ///< Turn page
-    READER_PAGE_REFRESH = 1,  ///< Refresh screen
-    READER_ANNOTATE = 2,      ///< Enter EPUB highlight / annotation mode
-    READER_DICTIONARY = 3,    ///< Enter EPUB dictionary lookup mode
-    READER_SHORT_PWRBTN_COUNT
-  };
-
-  enum XTC_SHORT_PWRBTN { XTC_POWER_NEXT = 0, XTC_POWER_PAGE_REFRESH = 1, XTC_SHORT_PWRBTN_COUNT };
-
-  /**
    * @brief Action assignable to a reader button's short or long press. Supersedes the older, more
    * legacy reader-navigation settings, which are no longer surfaced in the settings UI or consulted
    * by the reader - see ReaderButtonBindings.
@@ -352,20 +283,6 @@ class SystemSetting {
   };
 
   /**
-   * @brief Recent library display modes
-   */
-  enum RECENT_LIBRARY_MODE {
-    RECENT_GRID = 0,             ///< Legacy grid value; mapped to Flow
-    RECENT_LIST_DEPRECATED = 1,  ///< Removed mode; kept as a saved-settings alias for Flow
-    RECENT_FLOW = 2,             ///< Flow carousel
-    RECENT_SIMPLE = 3,           ///< Legacy Simple mode; mapped to Flow
-    RECENT_BOOK_LIST = 4,        ///< Vertical list: thumb left, title/author/progress (5 visible, scrollable)
-    RECENT_ICONS = 5,            ///< Legacy icon value; mapped to Flow
-    RECENT_COVER = 6,            ///< Latest recent book cover with title, author, and progress
-    RECENT_LIBRARY_MODE_COUNT
-  };
-
-  /**
    * @brief Library browser display modes
    */
   enum LIBRARY_MODE {
@@ -404,20 +321,10 @@ class SystemSetting {
     BOOT_SETTING_COUNT
   };
 
-  /**
-   * @brief Legacy image-dither values kept only for settings-file compatibility; rendering always uses Floyd.
-   */
-  enum READER_IMAGE_DITHER {
-    IMAGE_DITHER_NONE = 0,
-    IMAGE_DITHER_FLOYD_STEINBERG = 1,
-    IMAGE_DITHER_ATKINSON = 2,
-    READER_IMAGE_DITHER_COUNT
-  };
-
   uint8_t sleepScreen = LIGHT;                 ///< Sleep screen display mode
   uint8_t sleepScreenCoverMode = FIT;          ///< Sleep screen cover scaling mode
   uint8_t sleepScreenCoverFilter = NO_FILTER;  ///< Sleep screen cover filter
-  /** Sleep image quality; persisted in the old sleep 2-bit slot for settings compatibility. */
+  /** Sleep image quality for the sleep-screen image renderer. */
   uint8_t sleepImageQuality = SLEEP_IMAGE_HIGH;
   /**
    * Fixed custom/transparent sleep image when multiple images exist.
@@ -428,7 +335,6 @@ class SystemSetting {
   char sleepCustomBmp[64] = "";
   uint8_t sleepClockStyle = CLOCK_CENTERED_DATE;          ///< Date/time sleep screen style
   uint8_t sleepClockTimeFormat = CLOCK_24_HOUR;           ///< 12/24 hour clock format
-  uint8_t sleepClockRefreshInterval = CLOCK_REFRESH_OFF;  ///< Legacy settings slot; retained for compatibility
   /** UTC offset in 15-minute steps, biased by +12h. 0=UTC-12:00, 80=UTC+08:00, 104=UTC+14:00. */
   uint8_t timeZoneQuarterOffset = 80;
   /** When enabled, time sync may replace the stored offset using the network lookup. */
@@ -441,20 +347,14 @@ class SystemSetting {
   uint8_t keyboardLayout = KEYBOARD_QWERTY;
   /** System UI text size: Small=10pt, Medium=12pt, Large=14pt. */
   uint8_t systemTextSize = SYSTEM_TEXT_SMALL;
-  /** When set, a short press of the power button (instead of the default hold) turns the device
-   *  on/off - see getPowerButtonDuration(). */
-  uint8_t shortPressPowerButton = 0;
-
   /** Persisted Light drawer text/icon theme: 0=light, 1=dark. */
   uint8_t darkMode = 0;
 
   uint8_t shortPwrBtn = PAGE_REFRESH;  ///< Short power button behavior
 
-  uint8_t frontButtonLayout = BACK_CONFIRM_LEFT_RIGHT;  ///< Front button layout
   uint8_t sideButtonLayout = PREV_NEXT;                 ///< Side button layout
 
   uint8_t mainMenuNav = MAIN_MENU_NAV_FRONT;  ///< Main-menu tab vs item navigation buttons
-  uint8_t uiTheme = UI_THEME_BOTTOM_TABS;
   /** Active SD language package code; empty selects the built-in English UI. */
   char languageCode[33] = "";
 
@@ -465,9 +365,7 @@ class SystemSetting {
   char opdsPassword[64] = "";    ///< OPDS password
 
   uint8_t hideBatteryPercentage = HIDE_NEVER;  ///< Hide battery percentage setting
-  /** Long-press on prev/next: 0=off, 1=chapter skip (EPUB), 2=skip 5 pages (EPUB). Legacy files used 0/1 only.
-   *  The persisted value (ReaderSetting::longPressChapterSkip) moved to ReaderSetting; these named
-   *  constants stay here since BookSetting.h references them extensively as SystemSetting::XXX. */
+  /** Long-press on prev/next values shared with book and reader settings. */
   static constexpr uint8_t LONG_PRESS_OFF = 0;
   static constexpr uint8_t LONG_PRESS_CHAPTER_SKIP = 1;
   static constexpr uint8_t LONG_PRESS_PAGE_SKIP_5 = 2;
@@ -478,16 +376,8 @@ class SystemSetting {
   uint8_t refreshOnLoadSettings = 0;
   uint8_t refreshOnLoadSync = 0;
   uint8_t refreshOnLoadStatistics = 0;
-  uint8_t disableNavigation = NAV_NONE;  ///< Navigation disable mode
-
-  uint8_t recentLibraryMode = RECENT_FLOW;         ///< Recent library display mode
   uint8_t libraryMode = LIBRARY_GRID;              ///< Library browser display mode
   uint8_t libraryViewMode = LIBRARY_VIEW_FOLDERS;  ///< Last Library browser content view
-  uint8_t libraryShelfEnabled = 0;                 ///< Allow cover shelf view in Library
-  /** How many recent books to show on the Recent hub (1–8). */
-  uint8_t recentVisibleCount = 9;
-  /** Library: 0 = folders and books A-Z only; 1 = use librarySortMode (favorites / groups / reading / tags). */
-  uint8_t librarySortEnabled = 1;
   /** Library sort mode persisted when leaving Library (0=Title A–Z … 5=Read Z–A). */
   uint8_t librarySortMode = 0;
   /** Hide book titles below covers in Library thumbnail view. */
@@ -507,10 +397,6 @@ class SystemSetting {
     READER_IMAGE_HIGH = 2,    ///< 2-bit grayscale, quality LUT, text preserved
     READER_IMAGE_QUALITY_COUNT
   };
-  /** Legacy ignored value retained for settings-file compatibility. */
-  uint8_t displayImageDither = IMAGE_DITHER_ATKINSON;
-  /** Legacy ignored value retained for settings-file compatibility. */
-  uint8_t legacyDisplayImagePresentation = 1;
   /** When set, hub thumbnails use rounded clip on `GfxRenderer::drawBitmap` (Recent: sparse ink outside arc; stats:
    * paper). */
   uint8_t bitmapRoundedCorners = 0;

@@ -24,6 +24,7 @@
 #include "state/SystemSetting.h"
 #include "system/FontManager.h"
 #include "system/Fonts.h"
+#include "system/LanguageManager.h"
 
 namespace {
 
@@ -103,6 +104,16 @@ int splitWords(const char* text, WordSlice* words, const int maxWords) {
     ++count;
   }
   return count;
+}
+
+size_t firstUtf8CharacterLength(const char* text) {
+  if (!text || !text[0]) return 0;
+  const uint8_t first = static_cast<uint8_t>(text[0]);
+  if ((first & 0x80u) == 0) return 1;
+  if ((first & 0xe0u) == 0xc0u) return 2;
+  if ((first & 0xf0u) == 0xe0u) return 3;
+  if ((first & 0xf8u) == 0xf0u) return 4;
+  return 1;
 }
 
 const char* wordToBuffer(const WordSlice& word, char* buffer, const size_t bufferSize) {
@@ -241,13 +252,17 @@ void ReaderPresetEditorActivity::renderPreview() {
 
   constexpr int kDropCapLines = 2;
   constexpr int kSmallCapsWordCount = 4;
-  const char dropCapLetter[2] = {kLoremParagraph1[0], '\0'};
+  const char* paragraphOne = LanguageManager::translateText(kLoremParagraph1);
+  const char* paragraphTwo = LanguageManager::translateText(kLoremParagraph2);
+  const size_t dropCapLength = std::min<size_t>(firstUtf8CharacterLength(paragraphOne), 4);
+  char dropCapLetter[5] = {};
+  std::memcpy(dropCapLetter, paragraphOne, dropCapLength);
   const int dropCapFontId = READER_SETTINGS.getReaderFontIdForFamilyAndSize(working_.fontFamily, SystemSetting::EXTRA_LARGE);
   FontManager::ensureFontReady(dropCapFontId, renderer);
   const int dropCapWidth = renderer.text.getWidth(dropCapFontId, dropCapLetter, EpdFontFamily::BOLD) + 6;
 
   int y = bodyTop;
-  const char* paragraphs[2] = {kLoremParagraph1 + 1, kLoremParagraph2};
+  const char* paragraphs[2] = {paragraphOne + dropCapLength, paragraphTwo};
   const int paragraphGap = working_.extraParagraphSpacing ? (lineHeight / 2 + 4) : 2;
 
   for (int p = 0; p < 2 && y + lineHeight <= bodyBottom; ++p) {

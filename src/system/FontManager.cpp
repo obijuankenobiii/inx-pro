@@ -108,8 +108,11 @@ static bool isOutlineFontFile(const std::string& filename) {
   return hasFontExtension(filename, ".ttf") || hasFontExtension(filename, ".otf");
 }
 
-static bool shouldPreferFontPath(const std::string& current, const std::string& candidate) {
+static bool shouldPreferFontPath(const std::string& current, const std::string& candidate, const bool preferPacked) {
   if (current.empty()) return true;
+  if (preferPacked && isOutlineFontFile(candidate) != isOutlineFontFile(current)) {
+    return !isOutlineFontFile(candidate);
+  }
   if (isOutlineFontFile(candidate) != isOutlineFontFile(current)) {
     return isOutlineFontFile(candidate);
   }
@@ -324,13 +327,13 @@ bool FontManager::scanSDFonts(const char* sdPath, bool forceRescan) {
     for (size_t i = 0; i < sizeCount; ++i) {
       const int size = sizes[i];
       const auto key = std::make_pair(family, size);
-      if (style == "regular" && shouldPreferFontPath(groups[key].regularPath, fullPath)) {
+      if (style == "regular" && shouldPreferFontPath(groups[key].regularPath, fullPath, isLanguage)) {
         groups[key].regularPath = fullPath;
-      } else if (style == "bold" && shouldPreferFontPath(groups[key].boldPath, fullPath)) {
+      } else if (style == "bold" && shouldPreferFontPath(groups[key].boldPath, fullPath, isLanguage)) {
         groups[key].boldPath = fullPath;
-      } else if (style == "italic" && shouldPreferFontPath(groups[key].italicPath, fullPath)) {
+      } else if (style == "italic" && shouldPreferFontPath(groups[key].italicPath, fullPath, isLanguage)) {
         groups[key].italicPath = fullPath;
-      } else if (style == "bolditalic" && shouldPreferFontPath(groups[key].boldItalicPath, fullPath)) {
+      } else if (style == "bolditalic" && shouldPreferFontPath(groups[key].boldItalicPath, fullPath, isLanguage)) {
         groups[key].boldItalicPath = fullPath;
       }
       groups[key].family = family;

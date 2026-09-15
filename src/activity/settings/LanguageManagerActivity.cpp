@@ -12,7 +12,6 @@
 #include "activity/page/SubPage.h"
 #include "activity/page/components/global/Button.h"
 #include "activity/page/components/global/Toggle.h"
-#include "images/Download.h"
 #include "images/Trash.h"
 #include "system/FontManager.h"
 #include "system/Fonts.h"
@@ -118,29 +117,38 @@ void LanguageManagerActivity::onExit() {
 void LanguageManagerActivity::loadPackages() {
   std::string error;
   std::vector<LanguagePackageManager::Package> available;
-  if (LanguagePackageManager::fetchAvailable(available, error)) {
-    packages_.clear();
-    packages_.push_back({"", "English", "", 0});
-    for (const LanguagePackageManager::Package& package : available) packages_.push_back(package);
+  packages_.clear();
+  packages_.push_back({"", "English", "", 0});
 
-    // Also show packages copied directly to the SD card, even if they are
-    // not listed in the downloadable repository catalog.
-    for (const LanguageManager::LanguageInfo& language : LanguageManager::installedLanguages()) {
-      if (language.code.empty()) continue;
-      auto existing = std::find_if(packages_.begin(), packages_.end(), [&language](const auto& package) {
-        return package.code == language.code;
-      });
-      if (existing != packages_.end()) {
-        existing->name = language.name;
-      } else {
-        packages_.push_back({language.code, language.name, "", 0});
-      }
+  const bool storeLoaded = LanguagePackageManager::fetchAvailable(available, error);
+  if (storeLoaded) {
+    for (const LanguagePackageManager::Package& package : available) packages_.push_back(package);
+  }
+
+  // Also show packages copied directly to the SD card, even if they are not
+  // listed in the store catalog.
+  for (const LanguageManager::LanguageInfo& language : LanguageManager::installedLanguages()) {
+    if (language.code.empty()) continue;
+    auto existing = std::find_if(packages_.begin(), packages_.end(), [&language](const auto& package) {
+      return package.code == language.code;
+    });
+    if (existing != packages_.end()) {
+      existing->name = language.name;
+    } else {
+      packages_.push_back({language.code, language.name, "", 0});
     }
-    state_ = State::Ready;
-    status_ = packages_.empty() ? "No language packages found." : "Tap a language to download it.";
+  }
+
+  // Keep installed languages together at the top. Non-installed store rows
+  // remain visible below them as disabled entries.
+  std::stable_sort(packages_.begin() + 1, packages_.end(), [](const auto& left, const auto& right) {
+    return isInstalledLanguage(left) && !isInstalledLanguage(right);
+  });
+  state_ = State::Ready;
+  if (packages_.size() <= 1 && !storeLoaded) {
+    status_ = error.empty() ? "No language packages found." : error;
   } else {
-    state_ = State::Failed;
-    status_ = error.empty() ? "Could not load language packages." : error;
+    status_ = "Tap an installed language to enable it.";
   }
   updateDisplay();
 }
@@ -198,18 +206,9 @@ void LanguageManagerActivity::installSelected() {
     updateDisplay();
     return;
   }
-  if (WiFi.status() != WL_CONNECTED || WiFi.localIP() == IPAddress(0, 0, 0, 0)) {
-    launchWifiSelection();
-    return;
-  }
-  state_ = State::Downloading;
-  status_ = "Downloading and installing...";
-  installingPackageIndex_ = selectedIndex_;
-  progressDownloaded_ = 0;
-  progressTotal_ = 0;
-  lastProgressPercent_ = -1;
-  lastProgressUpdateMs_ = 0;
-  startInstallation();
+  // Store entries are intentionally disabled here. Installation remains
+  // available from the Store flow, while Device > Language only manages
+  // packages that are already installed on the SD card.
 }
 
 void LanguageManagerActivity::removeSelected() {
@@ -303,7 +302,7 @@ void LanguageManagerActivity::onWifiSelectionComplete(const bool connected) {
 
 void LanguageManagerActivity::render() {
   renderer.clearScreen();
-  const int bodyTop = SubPage::header(renderer, "Language Manager");
+  const int bodyTop = SubPage::header(renderer, "Language");
   const int listTop = bodyTop + 20;
   const int font = systemFontId();
   const int screenW = renderer.getScreenWidth();
@@ -356,30 +355,34 @@ void LanguageManagerActivity::render() {
     for (int index = scrollOffset_; index < end; ++index) {
       const int y = listTop + (index - scrollOffset_) * kRowHeight;
       const int textY = y + (kRowHeight - renderer.text.getLineHeight(font)) / 2;
-      const int deleteIconX = screenW - kSideMargin - kActionIconSize;
-      const int systemToggleRight = deleteIconX - kActionIconGap;
+      const int systemToggleRight = screenW - kSideMargin;
+      const int deleteIconX = systemToggleRight - Toggle::width - kActionIconGap - kActionIconSize;
       const auto& package = packages_[static_cast<size_t>(index)];
-      const int maxNameWidth = screenW - (kSideMargin * 2) - (kActionIconSize * 2) - kActionIconGap - 20;
+      const bool installed = isInstalledLanguage(package);
+      const int maxNameWidth = screenW - (kSideMargin * 2) - kActionIconSize - Toggle::width - kActionIconGap - 20;
       const std::string label = renderer.text.truncate(font, package.name.c_str(), maxNameWidth);
-      renderer.text.render(font, kSideMargin, textY, label.c_str(), true, EpdFontFamily::REGULAR);
+      if (installed) {
+        renderer.text.render(font, kSideMargin, textY, label.c_str(), true, EpdFontFamily::REGULAR);
+      } else {
+        renderer.text.renderGray(font, kSideMargin, textY, label.c_str(), true, EpdFontFamily::REGULAR);
+      }
       const int iconY = y + (kRowHeight - kActionIconSize) / 2;
-      if (isInstalledLanguage(package)) {
+      if (installed) {
         const bool systemLanguage = std::strcmp(LanguageManager::activeLanguageCode(), package.code.c_str()) == 0;
-        Toggle::render(renderer, systemToggleRight, y, kRowHeight, systemLanguage, false);
         if (!package.code.empty()) {
           renderer.bitmap.icon(Trash, deleteIconX, iconY, kActionIconSize, kActionIconSize,
                                BitmapRender::Orientation::None, false);
         }
+        Toggle::render(renderer, systemToggleRight, y, kRowHeight, systemLanguage, false);
       } else {
-        renderer.bitmap.icon(Download, deleteIconX, iconY, kActionIconSize, kActionIconSize,
-                             BitmapRender::Orientation::None, false);
+        renderer.text.renderGray(font, deleteIconX - 34, textY, "Store", true, EpdFontFamily::REGULAR);
       }
       if (index + 1 < end) renderer.line.render(0, y + kRowHeight - 1, screenW, y + kRowHeight - 1, true,
                                                 LineRender::Style::Dotted);
     }
     drawScrollBar(renderer, screenW - 8, listTop, visibleRows * kRowHeight, static_cast<int>(packages_.size()),
                   visibleRows, scrollOffset_);
-    mappedInput.mapLabels("\xC2\xAB Back", "Download", "Up", "Down");
+    mappedInput.mapLabels("\xC2\xAB Back", "Enable", "Up", "Down");
   } else {
     const int centerY = bodyTop + (screenH - bodyTop - 80) / 2;
     renderer.text.centered(font, centerY - 26, status_.c_str(), true, EpdFontFamily::BOLD);
@@ -419,12 +422,13 @@ void LanguageManagerActivity::loop() {
           tapped < static_cast<int>(packages_.size())) {
         selectedIndex_ = tapped;
         selectedVisible_ = true;
-        const int deleteIconX = renderer.getScreenWidth() - kSideMargin - kActionIconSize;
+        const int systemToggleRight = renderer.getScreenWidth() - kSideMargin;
+        const int deleteIconX = systemToggleRight - Toggle::width - kActionIconGap - kActionIconSize;
         const ButtonBounds deleteBounds{deleteIconX, listTop + (tapped - scrollOffset_) * kRowHeight, kActionIconSize,
                                         kRowHeight};
         const auto& package = packages_[static_cast<size_t>(tapped)];
         const bool installed = isInstalledLanguage(package);
-        const int systemToggleRight = deleteIconX - kActionIconGap;
+        if (!installed) return;
         const ToggleBounds systemToggle = Toggle::bounds(systemToggleRight,
                                                          listTop + (tapped - scrollOffset_) * kRowHeight, kRowHeight);
         if (installed && !package.code.empty() && contains(deleteBounds, x, y)) {

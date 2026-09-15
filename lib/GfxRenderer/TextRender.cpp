@@ -177,6 +177,10 @@ bool embeddedGlyphBitmapIsValid(const EpdFontData* fontData, const EpdGlyph* gly
 
 int TextRender::getWidth(const int fontId, const char* text, const EpdFontFamily::Style style) const {
   text = LanguageManager::translateText(text);
+  return getUntranslatedWidth(fontId, text, style);
+}
+
+int TextRender::getUntranslatedWidth(const int fontId, const char* text, const EpdFontFamily::Style style) const {
   std::string visualText;
   text = RtlText::prepareForRender(text, visualText);
   const EpdFontFamily* primary = findFontFamily(gfx, fontId);
@@ -435,12 +439,12 @@ std::string TextRender::truncate(const int fontId, const char* text, const int m
   text = LanguageManager::translateText(text);
   std::string item = text;
   const char* ellipsis = "...";
-  int textWidth = getWidth(fontId, item.c_str(), style);
+  int textWidth = getUntranslatedWidth(fontId, item.c_str(), style);
   if (textWidth <= maxWidth) {
     return item;
   }
 
-  while (!item.empty() && getWidth(fontId, (item + ellipsis).c_str(), style) >= maxWidth) {
+  while (!item.empty() && getUntranslatedWidth(fontId, (item + ellipsis).c_str(), style) >= maxWidth) {
     utf8RemoveLastChar(item);
   }
 
@@ -528,6 +532,11 @@ void TextRender::rotated90CW(const int fontId, const int x, const int y, const c
 void TextRender::render(const int fontId, const int x, const int y, const char* text, const bool black,
                         const EpdFontFamily::Style style) const {
   text = LanguageManager::translateText(text);
+  renderUntranslated(fontId, x, y, text, black, style);
+}
+
+void TextRender::renderUntranslated(const int fontId, const int x, const int y, const char* text, const bool black,
+                                    const EpdFontFamily::Style style) const {
   std::string visualText;
   text = RtlText::prepareForRender(text, visualText);
   const int yPos = y + getFontAscenderSize(fontId);

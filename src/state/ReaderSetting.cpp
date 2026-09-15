@@ -28,9 +28,8 @@ void readAndValidate(FsFile& file, uint8_t& member, uint8_t maxValue);
 ReaderSetting ReaderSetting::instance;
 
 namespace {
-constexpr uint8_t READER_SETTINGS_FILE_VERSION = 5;
-constexpr uint8_t READER_SETTINGS_COUNT = 42;
-constexpr uint8_t LEGACY_IMAGE_PRESENTATION_COUNT = 4;
+constexpr uint8_t READER_SETTINGS_FILE_VERSION = 1;
+constexpr uint8_t READER_SETTINGS_COUNT = 35;
 constexpr char READER_SETTINGS_FILE[] = "/.system/reader_settings.bin";
 constexpr uint32_t FNV1A_OFFSET = 2166136261UL;
 constexpr uint32_t FNV1A_PRIME = 16777619UL;
@@ -74,10 +73,6 @@ bool hashFile(const char* path, uint32_t& hash) {
   return true;
 }
 
-bool validRefreshFrequency(const uint8_t value) {
-  return value == 1 || value == 5 || value == 10 || value == 15 || value == 30;
-}
-
 uint32_t readerSettingsHash(const ReaderSetting& settings, const uint8_t fontFamilyToSave) {
   uint32_t hash = FNV1A_OFFSET;
   hashPod(hash, READER_SETTINGS_FILE_VERSION);
@@ -89,11 +84,6 @@ uint32_t readerSettingsHash(const ReaderSetting& settings, const uint8_t fontFam
   hashPod(hash, settings.statusBarFullStyle);
   hashPod(hash, settings.extraParagraphSpacing);
   hashPod(hash, settings.textAntiAliasing);
-  hashPod(hash, settings.readerShortPwrBtn);
-  hashPod(hash, settings.xtcShortPwrBtn);
-  hashPod(hash, settings.xtcPageAutoTurnSeconds);
-  hashPod(hash, settings.xtcImageQuality);
-  hashPod(hash, settings.xtcRefreshFrequency);
   hashString(hash, settings.dictionaryFolder);
   hashPod(hash, settings.btnPowerShortAction);
   hashPod(hash, settings.orientation);
@@ -111,8 +101,6 @@ uint32_t readerSettingsHash(const ReaderSetting& settings, const uint8_t fontFam
   hashPod(hash, settings.pageAutoTurnSeconds);
   hashPod(hash, settings.readerImageGrayscale);
   hashPod(hash, settings.readerSmartRefreshOnImages);
-  hashPod(hash, settings.legacyReaderImagePresentation);
-  hashPod(hash, settings.readerImageDither);
   hashPod(hash, settings.longPressChapterSkip);
   hashPod(hash, settings.quickActionsMask);
   hashPod(hash, settings.dailyReadingGoalMinutes);
@@ -151,16 +139,6 @@ bool ReaderSetting::saveToFile() const {
   }
 #endif
 
-  {
-    ReaderSetting* mut = const_cast<ReaderSetting*>(this);
-    if (mut->xtcImageQuality >= SystemSetting::READER_IMAGE_QUALITY_COUNT) {
-      mut->xtcImageQuality = SystemSetting::READER_IMAGE_LOW;
-    }
-    if (mut->xtcShortPwrBtn >= SystemSetting::XTC_SHORT_PWRBTN_COUNT) mut->xtcShortPwrBtn = SystemSetting::XTC_POWER_NEXT;
-    if (mut->xtcPageAutoTurnSeconds > 60 || mut->xtcPageAutoTurnSeconds % 10 != 0) mut->xtcPageAutoTurnSeconds = 0;
-    if (!validRefreshFrequency(mut->xtcRefreshFrequency)) mut->xtcRefreshFrequency = 15;
-  }
-
   const uint32_t currentHash = readerSettingsHash(*this, fontFamilyToSave);
   uint32_t storedHash = 0;
   if (hashFile(READER_SETTINGS_FILE, storedHash) && storedHash == currentHash) {
@@ -183,11 +161,6 @@ bool ReaderSetting::saveToFile() const {
   serialization::writePod(outputFile, statusBarFullStyle);
   serialization::writePod(outputFile, extraParagraphSpacing);
   serialization::writePod(outputFile, textAntiAliasing);
-  serialization::writePod(outputFile, readerShortPwrBtn);
-  serialization::writePod(outputFile, xtcShortPwrBtn);
-  serialization::writePod(outputFile, xtcPageAutoTurnSeconds);
-  serialization::writePod(outputFile, xtcImageQuality);
-  serialization::writePod(outputFile, xtcRefreshFrequency);
   serialization::writeString(outputFile, std::string(dictionaryFolder));
   serialization::writePod(outputFile, btnPowerShortAction);
   serialization::writePod(outputFile, orientation);
@@ -204,8 +177,6 @@ bool ReaderSetting::saveToFile() const {
   serialization::writePod(outputFile, pageAutoTurnSeconds);
   serialization::writePod(outputFile, readerImageGrayscale);
   serialization::writePod(outputFile, readerSmartRefreshOnImages);
-  serialization::writePod(outputFile, legacyReaderImagePresentation);
-  serialization::writePod(outputFile, readerImageDither);
   serialization::writePod(outputFile, longPressChapterSkip);
   serialization::writePod(outputFile, readingGuideLinesEnabled);
   serialization::writePod(outputFile, quickActionsMask);
@@ -240,16 +211,25 @@ bool ReaderSetting::loadFromFile() {
   uint8_t version;
   serialization::readPod(inputFile, version);
 
-  if (version > READER_SETTINGS_FILE_VERSION) {
-    INX_SERIAL.printf("[%lu] [CPR] Deserialization failed: Unknown version %u (expected <= %u)\n", millis(), version,
-                  READER_SETTINGS_FILE_VERSION);
+  if (version != READER_SETTINGS_FILE_VERSION) {
+    INX_SERIAL.printf("[%lu] [CPR] Deserialization failed: Unsupported version %u (expected %u)\n", millis(), version,
+                      READER_SETTINGS_FILE_VERSION);
     inputFile.close();
+    SdMan.remove(READER_SETTINGS_FILE);
+    saveToFile();
     return false;
   }
 
   uint8_t fileSettingsCount = 0;
   serialization::readPod(inputFile, fileSettingsCount);
-  const bool shouldRewriteSettings = version < READER_SETTINGS_FILE_VERSION || fileSettingsCount < READER_SETTINGS_COUNT;
+  if (fileSettingsCount != READER_SETTINGS_COUNT) {
+    INX_SERIAL.printf("[%lu] [CPR] Deserialization failed: Expected %u settings, found %u\n", millis(),
+                      READER_SETTINGS_COUNT, fileSettingsCount);
+    inputFile.close();
+    SdMan.remove(READER_SETTINGS_FILE);
+    saveToFile();
+    return false;
+  }
   uint8_t settingsRead = 0;
 
   do {
@@ -272,23 +252,6 @@ bool ReaderSetting::loadFromFile() {
     if (++settingsRead >= fileSettingsCount) break;
 
     serialization::readPod(inputFile, textAntiAliasing);
-    if (++settingsRead >= fileSettingsCount) break;
-
-    readAndValidate(inputFile, readerShortPwrBtn, SystemSetting::READER_SHORT_PWRBTN_COUNT);
-    if (++settingsRead >= fileSettingsCount) break;
-
-    readAndValidate(inputFile, xtcShortPwrBtn, SystemSetting::XTC_SHORT_PWRBTN_COUNT);
-    if (++settingsRead >= fileSettingsCount) break;
-
-    serialization::readPod(inputFile, xtcPageAutoTurnSeconds);
-    if (xtcPageAutoTurnSeconds > 60 || xtcPageAutoTurnSeconds % 10 != 0) xtcPageAutoTurnSeconds = 0;
-    if (++settingsRead >= fileSettingsCount) break;
-
-    readAndValidate(inputFile, xtcImageQuality, SystemSetting::READER_IMAGE_QUALITY_COUNT);
-    if (++settingsRead >= fileSettingsCount) break;
-
-    serialization::readPod(inputFile, xtcRefreshFrequency);
-    if (!validRefreshFrequency(xtcRefreshFrequency)) xtcRefreshFrequency = 15;
     if (++settingsRead >= fileSettingsCount) break;
 
     {
@@ -375,12 +338,6 @@ bool ReaderSetting::loadFromFile() {
     if (readerSmartRefreshOnImages > 1) readerSmartRefreshOnImages = 1;
     if (++settingsRead >= fileSettingsCount) break;
 
-    readAndValidate(inputFile, legacyReaderImagePresentation, LEGACY_IMAGE_PRESENTATION_COUNT);
-    if (++settingsRead >= fileSettingsCount) break;
-
-    readAndValidate(inputFile, readerImageDither, SystemSetting::READER_IMAGE_DITHER_COUNT);
-    if (++settingsRead >= fileSettingsCount) break;
-
     serialization::readPod(inputFile, longPressChapterSkip);
     if (longPressChapterSkip > SystemSetting::LONG_PRESS_PAGE_SKIP_5) {
       longPressChapterSkip = SystemSetting::LONG_PRESS_CHAPTER_SKIP;
@@ -456,10 +413,6 @@ bool ReaderSetting::loadFromFile() {
   quickActionsMask &= ~(1u << SystemSetting::BTN_ACTION_NONE);
   quickActionsMask &= ~(1u << SystemSetting::BTN_ACTION_QUICK_ACTIONS);
 
-  if (xtcImageQuality >= SystemSetting::READER_IMAGE_QUALITY_COUNT) xtcImageQuality = SystemSetting::READER_IMAGE_LOW;
-  if (xtcShortPwrBtn >= SystemSetting::XTC_SHORT_PWRBTN_COUNT) xtcShortPwrBtn = SystemSetting::XTC_POWER_NEXT;
-  if (xtcPageAutoTurnSeconds > 60 || xtcPageAutoTurnSeconds % 10 != 0) xtcPageAutoTurnSeconds = 0;
-  if (!validRefreshFrequency(xtcRefreshFrequency)) xtcRefreshFrequency = 15;
   if (pageTurnMode > PAGE_TURN_TAP) pageTurnMode = PAGE_TURN_TAP;
   if (disableLightControl > 1) disableLightControl = 0;
   if (doubleTapAction >= SystemSetting::READER_BUTTON_ACTION_COUNT) {
@@ -467,10 +420,6 @@ bool ReaderSetting::loadFromFile() {
   }
 
   INX_SERIAL.printf("[%lu] [CPR] Reader settings loaded (version %u, %u items)\n", millis(), version, settingsRead);
-
-  if (shouldRewriteSettings) {
-    saveToFile();
-  }
 
   return true;
 }

@@ -11,24 +11,10 @@
 #include <ZipFile.h>
 
 namespace {
-constexpr char kRepositoryBase[] =
-    "https://raw.githubusercontent.com/obijuankenobiii/inx-store/main/";
 constexpr char kDownloadPath[] = "/.system/language-package.zip";
 constexpr size_t kMaxPackageBytes = 5 * 1024 * 1024;
 constexpr size_t kMaxExtractedBytes = 16 * 1024 * 1024;
 constexpr size_t kMaxTranslationBytes = 128 * 1024;
-
-struct StaticPackage {
-  const char* code;
-  const char* name;
-  const char* path;
-};
-
-// CJK is a font-first package. Its YAML file is intentionally metadata-only
-// until translated UI strings are added to the language repository.
-constexpr StaticPackage kStaticPackages[] = {
-    {"cjk", "CJK", "lang/cjk.zip"},
-};
 
 bool isSafeLanguageCode(const std::string& code) {
   if (code.empty() || code.size() > 32 || code == "." || code == "..") return false;
@@ -247,10 +233,6 @@ bool installArchiveLocked(const std::string& archivePath, const std::string& cod
 bool LanguagePackageManager::fetchAvailable(std::vector<Package>& packages, std::string& error) {
   packages.clear();
   error.clear();
-  packages.reserve(sizeof(kStaticPackages) / sizeof(kStaticPackages[0]));
-  for (const StaticPackage& item : kStaticPackages) {
-    packages.push_back({item.code, item.name, std::string(kRepositoryBase) + item.path, 0});
-  }
   return true;
 }
 

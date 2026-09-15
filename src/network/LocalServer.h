@@ -108,7 +108,9 @@ class LocalServer {
   void handleSettingsGet() const;
   void handleSettingsUpdate() const;
   void handleLanguageGet() const;
+  void handleLanguagePackageGet() const;
   void handleLanguageUpdate() const;
+  void handleLanguageDelete() const;
 
   void handleWifiGet() const;
   void handleWifiPost() const;
