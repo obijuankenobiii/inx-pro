@@ -18,7 +18,7 @@ class Menu {
  public:
   enum class Action { None, Opened, Closed, Refresh, Search, View, Sort, Filter, Home, Library, Settings, Stats, Sync };
 
-  static constexpr int topPadding = FREEINK_DEVICE_X4PRO ? 25 : 15;
+  static constexpr int topPadding = FREEINK_DEVICE_X4PRO ? 20 : 15;
   static constexpr int iconSize = 40;
   static constexpr int leftMargin = 20;
   static constexpr int bottomPadding = 10;
