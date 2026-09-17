@@ -5,9 +5,20 @@
 #include "../../navigation/Menu.h"
 
 HomeWidgetLayout::HomeWidgetLayout(GfxRenderer& renderer)
-    : renderer_(renderer), carousel_(renderer), clock_(renderer), calendar_(renderer), recent_(renderer),
-      shortcut_(renderer), shortcutList_(renderer), temperature_(renderer), humidity_(renderer), todaysReading_(renderer),
-      favorites_(renderer), heatmap_(renderer), library_(renderer), description_(renderer) {}
+    : renderer_(renderer),
+      carousel_(renderer),
+      clock_(renderer),
+      calendar_(renderer),
+      recent_(renderer),
+      shortcut_(renderer),
+      shortcutList_(renderer),
+      temperature_(renderer),
+      humidity_(renderer),
+      todaysReading_(renderer),
+      favorites_(renderer),
+      heatmap_(renderer),
+      library_(renderer),
+      description_(renderer) {}
 
 void HomeWidgetLayout::render(const HomeTheme::Theme& theme, const int carouselIndex, const int favoriteIndex) const {
   switch (theme.layout) {
@@ -29,11 +40,12 @@ void HomeWidgetLayout::preloadCarousel(const HomeTheme::Theme& theme, const int 
   }
 
   const Grid layout = grid(theme.layout);
+  const bool hideFirst = hideFirstCarouselBook(theme);
   for (int slot = 0; slot < HomeTheme::slotCount(theme.layout); ++slot) {
     if (theme.widgets[slot] != HomeTheme::Widget::Carousel) continue;
     const Bounds bounds = slotBounds(layout, slot);
     carousel_.preload(carouselIndex, bounds.x, bounds.y, bounds.width, bounds.height, theme.carouselStyles[slot],
-                       theme.carouselLabels[slot] != 0, theme.carouselLabelColors[slot]);
+                      theme.carouselLabels[slot] != 0, theme.carouselLabelColors[slot], hideFirst);
   }
 }
 
@@ -48,10 +60,15 @@ bool HomeWidgetLayout::needsRefresh(const HomeTheme::Theme& theme) const {
     if (theme.widgets[slot] == HomeTheme::Widget::Humidity && humidity_.needsRefresh()) return true;
 #endif
     if (theme.widgets[slot] == HomeTheme::Widget::TodaysReading && todaysReading_.needsRefresh()) return true;
-    if (theme.widgets[slot] == HomeTheme::Widget::Heatmap &&
-        heatmap_.needsRefresh(theme.heatmapViews[slot])) return true;
+    if (theme.widgets[slot] == HomeTheme::Widget::Heatmap && heatmap_.needsRefresh(theme.heatmapViews[slot]))
+      return true;
   }
   return false;
+}
+
+int HomeWidgetLayout::carouselBookCount(const HomeTheme::Theme& theme, const int bookCount) const {
+  if (bookCount <= 0) return 0;
+  return std::max(0, bookCount - (hideFirstCarouselBook(theme) ? 1 : 0));
 }
 
 void HomeWidgetLayout::renderSleep(const HomeTheme::Theme& theme) const {
@@ -107,8 +124,8 @@ HomeWidgetLayout::Grid HomeWidgetLayout::grid(const HomeTheme::Layout layout, co
     }
   }
 
-  return {columns, rows, centeredX, centeredY, centeredWidth, centeredHeight, gap, baseColumns, slotColumnOffset,
-          slotRowOffset};
+  return {columns,        rows, centeredX,   centeredY,        centeredWidth,
+          centeredHeight, gap,  baseColumns, slotColumnOffset, slotRowOffset};
 }
 
 HomeWidgetLayout::Bounds HomeWidgetLayout::slotBounds(const Grid& layout, const int slot) const {
@@ -122,18 +139,19 @@ HomeWidgetLayout::Bounds HomeWidgetLayout::slotBounds(const Grid& layout, const 
 
 void HomeWidgetLayout::renderClassic(const int carouselIndex) const {
   carousel_.render(carouselIndex, 0, navigation::Menu::height, renderer_.getScreenWidth(), Carousel::kHeight);
-  shortcut_.render(20, navigation::Menu::height + Carousel::kHeight + 20, renderer_.getScreenWidth() - 40,
-                   renderer_.getScreenHeight() - navigation::Menu::height - Carousel::kHeight -
-                       navigation::Menu::bottomHeight - 40);
+  shortcut_.render(
+      20, navigation::Menu::height + Carousel::kHeight + 20, renderer_.getScreenWidth() - 40,
+      renderer_.getScreenHeight() - navigation::Menu::height - Carousel::kHeight - navigation::Menu::bottomHeight - 40);
 }
 
 void HomeWidgetLayout::renderGrid(const HomeTheme::Theme& theme, const int carouselIndex, const int favoriteIndex,
                                   const bool sleep) const {
   const Grid layout = grid(theme.layout, sleep, sleep ? &theme : nullptr);
+  const bool hideFirst = hideFirstCarouselBook(theme);
   int descriptionRecentIndex = -1;
   for (int slot = 0; slot < HomeTheme::slotCount(theme.layout); ++slot) {
     if (theme.widgets[slot] == HomeTheme::Widget::Carousel) {
-      descriptionRecentIndex = carouselIndex;
+      descriptionRecentIndex = hideFirst ? carouselIndex + 1 : carouselIndex;
       break;
     }
     if (descriptionRecentIndex < 0 && theme.widgets[slot] == HomeTheme::Widget::Recent) {
@@ -144,10 +162,9 @@ void HomeWidgetLayout::renderGrid(const HomeTheme::Theme& theme, const int carou
     const Bounds bounds = slotBounds(layout, slot);
     switch (theme.widgets[slot]) {
       case HomeTheme::Widget::Carousel:
-        carousel_.render(carouselIndex, bounds.x, bounds.y, bounds.width, bounds.height,
-                         theme.backgrounds[slot] != 0, theme.carouselStyles[slot], theme.carouselLabels[slot] != 0,
-                         theme.carouselLabelColors[slot], theme.carouselShadowStyles[slot],
-                         theme.carouselProgress[slot] != 0);
+        carousel_.render(carouselIndex, bounds.x, bounds.y, bounds.width, bounds.height, theme.backgrounds[slot] != 0,
+                         theme.carouselStyles[slot], theme.carouselLabels[slot] != 0, theme.carouselLabelColors[slot],
+                         theme.carouselShadowStyles[slot], theme.carouselProgress[slot] != 0, hideFirst);
         break;
       case HomeTheme::Widget::Shortcuts:
         shortcut_.render(bounds.x, bounds.y, bounds.width, bounds.height);
@@ -179,9 +196,9 @@ void HomeWidgetLayout::renderGrid(const HomeTheme::Theme& theme, const int carou
         todaysReading_.render(bounds.x, bounds.y, bounds.width, bounds.height);
         break;
       case HomeTheme::Widget::Favorites:
-        favorites_.render(favoriteIndex, bounds.x, bounds.y, bounds.width, bounds.height,
-                          theme.backgrounds[slot] != 0, theme.carouselStyles[slot], theme.carouselLabels[slot] != 0,
-                          theme.carouselLabelColors[slot], theme.carouselShadowStyles[slot]);
+        favorites_.render(favoriteIndex, bounds.x, bounds.y, bounds.width, bounds.height, theme.backgrounds[slot] != 0,
+                          theme.carouselStyles[slot], theme.carouselLabels[slot] != 0, theme.carouselLabelColors[slot],
+                          theme.carouselShadowStyles[slot]);
         break;
       case HomeTheme::Widget::Heatmap:
         heatmap_.render(bounds.x, bounds.y, bounds.width, bounds.height, theme.heatmapViews[slot],
@@ -225,7 +242,8 @@ void HomeWidgetLayout::renderBorder(const HomeTheme::Border border, const Grid& 
       break;
     case HomeTheme::Border::Normal:
       if (layout.rows > 1) renderer_.line.render(layout.areaX, dividerY, layout.areaX + layout.areaW, dividerY, true);
-      if (layout.columns == 2) renderer_.line.render(dividerX, layout.areaY, dividerX, layout.areaY + layout.areaH, true);
+      if (layout.columns == 2)
+        renderer_.line.render(dividerX, layout.areaY, dividerX, layout.areaY + layout.areaH, true);
       break;
     case HomeTheme::Border::Thick:
       for (int offset = -1; offset <= 1; ++offset) {
@@ -257,6 +275,7 @@ int HomeWidgetLayout::findWidget(const HomeTheme::Theme& theme, const HomeTheme:
 
 int HomeWidgetLayout::carouselAt(const HomeTheme::Theme& theme, const int carouselIndex, const int count, const int x,
                                  const int y) const {
+  const bool hideFirst = hideFirstCarouselBook(theme);
   if (theme.layout == HomeTheme::Layout::Classic) {
     return carousel_.hitTest(carouselIndex, count, x, y, 0, navigation::Menu::height, renderer_.getScreenWidth(),
                              Carousel::kHeight, HomeTheme::CarouselStyle::Centered, true);
@@ -265,8 +284,18 @@ int HomeWidgetLayout::carouselAt(const HomeTheme::Theme& theme, const int carous
   if (slot < 0) return -1;
   const Bounds bounds = slotBounds(grid(theme.layout), slot);
   return carousel_.hitTest(carouselIndex, count, x, y, bounds.x, bounds.y, bounds.width, bounds.height,
-                           theme.carouselStyles[slot], theme.carouselLabels[slot] != 0,
-                           theme.carouselLabelColors[slot]);
+                           theme.carouselStyles[slot], theme.carouselLabels[slot] != 0, theme.carouselLabelColors[slot],
+                           hideFirst);
+}
+
+bool HomeWidgetLayout::hideFirstCarouselBook(const HomeTheme::Theme& theme) const {
+  bool hasCarousel = false;
+  bool hasRecent = false;
+  for (int slot = 0; slot < HomeTheme::slotCount(theme.layout); ++slot) {
+    hasCarousel = hasCarousel || theme.widgets[slot] == HomeTheme::Widget::Carousel;
+    hasRecent = hasRecent || theme.widgets[slot] == HomeTheme::Widget::Recent;
+  }
+  return hasCarousel && hasRecent;
 }
 
 HomeWidgetLayout::HitResult HomeWidgetLayout::hitTest(const HomeTheme::Theme& theme, const int carouselIndex,
@@ -296,7 +325,7 @@ HomeWidgetLayout::HitResult HomeWidgetLayout::hitTest(const HomeTheme::Theme& th
 }
 
 HomeWidgetLayout::SwipeTarget HomeWidgetLayout::horizontalSwipeTarget(const HomeTheme::Theme& theme, const int x,
-                                                                       const int y) const {
+                                                                      const int y) const {
   if (theme.layout == HomeTheme::Layout::Classic) {
     return x >= 0 && x < renderer_.getScreenWidth() && y >= navigation::Menu::height &&
                    y < navigation::Menu::height + Carousel::kHeight

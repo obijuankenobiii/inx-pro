@@ -14,11 +14,12 @@ class Carousel final : public BaseCarousel {
               HomeTheme::CarouselStyle style = HomeTheme::CarouselStyle::Centered, bool showLabel = true,
               HomeTheme::CarouselLabelColor labelColor = HomeTheme::CarouselLabelColor::Black,
               HomeTheme::CarouselShadowStyle shadowStyle = HomeTheme::CarouselShadowStyle::None,
-              bool showProgress = true) const;
+              bool showProgress = true, bool hideFirst = false) const;
   /** Promote all capped recent-thumbnail display caches into PSRAM without drawing. */
   void preload(int index, int x, int y, int width, int height,
                HomeTheme::CarouselStyle style = HomeTheme::CarouselStyle::Centered, bool showLabel = true,
-               HomeTheme::CarouselLabelColor labelColor = HomeTheme::CarouselLabelColor::Black) const;
+               HomeTheme::CarouselLabelColor labelColor = HomeTheme::CarouselLabelColor::Black,
+               bool hideFirst = false) const;
   void preview(int x, int y, int width, int height, bool background = true,
                HomeTheme::CarouselStyle style = HomeTheme::CarouselStyle::Centered, bool showLabel = true,
                HomeTheme::CarouselLabelColor labelColor = HomeTheme::CarouselLabelColor::Black,
@@ -26,12 +27,13 @@ class Carousel final : public BaseCarousel {
                bool showProgress = true) const;
   int hitTest(int index, int count, int x, int y, int areaX, int areaY, int areaW, int areaH,
               HomeTheme::CarouselStyle style = HomeTheme::CarouselStyle::Centered, bool showLabel = true,
-              HomeTheme::CarouselLabelColor labelColor = HomeTheme::CarouselLabelColor::Black) const;
+              HomeTheme::CarouselLabelColor labelColor = HomeTheme::CarouselLabelColor::Black,
+              bool hideFirst = false) const;
 
  private:
   void renderLeft(int index, int x, int y, int width, int height, HomeTheme::CarouselShadowStyle shadowStyle,
-                  bool showProgress) const;
+                  bool showProgress, bool hideFirst) const;
   void previewLeft(int x, int y, int width, int height, HomeTheme::CarouselShadowStyle shadowStyle,
-                  bool showProgress) const;
-  int hitTestLeft(int index, int count, int x, int y, int areaX, int areaY, int areaW, int areaH) const;
+                   bool showProgress) const;
+  int hitTestLeft(int index, int count, int x, int y, int areaX, int areaY, int areaW, int areaH, bool hideFirst) const;
 };

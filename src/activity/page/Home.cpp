@@ -5,20 +5,18 @@
 
 #include "Home.h"
 
-#include "HomeSubPage.h"
-
 #include <GfxRenderer.h>
 #include <SDCardManager.h>
+#include <esp_task_wdt.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 #include <algorithm>
 #include <functional>
 #include <string>
 #include <vector>
 
-#include <esp_task_wdt.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
-
+#include "HomeSubPage.h"
 #include "components/global/Button.h"
 #include "components/global/PopUp.h"
 #include "components/global/Sidebar.h"
@@ -44,16 +42,14 @@ constexpr unsigned long longPressMs = 500;
 constexpr int kStoreIconSize = 40;
 constexpr int kStoreBottomMargin = 20;
 
-int storeIconY(const GfxRenderer& renderer) {
-  return renderer.getScreenHeight() - kStoreBottomMargin - kStoreIconSize;
-}
+int storeIconY(const GfxRenderer& renderer) { return renderer.getScreenHeight() - kStoreBottomMargin - kStoreIconSize; }
 
 bool storeIconHit(const GfxRenderer& renderer, const int x, const int y) {
   const int iconY = storeIconY(renderer);
   constexpr int rowSideMargin = 16;
   constexpr int rowVerticalPadding = 10;
-  return x >= rowSideMargin && x < renderer.getScreenWidth() / 2 + rowSideMargin &&
-         y >= iconY - rowVerticalPadding && y < iconY + kStoreIconSize + rowVerticalPadding;
+  return x >= rowSideMargin && x < renderer.getScreenWidth() / 2 + rowSideMargin && y >= iconY - rowVerticalPadding &&
+         y < iconY + kStoreIconSize + rowVerticalPadding;
 }
 
 std::string cachePath(const RecentBook& book) {
@@ -87,7 +83,7 @@ bool removeTree(const std::string& path, int& removed) {
   return SdMan.removeDir(path.c_str());
 }
 
-}
+}  // namespace
 
 Home::Home(GfxRenderer& renderer, MappedInputManager& mappedInput)
     : Page("Home", renderer, mappedInput), widgetLayout(renderer), shortcutList(renderer) {}
@@ -120,8 +116,7 @@ void Home::title() const {
   renderer.bitmap.icon(Hamburger, navigation::Menu::leftMargin, navigation::Menu::topPadding,
                        navigation::Menu::iconSize, navigation::Menu::iconSize);
   const int font = MONTSERRAT_16_FONT_ID;
-  const int textY = navigation::Menu::topPadding +
-                    (navigation::Menu::iconSize - renderer.text.getLineHeight(font)) / 2;
+  const int textY = navigation::Menu::topPadding + (navigation::Menu::iconSize - renderer.text.getLineHeight(font)) / 2;
   renderer.text.render(font, navigation::Menu::leftMargin + navigation::Menu::iconSize + 12, textY, "Home", true,
                        EpdFontFamily::BOLD);
 }
@@ -201,8 +196,7 @@ bool Home::handleSwipe() {
 
   const int swipeX = static_cast<int>(swipeNx * renderer.getScreenWidth());
   const int swipeY = static_cast<int>(swipeNy * renderer.getScreenHeight());
-  const HomeWidgetLayout::SwipeTarget target =
-      widgetLayout.horizontalSwipeTarget(HomeTheme::active(), swipeX, swipeY);
+  const HomeWidgetLayout::SwipeTarget target = widgetLayout.horizontalSwipeTarget(HomeTheme::active(), swipeX, swipeY);
   if (target == HomeWidgetLayout::SwipeTarget::Carousel) {
     advanceCarousel(swipeLeft ? 1 : -1);
     return true;
@@ -219,7 +213,7 @@ bool Home::handleSwipe() {
 }
 
 void Home::advanceCarousel(const int delta) {
-  const int bookCount = RECENT_BOOKS.getCount();
+  const int bookCount = widgetLayout.carouselBookCount(HomeTheme::active(), RECENT_BOOKS.getCount());
   if (bookCount <= 0) {
     carouselIndex = 0;
     return;
@@ -352,8 +346,8 @@ bool Home::handleShortcutDrawerInput() {
     return true;
   }
   if (tapX >= 0 && tapX < drawerWidth && tapY >= listTop) {
-    const int item = shortcutList.hitTest(tapX, tapY, 0, listTop, drawerWidth,
-                                          renderer.getScreenHeight() - listTop, Sidebar::rowHeight);
+    const int item = shortcutList.hitTest(tapX, tapY, 0, listTop, drawerWidth, renderer.getScreenHeight() - listTop,
+                                          Sidebar::rowHeight);
     if (item >= 0) {
       shortcutDrawerOpen = false;
       updateRequired = true;
@@ -404,10 +398,12 @@ bool Home::handleShortcut(const int item) {
 }
 
 void Home::popup() const {
-  const std::vector<std::string> items = heatmapPopupOpen
-                                             ? std::vector<std::string>{"View Report"}
-                                             : (favoritePopupOpen ? std::vector<std::string>{"Remove favorite"}
-                                                                   : std::vector<std::string>{"View description", "Mark as completed", "Remove Recent", "Delete cache"});
+  const std::vector<std::string> items =
+      heatmapPopupOpen
+          ? std::vector<std::string>{"View Report"}
+          : (favoritePopupOpen
+                 ? std::vector<std::string>{"Remove favorite"}
+                 : std::vector<std::string>{"View description", "Mark as completed", "Remove Recent", "Delete cache"});
   const PopUpBounds box = PopUp::bounds(renderer, static_cast<int>(items.size()));
   PopUp::background(renderer, box);
   PopUp::title(renderer, box, heatmapPopupOpen ? "Heatmap" : (favoritePopupOpen ? "Favorite" : "Book"));
@@ -496,7 +492,9 @@ void Home::removeRecent() {
     RECENT_BOOKS.removeBook(books[static_cast<size_t>(popupBook)].path);
   }
   popupBook = -1;
-  if (carouselIndex >= RECENT_BOOKS.getCount()) carouselIndex = 0;
+  if (carouselIndex >= widgetLayout.carouselBookCount(HomeTheme::active(), RECENT_BOOKS.getCount())) {
+    carouselIndex = 0;
+  }
   updateRequired = true;
 }
 
