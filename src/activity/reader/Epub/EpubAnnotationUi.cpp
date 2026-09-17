@@ -10,7 +10,6 @@
 #include "EpubActivity.h"
 #include "activity/page/components/global/Button.h"
 #include "images/Close.h"
-#include "images/LibraryFilterRight.h"
 #include "system/FontManager.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
@@ -25,12 +24,6 @@ constexpr int kSelectionHandleRadius = 11;
 constexpr int kSelectionHandleStem = 0;
 constexpr int kSelectionActionGap = 14;
 constexpr int kOverlayMargin = 20;
-constexpr int kCaretSize = 40;
-constexpr int kCaretSourceSize = 30;
-
-ButtonBounds caretBounds(const GfxRenderer& renderer) {
-  return {kOverlayMargin, renderer.getScreenHeight() - kOverlayMargin - kCaretSize, kCaretSize, kCaretSize};
-}
 
 }
 
@@ -158,7 +151,6 @@ void EpubAnnotationUi::enter(EpubActivity& act) {
   }
   act.btnBindings_.reset();
   mode_ = true;
-  controlsVisible_ = true;
   pendingNoteAudioPath_.clear();
   pendingNoteText_.clear();
   selectingStarted_ = false;
@@ -282,7 +274,6 @@ void EpubAnnotationUi::exit(EpubActivity& act) {
                 act.currentSpineIndex, act.section ? act.section->currentPage : -1, selectingStarted_ ? 1 : 0,
                 static_cast<unsigned>(pendingSpans_.size()), static_cast<unsigned>(storedRanges_.size()));
   mode_ = false;
-  controlsVisible_ = true;
   pendingNoteAudioPath_.clear();
   pendingNoteText_.clear();
   selectingStarted_ = false;
@@ -609,7 +600,7 @@ void EpubAnnotationUi::drawUiOverlay(EpubActivity& act) {
   const int closeY = margin;
   if (touchSelectionUi_) {
     drawTouchSelectionActions(act);
-  } else if (controlsVisible_) {
+  } else {
     act.renderer.bitmap.icon(Close, closeX, closeY, closeSize, closeSize);
     const int font = systemFontId();
     const int saveWidth = Button::width(act.renderer, "Save", font);
@@ -620,11 +611,6 @@ void EpubAnnotationUi::drawUiOverlay(EpubActivity& act) {
     const ButtonBounds note{save.x - margin - noteWidth, save.y, noteWidth, Button::height};
     Button::render(act.renderer, note, "Add note", true, font);
   }
-  const ButtonBounds caret = caretBounds(act.renderer);
-  const auto orientation = controlsVisible_ ? BitmapRender::Orientation::Rotate90CW
-                                            : BitmapRender::Orientation::Rotate270CW;
-  act.renderer.bitmap.iconScaled(LibraryFilterRight, caret.x, caret.y, kCaretSourceSize, kCaretSourceSize,
-                                 kCaretSize, kCaretSize, orientation);
   act.renderer.setOrientation(GfxRenderer::Portrait);
   const char* backHint = hasSaveableContent() ? "Save" : "Exit";
   const char* mid = selectingStarted_ ? "Stop" : "Start";
@@ -677,18 +663,11 @@ void EpubAnnotationUi::handleInput(EpubActivity& act) {
       const int closeY = margin;
       const int x = static_cast<int>(tapNx * act.renderer.getScreenWidth());
       const int y = static_cast<int>(tapNy * act.renderer.getScreenHeight());
-      const ButtonBounds caret = caretBounds(act.renderer);
-      if (x >= caret.x && x < caret.x + caret.width && y >= caret.y && y < caret.y + caret.height) {
-        controlsVisible_ = !controlsVisible_;
-        act.updateRequired = true;
-        return;
-      }
-
       if (handleTouchSelectionActionTap(act, x, y)) {
         return;
       }
 
-      if (controlsVisible_ && x >= closeX && x < closeX + closeSize && y >= closeY && y < closeY + closeSize) {
+      if (x >= closeX && x < closeX + closeSize && y >= closeY && y < closeY + closeSize) {
         INX_SERIAL.printf("[%lu] [ANNOTATION] close tap=(%d,%d) spine=%d page=%d\n", millis(), x, y,
                       act.currentSpineIndex, act.section ? act.section->currentPage : -1);
         exit(act);
@@ -696,7 +675,7 @@ void EpubAnnotationUi::handleInput(EpubActivity& act) {
         return;
       }
 
-      if (controlsVisible_) {
+      {
         const int font = systemFontId();
         const int saveWidth = Button::width(act.renderer, "Save", font);
         const ButtonBounds save{act.renderer.getScreenWidth() - margin - saveWidth,

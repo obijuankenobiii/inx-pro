@@ -99,7 +99,6 @@ class EpubAnnotationUi {
   static void normalizeSpans(std::vector<std::pair<size_t, size_t>>& spans);
 
   bool mode_ = false;
-  bool controlsVisible_ = true;
   /** While true, drawUiOverlay() is a no-op - lets a renderScreen() call rebuild the page/word-index
    *  cache without baking the cursor box into the framebuffer that gets captured right
    *  after (clearAllStoredHighlightsOnCurrentPage() recapture). */

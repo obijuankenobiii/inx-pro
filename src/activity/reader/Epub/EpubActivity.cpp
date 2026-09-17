@@ -68,6 +68,7 @@ constexpr unsigned long wordSelectionHoldMs = 300;
 constexpr bool kReaderHighQualityFastLut = true;
 constexpr int kWordSelectionHandleRadius = 11;
 constexpr int kWordSelectionActionGap = 14;
+constexpr bool kWordSelectionActionBarVertical = true;
 
 bool pageImageFootprintAtLeastHalfScreen(const Page& page, const GfxRenderer& renderer, int marginLeft, int marginTop) {
   if (!page.hasImages()) {
@@ -864,7 +865,7 @@ bool EpubActivity::wordSelectionActionBarBounds(const PageWordHit& word, int& x,
     return false;
   }
 
-  const bool vertical = actions.size() > 3;
+  const bool vertical = kWordSelectionActionBarVertical;
   width = 0;
   height = vertical ? Button::height * static_cast<int>(actions.size()) : Button::height;
   if (itemWidths) {
@@ -877,9 +878,8 @@ bool EpubActivity::wordSelectionActionBarBounds(const PageWordHit& word, int& x,
       itemWidths->push_back(itemWidth);
     }
   }
-  // The four-item menu is intentionally a little wider than the measured
-  // label bounds so it reads as a proper vertical action panel and does not
-  // crowd the system-font text at the right edge.
+  // Give the vertical action panel enough breathing room that it reads as a
+  // proper menu and does not crowd the system-font text at the right edge.
   if (vertical) {
     width += 20;
   }
@@ -907,7 +907,7 @@ void EpubActivity::drawWordSelectionActionBar(const PageWordHit& word) {
   }
 
   const std::vector<std::string> actions = currentWordActions();
-  const bool vertical = actions.size() > 3;
+  const bool vertical = kWordSelectionActionBarVertical;
   renderer.rectangle.fill(x, y, width, height, false, vertical ? false : true, false);
   renderer.rectangle.render(x, y, width, height, true, vertical ? false : true, false);
 
@@ -1271,7 +1271,7 @@ bool EpubActivity::handleWordSelection() {
   }
 
   int action = -1;
-  if (actions.size() > 3) {
+  if (kWordSelectionActionBarVertical) {
     const int row = (y - barY) / Button::height;
     if (row >= 0 && row < static_cast<int>(actions.size())) {
       action = row;

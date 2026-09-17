@@ -225,13 +225,6 @@ class EpubActivity final : public ActivityWithSubactivity {
                       int orientedMarginBottom, int orientedMarginLeft);
 
   /**
-   * Fast, minimal render of a page pulled straight out of an in-progress chapter build
-   * (Section::loadIncrementalPage()), shown while the rest of that chapter keeps building in the
-   * background. Deliberately skips annotations/AA/grayscale passes - it's a preview, superseded within a
-   * tick or two by the normal renderContents() once the chapter finishes and `section` is set.
-   */
-
-  /**
    * Renders the status bar with configurable sections.
    *
    * @param orientedMarginRight Right margin
