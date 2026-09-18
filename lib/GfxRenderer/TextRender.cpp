@@ -190,6 +190,35 @@ int TextRender::getUntranslatedWidth(const int fontId, const char* text, const E
   }
   if (!text || *text == '\0') return 0;
 
+  // Streaming TTF fonts already expose cached glyph metadata. Measure the
+  // common no-fallback case in one pass; the old path first scanned every
+  // codepoint for fallback glyphs and then scanned the same text again for
+  // its width, doubling the hot-path work during EPUB pagination.
+  if (ExternalFont* stream = findStreamingFont(gfx, primary->getData(style))) {
+    int streamingWidth = 0;
+    bool needsFallback = false;
+    const uint8_t* streamPtr = reinterpret_cast<const uint8_t*>(text);
+    while (const uint32_t cp = utf8NextCodepoint(&streamPtr)) {
+      EpdGlyph glyph{};
+      if (stream->getGlyphMetadata(cp, glyph)) {
+        streamingWidth += glyph.advanceX;
+        continue;
+      }
+
+      const int resolved = resolveFontForCodepoint(gfx, fontId, cp, style);
+      if (resolved != fontId) {
+        needsFallback = true;
+        break;
+      }
+      if (stream->getGlyphMetadata(REPLACEMENT_GLYPH, glyph)) {
+        streamingWidth += glyph.advanceX;
+      }
+    }
+    if (!needsFallback) {
+      return streamingWidth;
+    }
+  }
+
   // Keep the original family measurement for the common path. Besides being
   // cheaper for embedded fonts, this preserves their existing bearing rules.
   bool hasFallbackGlyph = false;

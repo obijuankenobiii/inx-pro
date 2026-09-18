@@ -20,6 +20,7 @@
 
 #include "Page.h"
 #include "ImagePrefetch.h"
+#include "../../../src/system/EpubPerf.h"
 #include "hyphenation/Hyphenator.h"
 #include "parsers/ChapterHtmlSlimParser.h"
 
@@ -76,13 +77,17 @@ uint32_t Section::onPageComplete(std::unique_ptr<Page> page, const std::function
     return 0;
   }
   const uint32_t position = file.position();
+  const uint32_t pageBuildStart = millis();
   if (pageBuiltFn) {
     pageBuiltFn(*page, pageCount);
   }
+  timingPageBuildMs_ += millis() - pageBuildStart;
+  const uint32_t pageSerializeStart = millis();
   if (!page->serialize(file)) {
     INX_SERIAL.printf("[%lu] [SCT] Failed to serialize page %d\n", millis(), pageCount);
     return 0;
   }
+  timingPageSerializeMs_ += millis() - pageSerializeStart;
   pageCount++;
   return position;
 }
@@ -369,9 +374,12 @@ bool Section::createSectionFile(const int fontId, const int headerFontId, const 
                                 const std::function<void(Page&, uint16_t)>& pageBuiltFn,
                                 const bool warmImageDisplayCache, const ImageRenderMode warmImageRenderMode,
                                 const bool warmImageQuality, const int warmImageYOffset) {
+  const uint32_t sectionStart = millis();
   clearPageCache();
   pageOffsets.clear();
   pageCount = 0;
+  timingPageBuildMs_ = 0;
+  timingPageSerializeMs_ = 0;
   const auto localPath = epub->getSpineItem(spineIndex).href;
 
   std::string contentBasePath = "";
@@ -403,6 +411,7 @@ bool Section::createSectionFile(const int fontId, const int headerFontId, const 
                          viewportHeight, hyphenationEnabled, respectCssParagraphIndent, bionicReadingEnabled);
 
   bool success = false;
+  const uint32_t parserStart = millis();
   try {
     success = visitor.parseAndBuildPages(skipImages);
   } catch (const std::bad_alloc& e) {
@@ -425,6 +434,12 @@ bool Section::createSectionFile(const int fontId, const int headerFontId, const 
                   spineIndex, localPath.c_str());
     success = false;
   }
+  const uint32_t parserElapsed = millis() - parserStart;
+  INX_SERIAL.printf(
+      "[%lu] [SCT-TIMING] spine=%d parser=%lums pages=%u success=%d skipImages=%d pageBuild=%lums pageSerialize=%lums\n",
+      millis(), spineIndex, static_cast<unsigned long>(parserElapsed), static_cast<unsigned>(pageCount), success ? 1 : 0,
+      skipImages ? 1 : 0, static_cast<unsigned long>(timingPageBuildMs_),
+      static_cast<unsigned long>(timingPageSerializeMs_));
 
   if (!success) {
     INX_SERIAL.printf(
@@ -455,6 +470,7 @@ bool Section::createSectionFile(const int fontId, const int headerFontId, const 
     }
   }
 
+  const uint32_t lutStart = millis();
   {
     EpubImagePrefetch::IoLock ioLock;
     const uint32_t lutOffset = file.position();
@@ -467,6 +483,10 @@ bool Section::createSectionFile(const int fontId, const int headerFontId, const 
     serialization::writePod(file, lutOffset);
     file.close();
   }
+  INX_SERIAL.printf("[%lu] [SCT-TIMING] spine=%d total=%lums parser=%lums lutWrite=%lums pages=%u\n", millis(),
+                spineIndex, static_cast<unsigned long>(millis() - sectionStart),
+                static_cast<unsigned long>(parserElapsed), static_cast<unsigned long>(millis() - lutStart),
+                static_cast<unsigned>(pageCount));
   epub->flushImageMetadata();
   return true;
 }

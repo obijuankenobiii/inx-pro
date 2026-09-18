@@ -19,13 +19,17 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <new>
 #include <vector>
 
 namespace {
 
 inline void cssParserCooperativeYield() {
 #ifdef ARDUINO
-  delay(1);
+  // Keep long selector scans cooperative without sleeping for a full
+  // millisecond on every batch. Large chapters can hit this thousands of
+  // times, and delay(1) turns CSS matching into the dominant parse cost.
+  yield();
 #endif
 }
 
@@ -646,6 +650,10 @@ CssParser::CssParser() {}
 
 CssParser::~CssParser() { clear(); }
 
+void CssParser::resetTimingStats() const { timingStats_ = {}; }
+
+CssParser::TimingStats CssParser::getTimingStats() const { return timingStats_; }
+
 void CssParser::clear() {
   rules.clear();
   properties_.clear();
@@ -653,6 +661,10 @@ void CssParser::clear() {
   bodyTextAlignRaw.clear();
   mcValid_ = false;
   mcMatched_.clear();
+  if (winningRuleCache_) {
+    winningRuleCache_[0].valid = false;
+    winningRuleCache_[1].valid = false;
+  }
   tagRuleIndex_.clear();
   classRuleIndex_.clear();
   idRuleIndex_.clear();
@@ -799,6 +811,10 @@ bool CssParser::loadBinary(FsFile& file) {
 
   mcValid_ = false;
   mcMatched_.clear();
+  if (winningRuleCache_) {
+    winningRuleCache_[0].valid = false;
+    winningRuleCache_[1].valid = false;
+  }
   selectorIndexValid_ = false;
   return true;
 }
@@ -937,6 +953,10 @@ void CssParser::parse(const std::string& cssContent, const std::string& sourcePa
 
   mcValid_ = false;
   mcMatched_.clear();
+  if (winningRuleCache_) {
+    winningRuleCache_[0].valid = false;
+    winningRuleCache_[1].valid = false;
+  }
   selectorIndexValid_ = false;
 
   INX_SERIAL.printf("[CSSP] Parsed %zu CSS rules\n", rules.size());
@@ -1682,7 +1702,12 @@ const std::vector<CssParser::MatchedRule>& CssParser::matchedRulesFor(const std:
   mcClass_ = className;
   mcId_ = id;
   mcMatched_.clear();
+  if (winningRuleCache_) {
+    winningRuleCache_[0].valid = false;
+    winningRuleCache_[1].valid = false;
+  }
 
+  const uint32_t matchStart = millis();
   const std::string idLower = toLower(trim(id));
   std::vector<std::string> classTokens;
   splitClassTokens(className, classTokens);
@@ -1716,6 +1741,8 @@ const std::vector<CssParser::MatchedRule>& CssParser::matchedRulesFor(const std:
     }
   }
   mcValid_ = true;
+  timingStats_.matchedRuleMs += millis() - matchStart;
+  ++timingStats_.matchedRuleCalls;
   return mcMatched_;
 }
 
@@ -1740,22 +1767,66 @@ bool CssParser::ruleHasProperty(const CssRule& rule, const std::string& propName
 const CssParser::CssRule* CssParser::winningRuleForProperty(const std::string& propName, const std::string& className,
                                                             const std::string& id, const std::string& elementTagLower,
                                                             const bool ignoreContextual) const {
-  const CssRule* best = nullptr;
-  int bestPriority = -1;
-  for (const auto& m : matchedRulesFor(elementTagLower, className, id)) {
-    if (ignoreContextual && m.contextual) {
-      continue;
-    }
-    if (!ruleHasProperty(*m.rule, propName)) {
-      continue;
-    }
-    const int priority = m.tier * 2 + (m.contextual ? 0 : 1);
-    if (priority >= bestPriority) {
-      bestPriority = priority;
-      best = m.rule;
+  const uint32_t propertyStart = millis();
+  ++timingStats_.propertyResolveCalls;
+  const uint8_t propertyId = cssPropertyId(propName);
+  if (propertyId == kCssPropertyInvalid) {
+    timingStats_.propertyResolveMs += millis() - propertyStart;
+    return nullptr;
+  }
+
+  const auto& matches = matchedRulesFor(elementTagLower, className, id);
+  if (!winningRuleCache_) {
+    winningRuleCache_.reset(new (std::nothrow) WinningRuleCacheTable[2]);
+    if (!winningRuleCache_) {
+      // Preserve correctness if the optimization cache cannot be allocated.
+      const CssRule* best = nullptr;
+      int bestPriority = -1;
+      for (const auto& matched : matches) {
+        if (ignoreContextual && matched.contextual) continue;
+        if (!ruleHasProperty(*matched.rule, propName)) continue;
+        const int priority = matched.tier * 2 + (matched.contextual ? 0 : 1);
+        if (priority >= bestPriority) {
+          bestPriority = priority;
+          best = matched.rule;
+        }
+      }
+      timingStats_.propertyResolveMs += millis() - propertyStart;
+      return best;
     }
   }
-  return best;
+
+  auto& table = winningRuleCache_[ignoreContextual ? 1 : 0];
+  if (!table.valid) {
+    table.winners.fill(nullptr);
+    table.priorities.fill(-1);
+    table.present.fill(false);
+
+    // One selector pass resolves every tracked property. The old path did
+    // this scan independently for each margin, border, font, and display
+    // query made while opening the same element.
+    for (const auto& matched : matches) {
+      if (ignoreContextual && matched.contextual) {
+        continue;
+      }
+      const int priority = matched.tier * 2 + (matched.contextual ? 0 : 1);
+      const size_t end = std::min(properties_.size(),
+                                  static_cast<size_t>(matched.rule->propertyStart) + matched.rule->propertyCount);
+      for (size_t i = matched.rule->propertyStart; i < end; ++i) {
+        const uint8_t id = properties_[i].id;
+        if (!table.present[id] || priority >= table.priorities[id]) {
+          table.present[id] = true;
+          table.priorities[id] = static_cast<int8_t>(priority);
+          table.winners[id] = matched.rule;
+        }
+      }
+    }
+    table.valid = true;
+  }
+
+  const CssRule* result = table.present[propertyId] ? table.winners[propertyId] : nullptr;
+  timingStats_.propertyResolveMs += millis() - propertyStart;
+  return result;
 }
 
 std::string CssParser::getCascadedPropertyValue(const std::string& propName, const std::string& className,

@@ -235,6 +235,19 @@ class ChapterHtmlSlimParser {
   XML_Size parseXmlColumn_ = 0;
   XML_Index parseXmlByte_ = 0;
   uint32_t parseStartedAt_ = 0;
+  uint32_t timingCssMs_ = 0;
+  uint32_t timingFontMs_ = 0;
+  uint32_t timingStreamMs_ = 0;
+  uint32_t timingXmlMs_ = 0;
+  uint32_t timingLayoutMs_ = 0;
+  uint32_t timingImageMs_ = 0;
+  uint32_t timingFinalizeMs_ = 0;
+  uint32_t timingImageCount_ = 0;
+  uint32_t timingStartElementMs_ = 0;
+  uint32_t timingEndElementMs_ = 0;
+  uint32_t timingCharacterDataMs_ = 0;
+  uint32_t timingFlushMs_ = 0;
+  uint32_t timingFlushCount_ = 0;
 
   void resetStructuralStateForParsePass();
 

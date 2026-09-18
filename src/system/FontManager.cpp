@@ -30,6 +30,7 @@ bool FontManager::g_scannedForFonts = false;
 
 namespace {
 std::vector<std::string> g_sdFamiliesSorted;
+constexpr int kPsramResidentFontLimit = 16;
 }
 
 /**
@@ -132,6 +133,11 @@ void FontManager::initialize(GfxRenderer& renderer) {
 
   g_loadedFontCount = 0;
   g_scannedForFonts = false;
+
+  // This firmware targets PSRAM hardware. Keep the reader's common font sizes
+  // alive instead of rebuilding them whenever a heading or CSS size is used.
+  g_maxLoadedFonts = std::max(g_maxLoadedFonts, kPsramResidentFontLimit);
+  INX_SERIAL.printf("[FontManager] PSRAM font residency enabled max=%d\n", g_maxLoadedFonts);
 
   static EpdFont montserrat8RegularFont(&montserrat_8_regular);
   static EpdFontFamily montserrat8FontFamily(&montserrat8RegularFont, nullptr, nullptr, nullptr);
@@ -627,10 +633,6 @@ bool FontManager::ensureReaderLayoutFonts(int bodyFontId, GfxRenderer& renderer)
       needsSdLoad = true;
       break;
     }
-  }
-
-  if (needsSdLoad && g_loadedFontCount > 0) {
-    unloadAllSDFonts();
   }
 
   for (int i = 0; i < requiredCount; ++i) {

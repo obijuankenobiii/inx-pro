@@ -13,12 +13,43 @@
 #include <algorithm>
 #include <cstring>
 
+#if defined(ARDUINO_ARCH_ESP32)
+#include <esp_heap_caps.h>
+#endif
+
 #include "../../src/system/EpubPerf.h"
 
 namespace {
 constexpr size_t kMinimumStreamChunkSize = 16 * 1024;
+#if defined(ARDUINO_ARCH_ESP32)
+constexpr size_t kPsramStreamChunkSize = 64 * 1024;
+constexpr size_t kPsramStreamReserveBytes = 128 * 1024;
+#endif
 constexpr size_t kZipServiceByteBudget = 64 * 1024;
 constexpr uint32_t kZipServiceTimeBudgetMs = 8;
+
+#if defined(ARDUINO_ARCH_ESP32)
+bool zipStreamPsramAvailable() {
+  return psramFound() &&
+         heap_caps_get_free_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) >= kPsramStreamReserveBytes;
+}
+
+void* allocateZipStreamBuffer(const size_t bytes, const bool preferPsram) {
+  if (preferPsram) {
+    if (void* memory = heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)) {
+      return memory;
+    }
+  }
+  return malloc(bytes);
+}
+
+void freeZipStreamBuffer(void* memory) {
+  heap_caps_free(memory);
+}
+#else
+void* allocateZipStreamBuffer(const size_t bytes, const bool) { return malloc(bytes); }
+void freeZipStreamBuffer(void* memory) { free(memory); }
+#endif
 
 class ZipServiceBudget {
  public:
@@ -689,11 +720,30 @@ bool ZipFile::readFileToStream(const char* filename, Print& out, const size_t re
   file.seek(fileOffset);
   const auto deflatedDataSize = fileStat.compressedSize;
   const auto inflatedDataSize = fileStat.uncompressedSize;
-  const size_t chunkSize = std::max(kMinimumStreamChunkSize, requestedChunkSize);
+  const size_t baseChunkSize = std::max(kMinimumStreamChunkSize, requestedChunkSize);
+#if defined(ARDUINO_ARCH_ESP32)
+  const bool usePsramBuffers = zipStreamPsramAvailable();
+  const size_t chunkSize = usePsramBuffers ? std::max(kPsramStreamChunkSize, requestedChunkSize) : baseChunkSize;
+#else
+  constexpr bool usePsramBuffers = false;
+  const size_t chunkSize = baseChunkSize;
+#endif
+#if defined(ARDUINO_ARCH_ESP32)
+  if (usePsramBuffers) {
+    INX_SERIAL.printf("[%lu] [ZIP] PSRAM stream buffers input=%u dict=%u free=%u\n", millis(),
+                      static_cast<unsigned>(chunkSize), static_cast<unsigned>(TINFL_LZ_DICT_SIZE),
+                      static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)));
+  }
+#endif
   ZipServiceBudget service;
 
   if (fileStat.method == MZ_NO_COMPRESSION) {
-    const auto buffer = static_cast<uint8_t*>(malloc(chunkSize));
+    size_t effectiveChunkSize = chunkSize;
+    auto buffer = static_cast<uint8_t*>(allocateZipStreamBuffer(chunkSize, usePsramBuffers));
+    if (!buffer && usePsramBuffers) {
+      effectiveChunkSize = baseChunkSize;
+      buffer = static_cast<uint8_t*>(allocateZipStreamBuffer(effectiveChunkSize, false));
+    }
     if (!buffer) {
       INX_SERIAL.printf("[%lu] [ZIP] Failed to allocate memory for buffer\n", millis());
       if (!wasOpen) {
@@ -707,10 +757,10 @@ bool ZipFile::readFileToStream(const char* filename, Print& out, const size_t re
     while (remaining > 0) {
       const size_t budgetLeft = maxOutputBytes - emitted;
       if (budgetLeft == 0) break;
-      const size_t dataRead = file.read(buffer, std::min({remaining, chunkSize, budgetLeft}));
+      const size_t dataRead = file.read(buffer, std::min({remaining, effectiveChunkSize, budgetLeft}));
       if (dataRead == 0) {
         INX_SERIAL.printf("[%lu] [ZIP] Could not read more bytes\n", millis());
-        free(buffer);
+        freeZipStreamBuffer(buffer);
         if (!wasOpen) {
           close();
         }
@@ -718,7 +768,7 @@ bool ZipFile::readFileToStream(const char* filename, Print& out, const size_t re
       }
 
       if (out.write(buffer, dataRead) != dataRead) {
-        free(buffer);
+        freeZipStreamBuffer(buffer);
         if (!wasOpen) close();
         return false;
       }
@@ -730,7 +780,7 @@ bool ZipFile::readFileToStream(const char* filename, Print& out, const size_t re
     if (!wasOpen) {
       close();
     }
-    free(buffer);
+    freeZipStreamBuffer(buffer);
     return remaining == 0 || emitted == maxOutputBytes;
   }
 
@@ -746,7 +796,12 @@ bool ZipFile::readFileToStream(const char* filename, Print& out, const size_t re
     memset(inflator, 0, sizeof(tinfl_decompressor));
     tinfl_init(inflator);
 
-    const auto fileReadBuffer = static_cast<uint8_t*>(malloc(chunkSize));
+    auto fileReadBuffer = static_cast<uint8_t*>(allocateZipStreamBuffer(chunkSize, usePsramBuffers));
+    size_t effectiveChunkSize = chunkSize;
+    if (!fileReadBuffer && usePsramBuffers) {
+      effectiveChunkSize = baseChunkSize;
+      fileReadBuffer = static_cast<uint8_t*>(allocateZipStreamBuffer(effectiveChunkSize, false));
+    }
     if (!fileReadBuffer) {
       INX_SERIAL.printf("[%lu] [ZIP] Failed to allocate memory for zip file read buffer\n", millis());
       free(inflator);
@@ -756,11 +811,11 @@ bool ZipFile::readFileToStream(const char* filename, Print& out, const size_t re
       return false;
     }
 
-    const auto outputBuffer = static_cast<uint8_t*>(malloc(TINFL_LZ_DICT_SIZE));
+    const auto outputBuffer = static_cast<uint8_t*>(allocateZipStreamBuffer(TINFL_LZ_DICT_SIZE, usePsramBuffers));
     if (!outputBuffer) {
       INX_SERIAL.printf("[%lu] [ZIP] Failed to allocate memory for dictionary\n", millis());
       free(inflator);
-      free(fileReadBuffer);
+      freeZipStreamBuffer(fileReadBuffer);
       if (!wasOpen) {
         close();
       }
@@ -780,7 +835,8 @@ bool ZipFile::readFileToStream(const char* filename, Print& out, const size_t re
         }
 
         fileReadBufferFilledBytes =
-            file.read(fileReadBuffer, fileRemainingBytes < chunkSize ? fileRemainingBytes : chunkSize);
+            file.read(fileReadBuffer,
+                      fileRemainingBytes < effectiveChunkSize ? fileRemainingBytes : effectiveChunkSize);
         fileRemainingBytes -= fileReadBufferFilledBytes;
         fileReadBufferCursor = 0;
         service.account(fileReadBufferFilledBytes);
@@ -808,8 +864,8 @@ bool ZipFile::readFileToStream(const char* filename, Print& out, const size_t re
           if (!wasOpen) {
             close();
           }
-          free(outputBuffer);
-          free(fileReadBuffer);
+          freeZipStreamBuffer(outputBuffer);
+          freeZipStreamBuffer(fileReadBuffer);
           free(inflator);
           return false;
         }
@@ -820,8 +876,8 @@ bool ZipFile::readFileToStream(const char* filename, Print& out, const size_t re
         if (processedOutputBytes == maxOutputBytes) {
           if (!wasOpen) close();
           free(inflator);
-          free(fileReadBuffer);
-          free(outputBuffer);
+          freeZipStreamBuffer(fileReadBuffer);
+          freeZipStreamBuffer(outputBuffer);
           return true;
         }
       }
@@ -833,8 +889,8 @@ bool ZipFile::readFileToStream(const char* filename, Print& out, const size_t re
         if (!wasOpen) {
           close();
         }
-        free(outputBuffer);
-        free(fileReadBuffer);
+        freeZipStreamBuffer(outputBuffer);
+        freeZipStreamBuffer(fileReadBuffer);
         free(inflator);
         return false;
       }
@@ -846,8 +902,8 @@ bool ZipFile::readFileToStream(const char* filename, Print& out, const size_t re
           close();
         }
         free(inflator);
-        free(fileReadBuffer);
-        free(outputBuffer);
+        freeZipStreamBuffer(fileReadBuffer);
+        freeZipStreamBuffer(outputBuffer);
         return true;
       }
     }
@@ -856,8 +912,8 @@ bool ZipFile::readFileToStream(const char* filename, Print& out, const size_t re
     if (!wasOpen) {
       close();
     }
-    free(outputBuffer);
-    free(fileReadBuffer);
+    freeZipStreamBuffer(outputBuffer);
+    freeZipStreamBuffer(fileReadBuffer);
     free(inflator);
     return false;
   }
