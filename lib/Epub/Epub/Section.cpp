@@ -27,7 +27,7 @@ namespace {
 // Heading font IDs are now stored per h1-h6 semantic size for outline fonts.
 // Invalidate older section pages so cached headers are rebuilt with the new mapping.
 // Heading and drop-cap font selection now honors the book's CSS font sizes.
-constexpr uint8_t SECTION_FILE_VERSION = 88;
+constexpr uint8_t SECTION_FILE_VERSION = 90;
 constexpr uint32_t HEADER_SIZE = sizeof(uint8_t) + sizeof(int) + sizeof(float) + sizeof(float) + sizeof(bool) +
                                  sizeof(uint8_t) + sizeof(uint16_t) + sizeof(uint16_t) + sizeof(bool) + sizeof(bool) +
                                  sizeof(bool) + sizeof(uint16_t) + sizeof(uint32_t);

@@ -1117,6 +1117,35 @@ int FontManager::getFontIdNearestPointSize(const std::string& family, int prefer
   return MONTSERRAT_14_FONT_ID;
 }
 
+int FontManager::getFontIdAtOrBelowPointSize(const std::string& family, const int preferredPt) {
+  if (family == "Montserrat") {
+    static constexpr int kSizes[] = {8, 10, 12, 14, 16, 18};
+    static constexpr int kIds[] = {MONTSERRAT_8_FONT_ID, MONTSERRAT_10_FONT_ID, MONTSERRAT_12_FONT_ID,
+                                    MONTSERRAT_14_FONT_ID, MONTSERRAT_16_FONT_ID, MONTSERRAT_18_FONT_ID};
+    int best = 0;
+    for (size_t i = 0; i < sizeof(kSizes) / sizeof(kSizes[0]); ++i) {
+      if (kSizes[i] <= preferredPt && kSizes[i] >= kSizes[best]) {
+        best = static_cast<int>(i);
+      }
+    }
+    return kIds[best];
+  }
+
+  if (!g_scannedForFonts) {
+    (void)scanSDFonts("/fonts", false);
+  }
+
+  int bestId = -1;
+  int bestSize = -1;
+  for (const auto& entry : g_sdFonts) {
+    if (entry.family == family && entry.size <= preferredPt && entry.size > bestSize) {
+      bestSize = entry.size;
+      bestId = entry.id;
+    }
+  }
+  return bestId >= 0 ? bestId : getFontIdNearestPointSize(family, preferredPt);
+}
+
 int FontManager::getDropCapFontId(const int bodyFontId, const uint8_t lineCount) {
   const FontInfo* bodyInfo = getFontInfo(bodyFontId);
   if (!bodyInfo || bodyInfo->isBuiltin) {

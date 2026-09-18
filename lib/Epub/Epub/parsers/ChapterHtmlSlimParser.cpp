@@ -1654,11 +1654,16 @@ int ChapterHtmlSlimParser::blockFontIdForEm(const float em) const {
   const int baseFontId = activeBlockFontId();
   const FontManager::FontInfo* baseInfo = FontManager::getFontInfo(baseFontId);
   if (baseInfo && !baseInfo->isBuiltin) {
-    // Book CSS may scale text, but never beyond the semantic h1 size.
-    const FontManager::FontInfo* maxHeadingInfo = FontManager::getFontInfo(headingFontIdForSteps(5));
-    const int maxHeadingPt = maxHeadingInfo && maxHeadingInfo->family == baseInfo->family ? maxHeadingInfo->size
-                                                                                           : baseInfo->size;
-    const int targetPt = std::min(maxHeadingPt, std::max(1, static_cast<int>(baseInfo->size * em + 0.5f)));
+    // The reader-selected font is the baseline. CSS only scales that
+    // baseline when the book explicitly requests a different size. Do not
+    // cap generic blocks at a heading size: a styled <p> may legitimately be
+    // larger than h1.
+    const int targetPt = std::max(1, static_cast<int>(baseInfo->size * em + 0.5f));
+    if (em < 1.0f) {
+      // Choosing at-or-below is important when the family has discrete sizes;
+      // nearest-size lookup can promote a small CSS paragraph back to body size.
+      return FontManager::getFontIdAtOrBelowPointSize(baseInfo->family, targetPt);
+    }
     return FontManager::getFontIdNearestPointSize(baseInfo->family, targetPt);
   }
 
@@ -1971,6 +1976,10 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
   std::string tagLower;
   extractSelectorAttributes(name, atts, tagLower, classAttr, idAttr, styleAttr);
   const bool applyCssTextLayout = self->shouldApplyCssTextLayout(tagLower);
+  // Font-size is independent from paragraph alignment. Even when the user
+  // chooses a fixed alignment, an explicit CSS font-size still scales from
+  // the user's selected reader font.
+  const bool hasCssFontSize = self->css().hasFontSizeSpecified(tagLower, classAttr, idAttr, styleAttr);
   const bool isHeaderTag = matches(name, HEADER_TAGS, NUM_HEADER_TAGS);
   const bool isBlockTag = matches(name, BLOCK_TAGS, NUM_BLOCK_TAGS);
   const bool hasSelectorAttrs = !classAttr.empty() || !idAttr.empty() || !styleAttr.empty();
@@ -2065,7 +2074,7 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
     self->beginCssBlockBox(tagLower, classAttr, idAttr, styleAttr);
     self->pushBlockClosingScopeIfNeeded();
     self->currentBlockFontId =
-        applyCssTextLayout ? self->blockFontIdForEm(self->css().getFontSizeEm(tagLower, classAttr, idAttr, styleAttr)) : -1;
+        hasCssFontSize ? self->blockFontIdForEm(self->css().getFontSizeEm(tagLower, classAttr, idAttr, styleAttr)) : -1;
     if (self->currentBlockFontId >= 0 &&
         !FontManager::ensureFontReady(self->currentBlockFontId, self->renderer)) {
       self->currentBlockFontId = -1;
@@ -2149,7 +2158,7 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
       self->startNewTextBlock(blockStyle);
       self->beginCssBlockBox(tagLower, classAttr, idAttr, styleAttr);
       self->pushBlockClosingScopeIfNeeded();
-      self->currentBlockFontId = applyCssTextLayout
+      self->currentBlockFontId = hasCssFontSize
                                      ? self->blockFontIdForEm(
                                            self->css().getFontSizeEm(tagLower, classAttr, idAttr, styleAttr))
                                      : -1;

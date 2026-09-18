@@ -58,6 +58,8 @@ class FontManager {
   /** Convert an outline point size to the closest legacy five-position size. */
   static uint8_t legacyReaderSizeForPointSize(int pointSize);
   static int getFontIdNearestPointSize(const std::string& family, int preferredPt);
+  /** Select the largest installed font at or below the requested point size. */
+  static int getFontIdAtOrBelowPointSize(const std::string& family, int preferredPt);
   /** Select the proportional drop-cap size for the active reader font. */
   static int getDropCapFontId(int bodyFontId, uint8_t lineCount);
 
