@@ -33,8 +33,6 @@ class Section {
   FsFile file;
   uint32_t lutOffset = 0;
   std::vector<uint32_t> pageOffsets;
-  uint32_t timingPageBuildMs_ = 0;
-  uint32_t timingPageSerializeMs_ = 0;
 
   struct CachedPage {
     int pageIndex = -1;

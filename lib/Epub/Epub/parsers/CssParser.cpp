@@ -650,10 +650,6 @@ CssParser::CssParser() {}
 
 CssParser::~CssParser() { clear(); }
 
-void CssParser::resetTimingStats() const { timingStats_ = {}; }
-
-CssParser::TimingStats CssParser::getTimingStats() const { return timingStats_; }
-
 void CssParser::clear() {
   rules.clear();
   properties_.clear();
@@ -1707,7 +1703,6 @@ const std::vector<CssParser::MatchedRule>& CssParser::matchedRulesFor(const std:
     winningRuleCache_[1].valid = false;
   }
 
-  const uint32_t matchStart = millis();
   const std::string idLower = toLower(trim(id));
   std::vector<std::string> classTokens;
   splitClassTokens(className, classTokens);
@@ -1741,8 +1736,6 @@ const std::vector<CssParser::MatchedRule>& CssParser::matchedRulesFor(const std:
     }
   }
   mcValid_ = true;
-  timingStats_.matchedRuleMs += millis() - matchStart;
-  ++timingStats_.matchedRuleCalls;
   return mcMatched_;
 }
 
@@ -1767,11 +1760,8 @@ bool CssParser::ruleHasProperty(const CssRule& rule, const std::string& propName
 const CssParser::CssRule* CssParser::winningRuleForProperty(const std::string& propName, const std::string& className,
                                                             const std::string& id, const std::string& elementTagLower,
                                                             const bool ignoreContextual) const {
-  const uint32_t propertyStart = millis();
-  ++timingStats_.propertyResolveCalls;
   const uint8_t propertyId = cssPropertyId(propName);
   if (propertyId == kCssPropertyInvalid) {
-    timingStats_.propertyResolveMs += millis() - propertyStart;
     return nullptr;
   }
 
@@ -1791,7 +1781,6 @@ const CssParser::CssRule* CssParser::winningRuleForProperty(const std::string& p
           best = matched.rule;
         }
       }
-      timingStats_.propertyResolveMs += millis() - propertyStart;
       return best;
     }
   }
@@ -1825,7 +1814,6 @@ const CssParser::CssRule* CssParser::winningRuleForProperty(const std::string& p
   }
 
   const CssRule* result = table.present[propertyId] ? table.winners[propertyId] : nullptr;
-  timingStats_.propertyResolveMs += millis() - propertyStart;
   return result;
 }
 

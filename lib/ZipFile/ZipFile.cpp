@@ -728,13 +728,6 @@ bool ZipFile::readFileToStream(const char* filename, Print& out, const size_t re
   constexpr bool usePsramBuffers = false;
   const size_t chunkSize = baseChunkSize;
 #endif
-#if defined(ARDUINO_ARCH_ESP32)
-  if (usePsramBuffers) {
-    INX_SERIAL.printf("[%lu] [ZIP] PSRAM stream buffers input=%u dict=%u free=%u\n", millis(),
-                      static_cast<unsigned>(chunkSize), static_cast<unsigned>(TINFL_LZ_DICT_SIZE),
-                      static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)));
-  }
-#endif
   ZipServiceBudget service;
 
   if (fileStat.method == MZ_NO_COMPRESSION) {

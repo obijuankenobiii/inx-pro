@@ -44,16 +44,6 @@ constexpr size_t MAX_TABLE_ROWS = 512;
 constexpr size_t MAX_TABLE_CELL_BYTES = 16 * 1024;
 constexpr size_t MAX_TABLE_TEXT_BYTES = 256 * 1024;
 
-class ScopedTimingAccumulator {
- public:
-  explicit ScopedTimingAccumulator(uint32_t& total) : total_(total), start_(millis()) {}
-  ~ScopedTimingAccumulator() { total_ += millis() - start_; }
-
- private:
-  uint32_t& total_;
-  uint32_t start_;
-};
-
 #if defined(ARDUINO_ARCH_ESP32)
 void* expatPsramMalloc(const size_t size) {
   const size_t request = std::max<size_t>(1, size);
@@ -694,9 +684,7 @@ bool ChapterHtmlSlimParser::parseHtmlThroughExpat(const bool callProgressPopup) 
   }
 
   ExpatStreamSink sink(*this);
-  const uint32_t streamStart = millis();
   const bool streamOk = epub.readItemContentsToStream(chapterHref, sink, 16 * 1024);
-  timingStreamMs_ += millis() - streamStart;
   const bool parseOk = streamOk && sink.finish();
   if (!parseOk) {
     INX_SERIAL.printf(
@@ -722,8 +710,6 @@ void ChapterHtmlSlimParser::loadCssRules() {
   } else {
     cssParser_.clear();
   }
-  css().resetTimingStats();
-
   cssLoaded = true;
 }
 
@@ -1032,8 +1018,6 @@ void ChapterHtmlSlimParser::processBackgroundImageElement(const std::string& tag
  */
 void ChapterHtmlSlimParser::flushPartWordBuffer() {
   if (partWordBufferIndex == 0) return;
-  ScopedTimingAccumulator timing(timingFlushMs_);
-  ++timingFlushCount_;
   partWordBuffer[partWordBufferIndex] = '\0';
 
   if (inDropCap) {
@@ -1982,7 +1966,6 @@ void ChapterHtmlSlimParser::finalizeBorderWidth(PageCssBorderLine* elem, const i
  */
 void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char* name, const XML_Char** atts) {
   auto* self = static_cast<ChapterHtmlSlimParser*>(userData);
-  ScopedTimingAccumulator timing(self->timingStartElementMs_);
   const bool followCssParagraphLayout = (self->paragraphAlignment == EPUB_PARAGRAPH_ALIGNMENT_FOLLOW_CSS);
   const TextBlock::Style inheritedCssStyle =
       self->cssAlignmentStack.empty() ? TextBlock::LEFT_ALIGN : self->cssAlignmentStack.back();
@@ -2118,10 +2101,7 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
   self->applyDropCapHint(name, tagLower, classAttr, idAttr, styleAttr);
 
   if (matches(name, IMAGE_TAGS, NUM_IMAGE_TAGS)) {
-    const uint32_t imageStart = millis();
     self->processImageElement(atts);
-    self->timingImageMs_ += millis() - imageStart;
-    ++self->timingImageCount_;
     self->depth += 1;
     return;
   }
@@ -2263,7 +2243,6 @@ void XMLCALL ChapterHtmlSlimParser::defaultHandlerExpand(void* userData, const X
  */
 void XMLCALL ChapterHtmlSlimParser::characterData(void* userData, const XML_Char* s, int len) {
   auto* self = static_cast<ChapterHtmlSlimParser*>(userData);
-  ScopedTimingAccumulator timing(self->timingCharacterDataMs_);
   if (self->inTable_) {
     self->appendTableText(s, len);
     return;
@@ -2329,7 +2308,6 @@ void XMLCALL ChapterHtmlSlimParser::characterData(void* userData, const XML_Char
  */
 void XMLCALL ChapterHtmlSlimParser::endElement(void* userData, const XML_Char* name) {
   auto* self = static_cast<ChapterHtmlSlimParser*>(userData);
-  ScopedTimingAccumulator timing(self->timingEndElementMs_);
 
   if (strcmp(name, "li") == 0) {
     self->pendingListMarker_ = false;
@@ -2787,7 +2765,6 @@ void ChapterHtmlSlimParser::addHorizontalRule(const std::string& tagLower, const
  */
 void ChapterHtmlSlimParser::makePages(bool deferClosingSpacingToCaller) {
   if (!currentTextBlock) return;
-  const uint32_t layoutStart = millis();
 
   if (!currentPage) {
     currentPage.reset(new Page());
@@ -2886,7 +2863,6 @@ void ChapterHtmlSlimParser::makePages(bool deferClosingSpacingToCaller) {
   pendingBorderBoxElem_ = nullptr;
   currentBlockMinHeightPx = 0;
   currentBlockFontId = -1;
-  timingLayoutMs_ += millis() - layoutStart;
 }
 
 /**
@@ -3050,23 +3026,6 @@ void ChapterHtmlSlimParser::addImageToPage(const std::string& cachePath, const s
  * @return true if parsing was successful, false otherwise
  */
 bool ChapterHtmlSlimParser::prepareParse(const bool skipImageProcessing) {
-  parseStartedAt_ = millis();
-  timingCssMs_ = 0;
-  timingFontMs_ = 0;
-  timingStreamMs_ = 0;
-  timingXmlMs_ = 0;
-  timingLayoutMs_ = 0;
-  timingImageMs_ = 0;
-  timingFinalizeMs_ = 0;
-  timingImageCount_ = 0;
-  timingStartElementMs_ = 0;
-  timingEndElementMs_ = 0;
-  timingCharacterDataMs_ = 0;
-  timingFlushMs_ = 0;
-  timingFlushCount_ = 0;
-  ParsedText::resetTimingStats();
-  EPUB_PERF_LOG("[%lu] [CHAPTER-IMG] parse start chapter=%s internal=%s skipImageProcessing=%d\n", millis(),
-                filepath.c_str(), internalPath.c_str(), skipImageProcessing ? 1 : 0);
   skipImages = skipImageProcessing;
   imageExtractCountForYield_ = 0;
   cssUsageFilter_ = CssParser::UsageFilter();
@@ -3113,16 +3072,12 @@ bool ChapterHtmlSlimParser::prepareParse(const bool skipImageProcessing) {
   currentTextBlockContentWidth = std::max(1, static_cast<int>(viewportWidth));
   pendingTopBorderElem_ = nullptr;
 
-  const uint32_t cssStart = millis();
   loadCssRules();
-  timingCssMs_ += millis() - cssStart;
-  const uint32_t fontStart = millis();
   if (!FontManager::ensureReaderLayoutFonts(fontId, renderer)) {
     INX_SERIAL.printf("[%lu] [SCT] parseAndBuildPages missing layout fonts font=%d internal=%s tmp=%s\n", millis(),
                       fontId, internalPath.c_str(), filepath.c_str());
     return false;
   }
-  timingFontMs_ += millis() - fontStart;
 
   TextBlock::Style initialBlockStyle = TextBlock::LEFT_ALIGN;
   if (paragraphAlignment <= 3) {
@@ -3190,9 +3145,7 @@ bool ChapterHtmlSlimParser::feedParse(const uint8_t* data, const size_t size) {
       size > static_cast<size_t>(INT_MAX)) {
     return false;
   }
-  const uint32_t xmlStart = millis();
   const XML_Status status = XML_Parse(xmlParser_, reinterpret_cast<const char*>(data), static_cast<int>(size), XML_FALSE);
-  timingXmlMs_ += millis() - xmlStart;
   if (status != XML_STATUS_OK) {
     recordParseXmlError();
     return false;
@@ -3204,9 +3157,7 @@ bool ChapterHtmlSlimParser::finishParse() {
   if (!parseActive_ || parseFailed_ || !xmlParser_) {
     return false;
   }
-  const uint32_t finalizeStart = millis();
   const XML_Status finalStatus = XML_Parse(xmlParser_, nullptr, 0, XML_TRUE);
-  timingXmlMs_ += millis() - finalizeStart;
   if (finalStatus != XML_STATUS_OK) {
     recordParseXmlError();
     cancelParse();
@@ -3224,30 +3175,6 @@ bool ChapterHtmlSlimParser::finishParse() {
   if (currentPage && !currentPage->elements.empty()) {
     completeCurrentPage();
   }
-  timingFinalizeMs_ = millis() - finalizeStart;
-  const CssParser::TimingStats cssTiming = css().getTimingStats();
-  const ParsedText::TimingStats parsedTextTiming = ParsedText::getTimingStats();
-
-  EPUB_PERF_LOG("[%lu] [PERF] chapter layout spine=%s elapsed=%lums\n", millis(), internalPath.c_str(),
-                static_cast<unsigned long>(millis() - parseStartedAt_));
-  INX_SERIAL.printf(
-      "[%lu] [SCT-TIMING] chapter=%s total=%lums css=%lums fonts=%lums stream=%lums xml=%lums layout=%lums "
-      "images=%lu imageMs=%lums start=%lums end=%lums chars=%lums flush=%lums flushes=%lu finalize=%lums "
-      "cssMatch=%lums/%lu cssResolve=%lums/%lu width=%lums break=%lums extract=%lums build=%lums callback=%lums "
-      "layouts=%lu\n",
-      millis(), internalPath.c_str(), static_cast<unsigned long>(millis() - parseStartedAt_),
-      static_cast<unsigned long>(timingCssMs_), static_cast<unsigned long>(timingFontMs_),
-      static_cast<unsigned long>(timingStreamMs_), static_cast<unsigned long>(timingXmlMs_),
-      static_cast<unsigned long>(timingLayoutMs_), static_cast<unsigned long>(timingImageCount_),
-      static_cast<unsigned long>(timingImageMs_), static_cast<unsigned long>(timingStartElementMs_),
-      static_cast<unsigned long>(timingEndElementMs_), static_cast<unsigned long>(timingCharacterDataMs_),
-      static_cast<unsigned long>(timingFlushMs_), static_cast<unsigned long>(timingFlushCount_),
-      static_cast<unsigned long>(timingFinalizeMs_), static_cast<unsigned long>(cssTiming.matchedRuleMs),
-      static_cast<unsigned long>(cssTiming.matchedRuleCalls), static_cast<unsigned long>(cssTiming.propertyResolveMs),
-      static_cast<unsigned long>(cssTiming.propertyResolveCalls), static_cast<unsigned long>(parsedTextTiming.widthMs),
-      static_cast<unsigned long>(parsedTextTiming.breakMs), static_cast<unsigned long>(parsedTextTiming.extractMs),
-      static_cast<unsigned long>(parsedTextTiming.extractBuildMs),
-      static_cast<unsigned long>(parsedTextTiming.extractCallbackMs), static_cast<unsigned long>(parsedTextTiming.layoutCalls));
   return true;
 }
 

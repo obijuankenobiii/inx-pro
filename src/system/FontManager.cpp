@@ -137,7 +137,6 @@ void FontManager::initialize(GfxRenderer& renderer) {
   // This firmware targets PSRAM hardware. Keep the reader's common font sizes
   // alive instead of rebuilding them whenever a heading or CSS size is used.
   g_maxLoadedFonts = std::max(g_maxLoadedFonts, kPsramResidentFontLimit);
-  INX_SERIAL.printf("[FontManager] PSRAM font residency enabled max=%d\n", g_maxLoadedFonts);
 
   static EpdFont montserrat8RegularFont(&montserrat_8_regular);
   static EpdFontFamily montserrat8FontFamily(&montserrat8RegularFont, nullptr, nullptr, nullptr);

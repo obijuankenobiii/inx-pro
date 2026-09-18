@@ -69,18 +69,6 @@ class ParsedText {
   std::vector<uint16_t> calculateWordWidths(const GfxRenderer& renderer, int fontId);
 
  public:
-  struct TimingStats {
-    uint32_t widthMs = 0;
-    uint32_t breakMs = 0;
-    uint32_t extractMs = 0;
-    uint32_t extractBuildMs = 0;
-    uint32_t extractCallbackMs = 0;
-    uint32_t layoutCalls = 0;
-  };
-
-  static void resetTimingStats();
-  static TimingStats getTimingStats();
-
   explicit ParsedText(const TextBlock::Style style, const bool extraParagraphSpacing, const bool hyphenationEnabled,
                       const bool respectParagraphIndent = true, const bool bionicReadingEnabled = false,
                       const float wordSpacingFactor = 1.0f)

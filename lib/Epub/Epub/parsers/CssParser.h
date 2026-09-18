@@ -192,15 +192,6 @@ class CssParser {
 
   size_t getRuleCount() const { return rules.size(); }
 
-  struct TimingStats {
-    uint32_t matchedRuleMs = 0;
-    uint32_t propertyResolveMs = 0;
-    uint32_t matchedRuleCalls = 0;
-    uint32_t propertyResolveCalls = 0;
-  };
-  void resetTimingStats() const;
-  TimingStats getTimingStats() const;
-
  private:
   std::vector<CssRule> rules;
   CssProperties properties_;
@@ -234,8 +225,6 @@ class CssParser {
   };
   // Keep the large per-element tables off ChapterHtmlSlimParser's task stack.
   mutable std::unique_ptr<WinningRuleCacheTable[]> winningRuleCache_;
-  mutable TimingStats timingStats_;
-
   struct SelectorIndexEntry {
     std::string key;
     std::vector<uint16_t> rules;

@@ -24,10 +24,6 @@
 constexpr int MAX_COST = std::numeric_limits<int>::max();
 
 namespace {
-ParsedText::TimingStats gParsedTextTiming;
-}
-
-namespace {
 
 constexpr char SOFT_HYPHEN_UTF8[] = "\xC2\xAD";
 constexpr size_t SOFT_HYPHEN_BYTES = 2;
@@ -238,10 +234,6 @@ std::vector<size_t> computeGreedyLineBreaksWithDropIndent(const int pageWidth, c
 
 }
 
-void ParsedText::resetTimingStats() { gParsedTextTiming = {}; }
-
-ParsedText::TimingStats ParsedText::getTimingStats() { return gParsedTextTiming; }
-
 void ParsedText::addWord(std::string word, const EpdFontFamily::Style fontStyle, const bool smallCaps,
                          const bool underline, const bool joinPrevious, const uint8_t verticalAlign,
                          const int16_t xOffset, std::string footnoteTarget) {
@@ -327,15 +319,12 @@ void ParsedText::layoutAndExtractLines(const GfxRenderer& renderer, const int fo
   const int pageWidth = viewportWidth;
   const int spaceWidth =
       std::max(1, static_cast<int>(std::lround(renderer.text.getSpaceWidth(fontId) * wordSpacingFactor_)));
-  const uint32_t widthStart = millis();
   auto wordWidths = calculateWordWidths(renderer, fontId);
-  gParsedTextTiming.widthMs += millis() - widthStart;
   const std::vector<uint8_t> joinPreviousSnapshot =
       hasJoinedWords_ ? std::vector<uint8_t>(wordJoinPrevious.begin(), wordJoinPrevious.end()) : std::vector<uint8_t>();
   std::vector<size_t> lineBreakIndices;
   const int dropW = static_cast<int>(leftIndentWidth);
   const int dropL = static_cast<int>(leftIndentLineCount);
-  const uint32_t breakStart = millis();
   if (hyphenationEnabled) {
     lineBreakIndices =
         computeHyphenatedLineBreaks(renderer, fontId, pageWidth, spaceWidth, wordWidths, joinPreviousSnapshot, dropW,
@@ -344,17 +333,13 @@ void ParsedText::layoutAndExtractLines(const GfxRenderer& renderer, const int fo
     lineBreakIndices =
         computeLineBreaks(renderer, fontId, pageWidth, spaceWidth, wordWidths, joinPreviousSnapshot, dropW, dropL);
   }
-  gParsedTextTiming.breakMs += millis() - breakStart;
   if (lineBreakIndices.empty() || (!includeLastLine && lineBreakIndices.size() <= 1)) {
     return;
   }
   const size_t lineCount = includeLastLine ? lineBreakIndices.size() : lineBreakIndices.size() - 1;
-  const uint32_t extractStart = millis();
   for (size_t i = 0; i < lineCount; ++i) {
     extractLine(i, pageWidth, spaceWidth, wordWidths, lineBreakIndices, joinPreviousSnapshot, processLine);
   }
-  gParsedTextTiming.extractMs += millis() - extractStart;
-  ++gParsedTextTiming.layoutCalls;
 }
 
 std::vector<uint16_t> ParsedText::calculateWordWidths(const GfxRenderer& renderer, const int fontId) {
@@ -784,7 +769,6 @@ void ParsedText::extractLine(const size_t breakIndex, const int pageWidth, const
                              const std::vector<uint16_t>& wordWidths, const std::vector<size_t>& lineBreakIndices,
                              const std::vector<uint8_t>& joinPreviousSnapshot,
                              const std::function<void(TextBlock&&)>& processLine) {
-  const uint32_t extractBuildStart = millis();
   const size_t lineBreak = lineBreakIndices[breakIndex];
   const size_t lastBreakAt = breakIndex > 0 ? lineBreakIndices[breakIndex - 1] : 0;
   const size_t lineWordCount = lineBreak - lastBreakAt;
@@ -919,12 +903,9 @@ void ParsedText::extractLine(const size_t breakIndex, const int pageWidth, const
     lineWordFootnoteTargets = moveListPrefixToVector(wordFootnoteTargets, lineWordCount);
   }
 
-  gParsedTextTiming.extractBuildMs += millis() - extractBuildStart;
-  const uint32_t extractCallbackStart = millis();
   processLine(TextBlock(std::move(lineWords), std::move(lineXPos), std::move(lineWordStyles), bionicDefault,
                         std::move(lineBionicPrefixBytes), smallCapsDefault, std::move(lineWordSmallCaps), style,
                         underlineDefault, std::move(lineWordUnderline), verticalAlignDefault,
                         std::move(lineWordVerticalAlign), std::move(lineWordImagePaths), std::move(lineWordImageW),
                         std::move(lineWordImageH), std::move(lineWordFootnoteTargets)));
-  gParsedTextTiming.extractCallbackMs += millis() - extractCallbackStart;
 }
