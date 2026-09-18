@@ -93,9 +93,13 @@ void makeDefault() {
   setDefaultHeatmapViews(themes[0]);
   setDefaultLibraryFolders(themes[0]);
   themes[0].carouselStyles[0] = CarouselStyle::Left;
+  themes[0].borders[0] = Border::Normal;
   themes[0].carouselLabels[0] = 0;
-  themes[0].backgrounds[0] = 0;
-  themes[0].carouselProgress[0] = 0;
+  themes[0].backgrounds[0] = 1;
+  themes[0].carouselShadowStyles[0] = CarouselShadowStyle::Gray;
+  themes[0].carouselProgress[0] = 1;
+  themes[0].backgrounds[1] = 0;
+  themes[0].descriptionProgress[1] = 0;
   sleepTheme = {};
   setName(sleepTheme, "Sleep");
   sleepTheme.layout = Layout::OneByTwo;
@@ -121,9 +125,13 @@ bool repairEmptyHomeTheme() {
   setDefaultHeatmapViews(themes[0]);
   setDefaultLibraryFolders(themes[0]);
   themes[0].carouselStyles[0] = CarouselStyle::Left;
+  themes[0].borders[0] = Border::Normal;
   themes[0].carouselLabels[0] = 0;
-  themes[0].backgrounds[0] = 0;
-  themes[0].carouselProgress[0] = 0;
+  themes[0].backgrounds[0] = 1;
+  themes[0].carouselShadowStyles[0] = CarouselShadowStyle::Gray;
+  themes[0].carouselProgress[0] = 1;
+  themes[0].backgrounds[1] = 0;
+  themes[0].descriptionProgress[1] = 0;
   return true;
 }
 
