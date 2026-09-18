@@ -425,7 +425,10 @@ void PageDropCap::render(GfxRenderer& renderer, const int fontId, const int xOff
   const int renderDropCapFontId = FontManager::ensureFontReady(dropCapFontId, renderer) ? dropCapFontId : fontId;
   const uint8_t* p = reinterpret_cast<const uint8_t*>(text.c_str());
   const uint32_t dropCp = utf8NextCodepoint(&p);
-  int alignY = yPos + yOffset - 2;
+  // Use the first line's actual glyph metrics as the vertical reference. The
+  // old fixed -2px nudge made the drop-cap drift relative to the first line
+  // between font families and sizes.
+  int alignY = yPos + yOffset;
   if (inlineFirstLine) {
     const int bodyBaseline = yPos + yOffset + renderer.text.getFontAscenderSize(fontId);
     alignY = bodyBaseline - renderer.text.getFontAscenderSize(renderDropCapFontId);
