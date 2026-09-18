@@ -74,12 +74,10 @@ void HalGPIO::serviceTouchGestures() {
     const float dy = ey - sy;
     if (std::fabs(dy) > std::fabs(dx)) {
       touchSwipeDirection = dy < 0.0f ? TouchSwipe::Up : TouchSwipe::Down;
-      INX_SERIAL.printf("[STICKY][TOUCH] SWIPE %s\n", dy < 0.0f ? "up" : "down");
       return;
     }
 
     touchSwipeDirection = dx < 0.0f ? TouchSwipe::Left : TouchSwipe::Right;
-    INX_SERIAL.printf("[STICKY][TOUCH] SWIPE %s\n", dx < 0.0f ? "left" : "right");
 
     const bool startedAtEdge = sx < kEdgeSwipeMargin || sx > (1.0f - kEdgeSwipeMargin) || sy < kEdgeSwipeMargin ||
                                sy > (1.0f - kEdgeSwipeMargin);
@@ -93,22 +91,6 @@ void HalGPIO::serviceTouchGestures() {
 
 void HalGPIO::update() {
   inputMgr.update();
-  float pressedNx = 0.0f;
-  float pressedNy = 0.0f;
-  if (inputMgr.wasTouchPressedAt(pressedNx, pressedNy)) {
-    INX_SERIAL.printf("[STICKY][TOUCH] DOWN native=(%.3f,%.3f)\n", pressedNx, pressedNy);
-  }
-  if (inputMgr.wasTouchPressed()) {
-    const InputManager::TouchPoint point = inputMgr.getTouchPoint();
-    INX_SERIAL.printf("[STICKY][TOUCH] point=(%u,%u) valid=%d\n", point.x, point.y, point.valid ? 1 : 0);
-  }
-  if (inputMgr.wasTouchReleased()) {
-    float tapNx = 0.0f;
-    float tapNy = 0.0f;
-    const bool isTap = inputMgr.wasTouchTap(tapNx, tapNy);
-    INX_SERIAL.printf("[STICKY][TOUCH] UP tap=%d native=(%.3f,%.3f) held=%lu\n", isTap ? 1 : 0, tapNx, tapNy,
-                   inputMgr.lastTouchHeldMs());
-  }
   serviceTouchGestures();
 }
 
@@ -123,11 +105,7 @@ bool HalGPIO::isTouchHeldAt(float& nx, float& ny) const { return inputMgr.isTouc
 bool HalGPIO::wasTouchActivity() const { return inputMgr.wasTouchActivity(); }
 
 bool HalGPIO::wasTouchTap(float& nx, float& ny) const {
-  const bool tapped = inputMgr.wasTouchTap(nx, ny);
-  if (tapped) {
-    INX_SERIAL.printf("[STICKY] wasTouchTap() -> nx=%.3f ny=%.3f\n", nx, ny);
-  }
-  return tapped;
+  return inputMgr.wasTouchTap(nx, ny);
 }
 
 bool HalGPIO::touchSwipeStart(float& nx, float& ny) const {

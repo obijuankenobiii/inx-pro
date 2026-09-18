@@ -205,8 +205,6 @@ bool MappedInputManager::wasTouchTapInScreen(const GfxRenderer& renderer, float&
   }
 #endif
 
-  INX_SERIAL.printf("[TOUCH] MAP orientation=%d native=(%.3f,%.3f) logical=(%.3f,%.3f)\n",
-                 static_cast<int>(renderer.getOrientation()), nativeNx, nativeNy, nx, ny);
   return true;
 }
 

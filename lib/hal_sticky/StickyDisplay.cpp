@@ -105,13 +105,8 @@ void StickyDisplay::finish() {
 }
 
 void StickyDisplay::displayBuffer(const RefreshMode mode) {
-  INX_SERIAL.printf("[%lu] [STICKY-DISPLAY] displayBuffer start mode=%d\n", millis(), static_cast<int>(mode));
   finish();
-  INX_SERIAL.printf("[%lu] [STICKY-DISPLAY] displayBuffer after finish-before\n", millis());
   display.displayBufferAsync(mode);
-  INX_SERIAL.printf("[%lu] [STICKY-DISPLAY] displayBuffer after async\n", millis());
-  finish();
-  INX_SERIAL.printf("[%lu] [STICKY-DISPLAY] displayBuffer complete\n", millis());
   qualityReferenceScreenOn = false;
 }
 

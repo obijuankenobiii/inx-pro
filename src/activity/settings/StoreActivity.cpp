@@ -85,7 +85,9 @@ void StoreActivity::loop() {
     return;
   }
 
-  if (SubPage::closeInput(renderer, mappedInput, onBack_, false)) return;
+  // Store is a top-level sub-page: an upward swipe should dismiss it just like
+  // the other pages opened from Home.
+  if (SubPage::closeInput(renderer, mappedInput, onBack_)) return;
 
   if (mappedInput.hasTouch() &&
       (mappedInput.wasTouchSwipeUpForRenderer(renderer) || mappedInput.wasTouchSwipeDownForRenderer(renderer))) {

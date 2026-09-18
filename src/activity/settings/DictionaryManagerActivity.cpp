@@ -280,7 +280,7 @@ void DictionaryManagerActivity::loop() {
     ActivityWithSubactivity::loop();
     return;
   }
-  if (SubPage::closeInput(renderer, mappedInput, goBack_, false)) return;
+  if (SubPage::closeInput(renderer, mappedInput, goBack_)) return;
 
   if (state_ == State::Ready && !packages_.empty() && mappedInput.hasTouch()) {
     float nx = 0.0f;

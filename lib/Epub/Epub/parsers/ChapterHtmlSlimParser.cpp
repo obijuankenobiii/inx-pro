@@ -1050,8 +1050,19 @@ void ChapterHtmlSlimParser::flushPartWordBuffer() {
     INX_SERIAL.printf("[%lu] [INCR-FONT] dropcap body=%d lines=%u cssEm=%.2f -> font=%d size=%d\n", millis(), fontId,
                       static_cast<unsigned>(dropCapLineCount), static_cast<double>(dropCapFontSizeEm), dropCapFontId,
                       dropCapInfo ? dropCapInfo->size : 0);
+    // A first-letter line-height changes the line box that contains the glyph.
+    // Store the resulting leading in the page element's Y origin so the cached
+    // page uses the same CSS-derived position after it is reopened. With no
+    // CSS line-height, retain the existing font-metric fallback.
+    int dropCapY = currentPageNextY;
+    if (dropCapLineHeightEm > 0.0f) {
+      const int naturalLineHeight = std::max(1, renderer.text.getLineHeight(dropCapFontId));
+      const int cssLineHeight = std::max(
+          1, static_cast<int>(static_cast<float>(naturalLineHeight) * dropCapLineHeightEm + 0.5f));
+      dropCapY += (cssLineHeight - naturalLineHeight) / 2;
+    }
     currentPage->elements.emplace_back(
-        new PageDropCap(dropCapText, 0, currentPageNextY, dropCapFontId, inlineFirstLine, dropCapStyle,
+        new PageDropCap(dropCapText, 0, static_cast<int16_t>(dropCapY), dropCapFontId, inlineFirstLine, dropCapStyle,
                         dropCapTextTone));
 
     int dropCapWidth = renderer.text.getWidth(dropCapFontId, dropCapText.c_str(), dropCapStyle) + 3;

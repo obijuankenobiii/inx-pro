@@ -280,8 +280,8 @@ void PluginManagerActivity::loop() {
     ActivityWithSubactivity::loop();
     return;
   }
+  if (SubPage::closeInput(renderer, mappedInput, goBack_)) return;
   if (state_ == State::Downloading) return;
-  if (SubPage::closeInput(renderer, mappedInput, goBack_, false)) return;
   if (mappedInput.hasTouch()) {
     float nx = 0.0f;
     float ny = 0.0f;
