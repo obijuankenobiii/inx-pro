@@ -67,6 +67,9 @@ void PopUp::list(GfxRenderer& renderer, const PopUpBounds& box, const std::vecto
 }
 
 void PopUp::border(GfxRenderer& renderer, const PopUpBounds& box) {
-  renderer.line.render(box.x, box.y + box.header, box.x + box.width, box.y + box.header, true);
+  constexpr int dividerInset = 20;
+  const int dividerY = box.y + box.header;
+  renderer.line.render(box.x + dividerInset, dividerY, box.x + box.width - dividerInset, dividerY, true,
+                       LineRender::Style::Dotted);
   renderer.rectangle.render(box.x, box.y, box.width, box.height, true);
 }

@@ -70,9 +70,11 @@ struct Theme {
   uint8_t descriptionTitles[4];
   uint8_t descriptionAuthors[4];
   uint8_t descriptionProgress[4];
+  uint8_t descriptionRatings[4];
   uint8_t recentTitles[4];
   uint8_t recentAuthors[4];
   uint8_t recentProgress[4];
+  uint8_t recentRatings[4];
   uint8_t carouselProgress[4];
   HeatmapView heatmapViews[4];
   char libraryFolders[4][3][128];
@@ -91,21 +93,25 @@ int add(Layout layout, const Widget* widgets, const Border* borders, const uint8
         const CarouselStyle* carouselStyles, const uint8_t* carouselLabels, const CarouselLabelColor* carouselLabelColors,
         const CarouselShadowStyle* carouselShadowStyles, const HeatmapView* heatmapViews,
         const uint8_t* descriptionTitles, const uint8_t* descriptionAuthors, const uint8_t* descriptionProgress,
+        const uint8_t* descriptionRatings,
         const uint8_t* recentTitles, const uint8_t* recentAuthors, const uint8_t* recentProgress,
-        const uint8_t* carouselProgress, const char (*libraryFolders)[3][128], int slotCount);
+        const uint8_t* recentRatings, const uint8_t* carouselProgress, const char (*libraryFolders)[3][128],
+        int slotCount);
 void update(int index, Layout layout, const Widget* widgets, const Border* borders, const uint8_t* backgrounds,
             const CarouselStyle* carouselStyles, const uint8_t* carouselLabels,
             const CarouselLabelColor* carouselLabelColors, const CarouselShadowStyle* carouselShadowStyles,
             const HeatmapView* heatmapViews, const uint8_t* descriptionTitles, const uint8_t* descriptionAuthors,
-            const uint8_t* descriptionProgress, const uint8_t* recentTitles, const uint8_t* recentAuthors,
-            const uint8_t* recentProgress, const uint8_t* carouselProgress,
+            const uint8_t* descriptionProgress, const uint8_t* descriptionRatings,
+            const uint8_t* recentTitles, const uint8_t* recentAuthors,
+            const uint8_t* recentProgress, const uint8_t* recentRatings, const uint8_t* carouselProgress,
             const char (*libraryFolders)[3][128], int slotCount);
 void updateSleep(Layout layout, const Widget* widgets, const Border* borders, const uint8_t* backgrounds,
                  const CarouselStyle* carouselStyles, const uint8_t* carouselLabels,
                  const CarouselLabelColor* carouselLabelColors, const CarouselShadowStyle* carouselShadowStyles,
                  const HeatmapView* heatmapViews, const uint8_t* descriptionTitles, const uint8_t* descriptionAuthors,
-                 const uint8_t* descriptionProgress, const uint8_t* recentTitles, const uint8_t* recentAuthors,
-                 const uint8_t* recentProgress, const uint8_t* carouselProgress,
+                 const uint8_t* descriptionProgress, const uint8_t* descriptionRatings,
+                 const uint8_t* recentTitles, const uint8_t* recentAuthors,
+                 const uint8_t* recentProgress, const uint8_t* recentRatings, const uint8_t* carouselProgress,
                  const char (*libraryFolders)[3][128], int slotCount);
 bool remove(int index);
 

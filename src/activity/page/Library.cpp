@@ -53,7 +53,7 @@ std::map<std::string, int> gThumbPage;
 constexpr int kFilterCategoryCount = 5;
 constexpr int kFilterMenuRowCount = kFilterCategoryCount + 1;
 constexpr int kPopupHeadingTopLeftMargin = 20;
-constexpr int kPopupHeadingBottomMargin = 10;
+constexpr int kPopupHeadingBottomMargin = 20;
 
 struct FilterDrawerLayout {
   int x;
@@ -84,14 +84,14 @@ FilterDrawerLayout filterDrawerLayout(const GfxRenderer& renderer, const int anc
                            kPopupHeadingBottomMargin;
   const int doneHeight = UiLayout::LIST_ITEM_HEIGHT;
   const int rowHeight = UiLayout::LIST_ITEM_HEIGHT;
-  const int y = navigation::Menu::height;
+  const int y = navigation::Menu::height + 10;
   const int availableRows = std::max(1, (screenHeight - y - 12 - headerHeight - doneHeight) / rowHeight);
   const int visibleRows = std::min({std::max(1, rowCount), availableRows, maxVisibleRows});
   const int height = headerHeight + visibleRows * rowHeight + doneHeight;
   const int width = std::max(1, std::min(320, screenWidth - horizontalScreenMargin * 2));
   const int minX = horizontalScreenMargin;
   const int maxX = std::max(minX, screenWidth - width - horizontalScreenMargin);
-  const int x = std::clamp(anchorRight - width, minX, maxX);
+  const int x = std::clamp(anchorRight - width, minX, maxX) + 2;
   return {x, y, width, height, headerHeight, doneHeight, rowHeight, visibleRows};
 }
 
@@ -1467,12 +1467,15 @@ void Library::sortDropdown() const {
   const int headerHeight = renderer.text.getLineHeight(font) + kPopupHeadingTopLeftMargin +
                            kPopupHeadingBottomMargin;
   const int height = headerHeight + sortCount() * rowHeight + 1;
-  const int x = std::max(0, buttonX(1) + buttonSize - width);
-  const int y = navigation::Menu::height;
+  const int x = std::max(0, buttonX(1) + buttonSize - width) + 2;
+  const int y = navigation::Menu::height + 10;
 
   renderer.rectangle.fill(x, y, width, height, false);
   renderer.text.render(font, x + kPopupHeadingTopLeftMargin, y + kPopupHeadingTopLeftMargin, "Sort", true,
                        EpdFontFamily::BOLD);
+  renderer.line.render(x + kPopupHeadingTopLeftMargin, y + headerHeight - 1,
+                       x + width - kPopupHeadingTopLeftMargin, y + headerHeight - 1, true,
+                       LineRender::Style::Dotted);
   const char* names[] = {"Title", "Title", "Folder", "Folder", "Author", "Author"};
   const char* directions[] = {"A-Z", "Z-A", "A-Z", "Z-A", "A-Z", "Z-A"};
   for (int index = 0; index < sortCount(); ++index) {
@@ -1705,6 +1708,9 @@ void Library::filterPopup() const {
   renderer.text.render(font, drawer.x + kPopupHeadingTopLeftMargin, drawer.y + kPopupHeadingTopLeftMargin,
                        filterCategoryLabel(filterCategory_), true, EpdFontFamily::BOLD);
   const int listY = drawer.y + drawer.headerHeight;
+  renderer.line.render(drawer.x + kPopupHeadingTopLeftMargin, listY - 1,
+                       drawer.x + drawer.width - kPopupHeadingTopLeftMargin, listY - 1, true,
+                       LineRender::Style::Dotted);
   static constexpr const char* kCategories[kFilterCategoryCount] = {
       "Title", "Type", "Author", "Series", "Tags"};
   const int metadataIndex = metadataFilterIndex(filterCategory_);

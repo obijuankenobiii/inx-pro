@@ -4,18 +4,20 @@
 
 #include "activity/Activity.h"
 
-/** Settings screen for the Description home widget. */
+/** Settings screen for the Book Details home widget. */
 class BaseDescriptionActivity final : public Activity {
  public:
-  using ApplyCallback = std::function<void(bool, bool, bool, bool)>;
+  using ApplyCallback = std::function<void(bool, bool, bool, bool, bool)>;
 
   BaseDescriptionActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, bool background, bool showTitle,
-                          bool showAuthor, bool showProgress, ApplyCallback onApply, std::function<void()> onBack)
+                          bool showAuthor, bool showProgress, bool showRating,
+                          ApplyCallback onApply, std::function<void()> onBack)
       : Activity("BaseDescription", renderer, mappedInput),
         background_(background),
         showTitle_(showTitle),
         showAuthor_(showAuthor),
         showProgress_(showProgress),
+        showRating_(showRating),
         onApply_(std::move(onApply)),
         onBack_(std::move(onBack)) {}
 
@@ -23,12 +25,14 @@ class BaseDescriptionActivity final : public Activity {
   void loop() override;
 
  private:
-  static constexpr int kRowHeight = 70;
+  static constexpr int kRowHeight = 60;
 
   bool background_ = false;
   bool showTitle_ = true;
   bool showAuthor_ = true;
   bool showProgress_ = true;
+  bool showRating_ = true;
+  int contentTop_ = 0;
   ApplyCallback onApply_;
   std::function<void()> onBack_;
 

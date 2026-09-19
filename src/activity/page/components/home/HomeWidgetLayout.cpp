@@ -182,7 +182,7 @@ void HomeWidgetLayout::renderGrid(const HomeTheme::Theme& theme, const int carou
         recent_.render(bounds.x, bounds.y, bounds.width, bounds.height, theme.backgrounds[slot] != 0,
                        theme.carouselStyles[slot], theme.carouselLabels[slot] != 0, theme.carouselLabelColors[slot],
                        theme.carouselShadowStyles[slot], theme.recentTitles[slot] != 0, theme.recentAuthors[slot] != 0,
-                       theme.recentProgress[slot] != 0);
+                       theme.recentProgress[slot] != 0, theme.recentRatings[slot] != 0);
         break;
 #if FREEINK_DEVICE_STICKY
       case HomeTheme::Widget::Temperature:
@@ -213,7 +213,7 @@ void HomeWidgetLayout::renderGrid(const HomeTheme::Theme& theme, const int carou
                             theme.backgrounds[slot] != 0, theme.carouselLabels[slot] != 0,
                             theme.carouselLabelColors[slot], theme.carouselShadowStyles[slot],
                             theme.descriptionTitles[slot] != 0, theme.descriptionAuthors[slot] != 0,
-                            theme.descriptionProgress[slot] != 0);
+                            theme.descriptionProgress[slot] != 0, theme.descriptionRatings[slot] != 0);
         break;
       case HomeTheme::Widget::Empty:
       default:

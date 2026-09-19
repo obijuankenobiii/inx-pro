@@ -2,6 +2,7 @@
 
 #include <GfxRenderer.h>
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -21,72 +22,88 @@ void BaseCarouselActivity::onEnter() { render(); }
 
 void BaseCarouselActivity::render() {
   renderer.clearScreen();
-  const int contentTop = SubPage::header(renderer, recentStyle_ ? "Recent" : "Carousel");
+  const int contentTop = contentTop_ = SubPage::header(renderer, recentStyle_ ? "Recent" : "Carousel");
+  const int rowHeight = kRowHeight;
   const int font = systemFontId();
   const int width = renderer.getScreenWidth();
-
-  const int styleY = contentTop;
-  const int backgroundY = contentTop + kRowHeight;
-  const int shadowStyleY = contentTop + kRowHeight * 2;
-  const int labelY = contentTop + kRowHeight * 3;
-  const int labelColorY = contentTop + kRowHeight * 4;
-  const int titleY = contentTop + kRowHeight * 5;
-  const int authorY = contentTop + kRowHeight * 6;
-  const int progressY = contentTop + kRowHeight * (recentStyle_ ? 7 : 5);
-  renderer.rectangle.fill(0, styleY, width, kRowHeight, static_cast<int>(GfxRenderer::FillTone::Paper));
-  renderer.rectangle.fill(0, backgroundY, width, kRowHeight, static_cast<int>(GfxRenderer::FillTone::Paper));
-  renderer.rectangle.fill(0, labelY, width, kRowHeight, static_cast<int>(GfxRenderer::FillTone::Paper));
-  renderer.rectangle.fill(0, labelColorY, width, kRowHeight, static_cast<int>(GfxRenderer::FillTone::Paper));
-  renderer.text.render(font, 20, styleY + (kRowHeight - renderer.text.getLineHeight(font)) / 2, "Style", true,
-                       EpdFontFamily::REGULAR);
-  const char* styleLabel = recentStyle_ ? (style_ == HomeTheme::CarouselStyle::Right ? "Right" : "Left")
-                                        : HomeTheme::carouselStyleLabel(style_);
-  const int styleWidth = renderer.text.getWidth(font, styleLabel);
-  renderer.text.render(font, width - styleWidth - 20,
-                       styleY + (kRowHeight - renderer.text.getLineHeight(font)) / 2, styleLabel, true,
-                       EpdFontFamily::REGULAR);
-  renderer.text.render(font, 20, backgroundY + (kRowHeight - renderer.text.getLineHeight(font)) / 2, "Background",
-                       true, EpdFontFamily::REGULAR);
-  Toggle::render(renderer, width - 20, backgroundY, kRowHeight, background_);
-  renderer.text.render(font, 20, shadowStyleY + (kRowHeight - renderer.text.getLineHeight(font)) / 2,
-                       "Shadow style", true, EpdFontFamily::REGULAR);
-  const char* shadowStyleLabel = HomeTheme::carouselShadowStyleLabel(shadowStyle_);
-  const int shadowStyleWidth = renderer.text.getWidth(font, shadowStyleLabel);
-  renderer.text.render(font, width - shadowStyleWidth - 20,
-                       shadowStyleY + (kRowHeight - renderer.text.getLineHeight(font)) / 2, shadowStyleLabel, true,
-                       EpdFontFamily::REGULAR);
-  renderer.text.render(font, 20, labelY + (kRowHeight - renderer.text.getLineHeight(font)) / 2, "Label", true,
-                       EpdFontFamily::REGULAR);
-  Toggle::render(renderer, width - 20, labelY, kRowHeight, showLabel_);
-  renderer.text.render(font, 20, labelColorY + (kRowHeight - renderer.text.getLineHeight(font)) / 2, "Label color",
-                       true, EpdFontFamily::REGULAR);
-  const char* labelColor = HomeTheme::carouselLabelColorLabel(labelColor_);
-  const int labelColorWidth = renderer.text.getWidth(font, labelColor);
-  renderer.text.render(font, width - labelColorWidth - 20,
-                       labelColorY + (kRowHeight - renderer.text.getLineHeight(font)) / 2, labelColor, true,
-                       EpdFontFamily::REGULAR);
-  renderer.line.render(0, backgroundY - 1, width, backgroundY - 1, true, LineRender::Style::Dotted);
-  renderer.line.render(0, shadowStyleY - 1, width, shadowStyleY - 1, true, LineRender::Style::Dotted);
-  renderer.line.render(0, labelY - 1, width, labelY - 1, true, LineRender::Style::Dotted);
-  renderer.line.render(0, labelColorY - 1, width, labelColorY - 1, true, LineRender::Style::Dotted);
-
-  if (recentStyle_) {
-    renderer.rectangle.fill(0, titleY, width, kRowHeight, static_cast<int>(GfxRenderer::FillTone::Paper));
-    renderer.rectangle.fill(0, authorY, width, kRowHeight, static_cast<int>(GfxRenderer::FillTone::Paper));
-    renderer.text.render(font, 20, titleY + (kRowHeight - renderer.text.getLineHeight(font)) / 2, "Show title", true,
-                         EpdFontFamily::REGULAR);
-    Toggle::render(renderer, width - 20, titleY, kRowHeight, showTitle_);
-    renderer.text.render(font, 20, authorY + (kRowHeight - renderer.text.getLineHeight(font)) / 2, "Show author",
-                         true, EpdFontFamily::REGULAR);
-    Toggle::render(renderer, width - 20, authorY, kRowHeight, showAuthor_);
-    renderer.line.render(0, titleY - 1, width, titleY - 1, true, LineRender::Style::Dotted);
-    renderer.line.render(0, authorY - 1, width, authorY - 1, true, LineRender::Style::Dotted);
+  const int itemCount = recentStyle_ ? 9 : 6;
+  const int visibleRows = std::max(1, (renderer.getScreenHeight() - contentTop) / rowHeight);
+  scrollOffset_ = std::max(0, std::min(scrollOffset_, itemCount - visibleRows));
+  const int lastItem = std::min(itemCount, scrollOffset_ + visibleRows);
+  const int lineHeight = renderer.text.getLineHeight(font);
+  for (int item = scrollOffset_; item < lastItem; ++item) {
+    const int rowY = contentTop + (item - scrollOffset_) * rowHeight;
+    renderer.rectangle.fill(0, rowY, width, rowHeight, static_cast<int>(GfxRenderer::FillTone::Paper));
+    const int textY = rowY + (rowHeight - lineHeight) / 2;
+    switch (item) {
+      case 0: {
+        renderer.text.render(font, 20, textY, "Style", true, EpdFontFamily::REGULAR);
+        const char* value = recentStyle_ ? (style_ == HomeTheme::CarouselStyle::Right ? "Right" : "Left")
+                                         : HomeTheme::carouselStyleLabel(style_);
+        renderer.text.render(font, width - renderer.text.getWidth(font, value) - 20, textY, value, true,
+                             EpdFontFamily::REGULAR);
+        break;
+      }
+      case 1:
+        renderer.text.render(font, 20, textY, "Background", true, EpdFontFamily::REGULAR);
+        Toggle::render(renderer, width - 20, rowY, rowHeight, background_);
+        break;
+      case 2: {
+        renderer.text.render(font, 20, textY, "Shadow style", true, EpdFontFamily::REGULAR);
+        const char* value = HomeTheme::carouselShadowStyleLabel(shadowStyle_);
+        renderer.text.render(font, width - renderer.text.getWidth(font, value) - 20, textY, value, true,
+                             EpdFontFamily::REGULAR);
+        break;
+      }
+      case 3:
+        renderer.text.render(font, 20, textY, "Label", true, EpdFontFamily::REGULAR);
+        Toggle::render(renderer, width - 20, rowY, rowHeight, showLabel_);
+        break;
+      case 4: {
+        renderer.text.render(font, 20, textY, "Label color", true, EpdFontFamily::REGULAR);
+        const char* value = HomeTheme::carouselLabelColorLabel(labelColor_);
+        renderer.text.render(font, width - renderer.text.getWidth(font, value) - 20, textY, value, true,
+                             EpdFontFamily::REGULAR);
+        break;
+      }
+      case 5:
+        if (recentStyle_) {
+          renderer.text.render(font, 20, textY, "Show title", true, EpdFontFamily::REGULAR);
+          Toggle::render(renderer, width - 20, rowY, rowHeight, showTitle_);
+        } else {
+          renderer.text.render(font, 20, textY, "Show progress", true, EpdFontFamily::REGULAR);
+          Toggle::render(renderer, width - 20, rowY, rowHeight, showProgress_);
+        }
+        break;
+      case 6:
+        renderer.text.render(font, 20, textY, "Show author", true, EpdFontFamily::REGULAR);
+        Toggle::render(renderer, width - 20, rowY, rowHeight, showAuthor_);
+        break;
+      case 7:
+        renderer.text.render(font, 20, textY, "Show rating", true, EpdFontFamily::REGULAR);
+        Toggle::render(renderer, width - 20, rowY, rowHeight, showRating_);
+        break;
+      case 8:
+        renderer.text.render(font, 20, textY, "Show progress", true, EpdFontFamily::REGULAR);
+        Toggle::render(renderer, width - 20, rowY, rowHeight, showProgress_);
+        break;
+    }
+    if (item > scrollOffset_) {
+      renderer.line.render(0, rowY - 1, width, rowY - 1, true, LineRender::Style::Dotted);
+    }
   }
-  renderer.rectangle.fill(0, progressY, width, kRowHeight, static_cast<int>(GfxRenderer::FillTone::Paper));
-  renderer.text.render(font, 20, progressY + (kRowHeight - renderer.text.getLineHeight(font)) / 2,
-                       "Show progress", true, EpdFontFamily::REGULAR);
-  Toggle::render(renderer, width - 20, progressY, kRowHeight, showProgress_);
-  renderer.line.render(0, progressY - 1, width, progressY - 1, true, LineRender::Style::Dotted);
+  if (itemCount > visibleRows) {
+    const int trackTop = contentTop + 4;
+    const int trackHeight = std::max(1, visibleRows * rowHeight - 8);
+    const int thumbHeight = std::max(18, trackHeight * visibleRows / itemCount);
+    const int thumbRange = std::max(0, trackHeight - thumbHeight);
+    const int thumbY = trackTop + (itemCount > visibleRows ? thumbRange * scrollOffset_ /
+                                                               (itemCount - visibleRows)
+                                                         : 0);
+    renderer.line.render(width - 4, trackTop, width - 4, trackTop + trackHeight, true,
+                         LineRender::Style::Dotted);
+    renderer.line.render(width - 4, thumbY, width - 4, thumbY + thumbHeight, true);
+  }
 
   if (stylePopup_) renderStylePopup();
   if (shadowStylePopup_) renderShadowStylePopup();
@@ -125,7 +142,10 @@ void BaseCarouselActivity::renderShadowStylePopup() {
 }
 
 void BaseCarouselActivity::close() {
-  if (onApply_) onApply_(style_, background_, showLabel_, labelColor_, shadowStyle_, showTitle_, showAuthor_, showProgress_);
+  if (onApply_) {
+    onApply_(style_, background_, showLabel_, labelColor_, shadowStyle_, showTitle_, showAuthor_, showProgress_,
+             showRating_);
+  }
   if (onBack_) onBack_();
 }
 
@@ -185,53 +205,47 @@ void BaseCarouselActivity::handleTouch(const int x, const int y) {
     return;
   }
 
-  const int contentTop = FREEINK_DEVICE_X4PRO ? 80 : 70;
-  if (x >= 0 && x < renderer.getScreenWidth() && y >= contentTop && y < contentTop + kRowHeight) {
-    stylePopup_ = true;
-    render();
-    return;
+  if (x < 0 || x >= renderer.getScreenWidth() || y < contentTop_ || y >= renderer.getScreenHeight()) return;
+  const int visibleIndex = (y - contentTop_) / kRowHeight;
+  const int visibleRows = std::max(1, (renderer.getScreenHeight() - contentTop_) / kRowHeight);
+  if (visibleIndex >= visibleRows) return;
+  const int item = scrollOffset_ + visibleIndex;
+  if ((!recentStyle_ && item >= 6) || (recentStyle_ && item >= 9)) return;
+
+  switch (item) {
+    case 0:
+      stylePopup_ = true;
+      break;
+    case 1:
+      background_ = !background_;
+      break;
+    case 2:
+      shadowStylePopup_ = true;
+      break;
+    case 3:
+      showLabel_ = !showLabel_;
+      break;
+    case 4:
+      labelColorPopup_ = true;
+      break;
+    case 5:
+      if (recentStyle_) {
+        showTitle_ = !showTitle_;
+      } else {
+        showProgress_ = !showProgress_;
+      }
+      break;
+    case 6:
+      showAuthor_ = !showAuthor_;
+      break;
+    case 7:
+      showRating_ = !showRating_;
+      break;
+    case 8:
+      showProgress_ = !showProgress_;
+      break;
   }
-  if (x >= 0 && x < renderer.getScreenWidth() && y >= contentTop + kRowHeight &&
-      y < contentTop + kRowHeight * 2) {
-    background_ = !background_;
-    render();
-    return;
-  }
-  if (x >= 0 && x < renderer.getScreenWidth() && y >= contentTop + kRowHeight * 2 &&
-      y < contentTop + kRowHeight * 3) {
-    shadowStylePopup_ = true;
-    render();
-    return;
-  }
-  if (x >= 0 && x < renderer.getScreenWidth() && y >= contentTop + kRowHeight * 3 &&
-      y < contentTop + kRowHeight * 4) {
-    showLabel_ = !showLabel_;
-    render();
-    return;
-  }
-  if (x >= 0 && x < renderer.getScreenWidth() && y >= contentTop + kRowHeight * 4 &&
-      y < contentTop + kRowHeight * 5) {
-    labelColorPopup_ = true;
-    render();
-    return;
-  }
-  if (recentStyle_ && x >= 0 && x < renderer.getScreenWidth() && y >= contentTop + kRowHeight * 5 &&
-      y < contentTop + kRowHeight * 6) {
-    showTitle_ = !showTitle_;
-    render();
-    return;
-  }
-  if (recentStyle_ && x >= 0 && x < renderer.getScreenWidth() && y >= contentTop + kRowHeight * 6 &&
-      y < contentTop + kRowHeight * 7) {
-    showAuthor_ = !showAuthor_;
-    render();
-    return;
-  }
-  if (x >= 0 && x < renderer.getScreenWidth() && y >= contentTop + kRowHeight * (recentStyle_ ? 7 : 5) &&
-      y < contentTop + kRowHeight * (recentStyle_ ? 8 : 6)) {
-    showProgress_ = !showProgress_;
-    render();
-  }
+  render();
 }
 
 void BaseCarouselActivity::loop() {
@@ -317,7 +331,36 @@ void BaseCarouselActivity::loop() {
     return;
   }
 
-  if (SubPage::closeInput(renderer, mappedInput, [this] { close(); })) return;
+  if (SubPage::closeInput(renderer, mappedInput, [this] { close(); }, false)) return;
+
+  const int itemCount = recentStyle_ ? 9 : 6;
+  const int visibleRows = std::max(1, (renderer.getScreenHeight() - contentTop_) / kRowHeight);
+  const int maxScroll = std::max(0, itemCount - visibleRows);
+  if (mappedInput.hasTouch() && mappedInput.wasTouchSwipeUpForRenderer(renderer)) {
+    if (scrollOffset_ < maxScroll) {
+      ++scrollOffset_;
+      render();
+    }
+    return;
+  }
+  if (mappedInput.hasTouch() && mappedInput.wasTouchSwipeDownForRenderer(renderer)) {
+    if (scrollOffset_ > 0) {
+      --scrollOffset_;
+      render();
+    }
+    return;
+  }
+
+  if (mappedInput.wasPressed(MappedInputManager::Button::Up) && scrollOffset_ > 0) {
+    --scrollOffset_;
+    render();
+    return;
+  }
+  if (mappedInput.wasPressed(MappedInputManager::Button::Down) && scrollOffset_ < maxScroll) {
+    ++scrollOffset_;
+    render();
+    return;
+  }
 
   if (mappedInput.hasTouch()) {
     float nx = 0.0f;

@@ -12,9 +12,14 @@ namespace HomeTheme {
 namespace {
 
 constexpr char kThemeFile[] = "/.system/home_themes.bin";
-constexpr uint8_t kVersion = 19;
+constexpr uint8_t kVersion = 22;
 constexpr uint8_t kDescriptionOptionsVersion = 17;
 constexpr uint8_t kRecentOptionsVersion = 18;
+constexpr uint8_t kCarouselProgressVersion = 19;
+constexpr uint8_t kBookDetailsOptionsVersion = 20;
+constexpr uint8_t kLegacyFavoriteIconOptionVersion = 20;
+constexpr uint8_t kVersionBeforeRecentRatingOptions = 21;
+constexpr uint8_t kRecentRatingOptionsVersion = 22;
 constexpr uint8_t kLibraryFoldersVersion = 17;
 constexpr uint8_t kLegacyLibraryFoldersVersion = 13;
 constexpr uint8_t kLegacyMultiLibraryFoldersVersion = 14;
@@ -198,6 +203,7 @@ void setDefaultDescriptionOptions(Theme& theme) {
     theme.descriptionTitles[i] = 1;
     theme.descriptionAuthors[i] = 1;
     theme.descriptionProgress[i] = 1;
+    theme.descriptionRatings[i] = 1;
   }
 }
 
@@ -206,6 +212,7 @@ void setDefaultRecentOptions(Theme& theme) {
     theme.recentTitles[i] = 1;
     theme.recentAuthors[i] = 1;
     theme.recentProgress[i] = 1;
+    theme.recentRatings[i] = 1;
   }
 }
 
@@ -257,7 +264,9 @@ void load() {
        version != kLegacyCarouselShadowVersion && version != kLegacyCarouselShadowStyleVersion &&
        version != 10 && version != 11 && version != kHeatmapViewVersion && version != kLegacyLibraryFoldersVersion &&
        version != kLegacyMultiLibraryFoldersVersion && version != kLegacySingleLibraryFoldersVersion && version != 16 &&
-       version != 17 && version != 18 &&
+       version != 17 && version != 18 && version != kCarouselProgressVersion &&
+       version != kVersionBeforeRecentRatingOptions &&
+       version != kLegacyFavoriteIconOptionVersion &&
        version != kVersion) || storedCount == 0 ||
       storedCount > kMaxThemes) {
     file.close();
@@ -360,6 +369,7 @@ void load() {
         theme.descriptionTitles[i] = 1;
         theme.descriptionAuthors[i] = 1;
         theme.descriptionProgress[i] = 1;
+        theme.descriptionRatings[i] = 1;
         continue;
       }
       serialization::readPod(file, theme.descriptionTitles[i]);
@@ -368,23 +378,40 @@ void load() {
       theme.descriptionTitles[i] = theme.descriptionTitles[i] != 0 ? 1 : 0;
       theme.descriptionAuthors[i] = theme.descriptionAuthors[i] != 0 ? 1 : 0;
       theme.descriptionProgress[i] = theme.descriptionProgress[i] != 0 ? 1 : 0;
+      if (version >= kBookDetailsOptionsVersion) {
+        if (version <= kLegacyFavoriteIconOptionVersion) {
+          uint8_t ignoredFavoriteIconOption = 0;
+          serialization::readPod(file, ignoredFavoriteIconOption);
+        }
+        serialization::readPod(file, theme.descriptionRatings[i]);
+      } else {
+        theme.descriptionRatings[i] = 1;
+      }
+      theme.descriptionRatings[i] = theme.descriptionRatings[i] != 0 ? 1 : 0;
     }
     for (int i = 0; i < 4; ++i) {
       if (version < kRecentOptionsVersion) {
         theme.recentTitles[i] = 1;
         theme.recentAuthors[i] = 1;
         theme.recentProgress[i] = 1;
+        theme.recentRatings[i] = 1;
         continue;
       }
       serialization::readPod(file, theme.recentTitles[i]);
       serialization::readPod(file, theme.recentAuthors[i]);
       serialization::readPod(file, theme.recentProgress[i]);
+      if (version >= kRecentRatingOptionsVersion) {
+        serialization::readPod(file, theme.recentRatings[i]);
+      } else {
+        theme.recentRatings[i] = 1;
+      }
       theme.recentTitles[i] = theme.recentTitles[i] != 0 ? 1 : 0;
       theme.recentAuthors[i] = theme.recentAuthors[i] != 0 ? 1 : 0;
       theme.recentProgress[i] = theme.recentProgress[i] != 0 ? 1 : 0;
+      theme.recentRatings[i] = theme.recentRatings[i] != 0 ? 1 : 0;
     }
     for (int i = 0; i < 4; ++i) {
-      if (version < kVersion) {
+      if (version < kCarouselProgressVersion) {
         theme.carouselProgress[i] = 1;
         continue;
       }
@@ -516,11 +543,13 @@ bool save() {
       serialization::writePod(file, theme.descriptionTitles[i]);
       serialization::writePod(file, theme.descriptionAuthors[i]);
       serialization::writePod(file, theme.descriptionProgress[i]);
+      serialization::writePod(file, theme.descriptionRatings[i]);
     }
     for (int i = 0; i < 4; ++i) {
       serialization::writePod(file, theme.recentTitles[i]);
       serialization::writePod(file, theme.recentAuthors[i]);
       serialization::writePod(file, theme.recentProgress[i]);
+      serialization::writePod(file, theme.recentRatings[i]);
     }
     for (int i = 0; i < 4; ++i) serialization::writePod(file, theme.carouselProgress[i]);
     for (const HeatmapView view : theme.heatmapViews) {
@@ -570,8 +599,9 @@ int add(const Layout layout, const Widget* widgets, const Border* borders, const
         const CarouselStyle* carouselStyles, const uint8_t* carouselLabels,
         const CarouselLabelColor* carouselLabelColors, const CarouselShadowStyle* carouselShadowStyles,
         const HeatmapView* heatmapViews, const uint8_t* descriptionTitles, const uint8_t* descriptionAuthors,
-        const uint8_t* descriptionProgress, const uint8_t* recentTitles, const uint8_t* recentAuthors,
-        const uint8_t* recentProgress, const uint8_t* carouselProgress,
+        const uint8_t* descriptionProgress, const uint8_t* descriptionRatings,
+        const uint8_t* recentTitles, const uint8_t* recentAuthors,
+        const uint8_t* recentProgress, const uint8_t* recentRatings, const uint8_t* carouselProgress,
         const char (*libraryFolders)[3][128],
         const int slotCountValue) {
   ensureLoaded();
@@ -611,6 +641,9 @@ int add(const Layout layout, const Widget* widgets, const Border* borders, const
     theme.descriptionProgress[i] = layout != Layout::Classic && descriptionProgress && i < slotCountValue
                                        ? (descriptionProgress[i] != 0 ? 1 : 0)
                                        : 1;
+    theme.descriptionRatings[i] = layout != Layout::Classic && descriptionRatings && i < slotCountValue
+                                      ? (descriptionRatings[i] != 0 ? 1 : 0)
+                                      : 1;
     theme.recentTitles[i] = layout != Layout::Classic && recentTitles && i < slotCountValue
                                 ? (recentTitles[i] != 0 ? 1 : 0)
                                 : 1;
@@ -620,6 +653,9 @@ int add(const Layout layout, const Widget* widgets, const Border* borders, const
     theme.recentProgress[i] = layout != Layout::Classic && recentProgress && i < slotCountValue
                                   ? (recentProgress[i] != 0 ? 1 : 0)
                                   : 1;
+    theme.recentRatings[i] = layout != Layout::Classic && recentRatings && i < slotCountValue
+                                 ? (recentRatings[i] != 0 ? 1 : 0)
+                                 : 1;
     theme.carouselProgress[i] = layout != Layout::Classic && carouselProgress && i < slotCountValue
                                     ? (carouselProgress[i] != 0 ? 1 : 0)
                                     : 1;
@@ -643,8 +679,9 @@ void update(const int index, const Layout layout, const Widget* widgets, const B
             const uint8_t* backgrounds, const CarouselStyle* carouselStyles, const uint8_t* carouselLabels,
             const CarouselLabelColor* carouselLabelColors, const CarouselShadowStyle* carouselShadowStyles,
             const HeatmapView* heatmapViews, const uint8_t* descriptionTitles, const uint8_t* descriptionAuthors,
-            const uint8_t* descriptionProgress, const uint8_t* recentTitles, const uint8_t* recentAuthors,
-            const uint8_t* recentProgress, const uint8_t* carouselProgress,
+            const uint8_t* descriptionProgress, const uint8_t* descriptionRatings,
+            const uint8_t* recentTitles, const uint8_t* recentAuthors,
+            const uint8_t* recentProgress, const uint8_t* recentRatings, const uint8_t* carouselProgress,
             const char (*libraryFolders)[3][128],
             const int slotCountValue) {
   ensureLoaded();
@@ -681,6 +718,9 @@ void update(const int index, const Layout layout, const Widget* widgets, const B
     theme.descriptionProgress[i] = layout != Layout::Classic && descriptionProgress && i < slotCountValue
                                        ? (descriptionProgress[i] != 0 ? 1 : 0)
                                        : 1;
+    theme.descriptionRatings[i] = layout != Layout::Classic && descriptionRatings && i < slotCountValue
+                                      ? (descriptionRatings[i] != 0 ? 1 : 0)
+                                      : 1;
     theme.recentTitles[i] = layout != Layout::Classic && recentTitles && i < slotCountValue
                                 ? (recentTitles[i] != 0 ? 1 : 0)
                                 : 1;
@@ -690,6 +730,9 @@ void update(const int index, const Layout layout, const Widget* widgets, const B
     theme.recentProgress[i] = layout != Layout::Classic && recentProgress && i < slotCountValue
                                   ? (recentProgress[i] != 0 ? 1 : 0)
                                   : 1;
+    theme.recentRatings[i] = layout != Layout::Classic && recentRatings && i < slotCountValue
+                                 ? (recentRatings[i] != 0 ? 1 : 0)
+                                 : 1;
     theme.carouselProgress[i] = layout != Layout::Classic && carouselProgress && i < slotCountValue
                                     ? (carouselProgress[i] != 0 ? 1 : 0)
                                     : 1;
@@ -711,8 +754,9 @@ void updateSleep(const Layout layout, const Widget* widgets, const Border* borde
                  const CarouselStyle* carouselStyles, const uint8_t* carouselLabels,
                  const CarouselLabelColor* carouselLabelColors, const CarouselShadowStyle* carouselShadowStyles,
                  const HeatmapView* heatmapViews, const uint8_t* descriptionTitles, const uint8_t* descriptionAuthors,
-                 const uint8_t* descriptionProgress, const uint8_t* recentTitles, const uint8_t* recentAuthors,
-                 const uint8_t* recentProgress, const uint8_t* carouselProgress,
+                 const uint8_t* descriptionProgress, const uint8_t* descriptionRatings,
+                 const uint8_t* recentTitles, const uint8_t* recentAuthors,
+                 const uint8_t* recentProgress, const uint8_t* recentRatings, const uint8_t* carouselProgress,
                  const char (*libraryFolders)[3][128],
                  const int slotCountValue) {
   ensureLoaded();
@@ -747,6 +791,9 @@ void updateSleep(const Layout layout, const Widget* widgets, const Border* borde
     sleepTheme.descriptionProgress[i] = layout != Layout::Classic && descriptionProgress && i < slotCountValue
                                             ? (descriptionProgress[i] != 0 ? 1 : 0)
                                             : 1;
+    sleepTheme.descriptionRatings[i] = layout != Layout::Classic && descriptionRatings && i < slotCountValue
+                                           ? (descriptionRatings[i] != 0 ? 1 : 0)
+                                           : 1;
     sleepTheme.recentTitles[i] = layout != Layout::Classic && recentTitles && i < slotCountValue
                                      ? (recentTitles[i] != 0 ? 1 : 0)
                                      : 1;
@@ -756,6 +803,9 @@ void updateSleep(const Layout layout, const Widget* widgets, const Border* borde
     sleepTheme.recentProgress[i] = layout != Layout::Classic && recentProgress && i < slotCountValue
                                        ? (recentProgress[i] != 0 ? 1 : 0)
                                        : 1;
+    sleepTheme.recentRatings[i] = layout != Layout::Classic && recentRatings && i < slotCountValue
+                                      ? (recentRatings[i] != 0 ? 1 : 0)
+                                      : 1;
     sleepTheme.carouselProgress[i] = layout != Layout::Classic && carouselProgress && i < slotCountValue
                                          ? (carouselProgress[i] != 0 ? 1 : 0)
                                          : 1;
@@ -830,7 +880,7 @@ const char* widgetLabel(const Widget widget) {
     case Widget::Library:
       return "Library";
     case Widget::Description:
-      return "Description";
+      return "Book Details";
     default:
       return "Unknown";
   }

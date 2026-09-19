@@ -1,14 +1,18 @@
 #include "Recent.h"
 
 #include <BitmapRender.h>
+#include <Epub/BookMetadataCache.h>
 #include <GfxRenderer.h>
 #include <ImageRender.h>
 #include <SDCardManager.h>
 
 #include <algorithm>
 #include <cstdio>
+#include <functional>
 #include <string>
 
+#include "images/Star.h"
+#include "MetadataRating.h"
 #include "state/RecentBooks.h"
 #include "state/SystemSetting.h"
 #include "system/Fonts.h"
@@ -96,11 +100,24 @@ void renderThumbnail(GfxRenderer& renderer, const RecentBook& book, const int x,
 
 }
 
+int Recent::ratingStars(const RecentBook& book) const {
+  if (ratingCachePath_ == book.path) return cachedRatingStars_;
+  ratingCachePath_ = book.path;
+  cachedRatingStars_ = 0;
+
+  const std::string cachePath = book.cachePath.empty()
+                                    ? "/.metadata/epub/" + std::to_string(std::hash<std::string>{}(book.path))
+                                    : book.cachePath;
+  BookMetadataCache metadata(cachePath);
+  if (metadata.load()) cachedRatingStars_ = metadataRatingStars(metadata.coreMetadata.rating);
+  return cachedRatingStars_;
+}
+
 void Recent::render(const int x, const int y, const int width, const int height, const bool background,
                     const HomeTheme::CarouselStyle style, const bool showLabel,
                     const HomeTheme::CarouselLabelColor labelColor,
                     const HomeTheme::CarouselShadowStyle shadowStyle, const bool showTitle, const bool showAuthor,
-                    const bool showProgress) const {
+                    const bool showProgress, const bool showRating) const {
   if (width <= 0 || height <= 0) return;
   renderBackground(x, y, width, height, background);
   const ContentArea content = contentArea(y, height, showLabel);
@@ -126,12 +143,17 @@ void Recent::render(const int x, const int y, const int width, const int height,
   std::string title;
   std::string titleSecond;
   titleLines(renderer_, bookTitle(book), font, contentWidth, title, titleSecond);
-  const std::string author = renderer_.text.truncate(font, book.author.c_str(), contentWidth);
   const int lineHeight = renderer_.text.getLineHeight(font);
   const int titleLines = titleSecond.empty() ? 1 : 2;
   const bool hasAuthor = showAuthor && !book.author.empty();
-  const int titleBlockHeight = (showTitle ? titleLines * lineHeight : 0) +
-                               (hasAuthor ? lineHeight + (showTitle ? 4 : 0) : 0);
+  const int stars = showRating ? ratingStars(book) : 0;
+  const bool hasRating = stars > 0;
+  const int metadataRows = (hasAuthor ? 1 : 0) + (hasRating ? 1 : 0);
+  constexpr int ratingIconSize = 24;
+  const int metadataBlockHeight = (hasAuthor ? lineHeight : 0) + (hasRating ? ratingIconSize : 0) +
+                                  (hasAuthor && hasRating ? 4 : 0) +
+                                  (metadataRows > 0 && showTitle ? 4 : 0);
+  const int titleBlockHeight = (showTitle ? titleLines * lineHeight : 0) + metadataBlockHeight;
   const int titleY = content.y + std::max(8, (content.height - titleBlockHeight) / 2 - 20);
   int textY = titleY;
   if (showTitle) {
@@ -141,9 +163,19 @@ void Recent::render(const int x, const int y, const int width, const int height,
     }
     textY += titleLines * lineHeight;
   }
-  if (hasAuthor) {
-    const int authorY = textY + (showTitle ? 4 : 0);
-    renderer_.text.render(font, contentX, authorY, author.c_str(), true, EpdFontFamily::REGULAR);
+  if (metadataRows > 0) {
+    int metadataY = textY + (metadataRows > 0 && showTitle ? 4 : 0);
+    if (hasAuthor) {
+      const std::string author = renderer_.text.truncate(font, book.author.c_str(), contentWidth);
+      renderer_.text.render(font, contentX, metadataY, author.c_str(), true, EpdFontFamily::REGULAR);
+      metadataY += lineHeight + (hasRating ? 4 : 0);
+    }
+    constexpr int starGap = 4;
+    const int starsY = metadataY;
+    for (int star = 0; star < stars; ++star) {
+      renderer_.bitmap.icon(Star, contentX + star * (ratingIconSize + starGap), starsY, ratingIconSize,
+                            ratingIconSize);
+    }
   }
 
   if (!showProgress) return;
@@ -170,7 +202,7 @@ void Recent::preview(const int x, const int y, const int width, const int height
                      const HomeTheme::CarouselStyle style, const bool showLabel,
                      const HomeTheme::CarouselLabelColor labelColor,
                      const HomeTheme::CarouselShadowStyle shadowStyle, const bool showTitle, const bool showAuthor,
-                     const bool showProgress) const {
+                     const bool showProgress, const bool showRating) const {
   if (width <= 0 || height <= 0) return;
   renderBackground(x, y, width, height, background);
   const ContentArea content = contentArea(y, height, showLabel);
@@ -192,11 +224,22 @@ void Recent::preview(const int x, const int y, const int width, const int height
   const int contentWidth = std::max(1, rightAligned ? thumbnailX - contentX - 18 : x + width - contentX - innerPadding);
   const int font = systemFontId();
   const int lineHeight = renderer_.text.getLineHeight(font);
-  const int titleY = content.y + std::max(8, (content.height - lineHeight * 2 - 28) / 2 - 20);
+  constexpr int previewIconSize = 24;
+  constexpr int previewStars = 5;
+  const int previewMetadataHeight = (showAuthor ? lineHeight + 4 : 0) +
+                                    (showRating ? previewIconSize + (showAuthor ? 4 : 0) : 0);
+  const int previewTextHeight = (showTitle ? lineHeight + 4 : 0) + previewMetadataHeight;
+  const int titleY = content.y + std::max(8, (content.height - previewTextHeight) / 2 - 20);
   if (showTitle) renderer_.text.render(font, contentX, titleY, "Book title", true, EpdFontFamily::BOLD);
-  if (showAuthor) {
-    const int authorY = titleY + (showTitle ? lineHeight + 4 : 0);
-    renderer_.text.render(font, contentX, authorY, "Author", true, EpdFontFamily::REGULAR);
+  const int authorY = titleY + (showTitle ? lineHeight + 4 : 0);
+  if (showAuthor) renderer_.text.render(font, contentX, authorY, "Author", true, EpdFontFamily::REGULAR);
+  if (showRating) {
+    constexpr int previewStarGap = 4;
+    const int starsY = authorY + (showAuthor ? lineHeight + 4 : 0);
+    for (int star = 0; star < previewStars; ++star) {
+      renderer_.bitmap.icon(Star, contentX + star * (previewIconSize + previewStarGap), starsY, previewIconSize,
+                            previewIconSize);
+    }
   }
 
   if (!showProgress) return;

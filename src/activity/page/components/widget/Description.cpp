@@ -5,11 +5,12 @@
 
 #include <algorithm>
 #include <cctype>
-#include <cstdlib>
 #include <functional>
 #include <utility>
 
 #include "state/RecentBooks.h"
+#include "images/Star.h"
+#include "MetadataRating.h"
 #include "system/Fonts.h"
 
 namespace {
@@ -220,12 +221,16 @@ void Description::ensureLines(const int recentIndex, const int width) const {
   cachedPath_ = path;
   cachedWidth_ = width;
   lines_.clear();
+  cachedRatingStars_ = 0;
 
   std::string raw;
   if (!path.empty()) {
     const RecentBook& book = books[static_cast<size_t>(recentIndex)];
     BookMetadataCache metadata(metadataCachePath(book));
-    if (metadata.load()) raw = metadata.coreMetadata.description;
+    if (metadata.load()) {
+      raw = metadata.coreMetadata.description;
+      cachedRatingStars_ = metadataRatingStars(metadata.coreMetadata.rating);
+    }
   }
   lines_ = wrapDescription(renderer_, raw, std::max(1, width));
 }
@@ -234,11 +239,11 @@ void Description::render(const int recentIndex, const int x, const int y, const 
                          const bool background, const bool showLabel,
                          const HomeTheme::CarouselLabelColor labelColor,
                          const HomeTheme::CarouselShadowStyle shadowStyle, const bool showTitle,
-                         const bool showAuthor, const bool showProgress) const {
+                         const bool showAuthor, const bool showProgress, const bool showRating) const {
   if (width <= 0 || height <= 0) return;
   renderBackground(x, y, width, height, background);
   const ContentArea content = contentArea(y, height, showLabel);
-  if (showLabel) renderLabel(x, y, "Description", labelColor);
+  if (showLabel) renderLabel(x, y, "Book Details", labelColor);
 
   const auto& books = RECENT_BOOKS.getBooks();
   if (recentIndex < 0 || recentIndex >= static_cast<int>(books.size())) {
@@ -253,6 +258,7 @@ void Description::render(const int recentIndex, const int x, const int y, const 
   constexpr int titleFont = MONTSERRAT_16_FONT_ID;
   constexpr int authorFont = MONTSERRAT_12_FONT_ID;
   const int textWidth = std::max(1, width - marginX * 2);
+  ensureLines(recentIndex, textWidth);
   int textBottom = content.y + marginTop;
   if (showTitle) {
     const std::string title = renderer_.text.truncate(titleFont, bookTitle(book).c_str(), textWidth,
@@ -260,12 +266,27 @@ void Description::render(const int recentIndex, const int x, const int y, const 
     renderer_.text.render(titleFont, x + marginX, textBottom, title.c_str(), true, EpdFontFamily::BOLD);
     textBottom += renderer_.text.getLineHeight(titleFont);
   }
-  if (showAuthor && !book.author.empty()) {
+  const int ratingStars = showRating ? cachedRatingStars_ : 0;
+  const bool showAuthorText = showAuthor && !book.author.empty();
+  if (showAuthorText || ratingStars > 0) {
     const int authorY = textBottom + 6;
-    const std::string author = renderer_.text.truncate(authorFont, book.author.c_str(), textWidth,
-                                                        EpdFontFamily::REGULAR);
-    renderer_.text.renderGray(authorFont, x + marginX, authorY, author.c_str(), true, EpdFontFamily::REGULAR);
-    textBottom = authorY + renderer_.text.getLineHeight(authorFont);
+    constexpr int iconSize = 24;
+    constexpr int starGap = 2;
+    const int authorLineHeight = renderer_.text.getLineHeight(authorFont);
+    const int iconY = authorY + (authorLineHeight - iconSize) / 2;
+    const int starsWidth = ratingStars > 0 ? ratingStars * iconSize + (ratingStars - 1) * starGap : 0;
+    const int rightEdge = x + width - marginX;
+    const int starsStart = rightEdge - starsWidth;
+    const int authorWidth = std::max(0, (ratingStars > 0 ? starsStart - 8 : rightEdge) - (x + marginX));
+    if (showAuthorText && authorWidth > 0) {
+      const std::string author = renderer_.text.truncate(authorFont, book.author.c_str(), authorWidth,
+                                                          EpdFontFamily::REGULAR);
+      renderer_.text.renderGray(authorFont, x + marginX, authorY, author.c_str(), true, EpdFontFamily::REGULAR);
+    }
+    for (int star = 0; star < ratingStars; ++star) {
+      renderer_.bitmap.icon(Star, starsStart + star * (iconSize + starGap), iconY, iconSize, iconSize);
+    }
+    textBottom = authorY + std::max(authorLineHeight, iconSize);
   }
 
   int descriptionY = textBottom + 20;
@@ -280,7 +301,6 @@ void Description::render(const int recentIndex, const int x, const int y, const 
     descriptionY = barY + 5 + descriptionGap;
   }
   const int descriptionHeight = content.y + content.height - descriptionY;
-  ensureLines(recentIndex, textWidth);
   if (descriptionHeight <= 0 || lines_.empty()) {
     (void)shadowStyle;
     return;

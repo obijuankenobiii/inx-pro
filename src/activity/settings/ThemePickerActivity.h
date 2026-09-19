@@ -48,9 +48,11 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
   uint8_t descriptionTitles_[4] = {};
   uint8_t descriptionAuthors_[4] = {};
   uint8_t descriptionProgress_[4] = {};
+  uint8_t descriptionRatings_[4] = {};
   uint8_t recentTitles_[4] = {};
   uint8_t recentAuthors_[4] = {};
   uint8_t recentProgress_[4] = {};
+  uint8_t recentRatings_[4] = {};
   uint8_t carouselProgress_[4] = {};
   HomeTheme::CarouselLabelColor carouselLabelColors_[4] = {};
   HomeTheme::CarouselShadowStyle carouselShadowStyles_[4] = {};
@@ -91,8 +93,9 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
                            HomeTheme::CarouselStyle style, bool showLabel, HomeTheme::CarouselLabelColor labelColor,
                            HomeTheme::CarouselShadowStyle shadowStyle, HomeTheme::HeatmapView heatmapView,
                            const char (*libraryFolders)[128], bool descriptionShowTitle, bool descriptionShowAuthor,
-                           bool descriptionShowProgress, bool recentShowTitle, bool recentShowAuthor,
-                           bool recentShowProgress, bool carouselShowProgress);
+                           bool descriptionShowProgress, bool descriptionShowRating,
+                           bool recentShowTitle, bool recentShowAuthor,
+                           bool recentShowProgress, bool recentShowRating, bool carouselShowProgress);
   void renderBorder(HomeTheme::Border border, int x, int y, int width, int height);
   void handleTouch(int x, int y);
   void editTheme();

@@ -16,14 +16,14 @@ void BaseDescriptionActivity::onEnter() { render(); }
 
 void BaseDescriptionActivity::render() {
   renderer.clearScreen();
-  const int contentTop = SubPage::header(renderer, "Description");
+  contentTop_ = SubPage::header(renderer, "Book Details");
   const int font = systemFontId();
   const int width = renderer.getScreenWidth();
-  const char* labels[] = {"Background", "Show title", "Show author", "Show progress"};
-  const bool values[] = {background_, showTitle_, showAuthor_, showProgress_};
+  const char* labels[] = {"Background", "Show title", "Show author", "Show progress", "Show rating"};
+  const bool values[] = {background_, showTitle_, showAuthor_, showProgress_, showRating_};
 
-  for (int row = 0; row < 4; ++row) {
-    const int rowY = contentTop + row * kRowHeight;
+  for (int row = 0; row < 5; ++row) {
+    const int rowY = contentTop_ + row * kRowHeight;
     renderer.rectangle.fill(0, rowY, width, kRowHeight, static_cast<int>(GfxRenderer::FillTone::Paper));
     renderer.text.render(font, 20, rowY + (kRowHeight - renderer.text.getLineHeight(font)) / 2, labels[row], true,
                          EpdFontFamily::REGULAR);
@@ -34,14 +34,13 @@ void BaseDescriptionActivity::render() {
 }
 
 void BaseDescriptionActivity::close() {
-  if (onApply_) onApply_(background_, showTitle_, showAuthor_, showProgress_);
+  if (onApply_) onApply_(background_, showTitle_, showAuthor_, showProgress_, showRating_);
   if (onBack_) onBack_();
 }
 
 void BaseDescriptionActivity::handleTouch(const int x, const int y) {
-  const int contentTop = FREEINK_DEVICE_X4PRO ? 80 : 70;
-  if (!inside(x, y, 0, contentTop, renderer.getScreenWidth(), kRowHeight * 4)) return;
-  const int row = (y - contentTop) / kRowHeight;
+  if (!inside(x, y, 0, contentTop_, renderer.getScreenWidth(), kRowHeight * 5)) return;
+  const int row = (y - contentTop_) / kRowHeight;
   switch (row) {
     case 0:
       background_ = !background_;
@@ -54,6 +53,9 @@ void BaseDescriptionActivity::handleTouch(const int x, const int y) {
       break;
     case 3:
       showProgress_ = !showProgress_;
+      break;
+    case 4:
+      showRating_ = !showRating_;
       break;
     default:
       return;
