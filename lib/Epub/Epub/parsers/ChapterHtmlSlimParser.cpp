@@ -613,6 +613,7 @@ void ChapterHtmlSlimParser::resetStructuralStateForParsePass() {
   currentTextBlock.reset();
   currentPage.reset();
   currentPageNextY = 0;
+  dropCapPageStartMarginPx_ = 0;
   currentTextBlockContentX = 0;
   currentTextBlockContentWidth = std::max(1, static_cast<int>(viewportWidth));
   cssAlignmentStack.clear();
@@ -1036,6 +1037,13 @@ void ChapterHtmlSlimParser::flushPartWordBuffer() {
     const std::string dropCapText = uppercaseSingleLetterDropCap(partWordBuffer, partWordBufferIndex);
     const bool inlineFirstLine = dropCapLineCount <= 1 ||
                                  (dropCapLineHeightEm > 0.0f && dropCapLineHeightEm < 1.0f);
+    if (currentPageNextY == 0 && dropCapPageStartMarginPx_ > 0) {
+      const int minimumContent = std::max(
+          1, renderer.text.getLineHeight(fontId) * (inlineFirstLine ? 1 : dropCapLineCount));
+      const int margin = std::min(dropCapPageStartMarginPx_, std::max(0, viewportHeight - minimumContent));
+      currentPageNextY = static_cast<int16_t>(currentPageNextY + margin);
+    }
+    dropCapPageStartMarginPx_ = 0;
     const bool cssBoldActive = !cssFontStyleStack.empty() && cssFontStyleStack.back().bold;
     const bool cssItalicActive = !cssFontStyleStack.empty() && cssFontStyleStack.back().italic;
     const bool dropCapBold = boldUntilDepth < depth || cssBoldActive;
@@ -1057,6 +1065,22 @@ void ChapterHtmlSlimParser::flushPartWordBuffer() {
       dropCapFontId = maxFontId;
     }
     const FontManager::FontInfo* dropCapInfo = FontManager::getFontInfo(dropCapFontId);
+
+    // Inline/one-line drop caps share the first line's baseline. A tall glyph
+    // can therefore extend above a chapter page whose content starts at y=0.
+    // Reserve that missing ascent in the page flow before placing both the
+    // drop cap and its first line, keeping their baseline alignment intact.
+    if (inlineFirstLine) {
+      const uint8_t* dropCapBytes = reinterpret_cast<const uint8_t*>(dropCapText.c_str());
+      const uint32_t dropCapCodepoint = utf8NextCodepoint(&dropCapBytes);
+      const int glyphTop = currentPageNextY + renderer.text.getFontAscenderSize(fontId) -
+                           renderer.text.getFontAscenderSize(dropCapFontId) +
+                           renderer.text.getGlyphTopInset(dropCapFontId, dropCapCodepoint, dropCapStyle);
+      if (glyphTop < 0) {
+        currentPageNextY = static_cast<int16_t>(std::min<int>(INT16_MAX, currentPageNextY - glyphTop));
+      }
+    }
+
     INX_SERIAL.printf("[%lu] [INCR-FONT] dropcap body=%d lines=%u cssEm=%.2f -> font=%d size=%d\n", millis(), fontId,
                       static_cast<unsigned>(dropCapLineCount), static_cast<double>(dropCapFontSizeEm), dropCapFontId,
                       dropCapInfo ? dropCapInfo->size : 0);
@@ -1731,6 +1755,13 @@ void ChapterHtmlSlimParser::beginCssBlockBox(const std::string& tagLower, const 
   const int marginTop = applyCssTextLayout
                             ? css().getMarginTopPx(tagLower, classAttr, idAttr, styleAttr, viewportWidth, viewportHeight)
                             : 0;
+  if (tagLower == "p") {
+    dropCapPageStartMarginPx_ = currentPageNextY == 0 ? marginTop : 0;
+  } else if (currentPageNextY == 0 && marginTop > 0 &&
+             (hasDropCapHint(classAttr, idAttr, styleAttr) ||
+              css().hasFirstLetterDropCapHint(tagLower, classAttr, idAttr, styleAttr))) {
+    dropCapPageStartMarginPx_ = marginTop;
+  }
   const int paddingTop = applyCssTextLayout
                              ? css().getPaddingTopPx(tagLower, classAttr, idAttr, styleAttr, viewportWidth, viewportHeight)
                              : 0;
@@ -2541,6 +2572,9 @@ void XMLCALL ChapterHtmlSlimParser::endElement(void* userData, const XML_Char* n
     self->dropCapFontSizeEm = 0.0f;
     self->dropCapLineHeightEm = 0.0f;
     self->dropCapTextTone = 1;
+  }
+  if (strcmp(name, "p") == 0) {
+    self->dropCapPageStartMarginPx_ = 0;
   }
 }
 

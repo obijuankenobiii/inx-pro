@@ -159,7 +159,7 @@ void Grid::reset() { page = 0; }
 int Grid::top() const { return navigation::Menu::height; }
 
 int Grid::visibleHeight() const {
-  return std::max(1, renderer.getScreenHeight() - top() - navigation::Menu::bottomHeight - 10);
+  return std::max(1, renderer.getScreenHeight() - top() - navigation::Menu::bottomHeight - 30);
 }
 
 int Grid::pageCount() const {

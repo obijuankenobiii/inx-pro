@@ -19,16 +19,17 @@
 #include <freertos/task.h>
 
 #include "components/global/PopUp.h"
+#include "components/global/Button.h"
 #include "components/global/Sidebar.h"
 #include "components/global/Toggle.h"
 #include "components/library/AllBooksLibrary.h"
 #include "images/Filter.h"
 #include "images/Hamburger.h"
+#include "images/LibraryFilterLeft.h"
+#include "images/LibraryFilterRight.h"
 #include "images/LibraryViewGrid.h"
 #include "images/LibraryViewList.h"
 #include "images/LibraryViewThumb.h"
-#include "images/LibraryFilterLeft.h"
-#include "images/LibraryFilterRight.h"
 #include "images/Refresh.h"
 #include "images/SortAsc.h"
 #include "images/SortDesc.h"
@@ -48,6 +49,87 @@ extern void onGoToLibrary(const std::string& path);
 
 namespace {
 std::map<std::string, int> gThumbPage;
+
+constexpr int kFilterCategoryCount = 5;
+constexpr int kFilterMenuRowCount = kFilterCategoryCount + 1;
+constexpr int kPopupHeadingTopLeftMargin = 20;
+constexpr int kPopupHeadingBottomMargin = 10;
+
+struct FilterDrawerLayout {
+  int x;
+  int y;
+  int width;
+  int height;
+  int headerHeight;
+  int doneHeight;
+  int rowHeight;
+  int visibleRows;
+};
+
+struct FilterFooterLayout {
+  ButtonBounds back;
+  ButtonBounds clear;
+  ButtonBounds done;
+  int caretSize;
+  bool hasBack;
+};
+
+FilterDrawerLayout filterDrawerLayout(const GfxRenderer& renderer, const int anchorRight, const int rowCount) {
+  constexpr int maxVisibleRows = 6;
+  constexpr int horizontalScreenMargin = 12;
+  const int screenHeight = renderer.getScreenHeight();
+  const int screenWidth = renderer.getScreenWidth();
+  const int headerFont = systemFontId();
+  const int headerHeight = renderer.text.getLineHeight(headerFont) + kPopupHeadingTopLeftMargin +
+                           kPopupHeadingBottomMargin;
+  const int doneHeight = UiLayout::LIST_ITEM_HEIGHT;
+  const int rowHeight = UiLayout::LIST_ITEM_HEIGHT;
+  const int y = navigation::Menu::height;
+  const int availableRows = std::max(1, (screenHeight - y - 12 - headerHeight - doneHeight) / rowHeight);
+  const int visibleRows = std::min({std::max(1, rowCount), availableRows, maxVisibleRows});
+  const int height = headerHeight + visibleRows * rowHeight + doneHeight;
+  const int width = std::max(1, std::min(320, screenWidth - horizontalScreenMargin * 2));
+  const int minX = horizontalScreenMargin;
+  const int maxX = std::max(minX, screenWidth - width - horizontalScreenMargin);
+  const int x = std::clamp(anchorRight - width, minX, maxX);
+  return {x, y, width, height, headerHeight, doneHeight, rowHeight, visibleRows};
+}
+
+void renderFilterScrollbar(const GfxRenderer& renderer, const FilterDrawerLayout& drawer, const int totalRows,
+                           const int visibleRows, const int scrollOffset) {
+  if (totalRows <= visibleRows || visibleRows <= 0) return;
+  constexpr int barWidth = 2;
+  const int trackY = drawer.y + drawer.headerHeight;
+  const int trackHeight = visibleRows * drawer.rowHeight;
+  const int thumbHeight = std::max(12, trackHeight * visibleRows / totalRows);
+  const int maxOffset = totalRows - visibleRows;
+  const int thumbY = trackY + (trackHeight - thumbHeight) * scrollOffset / maxOffset;
+  const int barX = drawer.x + drawer.width - 5;
+  renderer.rectangle.fill(barX, trackY, barWidth, trackHeight,
+                          static_cast<int>(GfxRenderer::FillTone::Gray), true);
+  renderer.rectangle.fill(barX, thumbY, barWidth, thumbHeight,
+                          static_cast<int>(GfxRenderer::FillTone::Ink), true);
+}
+
+FilterFooterLayout filterFooterLayout(const GfxRenderer& renderer, const FilterDrawerLayout& drawer,
+                                      const bool hasBack, const int font) {
+  constexpr int backLeftMargin = 20;
+  constexpr int backButtonGap = 8;
+  constexpr int backTouchWidth = 48;
+  const int caretSize = 28;
+  const int buttonSpace = std::max(1, drawer.width -
+                                         (hasBack ? backLeftMargin + backTouchWidth + backButtonGap : 0));
+  const int maxButtonWidth = std::max(1, buttonSpace / 2);
+  const int doneWidth = std::min(Button::width(renderer, "Done", font), maxButtonWidth);
+  const int clearWidth = std::min(Button::width(renderer, "Clear", font), maxButtonWidth);
+  const int footerY = drawer.y + drawer.headerHeight + drawer.visibleRows * drawer.rowHeight;
+  const int doneX = drawer.x + drawer.width - doneWidth;
+  const int clearX = doneX - clearWidth;
+  const ButtonBounds back{drawer.x + backLeftMargin, footerY, backTouchWidth, drawer.doneHeight};
+  const ButtonBounds clear{clearX, footerY, clearWidth, drawer.doneHeight};
+  const ButtonBounds done{doneX, footerY, doneWidth, drawer.doneHeight};
+  return {back, clear, done, caretSize, hasBack};
+}
 }
 extern void openReaderFromCallback(const std::string& path, std::function<void()> returnToCaller);
 extern void openSearchFromCallback(std::function<void()> returnToCaller);
@@ -257,12 +339,11 @@ void Library::onEnter() {
       break;
   }
   sort = static_cast<Sort>(std::min<int>(SETTINGS.librarySortMode, sortCount() - 1));
-  filter = 0;
-  filterPage = 0;
-  filterIndex = 9;
-  filterTab = FilterTab::Title;
-  typeFilter.clear();
-  typeFilterIndex = 0;
+  resetFilterSelections();
+  filterCategory_ = FilterCategory::Categories;
+  filterMetadataGroups_.clear();
+  filterMetadataIndexAvailable_ = false;
+  filterScrollOffset_ = 0;
   sortOpen = false;
   filterOpen = false;
   popupBook = -1;
@@ -295,6 +376,9 @@ void Library::load() {
   for (const BookState::Book& book : BOOK_STATE.getFavoriteBooks()) {
     favorites.insert(book.path);
   }
+  const bool hasMetadataFilter = std::any_of(
+      metadataFilters_.begin(), metadataFilters_.end(),
+      [](const MetadataFilterSelection& selection) { return !selection.selectedKeys.empty(); });
   if (stateFilter == StateFilter::Plugin) {
     std::string output;
     std::string error;
@@ -422,6 +506,15 @@ void Library::load() {
                 }),
                 items.end());
     books.clear();
+  } else if (hasMetadataFilter) {
+    // Metadata filters are global library filters, not scoped to the folder
+    // currently open. Their indexes contain book paths from the whole library.
+    if (!LibraryIndex::search("", items, LibraryIndex::all)) return;
+    items.erase(std::remove_if(items.begin(), items.end(), [](const LibraryIndex::Book& item) {
+                  return item.type != LibraryIndex::Book::Type::BOOK;
+                }),
+                items.end());
+    books.clear();
   } else if (allBooksMode) {
     if (!AllBooksLibrary::load(items)) return;
     books.clear();
@@ -449,16 +542,33 @@ void Library::load() {
                 items.end());
   }
 
-  if (filter != 0) {
+  if (titleFilters_.any()) {
     items.erase(std::remove_if(items.begin(), items.end(), [this](const LibraryIndex::Book& item) {
-                  return firstLetter(item.title) != filter;
+                  const char initial = firstLetter(item.title);
+                  return initial < 'A' || initial > 'Z' || !titleFilters_.test(initial - 'A');
                 }),
                 items.end());
   }
 
-  if (!typeFilter.empty()) {
+  for (const MetadataFilterSelection& selection : metadataFilters_) {
+    if (selection.selectedKeys.empty()) continue;
+    items.erase(std::remove_if(items.begin(), items.end(), [&selection](const LibraryIndex::Book& item) {
+                  if (item.type != LibraryIndex::Book::Type::BOOK) return true;
+                  const std::string path = cleanPath(item.path);
+                  return selection.pathMatchCounts.find(std::string_view(path)) == selection.pathMatchCounts.end();
+                }),
+                items.end());
+  }
+
+  if (typeFilters_.any()) {
     items.erase(std::remove_if(items.begin(), items.end(), [this](const LibraryIndex::Book& item) {
-                  return item.type == LibraryIndex::Book::Type::BOOK && !matchesTypeFilter(item.path, typeFilter);
+                  if (item.type != LibraryIndex::Book::Type::BOOK) return false;
+                  for (int index = 0; index < 4; ++index) {
+                    if (typeFilters_.test(index) && matchesTypeFilter(item.path, typeFilterCategory(index))) {
+                      return false;
+                    }
+                  }
+                  return true;
                 }),
                 items.end());
   }
@@ -604,22 +714,50 @@ void Library::loop() {
     return;
   }
 
-  if (menuInput()) return;
-
-  if (isOpen()) {
-    renderPage();
-    return;
-  }
-
   if (filterOpen) {
-    if (filterTab == FilterTab::Title && mappedInput.wasTouchSwipeLeft()) {
-      changeFilterPage(-1);
+    if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+      if (filterCategory_ != FilterCategory::Categories) {
+        openFilterCategory(FilterCategory::Categories);
+      } else {
+        filterOpen = false;
+      }
+      updateRequired = true;
       return;
     }
-    if (filterTab == FilterTab::Title && mappedInput.wasTouchSwipeRight()) {
-      changeFilterPage(1);
+
+    const int rowCount = filterRowCount();
+    const FilterDrawerLayout drawer = filterDrawerLayout(renderer, buttonX(2) + buttonSize, rowCount);
+    const int maxScroll = std::max(0, rowCount - drawer.visibleRows);
+    const int scrollStep = std::max(1, drawer.visibleRows - 1);
+    float swipeNx = 0.0f;
+    float swipeNy = 0.0f;
+    if (mappedInput.wasTouchSwipeUpInScreen(renderer, swipeNx, swipeNy)) {
+      const int startX = static_cast<int>(swipeNx * renderer.getScreenWidth());
+      const int startY = static_cast<int>(swipeNy * renderer.getScreenHeight());
+      if (startX >= drawer.x && startX < drawer.x + drawer.width && startY >= drawer.y &&
+          startY < drawer.y + drawer.height) {
+        filterScrollOffset_ = std::min(maxScroll, filterScrollOffset_ + scrollStep);
+        updateRequired = true;
+      }
       return;
     }
+    if (mappedInput.wasTouchSwipeDownInScreen(renderer, swipeNx, swipeNy)) {
+      const int startX = static_cast<int>(swipeNx * renderer.getScreenWidth());
+      const int startY = static_cast<int>(swipeNy * renderer.getScreenHeight());
+      if (startX < drawer.x || startX >= drawer.x + drawer.width || startY < drawer.y ||
+          startY >= drawer.y + drawer.height) {
+        filterOpen = false;
+      } else if (filterScrollOffset_ > 0) {
+        filterScrollOffset_ = std::max(0, filterScrollOffset_ - scrollStep);
+      } else if (filterCategory_ != FilterCategory::Categories) {
+        openFilterCategory(FilterCategory::Categories);
+      } else {
+        filterOpen = false;
+      }
+      updateRequired = true;
+      return;
+    }
+
     if (mappedInput.hasTouch()) {
       float tapNx = 0.0f;
       float tapNy = 0.0f;
@@ -629,6 +767,13 @@ void Library::loop() {
         return;
       }
     }
+    renderPage();
+    return;
+  }
+
+  if (menuInput()) return;
+
+  if (isOpen()) {
     renderPage();
     return;
   }
@@ -725,13 +870,38 @@ std::vector<std::string> Library::pluginGroupCovers(const LibraryIndex::Book& gr
 void Library::title() const {
   renderer.bitmap.icon(Hamburger, navigation::Menu::leftMargin, navigation::Menu::topPadding,
                        navigation::Menu::iconSize, navigation::Menu::iconSize);
+
+  const char* heading = "Library";
+  switch (stateFilter) {
+    case StateFilter::Favorites:
+      heading = "Favorites";
+      break;
+    case StateFilter::Reading:
+      heading = "Reading";
+      break;
+    case StateFilter::Finished:
+      heading = "Finished";
+      break;
+    case StateFilter::Metadata:
+      heading = metadataKind_ == MetadataIndex::Kind::Authors
+                    ? "Authors"
+                    : (metadataKind_ == MetadataIndex::Kind::Tags ? "Tags" : "Series");
+      break;
+    case StateFilter::Plugin:
+      heading = pluginMenu_.label.empty() ? "Library" : pluginMenu_.label.c_str();
+      break;
+    case StateFilter::None:
+      if (allBooksMode) heading = "All books";
+      break;
+  }
+
   const int font = MONTSERRAT_16_FONT_ID;
   const int textY = navigation::Menu::topPadding +
                     (navigation::Menu::iconSize - renderer.text.getLineHeight(font)) / 2;
   const int textX = navigation::Menu::leftMargin + navigation::Menu::iconSize + 12;
   const int maxTextWidth = std::max(1, buttonX(0) - 12 - textX);
-  const std::string shown = renderer.text.truncate(font, "Library", maxTextWidth, EpdFontFamily::BOLD);
-  renderer.text.renderUntranslated(font, textX, textY, shown.c_str(), true, EpdFontFamily::BOLD);
+  const std::string shown = renderer.text.truncate(font, heading, maxTextWidth, EpdFontFamily::BOLD);
+  renderer.text.render(font, textX, textY, shown.c_str(), true, EpdFontFamily::BOLD);
 }
 
 void Library::select(const int index, const bool longPress) {
@@ -1156,10 +1326,11 @@ bool Library::handleSidebarInput() {
     metadataGroupKey_.clear();
     metadataIndexAvailable_ = false;
     stateFilter = StateFilter::Metadata;
-    filter = 0;
-    typeFilter.clear();
-    filterIndex = 9;
-    typeFilterIndex = 0;
+    resetFilterSelections();
+    filterCategory_ = FilterCategory::Categories;
+    filterMetadataGroups_.clear();
+    filterMetadataIndexAvailable_ = false;
+    filterScrollOffset_ = 0;
     pluginMode_ = false;
     allBooksMode = false;
     sortOpen = false;
@@ -1243,6 +1414,7 @@ bool Library::menuAction(const navigation::Menu::Action action) {
   }
   if (action == navigation::Menu::Action::Filter) {
     filterOpen = !filterOpen;
+    if (filterOpen) openFilterCategory(FilterCategory::Categories);
     sortOpen = false;
     updateRequired = true;
     return true;
@@ -1291,20 +1463,24 @@ void Library::sortDropdown() const {
   constexpr int width = 250;
   constexpr int leftPadding = 20;
   constexpr int rightPadding = 40;
-  const int height = sortCount() * rowHeight + 1;
+  const int font = systemFontId();
+  const int headerHeight = renderer.text.getLineHeight(font) + kPopupHeadingTopLeftMargin +
+                           kPopupHeadingBottomMargin;
+  const int height = headerHeight + sortCount() * rowHeight + 1;
   const int x = std::max(0, buttonX(1) + buttonSize - width);
   const int y = navigation::Menu::height;
 
   renderer.rectangle.fill(x, y, width, height, false);
+  renderer.text.render(font, x + kPopupHeadingTopLeftMargin, y + kPopupHeadingTopLeftMargin, "Sort", true,
+                       EpdFontFamily::BOLD);
   const char* names[] = {"Title", "Title", "Folder", "Folder", "Author", "Author"};
   const char* directions[] = {"A-Z", "Z-A", "A-Z", "Z-A", "A-Z", "Z-A"};
   for (int index = 0; index < sortCount(); ++index) {
-    const int rowY = y + index * rowHeight;
+    const int rowY = y + headerHeight + index * rowHeight;
     const bool selected = index == sortIndex();
     if (selected) {
       renderer.rectangle.fill(x, rowY, width, rowHeight, true);
     }
-    const int font = systemFontId();
     const int textY = rowY + (rowHeight - renderer.text.getLineHeight(font)) / 2;
     renderer.text.render(font, x + leftPadding, textY, names[index], !selected, EpdFontFamily::REGULAR);
     const int directionFont = MONTSERRAT_8_FONT_ID;
@@ -1323,11 +1499,15 @@ void Library::sortDropdown() const {
 void Library::handleSortTap(const int tapX, const int tapY) {
   constexpr int rowHeight = UiLayout::LIST_ITEM_HEIGHT;
   constexpr int width = 250;
-  const int height = sortCount() * rowHeight + 1;
+  const int font = systemFontId();
+  const int headerHeight = renderer.text.getLineHeight(font) + kPopupHeadingTopLeftMargin +
+                           kPopupHeadingBottomMargin;
+  const int height = headerHeight + sortCount() * rowHeight + 1;
   const int x = std::max(0, buttonX(1) + buttonSize - width);
   const int y = navigation::Menu::height;
-  if (tapX >= x && tapX < x + width && tapY >= y && tapY < y + height) {
-    applySort((tapY - y) / rowHeight);
+  const int listY = y + headerHeight;
+  if (tapX >= x && tapX < x + width && tapY >= listY && tapY < y + height) {
+    applySort((tapY - listY) / rowHeight);
     return;
   }
   sortOpen = false;
@@ -1344,264 +1524,349 @@ void Library::applySort(const int index) {
   updateRequired = true;
 }
 
-char Library::letter(const int index) const {
-  if (index == 9) return '*';
-  const int value = filterPage * 9 + index;
-  return value >= 0 && value < 26 ? static_cast<char>('A' + value) : 0;
-}
-
-void Library::changeFilterPage(const int delta) {
-  filterPage = (filterPage + (delta < 0 ? 2 : 1)) % 3;
-  if (filterIndex != 9 && letter(filterIndex) == 0) filterIndex = 9;
-  updateRequired = true;
-}
-
 void Library::applyFilter(const int index) {
-  const char selected = letter(index);
-  if (selected == 0) return;
-  filterIndex = index;
-  filter = selected == '*' ? 0 : selected;
-  filterOpen = false;
+  if (index < 0 || index >= 26) return;
+  titleFilters_.flip(index);
   load();
   updateRequired = true;
 }
 
 const char* Library::typeFilterLabel(const int index) {
   switch (index) {
-    case 1:
+    case 0:
       return "EPUB";
-    case 2:
+    case 1:
       return "PDF";
-    case 3:
+    case 2:
       return "TXT";
-    case 4:
+    case 3:
       return "XTC";
     default:
-      return "All";
+      return "";
   }
 }
 
 const char* Library::typeFilterCategory(const int index) {
   switch (index) {
-    case 1:
+    case 0:
       return "epub";
-    case 2:
+    case 1:
       return "pdf";
-    case 3:
+    case 2:
       return "txt";
-    case 4:
+    case 3:
       return "xtc";
     default:
       return "";
   }
 }
 
+const char* Library::filterCategoryLabel(const FilterCategory category) {
+  switch (category) {
+    case FilterCategory::Categories: return "Filter";
+    case FilterCategory::Title: return "Title";
+    case FilterCategory::Type: return "Type";
+    case FilterCategory::Author: return "Author";
+    case FilterCategory::Series: return "Series";
+    case FilterCategory::Tags: return "Tags";
+    case FilterCategory::Options: return "Options";
+  }
+  return "Filter";
+}
+
 void Library::applyTypeFilter(const int index) {
-  typeFilterIndex = index;
-  typeFilter = typeFilterCategory(index);
-  filterOpen = false;
+  if (index < 0 || index >= 4) return;
+  typeFilters_.flip(index);
+  load();
+  updateRequired = true;
+}
+
+int Library::metadataFilterIndex(const FilterCategory category) {
+  switch (category) {
+    case FilterCategory::Author: return 0;
+    case FilterCategory::Series: return 1;
+    case FilterCategory::Tags: return 2;
+    default: return -1;
+  }
+}
+
+int Library::filterRowCount() const {
+  switch (filterCategory_) {
+    case FilterCategory::Categories: return kFilterMenuRowCount;
+    case FilterCategory::Title: return 26;
+    case FilterCategory::Type: return 4;
+    case FilterCategory::Options: return 1;
+    case FilterCategory::Author:
+    case FilterCategory::Series:
+    case FilterCategory::Tags:
+      return std::max(1, static_cast<int>(filterMetadataGroups_.size()));
+  }
+  return 0;
+}
+
+int Library::selectedFilterCount(const FilterCategory category) const {
+  switch (category) {
+    case FilterCategory::Title: return static_cast<int>(titleFilters_.count());
+    case FilterCategory::Type: return static_cast<int>(typeFilters_.count());
+    case FilterCategory::Options: return SETTINGS.hideFinishedBooks != 0 ? 1 : 0;
+    case FilterCategory::Author:
+    case FilterCategory::Series:
+    case FilterCategory::Tags: {
+      const int index = metadataFilterIndex(category);
+      return index >= 0 ? static_cast<int>(metadataFilters_[index].selectedKeys.size()) : 0;
+    }
+    case FilterCategory::Categories:
+      return 0;
+  }
+  return 0;
+}
+
+void Library::resetFilterSelections() {
+  titleFilters_.reset();
+  typeFilters_.reset();
+  for (MetadataFilterSelection& selection : metadataFilters_) {
+    selection.selectedKeys.clear();
+    selection.pathMatchCounts.clear();
+  }
+}
+
+void Library::openFilterCategory(const FilterCategory category) {
+  filterCategory_ = category;
+  filterScrollOffset_ = 0;
+  filterMetadataGroups_.clear();
+  filterMetadataIndexAvailable_ = false;
+
+  const int index = metadataFilterIndex(category);
+  if (index >= 0) {
+    filterMetadataIndexAvailable_ = MetadataIndex::loadGroups(metadataFilters_[index].kind, filterMetadataGroups_);
+  }
+  updateRequired = true;
+}
+
+void Library::applyMetadataFilter(const int index) {
+  if (index < 0 || index >= static_cast<int>(filterMetadataGroups_.size())) return;
+  const int metadataIndex = metadataFilterIndex(filterCategory_);
+  if (metadataIndex < 0) return;
+
+  const MetadataIndex::Group& group = filterMetadataGroups_[static_cast<size_t>(index)];
+  MetadataFilterSelection& selection = metadataFilters_[metadataIndex];
+  const auto selectedKey = selection.selectedKeys.find(std::string_view(group.key));
+  const bool wasSelected = selectedKey != selection.selectedKeys.end();
+  std::vector<MetadataIndex::Entry> entries;
+  if (!MetadataIndex::loadGroup(selection.kind, group, entries)) return;
+
+  if (wasSelected) {
+    selection.selectedKeys.erase(selectedKey);
+    for (const MetadataIndex::Entry& entry : entries) {
+      const std::string path = cleanPath(entry.path);
+      const auto match = selection.pathMatchCounts.find(std::string_view(path));
+      if (match == selection.pathMatchCounts.end()) continue;
+      if (match->second <= 1) {
+        selection.pathMatchCounts.erase(match);
+      } else {
+        --match->second;
+      }
+    }
+  } else {
+    selection.selectedKeys.insert(EpubPsramString(group.key.begin(), group.key.end()));
+    for (const MetadataIndex::Entry& entry : entries) {
+      const std::string path = cleanPath(entry.path);
+      auto match = selection.pathMatchCounts.try_emplace(
+          EpubPsramString(path.begin(), path.end()), 0).first;
+      ++match->second;
+    }
+  }
+
+  load();
+  updateRequired = true;
+}
+
+void Library::clearFilters() {
+  bool hasSelection = titleFilters_.any() || typeFilters_.any();
+  for (const MetadataFilterSelection& selection : metadataFilters_) {
+    hasSelection = hasSelection || !selection.selectedKeys.empty();
+  }
+  if (!hasSelection) return;
+  resetFilterSelections();
   load();
   updateRequired = true;
 }
 
 void Library::filterPopup() const {
-  const int screenWidth = renderer.getScreenWidth();
-  const int screenHeight = renderer.getScreenHeight();
-  const int panelWidth = std::min(screenWidth - 48, 330);
-  constexpr int panelHeight = 370;
-  const int panelX = (screenWidth - panelWidth) / 2;
-  const int panelY = std::max(navigation::Menu::height + 20, (screenHeight - panelHeight) / 2);
-  constexpr int padding = 18;
-  constexpr int titleHeight = 28;
-  constexpr int tabContentGap = 20;
-  constexpr int gap = 10;
-  constexpr int allRowGap = 10;
-  constexpr int allBottomMargin = 20;
-  const int gridY = panelY + padding + titleHeight + tabContentGap;
-  const int cellWidth = (panelWidth - padding * 2 - gap * 2) / 3;
-  const int cellHeight =
-      (panelHeight - padding * 2 - titleHeight - tabContentGap - gap * 2 - allRowGap - allBottomMargin) / 4;
-  const int selectorSize = std::min(cellWidth, cellHeight);
+  const int rowCount = filterRowCount();
+  const FilterDrawerLayout drawer = filterDrawerLayout(renderer, buttonX(2) + buttonSize, rowCount);
+  const int maxScroll = std::max(0, rowCount - drawer.visibleRows);
+  const int scroll = std::clamp(filterScrollOffset_, 0, maxScroll);
+  constexpr int horizontalPadding = 24;
   const int font = systemFontId();
 
-  renderer.rectangle.fill(panelX, panelY, panelWidth, panelHeight, false);
-  renderer.rectangle.render(panelX, panelY, panelWidth, panelHeight, true);
+  renderer.rectangle.fill(drawer.x, drawer.y, drawer.width, drawer.height, false);
+  const int lineHeight = renderer.text.getLineHeight(font);
+  renderer.text.render(font, drawer.x + kPopupHeadingTopLeftMargin, drawer.y + kPopupHeadingTopLeftMargin,
+                       filterCategoryLabel(filterCategory_), true, EpdFontFamily::BOLD);
+  const int listY = drawer.y + drawer.headerHeight;
+  static constexpr const char* kCategories[kFilterCategoryCount] = {
+      "Title", "Type", "Author", "Series", "Tags"};
+  const int metadataIndex = metadataFilterIndex(filterCategory_);
+  const bool metadataHasValues = metadataIndex >= 0 && filterMetadataIndexAvailable_ &&
+                                 !filterMetadataGroups_.empty();
 
-  static constexpr const char* kTabLabels[] = {"Title", "Type", "Options"};
-  const int tabAreaX = panelX + padding;
-  const int tabAreaWidth = panelWidth - padding * 2;
-  const int tabColumnWidth = tabAreaWidth / 3;
-  const int tabTextY = panelY + padding + 3;
-  for (int tab = 0; tab < 3; ++tab) {
-    const bool selected = static_cast<int>(filterTab) == tab;
-    const EpdFontFamily::Style style = selected ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR;
-    const int columnX = tabAreaX + tab * tabColumnWidth;
-    const int maxTextWidth = std::max(1, tabColumnWidth - 8);
-    const std::string shown = renderer.text.truncate(font, kTabLabels[tab], maxTextWidth, style);
-    const int textWidth = renderer.text.getUntranslatedWidth(font, shown.c_str(), style);
-    const int textX = columnX + (tabColumnWidth - textWidth) / 2;
-    renderer.text.renderUntranslated(font, textX, tabTextY, shown.c_str(), true, style);
-  }
+  const int rowsToDraw = std::max(0, std::min(drawer.visibleRows, rowCount - scroll));
+  for (int visibleRow = 0; visibleRow < rowsToDraw; ++visibleRow) {
+    const int rowIndex = scroll + visibleRow;
+    const int contentIndex = rowIndex;
+    const int rowY = listY + visibleRow * drawer.rowHeight;
+    const int textY = rowY + (drawer.rowHeight - lineHeight) / 2;
+    bool checked = false;
+    const char* label = nullptr;
+    std::string value;
+    char letterLabel[2] = {};
 
-  if (filterTab == FilterTab::Title) {
-    for (int index = 0; index < 9; ++index) {
-      const char value = letter(index);
-      if (value == 0) continue;
-      const int column = index % 3;
-      const int row = index / 3;
-      const int cellX = panelX + padding + column * (cellWidth + gap);
-      const int cellY = gridY + row * (cellHeight + gap);
-      const int selectorX = cellX + (cellWidth - selectorSize) / 2;
-      const int selectorY = cellY + (cellHeight - selectorSize) / 2;
-      const bool selected = index == filterIndex;
-      if (selected) renderer.rectangle.fill(selectorX, selectorY, selectorSize, selectorSize, true, true, true);
-      char label[2] = {value, '\0'};
-      const int textWidth = renderer.text.getWidth(font, label, EpdFontFamily::BOLD);
-      const int textY = cellY + (cellHeight - renderer.text.getLineHeight(font)) / 2;
-      renderer.text.render(font, cellX + (cellWidth - textWidth) / 2, textY, label, !selected,
-                           EpdFontFamily::BOLD);
+    if (filterCategory_ == FilterCategory::Categories) {
+      if (contentIndex < kFilterCategoryCount) {
+        label = kCategories[contentIndex];
+        const FilterCategory category =
+            static_cast<FilterCategory>(static_cast<int>(FilterCategory::Title) + contentIndex);
+        const int count = selectedFilterCount(category);
+        if (count > 0) value = std::to_string(count);
+      } else {
+        label = "Hide finished books";
+        checked = SETTINGS.hideFinishedBooks != 0;
+      }
+    } else if (filterCategory_ == FilterCategory::Title) {
+      letterLabel[0] = static_cast<char>('A' + contentIndex);
+      label = letterLabel;
+      checked = titleFilters_.test(contentIndex);
+    } else if (filterCategory_ == FilterCategory::Type) {
+      label = typeFilterLabel(contentIndex);
+      checked = typeFilters_.test(contentIndex);
+    } else if (metadataIndex >= 0) {
+      if (!filterMetadataIndexAvailable_) {
+        label = "No metadata index";
+      } else if (filterMetadataGroups_.empty()) {
+        label = "No metadata found";
+      } else {
+        const MetadataIndex::Group& group = filterMetadataGroups_[static_cast<size_t>(contentIndex)];
+        label = group.label.c_str();
+        checked = metadataFilters_[metadataIndex].selectedKeys.find(std::string_view(group.key)) !=
+                  metadataFilters_[metadataIndex].selectedKeys.end();
+      }
+    } else if (filterCategory_ == FilterCategory::Options) {
+      label = "Hide finished books";
+      checked = SETTINGS.hideFinishedBooks != 0;
     }
 
-    const int allY = gridY + 3 * (cellHeight + gap) + allRowGap;
-    const int allX = panelX + (panelWidth - selectorSize) / 2;
-    constexpr int arrowSize = 30;
-    const int arrowY = allY + (selectorSize - arrowSize) / 2;
-    const int leftX = panelX + padding;
-    const int rightX = panelX + panelWidth - padding - arrowSize;
-    renderer.bitmap.icon(LibraryFilterLeft, leftX, arrowY, arrowSize, arrowSize);
-    renderer.bitmap.icon(LibraryFilterRight, rightX, arrowY, arrowSize, arrowSize);
-    const bool allSelected = filterIndex == 9;
-    if (allSelected) renderer.rectangle.fill(allX, allY, selectorSize, selectorSize, true, true, true);
-    const std::string allLabel = renderer.text.truncate(font, "All", std::max(1, selectorSize - 8),
-                                                        EpdFontFamily::BOLD);
-    const int allWidth = renderer.text.getUntranslatedWidth(font, allLabel.c_str(), EpdFontFamily::BOLD);
-    const int allYText = allY + (selectorSize - renderer.text.getLineHeight(font)) / 2;
-    renderer.text.renderUntranslated(font, panelX + (panelWidth - allWidth) / 2, allYText, allLabel.c_str(),
-                                     !allSelected, EpdFontFamily::BOLD);
-  } else if (filterTab == FilterTab::Type) {
-    constexpr int typeOptionCount = 5;
-    for (int index = 0; index < typeOptionCount; ++index) {
-      const int column = index % 3;
-      const int row = index / 3;
-      const int cellX = panelX + padding + column * (cellWidth + gap);
-      const int cellY = gridY + row * (cellHeight + gap);
-      const int selectorX = cellX + (cellWidth - selectorSize) / 2;
-      const int selectorY = cellY + (cellHeight - selectorSize) / 2;
-      const bool selected = index == typeFilterIndex;
-      if (selected) renderer.rectangle.fill(selectorX, selectorY, selectorSize, selectorSize, true, true, true);
-      const char* label = typeFilterLabel(index);
-      const std::string shown = renderer.text.truncate(font, label, std::max(1, cellWidth - 8),
-                                                       EpdFontFamily::BOLD);
-      const int textWidth = renderer.text.getUntranslatedWidth(font, shown.c_str(), EpdFontFamily::BOLD);
-      const int textY = cellY + (cellHeight - renderer.text.getLineHeight(font)) / 2;
-      renderer.text.renderUntranslated(font, cellX + (cellWidth - textWidth) / 2, textY, shown.c_str(), !selected,
-                                       EpdFontFamily::BOLD);
+    const bool isCategoryEntry = filterCategory_ == FilterCategory::Categories &&
+                                 contentIndex >= 0 && contentIndex < kFilterCategoryCount;
+    if (isCategoryEntry) {
+      renderer.text.render(font, drawer.x + horizontalPadding, textY, label, true, EpdFontFamily::REGULAR);
+      constexpr int caretSize = 30;
+      const int arrowX = drawer.x + drawer.width - horizontalPadding - caretSize;
+      const int arrowY = rowY + (drawer.rowHeight - caretSize) / 2;
+      if (!value.empty()) {
+        const int valueWidth = renderer.text.getWidth(font, value.c_str(), EpdFontFamily::REGULAR);
+        renderer.text.render(font, arrowX - 16 - valueWidth, textY, value.c_str(), true,
+                             EpdFontFamily::REGULAR);
+      }
+      renderer.bitmap.icon(LibraryFilterRight, arrowX, arrowY, caretSize, caretSize);
+    } else if (label) {
+      const ToggleBounds toggle = Toggle::bounds(drawer.x + drawer.width - horizontalPadding, rowY,
+                                                 drawer.rowHeight);
+      const int maxTextWidth = std::max(1, toggle.x - (drawer.x + horizontalPadding) - 12);
+      const std::string shown = renderer.text.truncate(font, label, maxTextWidth, EpdFontFamily::REGULAR);
+      renderer.text.render(font, drawer.x + horizontalPadding, textY, shown.c_str(), true,
+                           EpdFontFamily::REGULAR);
+      if ((filterCategory_ == FilterCategory::Categories && contentIndex == kFilterCategoryCount) ||
+          (filterCategory_ != FilterCategory::Categories && filterCategory_ != FilterCategory::Author &&
+          filterCategory_ != FilterCategory::Series &&
+          filterCategory_ != FilterCategory::Tags)) {
+        Toggle::render(renderer, toggle, checked);
+      } else if ((filterCategory_ == FilterCategory::Author || filterCategory_ == FilterCategory::Series ||
+                  filterCategory_ == FilterCategory::Tags) && metadataHasValues) {
+        Toggle::render(renderer, toggle, checked);
+      }
     }
-  } else {
-    const int rowY = gridY;
-    const int rowHeight = cellHeight;
-    const int textY = rowY + (rowHeight - renderer.text.getLineHeight(font)) / 2;
-    const ToggleBounds toggle = Toggle::bounds(panelX + panelWidth - padding, rowY, rowHeight);
-    const int maxTextWidth = std::max(1, toggle.x - (panelX + padding) - 10);
-    const std::string shown = renderer.text.truncate(font, "Hide finished books", maxTextWidth,
-                                                     EpdFontFamily::REGULAR);
-    renderer.text.renderUntranslated(font, panelX + padding, textY, shown.c_str(), true, EpdFontFamily::REGULAR);
-    Toggle::render(renderer, toggle, SETTINGS.hideFinishedBooks != 0);
+
+    if (visibleRow + 1 < rowsToDraw) {
+      renderer.line.render(drawer.x + horizontalPadding, rowY + drawer.rowHeight,
+                           drawer.x + drawer.width - horizontalPadding, rowY + drawer.rowHeight, true,
+                           LineRender::Style::Dotted);
+    }
   }
+
+  renderFilterScrollbar(renderer, drawer, rowCount, drawer.visibleRows, scroll);
+  const int doneY = drawer.y + drawer.headerHeight + drawer.visibleRows * drawer.rowHeight;
+  renderer.line.render(drawer.x, doneY, drawer.x + drawer.width, doneY, true);
+  const FilterFooterLayout footer = filterFooterLayout(renderer, drawer,
+                                                       filterCategory_ != FilterCategory::Categories, font);
+  if (footer.hasBack) {
+    const int caretX = footer.back.x + (footer.back.width - footer.caretSize) / 2;
+    const int caretY = footer.back.y + (footer.back.height - footer.caretSize) / 2;
+    renderer.bitmap.icon(LibraryFilterLeft, caretX, caretY, footer.caretSize, footer.caretSize);
+  }
+  Button::render(renderer, footer.clear, "Clear", false, font);
+  Button::render(renderer, footer.done, "Done", true, font);
+  renderer.rectangle.render(drawer.x, drawer.y, drawer.width, drawer.height, true);
 }
 
 void Library::handleFilterTap(const int tapX, const int tapY) {
-  const int screenWidth = renderer.getScreenWidth();
-  const int screenHeight = renderer.getScreenHeight();
-  const int panelWidth = std::min(screenWidth - 48, 330);
-  constexpr int panelHeight = 370;
-  const int panelX = (screenWidth - panelWidth) / 2;
-  const int panelY = std::max(navigation::Menu::height + 20, (screenHeight - panelHeight) / 2);
-  constexpr int padding = 18;
-  constexpr int titleHeight = 28;
-  constexpr int tabContentGap = 20;
-  constexpr int gap = 10;
-  constexpr int allRowGap = 10;
-  constexpr int allBottomMargin = 20;
-  const int gridY = panelY + padding + titleHeight + tabContentGap;
-  const int cellWidth = (panelWidth - padding * 2 - gap * 2) / 3;
-  const int cellHeight =
-      (panelHeight - padding * 2 - titleHeight - tabContentGap - gap * 2 - allRowGap - allBottomMargin) / 4;
-  const int selectorSize = std::min(cellWidth, cellHeight);
+  const int rowCount = filterRowCount();
+  const FilterDrawerLayout drawer = filterDrawerLayout(renderer, buttonX(2) + buttonSize, rowCount);
 
-  if (tapY >= panelY && tapY < gridY) {
-    const int tabAreaX = panelX + padding;
-    const int tabAreaWidth = panelWidth - padding * 2;
-    const int tabColumnWidth = tabAreaWidth / 3;
-    const int tab = std::clamp((tapX - tabAreaX) / std::max(1, tabColumnWidth), 0, 2);
-    if (tapX >= panelX && tapX < panelX + panelWidth) {
-      filterTab = static_cast<FilterTab>(tab);
-      updateRequired = true;
-      return;
-    }
+  if (tapY < drawer.y || tapY >= drawer.y + drawer.height || tapX < drawer.x || tapX >= drawer.x + drawer.width) {
+    filterOpen = false;
+    updateRequired = true;
+    return;
   }
 
-  if (filterTab == FilterTab::Title) {
-    const int allY = gridY + 3 * (cellHeight + gap) + allRowGap;
-    const int allX = panelX + (panelWidth - selectorSize) / 2;
-    const int leftX = panelX + padding;
-    const int rightX = panelX + panelWidth - padding - selectorSize;
+  const int listY = drawer.y + drawer.headerHeight;
+  const int doneY = listY + drawer.visibleRows * drawer.rowHeight;
+  if (tapY >= doneY) {
+    const FilterFooterLayout footer = filterFooterLayout(
+        renderer, drawer, filterCategory_ != FilterCategory::Categories, systemFontId());
+    if (footer.hasBack && tapX >= footer.back.x && tapX < footer.back.x + footer.back.width) {
+      openFilterCategory(FilterCategory::Categories);
+    } else if (tapX >= footer.clear.x && tapX < footer.clear.x + footer.clear.width) {
+      clearFilters();
+    } else if (tapX >= footer.done.x && tapX < footer.done.x + footer.done.width) {
+      filterOpen = false;
+      updateRequired = true;
+    }
+    return;
+  }
 
-    if (tapY >= allY && tapY < allY + selectorSize) {
-      if (tapX >= leftX && tapX < leftX + selectorSize) {
-        changeFilterPage(-1);
-        return;
-      }
-      if (tapX >= rightX && tapX < rightX + selectorSize) {
-        changeFilterPage(1);
-        return;
-      }
-      if (tapX >= allX && tapX < allX + selectorSize) {
-        applyFilter(9);
-        return;
-      }
-    }
+  const int maxScroll = std::max(0, rowCount - drawer.visibleRows);
+  if (tapY < listY) return;
+  const int visibleRow = (tapY - listY) / drawer.rowHeight;
+  const int rowIndex = std::clamp(filterScrollOffset_, 0, maxScroll) + visibleRow;
+  if (visibleRow < 0 || visibleRow >= drawer.visibleRows || rowIndex >= rowCount) return;
 
-    if (tapX >= panelX + padding && tapX < panelX + panelWidth - padding && tapY >= gridY && tapY < allY) {
-      const int column = (tapX - panelX - padding) / (cellWidth + gap);
-      const int row = (tapY - gridY) / (cellHeight + gap);
-      if (column >= 0 && column < 3 && row >= 0 && row < 3) {
-        const int cellX = panelX + padding + column * (cellWidth + gap);
-        const int cellY = gridY + row * (cellHeight + gap);
-        if (tapX < cellX + cellWidth && tapY < cellY + cellHeight) {
-          applyFilter(row * 3 + column);
-          return;
-        }
-      }
-    }
-  } else if (filterTab == FilterTab::Type) {
-    constexpr int typeOptionCount = 5;
-    const int gridBottom = gridY + 2 * (cellHeight + gap);
-    if (tapX >= panelX + padding && tapX < panelX + panelWidth - padding && tapY >= gridY && tapY < gridBottom) {
-      const int column = (tapX - panelX - padding) / (cellWidth + gap);
-      const int row = (tapY - gridY) / (cellHeight + gap);
-      if (column >= 0 && column < 3 && row >= 0 && row < 2) {
-        const int cellX = panelX + padding + column * (cellWidth + gap);
-        const int cellY = gridY + row * (cellHeight + gap);
-        const int index = row * 3 + column;
-        if (tapX < cellX + cellWidth && tapY < cellY + cellHeight && index < typeOptionCount) {
-          applyTypeFilter(index);
-          return;
-        }
-      }
-    }
-  } else {
-    const int rowY = gridY;
-    if (tapX >= panelX + padding && tapX < panelX + panelWidth - padding && tapY >= rowY &&
-        tapY < rowY + cellHeight) {
+  if (filterCategory_ == FilterCategory::Categories) {
+    const FilterCategory categories[kFilterCategoryCount] = {
+        FilterCategory::Title, FilterCategory::Type, FilterCategory::Author,
+        FilterCategory::Series, FilterCategory::Tags};
+    if (rowIndex < kFilterCategoryCount) {
+      openFilterCategory(categories[rowIndex]);
+    } else if (rowIndex == kFilterCategoryCount) {
       SETTINGS.hideFinishedBooks = SETTINGS.hideFinishedBooks == 0 ? 1 : 0;
       SETTINGS.saveToFile();
       load();
       updateRequired = true;
-      return;
     }
+    return;
   }
 
-  filterOpen = false;
-  updateRequired = true;
+  const int contentIndex = rowIndex;
+  if (filterCategory_ == FilterCategory::Title) {
+    applyFilter(contentIndex);
+  } else if (filterCategory_ == FilterCategory::Type) {
+    applyTypeFilter(contentIndex);
+  } else if (metadataFilterIndex(filterCategory_) >= 0 && filterMetadataIndexAvailable_) {
+    applyMetadataFilter(contentIndex);
+  } else if (filterCategory_ == FilterCategory::Options && contentIndex == 0) {
+    SETTINGS.hideFinishedBooks = SETTINGS.hideFinishedBooks == 0 ? 1 : 0;
+    SETTINGS.saveToFile();
+    load();
+    updateRequired = true;
+  }
 }

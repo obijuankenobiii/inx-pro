@@ -152,14 +152,14 @@ std::string indexPath(const MetadataIndex::Kind kind) {
 
 const char* kindLabel(const MetadataIndex::Kind kind) {
   switch (kind) {
-    case MetadataIndex::Kind::Authors: return "Authors";
+    case MetadataIndex::Kind::Authors: return "Author";
     case MetadataIndex::Kind::Series: return "Series";
-    case MetadataIndex::Kind::Tags: return "Tags";
-    case MetadataIndex::Kind::Publishers: return "Publishers";
-    case MetadataIndex::Kind::Languages: return "Languages";
-    case MetadataIndex::Kind::Ratings: return "Ratings";
-    case MetadataIndex::Kind::PublicationDates: return "Dates";
-    case MetadataIndex::Kind::Identifiers: return "Identifiers";
+    case MetadataIndex::Kind::Tags: return "Tag";
+    case MetadataIndex::Kind::Publishers: return "Publisher";
+    case MetadataIndex::Kind::Languages: return "Language";
+    case MetadataIndex::Kind::Ratings: return "Rating";
+    case MetadataIndex::Kind::PublicationDates: return "Publication date";
+    case MetadataIndex::Kind::Identifiers: return "Identifier";
     case MetadataIndex::Kind::TitleSorts: return "Title sort";
     case MetadataIndex::Kind::AuthorSorts: return "Author sort";
   }
@@ -489,7 +489,7 @@ bool scanLibrary(const bool includeXtc, const std::function<void(int, int, const
         }
       }
       ++current;
-      if (progress) progress(current, total, name);
+      if (progress) progress(current, total, fullPath.c_str());
       if ((current & 3) == 0) vTaskDelay(pdMS_TO_TICKS(1));
     }
     directory.close();
@@ -734,7 +734,8 @@ bool MetadataIndex::loadGroup(const Kind kind, const Group& group, std::vector<E
   return true;
 }
 
-bool MetadataIndex::generate(const Options& options, const std::function<void(int, int, const char*)>& progress,
+bool MetadataIndex::generate(const Options& options,
+                             const std::function<void(int, int, const char*, const char*)>& progress,
                              const std::function<bool()>& shouldCancel) {
   if (!options.authors && !options.series && !options.tags && !options.publishers && !options.languages &&
       !options.ratings && !options.publicationDates && !options.identifiers && !options.titleSorts &&
@@ -763,9 +764,7 @@ bool MetadataIndex::generate(const Options& options, const std::function<void(in
     if (selected) {
       const auto stageProgress = [&progress, kind](const int current, const int total, const char* path) {
         if (!progress) return;
-        std::string label = kindLabel(kind);
-        if (path && path[0]) label += ": " + std::string(path);
-        progress(current, total, label.c_str());
+        progress(current, total, kindLabel(kind), path);
       };
       if (!generateSelected(kind, stageProgress, shouldCancel)) return false;
     }
@@ -773,9 +772,7 @@ bool MetadataIndex::generate(const Options& options, const std::function<void(in
   if (options.completeRecords) {
     const auto fullMetadataProgress = [&progress](const int current, const int total, const char* path) {
       if (!progress) return;
-      std::string label = "Complete records";
-      if (path && path[0]) label += ": " + std::string(path);
-      progress(current, total, label.c_str());
+      progress(current, total, "Description + fields", path);
     };
     if (!generateAllMetadata(fullMetadataProgress, shouldCancel)) return false;
   }

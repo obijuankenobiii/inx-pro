@@ -39,7 +39,8 @@ class MetadataGeneratorActivity final : public Activity {
   volatile bool thumbnailPhase = false;
   volatile int processedCount = 0;
   volatile int totalCount = 0;
-  char currentPath[180] = {0};
+  char currentStage[48] = {0};
+  char currentBook[256] = {0};
   char completionSummary[120] = {0};
   int optionListTop = 0;
   int optionListRows = 0;

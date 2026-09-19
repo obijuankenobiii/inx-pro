@@ -181,6 +181,7 @@ class ChapterHtmlSlimParser {
   int currentCssInsetRightPx = 0;
   int currentBlockBottomSpacingPx = 0;
   bool currentBlockSpacingFromCss = false;
+  int dropCapPageStartMarginPx_ = 0;
   int currentBlockMarginBottomPx = 0;
   int currentBlockPaddingBottomPx = 0;
   int currentBlockBorderTopPx = 0;

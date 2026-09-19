@@ -56,7 +56,8 @@ class MetadataIndex final {
   static bool findGroup(Kind kind, const std::string& key, Group& group);
   static bool loadGroup(Kind kind, const Group& group, std::vector<Entry>& entries,
                         size_t maxEntries = static_cast<size_t>(-1));
-  static bool generate(const Options& options, const std::function<void(int, int, const char*)>& progress,
+  static bool generate(const Options& options,
+                       const std::function<void(int, int, const char*, const char*)>& progress,
                        const std::function<bool()>& shouldCancel = {});
   static std::string authorKey(const std::string& author);
 };

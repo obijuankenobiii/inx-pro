@@ -47,7 +47,8 @@ void MetadataGeneratorActivity::onEnter() {
   updateRequired = true;
   processedCount = 0;
   totalCount = 0;
-  currentPath[0] = '\0';
+  currentStage[0] = '\0';
+  currentBook[0] = '\0';
   completionSummary[0] = '\0';
 }
 
@@ -84,7 +85,8 @@ void MetadataGeneratorActivity::startGeneration() {
   cancelRequested = false;
   processedCount = 0;
   totalCount = 0;
-  currentPath[0] = '\0';
+  currentStage[0] = '\0';
+  currentBook[0] = '\0';
   completionSummary[0] = '\0';
   thumbnailPhase = false;
   state = RUNNING;
@@ -114,10 +116,11 @@ void MetadataGeneratorActivity::workerTaskLoop() {
                             options.authorSorts || options.completeRecords;
   bool indexed = !needsIndexes || MetadataIndex::generate(
       options,
-      [this](const int current, const int total, const char* path) {
+      [this](const int current, const int total, const char* stage, const char* book) {
         processedCount = current;
         totalCount = total;
-        if (path) strlcpy(currentPath, path, sizeof(currentPath));
+        if (stage) strlcpy(currentStage, stage, sizeof(currentStage));
+        if (book) strlcpy(currentBook, book, sizeof(currentBook));
         updateRequired = true;
       },
       [this] { return cancelRequested; });
@@ -127,14 +130,15 @@ void MetadataGeneratorActivity::workerTaskLoop() {
     thumbnailPhase = true;
     processedCount = 0;
     totalCount = 0;
-    strlcpy(currentPath, "Scanning books for missing thumbnails", sizeof(currentPath));
+    currentBook[0] = '\0';
+    strlcpy(currentStage, "Thumbnail", sizeof(currentStage));
     updateRequired = true;
     indexed = ThumbnailGeneration::generate(
         renderer, renderingMutex, thumbnailResult,
-        [this](const int current, const char* path) {
+        [this](const int current, const char* book) {
           processedCount = current;
           totalCount = 0;
-          if (path) strlcpy(currentPath, path, sizeof(currentPath));
+          if (book) strlcpy(currentBook, book, sizeof(currentBook));
           updateRequired = true;
         },
         [this] { return cancelRequested; });
@@ -150,7 +154,8 @@ void MetadataGeneratorActivity::workerTaskLoop() {
     state = SUCCESS;
   }
   workerTaskHandle = nullptr;
-  currentPath[0] = '\0';
+  currentStage[0] = '\0';
+  currentBook[0] = '\0';
   updateRequired = true;
   vTaskDelete(nullptr);
 }
@@ -166,9 +171,10 @@ void MetadataGeneratorActivity::render() {
   const int font = systemFontId();
 
   if (state == READY) {
-    optionListTop = contentTop + 1;
     const ButtonBounds bounds = actionBounds(renderer);
-    optionListRows = std::max(1, (bounds.y - optionListTop - 8) / kRowHeight);
+    const int listSpace = std::max(kRowHeight, bounds.y - contentTop - 8);
+    optionListRows = std::max(1, std::min(kOptionCount, listSpace / kRowHeight));
+    optionListTop = contentTop + std::max(0, (listSpace - optionListRows * kRowHeight) / 2);
     scrollOffset = std::max(0, std::min(scrollOffset, kOptionCount - optionListRows));
     for (int row = 0; row < optionListRows && scrollOffset + row < kOptionCount; ++row) {
       const int index = scrollOffset + row;
@@ -189,12 +195,18 @@ void MetadataGeneratorActivity::render() {
     Button::render(renderer, bounds, "Generate", true, font);
     mappedInput.mapLabels("\xC2\xAB Back", "Generate", "Up", "Down");
   } else if (state == RUNNING) {
-    renderer.text.centered(font, contentTop + 74,
-                           thumbnailPhase ? "GENERATING THUMBNAILS" : "GENERATING METADATA", true,
-                           EpdFontFamily::BOLD);
-    renderer.text.centered(font, contentTop + 116,
-                           thumbnailPhase ? "Scanning books for missing covers" : "Building grouped library indexes",
-                           true, EpdFontFamily::REGULAR);
+    const char* stage = currentStage[0] ? currentStage : (thumbnailPhase ? "Thumbnail" : "Metadata");
+    const ButtonBounds stopBounds = actionBounds(renderer);
+    const int lineHeight = renderer.text.getLineHeight(font);
+    constexpr int rowGap = 12;
+    constexpr int barHeight = 8;
+    const int blockHeight = lineHeight * 3 + rowGap * 3 + barHeight;
+    const int blockTop = contentTop + std::max(0, (stopBounds.y - contentTop - blockHeight) / 2);
+    const int stageY = blockTop;
+    const int progressY = stageY + lineHeight + rowGap;
+    const int barY = progressY + lineHeight + rowGap;
+    const int bookY = barY + barHeight + rowGap;
+    renderer.text.centered(font, stageY, stage, true, EpdFontFamily::BOLD);
     char progress[64];
     if (totalCount > 0) {
       std::snprintf(progress, sizeof(progress), "Processed %d of %d books", static_cast<int>(processedCount),
@@ -202,10 +214,9 @@ void MetadataGeneratorActivity::render() {
     } else {
       std::snprintf(progress, sizeof(progress), "Processed %d books", static_cast<int>(processedCount));
     }
-    renderer.text.centered(font, contentTop + 158, progress, true, EpdFontFamily::REGULAR);
+    renderer.text.centered(font, progressY, progress, true, EpdFontFamily::REGULAR);
     const int barWidth = std::min(320, screenWidth - 80);
     const int barX = (screenWidth - barWidth) / 2;
-    const int barY = contentTop + 192;
     renderer.rectangle.render(barX, barY, barWidth, 8, true);
     renderer.rectangle.fill(barX + 1, barY + 1, std::max(1, barWidth - 2), 6, false);
     if (totalCount > 0) {
@@ -217,9 +228,10 @@ void MetadataGeneratorActivity::render() {
       const int fillX = (processedCount * 17) % travel;
       renderer.rectangle.fill(barX + 1 + fillX, barY + 1, fillWidth, 6, true);
     }
-    if (currentPath[0]) {
-      const std::string current = renderer.text.truncate(font, currentPath, screenWidth - 40, EpdFontFamily::REGULAR);
-      renderer.text.centered(font, barY + 28, current.c_str(), true, EpdFontFamily::REGULAR);
+    if (currentBook[0]) {
+      const std::string book = renderer.text.truncate(font, currentBook, screenWidth - 40,
+                                                       EpdFontFamily::REGULAR);
+      renderer.text.centered(font, bookY, book.c_str(), true, EpdFontFamily::REGULAR);
     }
     Button::render(renderer, actionBounds(renderer), "Stop", true, font);
     mappedInput.mapLabels("Stop", "", "", "");
