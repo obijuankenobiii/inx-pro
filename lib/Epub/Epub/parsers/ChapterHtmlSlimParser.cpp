@@ -1753,6 +1753,14 @@ void ChapterHtmlSlimParser::beginCssBlockBox(const std::string& tagLower, const 
   const int borderLeft = css().getBorderLeftPx(tagLower, classAttr, idAttr, styleAttr, viewportWidth, viewportHeight);
   int horizontalLeft = marginLeft + borderLeft + paddingLeft;
   int horizontalRight = marginRight + borderRight + paddingRight;
+  if (tagLower == "p" && !applyCssTextLayout) {
+    // In fixed reader paragraph modes, the paragraph should use the reader's
+    // content margins. Clear horizontal insets inherited from book wrappers
+    // for the duration of this paragraph; its inset scope restores them when
+    // the closing tag is handled.
+    horizontalLeft = -currentCssInsetLeftPx;
+    horizontalRight = -currentCssInsetRightPx;
+  }
   const bool horizontalSpacingSpecified = css().hasHorizontalSpacingSpecified(tagLower, classAttr, idAttr, styleAttr);
   if (applyCssTextLayout && horizontalLeft == 0 && horizontalRight == 0 && !classAttr.empty() &&
       !horizontalSpacingSpecified) {
