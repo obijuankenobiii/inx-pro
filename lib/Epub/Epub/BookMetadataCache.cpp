@@ -17,7 +17,7 @@
 #include "FsHelpers.h"
 
 namespace {
-constexpr uint8_t BOOK_CACHE_VERSION = 8;
+constexpr uint8_t BOOK_CACHE_VERSION = 9;
 constexpr char bookBinFile[] = "/book.bin";
 constexpr char tmpSpineBinFile[] = "/spine.bin.tmp";
 constexpr char tmpTocBinFile[] = "/toc.bin.tmp";
@@ -30,6 +30,66 @@ constexpr uint16_t kMaxImageMetadataEntries = 256;
 constexpr uint16_t kMaxImageMetadataPathBytes = 384;
 constexpr size_t kMaxOpfCssScanBytes = 64 * 1024;
 constexpr size_t kMaxParsedCssBytes = 50 * 1024;
+constexpr uint16_t kMaxMetadataTags = 256;
+constexpr uint16_t kMaxMetadataFields = 128;
+constexpr uint8_t kMaxMetadataAttributes = 16;
+constexpr uint32_t kMaxMetadataStringBytes = 64 * 1024;
+
+uint32_t metadataStringSize(const std::string& value) {
+  return sizeof(uint32_t) + static_cast<uint32_t>(value.size());
+}
+
+uint32_t serializedMetadataSize(const BookMetadataCache::BookMetadata& metadata) {
+  uint32_t size = metadataStringSize(metadata.title) + metadataStringSize(metadata.author) +
+                  metadataStringSize(metadata.description) + metadataStringSize(metadata.language) +
+                  metadataStringSize(metadata.coverItemHref) + metadataStringSize(metadata.textReferenceHref) +
+                  metadataStringSize(metadata.titleSort) + metadataStringSize(metadata.authorSort) +
+                  metadataStringSize(metadata.series) + metadataStringSize(metadata.seriesIndex) +
+                  metadataStringSize(metadata.rating) + metadataStringSize(metadata.publisher) +
+                  metadataStringSize(metadata.publicationDate) + metadataStringSize(metadata.calibreTimestamp) +
+                  metadataStringSize(metadata.calibreUuid) + sizeof(uint16_t) + sizeof(uint16_t);
+
+  const size_t tagCount = std::min(metadata.tags.size(), static_cast<size_t>(kMaxMetadataTags));
+  for (size_t i = 0; i < tagCount; ++i) size += metadataStringSize(metadata.tags[i]);
+
+  const size_t fieldCount = std::min(metadata.fields.size(), static_cast<size_t>(kMaxMetadataFields));
+  for (size_t i = 0; i < fieldCount; ++i) {
+    const auto& field = metadata.fields[i];
+    const size_t attributeCount = std::min(field.attributes.size(), static_cast<size_t>(kMaxMetadataAttributes));
+    size += metadataStringSize(field.name) + metadataStringSize(field.value) + sizeof(uint8_t);
+    for (size_t j = 0; j < attributeCount; ++j) {
+      size += metadataStringSize(field.attributes[j].name) + metadataStringSize(field.attributes[j].value);
+    }
+  }
+  return size;
+}
+
+bool readMetadataString(FsFile& file, std::string& value) {
+  if (file.position() + sizeof(uint32_t) > file.size()) return false;
+  uint32_t length = 0;
+  if (file.read(reinterpret_cast<uint8_t*>(&length), sizeof(length)) != sizeof(length) ||
+      length > kMaxMetadataStringBytes || file.position() + length > file.size()) {
+    return false;
+  }
+  value.resize(length);
+  return length == 0 || file.read(reinterpret_cast<uint8_t*>(&value[0]), length) == length;
+}
+
+bool readMetadataStringVector(FsFile& file, std::vector<std::string>& values, const uint16_t maxCount) {
+  uint16_t count = 0;
+  if (file.position() + sizeof(count) > file.size() ||
+      file.read(reinterpret_cast<uint8_t*>(&count), sizeof(count)) != sizeof(count) || count > maxCount) {
+    return false;
+  }
+  values.clear();
+  values.reserve(count);
+  for (uint16_t i = 0; i < count; ++i) {
+    std::string value;
+    if (!readMetadataString(file, value)) return false;
+    values.push_back(std::move(value));
+  }
+  return true;
+}
 
 std::string normaliseTocTitle(const std::string& title) {
   std::string result;
@@ -176,9 +236,7 @@ bool BookMetadataCache::buildBookBin(const std::string& epubPath, const BookMeta
 
   constexpr uint32_t headerASize =
       sizeof(BOOK_CACHE_VERSION) + sizeof(uint32_t) + sizeof(spineCount) + sizeof(tocCount) + sizeof(cssCount);
-  const uint32_t metadataSize = metadata.title.size() + metadata.author.size() + metadata.description.size() +
-                                metadata.language.size() + metadata.coverItemHref.size() +
-                                metadata.textReferenceHref.size() + sizeof(uint32_t) * 6;
+  const uint32_t metadataSize = serializedMetadataSize(metadata);
   const uint32_t lutSize = sizeof(uint32_t) * spineCount + sizeof(uint32_t) * tocCount + sizeof(uint32_t) * cssCount;
   const uint32_t lutOffset = headerASize + metadataSize;
 
@@ -194,6 +252,35 @@ bool BookMetadataCache::buildBookBin(const std::string& epubPath, const BookMeta
   serialization::writeString(bookFile, metadata.language);
   serialization::writeString(bookFile, metadata.coverItemHref);
   serialization::writeString(bookFile, metadata.textReferenceHref);
+  serialization::writeString(bookFile, metadata.titleSort);
+  serialization::writeString(bookFile, metadata.authorSort);
+  serialization::writeString(bookFile, metadata.series);
+  serialization::writeString(bookFile, metadata.seriesIndex);
+  serialization::writeString(bookFile, metadata.rating);
+  serialization::writeString(bookFile, metadata.publisher);
+  serialization::writeString(bookFile, metadata.publicationDate);
+  serialization::writeString(bookFile, metadata.calibreTimestamp);
+  serialization::writeString(bookFile, metadata.calibreUuid);
+
+  const uint16_t tagCount = static_cast<uint16_t>(std::min(metadata.tags.size(), static_cast<size_t>(kMaxMetadataTags)));
+  serialization::writePod(bookFile, tagCount);
+  for (uint16_t i = 0; i < tagCount; ++i) serialization::writeString(bookFile, metadata.tags[i]);
+
+  const uint16_t fieldCount =
+      static_cast<uint16_t>(std::min(metadata.fields.size(), static_cast<size_t>(kMaxMetadataFields)));
+  serialization::writePod(bookFile, fieldCount);
+  for (uint16_t i = 0; i < fieldCount; ++i) {
+    const auto& field = metadata.fields[i];
+    serialization::writeString(bookFile, field.name);
+    serialization::writeString(bookFile, field.value);
+    const uint8_t attributeCount =
+        static_cast<uint8_t>(std::min(field.attributes.size(), static_cast<size_t>(kMaxMetadataAttributes)));
+    serialization::writePod(bookFile, attributeCount);
+    for (uint8_t j = 0; j < attributeCount; ++j) {
+      serialization::writeString(bookFile, field.attributes[j].name);
+      serialization::writeString(bookFile, field.attributes[j].value);
+    }
+  }
 
   spineFile.seek(0);
   for (int i = 0; i < spineCount; i++) {
@@ -751,12 +838,54 @@ bool BookMetadataCache::load() {
   serialization::readPod(bookFile, tocCount);
   serialization::readPod(bookFile, cssCount);
 
-  serialization::readString(bookFile, coreMetadata.title);
-  serialization::readString(bookFile, coreMetadata.author);
-  serialization::readString(bookFile, coreMetadata.description);
-  serialization::readString(bookFile, coreMetadata.language);
-  serialization::readString(bookFile, coreMetadata.coverItemHref);
-  serialization::readString(bookFile, coreMetadata.textReferenceHref);
+  if (!readMetadataString(bookFile, coreMetadata.title) || !readMetadataString(bookFile, coreMetadata.author) ||
+      !readMetadataString(bookFile, coreMetadata.description) || !readMetadataString(bookFile, coreMetadata.language) ||
+      !readMetadataString(bookFile, coreMetadata.coverItemHref) ||
+      !readMetadataString(bookFile, coreMetadata.textReferenceHref) ||
+      !readMetadataString(bookFile, coreMetadata.titleSort) || !readMetadataString(bookFile, coreMetadata.authorSort) ||
+      !readMetadataString(bookFile, coreMetadata.series) || !readMetadataString(bookFile, coreMetadata.seriesIndex) ||
+      !readMetadataString(bookFile, coreMetadata.rating) || !readMetadataString(bookFile, coreMetadata.publisher) ||
+      !readMetadataString(bookFile, coreMetadata.publicationDate) ||
+      !readMetadataString(bookFile, coreMetadata.calibreTimestamp) || !readMetadataString(bookFile, coreMetadata.calibreUuid) ||
+      !readMetadataStringVector(bookFile, coreMetadata.tags, kMaxMetadataTags)) {
+    bookFile.close();
+    return false;
+  }
+
+  uint16_t fieldCount = 0;
+  if (bookFile.position() + sizeof(fieldCount) > bookFile.size() ||
+      bookFile.read(reinterpret_cast<uint8_t*>(&fieldCount), sizeof(fieldCount)) != sizeof(fieldCount) ||
+      fieldCount > kMaxMetadataFields) {
+    bookFile.close();
+    return false;
+  }
+  coreMetadata.fields.clear();
+  coreMetadata.fields.reserve(fieldCount);
+  for (uint16_t i = 0; i < fieldCount; ++i) {
+    MetadataField field;
+    uint8_t attributeCount = 0;
+    if (!readMetadataString(bookFile, field.name) || !readMetadataString(bookFile, field.value) ||
+        bookFile.position() + sizeof(attributeCount) > bookFile.size() ||
+        bookFile.read(reinterpret_cast<uint8_t*>(&attributeCount), sizeof(attributeCount)) != sizeof(attributeCount) ||
+        attributeCount > kMaxMetadataAttributes) {
+      bookFile.close();
+      return false;
+    }
+    field.attributes.reserve(attributeCount);
+    for (uint8_t j = 0; j < attributeCount; ++j) {
+      MetadataAttribute attribute;
+      if (!readMetadataString(bookFile, attribute.name) || !readMetadataString(bookFile, attribute.value)) {
+        bookFile.close();
+        return false;
+      }
+      field.attributes.push_back(std::move(attribute));
+    }
+    coreMetadata.fields.push_back(std::move(field));
+  }
+  if (bookFile.position() != lutOffset) {
+    bookFile.close();
+    return false;
+  }
 
   loaded = true;
   INX_SERIAL.printf("[%lu] [BMC] Loaded cache data: %d spine, %d TOC, %d CSS entries\n", millis(), spineCount, tocCount,

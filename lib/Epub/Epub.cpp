@@ -941,14 +941,9 @@ bool Epub::parseContentOpf(BookMetadataCache::BookMetadata& bookMetadata) {
   ContentOpfParser opfParser(getCachePath(), getBasePath(), opfSize, bookMetadataCache.get());
   if (!opfParser.setup() || !readItemContentsToStream(opfPath, opfParser, 1024)) return false;
 
-  bookMetadata.title = opfParser.title;
-  bookMetadata.author = opfParser.author;
-  bookMetadata.description = opfParser.description;
-  bookMetadata.language = opfParser.language;
-  bookMetadata.coverItemHref = opfParser.coverItemHref;
-  bookMetadata.textReferenceHref = opfParser.textReferenceHref;
   if (!opfParser.tocNcxPath.empty()) tocNcxItem = opfParser.tocNcxPath;
   if (!opfParser.tocNavPath.empty()) tocNavItem = opfParser.tocNavPath;
+  bookMetadata = opfParser.takeMetadata();
 
   return true;
 }
@@ -1076,14 +1071,9 @@ bool Epub::load(const bool buildIfMissing) {
     return false;
   }
 
-  meta.title = opfParser.title;
-  meta.author = opfParser.author;
-  meta.description = opfParser.description;
-  meta.language = opfParser.language;
-  meta.coverItemHref = opfParser.coverItemHref;
-  meta.textReferenceHref = opfParser.textReferenceHref;
   if (!opfParser.tocNcxPath.empty()) tocNcxItem = opfParser.tocNcxPath;
   if (!opfParser.tocNavPath.empty()) tocNavItem = opfParser.tocNavPath;
+  meta = opfParser.takeMetadata();
 
   bookMetadataCache->endContentOpfPass();
 
