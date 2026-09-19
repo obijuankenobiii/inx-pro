@@ -21,7 +21,6 @@
 #include <string>
 
 #include "CalibreSettingsActivity.h"
-#include "AuthorGeneratorActivity.h"
 #include "ClearCacheActivity.h"
 #include "ClockStylePickerActivity.h"
 #include "LanguageManagerActivity.h"
@@ -29,7 +28,7 @@
 #include "activity/page/components/global/PopUp.h"
 #include "ReaderFontSettingsDraw.h"
 #include "SleepImagePickerActivity.h"
-#include "ThumbnailGeneratorActivity.h"
+#include "MetadataGeneratorActivity.h"
 #include "ThemePickerActivity.h"
 #include "images/Close.h"
 #include "images/LibraryFilterLeft.h"
@@ -511,17 +510,9 @@ void CategorySettingsActivity::setupMenu() {
               }
               return;
             }
-            if (strcmp(settingPtr->name, "Generate thumbnails") == 0) {
+            if (strcmp(settingPtr->name, "Generate Metadata") == 0) {
               exitActivity();
-              enterNewActivity(new ThumbnailGeneratorActivity(renderer, mappedInput, [this] {
-                exitActivity();
-                updateRequired = true;
-              }));
-              return;
-            }
-            if (strcmp(settingPtr->name, "Generate Authors") == 0) {
-              exitActivity();
-              enterNewActivity(new AuthorGeneratorActivity(renderer, mappedInput, [this] {
+              enterNewActivity(new MetadataGeneratorActivity(renderer, mappedInput, [this] {
                 exitActivity();
                 updateRequired = true;
               }));

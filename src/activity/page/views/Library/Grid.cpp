@@ -9,9 +9,6 @@
 
 #include "images/BookLarge.h"
 #include "images/FolderLarge.h"
-#define FolderLarge FolderAuthorLarge
-#include "images/FolderAuthorLarge.h"
-#undef FolderLarge
 #include "images/ImageLarge.h"
 #include "images/Pdf72.h"
 #include "images/Star.h"
@@ -113,7 +110,7 @@ void drawItemBadge(const GfxRenderer& renderer, const int x, const int y, const 
 }
 
 void drawItem(const GfxRenderer& renderer, const LibraryIndex::Book& item, const int x, const int y,
-              const int width, const int height, const bool favorite, const bool authorFolder) {
+              const int width, const int height, const bool favorite) {
   constexpr int labelGap = 4;
   constexpr int labelHeight = 36;
   const int iconX = x + 8;
@@ -124,7 +121,7 @@ void drawItem(const GfxRenderer& renderer, const LibraryIndex::Book& item, const
   const int drawX = iconX + (iconWidth - iconSize) / 2;
   const int drawY = iconY + (iconHeight - iconSize) / 2;
   const uint8_t* icon = item.type == LibraryIndex::Book::Type::FOLDER
-                            ? (authorFolder ? FolderAuthorLarge : FolderLarge)
+                            ? FolderLarge
                             : (isImage(item.path)
                                   ? ImageLarge
                                   : (isPdf(item.path) ? Pdf72 : (isTxt(item.path) ? Txt72 : BookLarge)));
@@ -152,11 +149,10 @@ void drawItem(const GfxRenderer& renderer, const LibraryIndex::Book& item, const
 Grid::Grid(GfxRenderer& renderer, MappedInputManager& mappedInput,
            const std::vector<LibraryIndex::Book>& items, std::function<void(int, bool)> select,
            std::function<bool(const LibraryIndex::Book&)> isFavorite,
-           std::function<void(int, int)> outsideTap,
-           std::function<bool(const LibraryIndex::Book&)> isAuthorFolder)
+           std::function<void(int, int)> outsideTap)
     : renderer(renderer), mappedInput(mappedInput), items(items), select(std::move(select)),
       isFavorite(std::move(isFavorite)),
-      outsideTap(std::move(outsideTap)), isAuthorFolder(std::move(isAuthorFolder)) {}
+      outsideTap(std::move(outsideTap)) {}
 
 void Grid::reset() { page = 0; }
 
@@ -239,8 +235,7 @@ void Grid::render() const {
     int height = 0;
     itemBounds(index, x, y, width, height);
     const LibraryIndex::Book& item = items[static_cast<size_t>(start + index)];
-    drawItem(renderer, item, x, y, width, height, isFavorite && isFavorite(item),
-             isAuthorFolder && isAuthorFolder(item));
+    drawItem(renderer, item, x, y, width, height, isFavorite && isFavorite(item));
   }
 }
 

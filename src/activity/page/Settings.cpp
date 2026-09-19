@@ -149,8 +149,7 @@ std::vector<SettingInfo> buildSystemSettings() {
 
   settings.push_back(SettingInfo::Separator("Actions", GroupType::DEVICE_ACTIONS));
   settings.push_back(SettingInfo::Action("Delete Cache", GroupType::DEVICE_ACTIONS));
-  settings.push_back(SettingInfo::Action("Generate thumbnails", GroupType::DEVICE_ACTIONS));
-  settings.push_back(SettingInfo::Action("Generate Authors", GroupType::DEVICE_ACTIONS));
+  settings.push_back(SettingInfo::Action("Generate Metadata", GroupType::DEVICE_ACTIONS));
   return settings;
 }
 

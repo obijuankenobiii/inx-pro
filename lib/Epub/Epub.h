@@ -105,6 +105,8 @@ class Epub {
   const std::string& getTitle() const;
   const std::string& getAuthor() const;
   const std::string& getLanguage() const;
+  /** Returns all cached OPF metadata, or an empty record if the book is not loaded. */
+  const BookMetadataCache::BookMetadata& getBookMetadata() const;
   std::string& getBasePath() { return contentBasePath; }
 
   std::string getCoverBmpPath(bool cropped = false) const;

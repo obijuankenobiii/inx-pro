@@ -9,6 +9,7 @@
 #include "Page.h"
 #include "system/PluginManager.h"
 #include "util/LibraryIndex.h"
+#include "util/MetadataIndex.h"
 #include "views/Library/Grid.h"
 #include "views/Library/List.h"
 #include "views/Library/Thumb.h"
@@ -37,7 +38,7 @@ class Library final : public Page {
   enum class Sort { TitleAZ, TitleZA, FolderAZ, FolderZA, AuthorAZ, AuthorZA };
   enum class View { List, Grid, Thumb };
   enum class FilterTab { Title, Type, Options };
-  enum class StateFilter { None, Favorites, Reading, Finished, Author, Plugin };
+  enum class StateFilter { None, Favorites, Reading, Finished, Metadata, Plugin };
 
   static constexpr int buttonSize = 40;
   static constexpr int buttonGap = 25;
@@ -67,14 +68,16 @@ class Library final : public Page {
   bool sidebarOpen = false;
   bool allBooksMode = false;
   StateFilter stateFilter = StateFilter::None;
-  std::string authorFolder;
-  std::string authorFolderKey;
-  bool authorIndexAvailable = false;
+  MetadataIndex::Kind metadataKind_ = MetadataIndex::Kind::Authors;
+  std::string metadataGroupKey_;
+  bool metadataIndexAvailable_ = false;
+  int sidebarScrollOffset_ = 0;
   std::unordered_set<std::string> favorites;
   std::unordered_map<std::string, std::string> pluginGroupByPath_;
-  std::unordered_map<std::string, int> pluginOrderByPath_;
+  std::unordered_map<std::string, float> pluginOrderByPath_;
   std::unordered_map<std::string, std::vector<LibraryIndex::Book>> pluginBooksByGroup_;
   std::unordered_map<std::string, std::string> pluginNameByGroup_;
+  std::unordered_map<std::string, std::string> metadataKeyByGroup_;
   std::string activePluginGroup_;
 
   void load();

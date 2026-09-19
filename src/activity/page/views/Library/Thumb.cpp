@@ -329,12 +329,10 @@ Thumb::Thumb(GfxRenderer& renderer, MappedInputManager& mappedInput,
              std::function<void(int, bool)> select,
              std::function<bool(const LibraryIndex::Book&)> isFavorite,
              std::function<void(int, int)> outsideTap,
-             std::function<bool(const LibraryIndex::Book&)> isAuthorFolder,
              std::function<std::vector<std::string>(const LibraryIndex::Book&, int)> folderCovers)
     : renderer(renderer), mappedInput(mappedInput), items(items), books(books), select(std::move(select)),
       isFavorite(std::move(isFavorite)),
-      outsideTap(std::move(outsideTap)), isAuthorFolder(std::move(isAuthorFolder)),
-      customFolderCovers(std::move(folderCovers)) {}
+      outsideTap(std::move(outsideTap)), customFolderCovers(std::move(folderCovers)) {}
 
 std::vector<std::string> Thumb::coversForFolder(const LibraryIndex::Book& folder, const int limit) const {
   if (customFolderCovers) {
@@ -572,7 +570,7 @@ const Thumb::Thumbnail* Thumb::find(const std::string& item) const {
 }
 
 void Thumb::drawItem(const LibraryIndex::Book& item, const int x, const int y, const int width,
-                     const int height, const bool favorite, const bool authorFolder) const {
+                     const int height, const bool favorite) const {
   constexpr int padding = 5;
   const bool rounded = SETTINGS.bitmapRoundedCorners != 0;
   const Thumbnail* thumbnail = find(item.path);
@@ -583,10 +581,6 @@ void Thumb::drawItem(const LibraryIndex::Book& item, const int x, const int y, c
     const int imageY = y + padding;
     const int labelSpacing = hideTitle ? 0 : 4 + kFolderLabelGap;
     const int imageHeight = std::max(8, height - lineHeight - padding * 2 - labelSpacing);
-    if (authorFolder) {
-      drawFolderPlaceholder(renderer, item, x, y, width, height, favorite, thumbnail ? thumbnail->bookCount : 0);
-      return;
-    }
     if (thumbnail && thumbnail->loaded && !thumbnail->first.empty()) {
       const int frontHeight = imageHeight;
       if (thumbnail->bookCount == 1) {
@@ -755,7 +749,7 @@ void Thumb::render() const {
     itemBounds(index, x, y, width, height);
     const LibraryIndex::Book& item = items[static_cast<size_t>(start + index)];
     const bool favorite = isFavorite && isFavorite(item);
-    drawItem(item, x, y, width, height, favorite, isAuthorFolder && isAuthorFolder(item));
+    drawItem(item, x, y, width, height, favorite);
   }
 }
 

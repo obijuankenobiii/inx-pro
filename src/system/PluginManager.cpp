@@ -42,7 +42,6 @@ struct StaticPackage {
 
 constexpr StaticPackage kStaticPackages[] = {
     {"study-cards", "Anki Export", "Adds anki supported export", "plugin/study-cards.zip"},
-    {"series", "Series", "Group books into reading series", "plugin/series.zip"},
 };
 
 bool safeId(const std::string& id) {
@@ -169,7 +168,7 @@ bool forEachInstalledPlugin(const Callback& callback) {
     entry.getName(name, sizeof(name));
     const bool isDirectory = entry.isDirectory();
     entry.close();
-    if (isDirectory && safeId(name) && callback(name)) {
+    if (isDirectory && safeId(name) && std::strcmp(name, "series") != 0 && callback(name)) {
       directory.close();
       return true;
     }

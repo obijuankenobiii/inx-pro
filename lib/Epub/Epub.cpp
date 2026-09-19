@@ -1178,6 +1178,11 @@ const std::string& Epub::getLanguage() const {
   return (bookMetadataCache && bookMetadataCache->isLoaded()) ? bookMetadataCache->coreMetadata.language : kEmptyString;
 }
 
+const BookMetadataCache::BookMetadata& Epub::getBookMetadata() const {
+  static const BookMetadataCache::BookMetadata emptyMetadata;
+  return (bookMetadataCache && bookMetadataCache->isLoaded()) ? bookMetadataCache->coreMetadata : emptyMetadata;
+}
+
 /**
  * @brief Gets the filesystem path for the cover BMP.
  *

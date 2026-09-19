@@ -8,9 +8,6 @@
 
 #include "images/BookSmall.h"
 #include "images/Folder.h"
-#define Folder FolderAuthor
-#include "images/FolderAuthor.h"
-#undef Folder
 #include "images/Pdf24.h"
 #include "images/Star.h"
 #include "images/Txt24.h"
@@ -56,11 +53,10 @@ bool isTxt(const std::string& path) {
 List::List(GfxRenderer& renderer, MappedInputManager& mappedInput,
            const std::vector<LibraryIndex::Book>& items, std::function<void(int, bool)> select,
            std::function<bool(const LibraryIndex::Book&)> isFavorite,
-           std::function<void(int, int)> outsideTap,
-           std::function<bool(const LibraryIndex::Book&)> isAuthorFolder)
+           std::function<void(int, int)> outsideTap)
     : renderer(renderer), mappedInput(mappedInput), items(items), select(std::move(select)),
       isFavorite(std::move(isFavorite)),
-      outsideTap(std::move(outsideTap)), isAuthorFolder(std::move(isAuthorFolder)) {}
+      outsideTap(std::move(outsideTap)) {}
 
 void List::reset() { page = 0; }
 
@@ -119,7 +115,7 @@ void List::render() const {
     const LibraryIndex::Book& item = items[static_cast<size_t>(start + row)];
     const bool favorite = isFavorite && isFavorite(item);
     const uint8_t* icon = item.type == LibraryIndex::Book::Type::FOLDER
-                              ? (isAuthorFolder && isAuthorFolder(item) ? FolderAuthor : Folder)
+                              ? Folder
                               : (isPdf(item.path) ? Pdf24 : (isTxt(item.path) ? Txt24 : BookSmall));
     renderer.bitmap.icon(icon, 20, y + (rowHeight - 24) / 2, 24, 24);
     constexpr int favoriteSize = 24;
