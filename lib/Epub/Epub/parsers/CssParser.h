@@ -51,17 +51,17 @@ class CssParser {
   bool loadBinary(FsFile& file);
 
   int getWidth(const std::string& className, const std::string& id, const std::string& styleAttr, int viewportWidth,
-               int viewportHeight) const;
+               int viewportHeight, const std::string& elementTagLower = "") const;
   int getHeight(const std::string& className, const std::string& id, const std::string& styleAttr, int viewportWidth,
-                int viewportHeight) const;
+                int viewportHeight, const std::string& elementTagLower = "") const;
   int getMaxWidth(const std::string& className, const std::string& id, const std::string& styleAttr, int viewportWidth,
-                  int viewportHeight) const;
+                  int viewportHeight, const std::string& elementTagLower = "") const;
   int getMinWidth(const std::string& className, const std::string& id, const std::string& styleAttr, int viewportWidth,
-                  int viewportHeight) const;
+                  int viewportHeight, const std::string& elementTagLower = "") const;
   int getMaxHeight(const std::string& className, const std::string& id, const std::string& styleAttr, int viewportWidth,
-                   int viewportHeight) const;
+                   int viewportHeight, const std::string& elementTagLower = "") const;
   int getMinHeight(const std::string& className, const std::string& id, const std::string& styleAttr, int viewportWidth,
-                   int viewportHeight) const;
+                   int viewportHeight, const std::string& elementTagLower = "") const;
 
   /**
    * Parse a single CSS length (e.g. HTML width="50%" or style value).
@@ -262,7 +262,8 @@ class CssParser {
                           PercentRefersTo percentAxis) const;
   void parseInlineStyle(const std::string& styleAttr, std::map<std::string, std::string>& out) const;
   int getInlineOrSheetLength(const std::string& propName, const std::string& className, const std::string& id,
-                             const std::string& styleAttr, int viewportWidth, int viewportHeight) const;
+                             const std::string& styleAttr, int viewportWidth, int viewportHeight,
+                             const std::string& elementTagLower) const;
   int getSpacingEdgePx(const std::string& propName, const std::string& shorthandName, const std::string& className,
                        const std::string& id, const std::string& styleAttr, int viewportWidth, int viewportHeight,
                        const std::string& elementTagLower = "") const;

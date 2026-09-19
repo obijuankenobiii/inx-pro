@@ -791,7 +791,7 @@ void ChapterHtmlSlimParser::processImageElement(const char** atts) {
     }
 
     if (imgWidth == 0) {
-      int cssWidth = css().getWidth(classAttr, idAttr, styleAttr, availableImgWidth, viewportHeight);
+      int cssWidth = css().getWidth(classAttr, idAttr, styleAttr, availableImgWidth, viewportHeight, "img");
 
       if (cssWidth == 0 && !widthIsPercentage) {
         imgWidth = cssWidth;
@@ -801,7 +801,7 @@ void ChapterHtmlSlimParser::processImageElement(const char** atts) {
     }
 
     if (imgHeight == 0) {
-      int cssHeight = css().getHeight(classAttr, idAttr, styleAttr, viewportWidth, viewportHeight);
+      int cssHeight = css().getHeight(classAttr, idAttr, styleAttr, viewportWidth, viewportHeight, "img");
       if (cssHeight == 0 && !heightIsPercentage) {
         imgHeight = cssHeight;
       } else if (cssHeight > 0) {
@@ -816,52 +816,62 @@ void ChapterHtmlSlimParser::processImageElement(const char** atts) {
   EPUB_PERF_LOG("[%lu] [CHAPTER-IMG] source=%s resolved=%s cache=%s explicit=%dx%d\n", millis(), src.c_str(),
                 fullInternalPath.c_str(), cacheImgPath.c_str(), explicitWidth, explicitHeight);
 
-  const int cssMaxW = css().getMaxWidth(classAttr, idAttr, styleAttr, availableImgWidth, viewportHeight);
-  const int cssMinW = css().getMinWidth(classAttr, idAttr, styleAttr, availableImgWidth, viewportHeight);
-  const int cssMaxH = css().getMaxHeight(classAttr, idAttr, styleAttr, viewportWidth, viewportHeight);
-  const int cssMinH = css().getMinHeight(classAttr, idAttr, styleAttr, viewportWidth, viewportHeight);
+  const int cssMaxW = css().getMaxWidth(classAttr, idAttr, styleAttr, availableImgWidth, viewportHeight, "img");
+  const int cssMinW = css().getMinWidth(classAttr, idAttr, styleAttr, availableImgWidth, viewportHeight, "img");
+  const int cssMaxH = css().getMaxHeight(classAttr, idAttr, styleAttr, viewportWidth, viewportHeight, "img");
+  const int cssMinH = css().getMinHeight(classAttr, idAttr, styleAttr, viewportWidth, viewportHeight, "img");
 
   int actualW = 0, actualH = 0;
   const uint8_t format = imageFormat(cacheImgPath);
   bool imageAvailable = imgWidth > 0 && imgHeight > 0;
-  if (!imageAvailable && epub.getImageMetadata(cacheImgPath, &actualW, &actualH, format) && actualW > 0 && actualH > 0) {
-    imageAvailable = true;
-  } else if (!imageAvailable) {
-    {
-      EpubImagePrefetch::IoLock ioLock;
-      if (SdMan.exists(cacheImgPath.c_str())) {
-        imageAvailable = getImageDimensions(cacheImgPath, &actualW, &actualH);
-      }
-    }
-    if (!imageAvailable && epub.probeImageDimensions(fullInternalPath, &actualW, &actualH)) {
-      epub.setImageMetadata(cacheImgPath, actualW, actualH, format, true);
+  // A CSS rule may provide only one dimension, e.g. the book's ornament images use
+  // height: 1.5em. We still need the intrinsic dimensions to derive the missing side;
+  // treating the partial CSS size as a complete image size loses the aspect ratio.
+  if (!imageAvailable) {
+    if (epub.getImageMetadata(cacheImgPath, &actualW, &actualH, format) && actualW > 0 && actualH > 0) {
       imageAvailable = true;
+    } else {
+      actualW = 0;
+      actualH = 0;
+    }
+    if (!imageAvailable) {
+      {
+        EpubImagePrefetch::IoLock ioLock;
+        if (SdMan.exists(cacheImgPath.c_str())) {
+          imageAvailable = getImageDimensions(cacheImgPath, &actualW, &actualH);
+        }
+      }
+      if (!imageAvailable && epub.probeImageDimensions(fullInternalPath, &actualW, &actualH)) {
+        epub.setImageMetadata(cacheImgPath, actualW, actualH, format, true);
+        imageAvailable = true;
+      }
     }
   }
 
-  if (imageAvailable && actualW > 0 && actualH > 0) {
+  auto completeImageDimensions = [&]() {
+    if (actualW <= 0 || actualH <= 0) return;
     if (imgWidth == 0 && cssMaxW > 0) {
       imgWidth = std::min(actualW, cssMaxW);
-      imgHeight = (actualH * imgWidth) / std::max(1, actualW);
     }
     if (imgHeight == 0 && cssMaxH > 0) {
       imgHeight = std::min(actualH, cssMaxH);
-      imgWidth = (actualW * imgHeight) / std::max(1, actualH);
     }
 
     if (imgWidth > 0 && imgHeight == 0) {
-      imgHeight = (actualH * imgWidth) / std::max(1, actualW);
+      imgHeight = std::max(1, (actualH * imgWidth) / std::max(1, actualW));
     } else if (imgHeight > 0 && imgWidth == 0) {
-      imgWidth = (actualW * imgHeight) / std::max(1, actualH);
+      imgWidth = std::max(1, (actualW * imgHeight) / std::max(1, actualH));
     } else if (imgWidth == 0 && imgHeight == 0) {
       imgWidth = actualW;
       imgHeight = actualH;
     }
-    imageAvailable = true;
-  } else if (!imageAvailable && ensureImageCached(fullInternalPath, cacheImgPath, &actualW, &actualH)) {
-    if (imgWidth == 0) imgWidth = actualW;
-    if (imgHeight == 0) imgHeight = actualH;
-    imageAvailable = true;
+  };
+
+  completeImageDimensions();
+  imageAvailable = imgWidth > 0 && imgHeight > 0;
+  if (!imageAvailable && ensureImageCached(fullInternalPath, cacheImgPath, &actualW, &actualH)) {
+    completeImageDimensions();
+    imageAvailable = imgWidth > 0 && imgHeight > 0;
   }
 
   if (imageAvailable) {
@@ -965,8 +975,8 @@ void ChapterHtmlSlimParser::processBackgroundImageElement(const std::string& tag
     return;
   }
 
-  const int cssWidth = css().getWidth(classAttr, idAttr, styleAttr, viewportWidth, viewportHeight);
-  const int cssHeight = css().getHeight(classAttr, idAttr, styleAttr, viewportWidth, viewportHeight);
+  const int cssWidth = css().getWidth(classAttr, idAttr, styleAttr, viewportWidth, viewportHeight, tagLower);
+  const int cssHeight = css().getHeight(classAttr, idAttr, styleAttr, viewportWidth, viewportHeight, tagLower);
   if (cssWidth > 0 && cssHeight > 0) {
     imageWidth = cssWidth;
     imageHeight = cssHeight;
@@ -1781,7 +1791,7 @@ void ChapterHtmlSlimParser::beginCssBlockBox(const std::string& tagLower, const 
     }
   }
   const int minHeight = applyCssTextLayout
-                            ? css().getMinHeight(classAttr, idAttr, styleAttr, viewportWidth, viewportHeight)
+                            ? css().getMinHeight(classAttr, idAttr, styleAttr, viewportWidth, viewportHeight, tagLower)
                             : 0;
   CssHorizontalInsetScope insetScope;
   insetScope.depth = depth;
@@ -2702,8 +2712,8 @@ void ChapterHtmlSlimParser::addHorizontalRule(const std::string& tagLower, const
     int imgW = 0;
     int imgH = 0;
     if (ensureImageCached(bgInternalPath, cacheImgPath, &imgW, &imgH) && imgW > 0 && imgH > 0) {
-      const int cssWidth = css().getWidth(classAttr, idAttr, styleAttr, viewportWidth, viewportHeight);
-      const int cssHeight = css().getHeight(classAttr, idAttr, styleAttr, viewportWidth, viewportHeight);
+      const int cssWidth = css().getWidth(classAttr, idAttr, styleAttr, viewportWidth, viewportHeight, tagLower);
+      const int cssHeight = css().getHeight(classAttr, idAttr, styleAttr, viewportWidth, viewportHeight, tagLower);
       if (cssWidth > 0 && cssHeight > 0) {
         imgW = cssWidth;
         imgH = cssHeight;
@@ -2733,7 +2743,7 @@ void ChapterHtmlSlimParser::addHorizontalRule(const std::string& tagLower, const
     const int borderBottom =
         css().getBorderBottomPx(tagLower, classAttr, idAttr, styleAttr, viewportWidth, viewportHeight);
     if (borderTop > 0 || borderBottom > 0) {
-      const int cssHeight = css().getHeight(classAttr, idAttr, styleAttr, viewportWidth, viewportHeight);
+      const int cssHeight = css().getHeight(classAttr, idAttr, styleAttr, viewportWidth, viewportHeight, tagLower);
       applyHrTopSpacing();
       if (borderTop > 0) {
         addCssBorderLine(borderTop, borderStyleCodeFromKeyword(

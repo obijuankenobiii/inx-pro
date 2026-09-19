@@ -25,7 +25,7 @@
 #include "util/StringUtils.h"
 
 namespace {
-constexpr uint32_t kDisplayTaskStack = 4096;
+constexpr uint32_t kDisplayTaskStack = 8192;
 constexpr uint32_t kWorkerTaskStack = 16384;
 constexpr int kActionButtonWidth = 180;
 constexpr int kActionButtonHeight = Button::height;

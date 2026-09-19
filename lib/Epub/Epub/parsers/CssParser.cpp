@@ -1188,7 +1188,8 @@ int CssParser::parseDimensionValue(const std::string& valueIn, int viewportWidth
 }
 
 int CssParser::getInlineOrSheetLength(const std::string& propName, const std::string& className, const std::string& id,
-                                      const std::string& styleAttr, int viewportWidth, int viewportHeight) const {
+                                      const std::string& styleAttr, int viewportWidth, int viewportHeight,
+                                      const std::string& elementTagLower) const {
   const PercentRefersTo pct = (propName == "height" || propName == "min-height" || propName == "max-height")
                                   ? PercentRefersTo::Height
                                   : PercentRefersTo::Width;
@@ -1208,7 +1209,7 @@ int CssParser::getInlineOrSheetLength(const std::string& propName, const std::st
   bool hasClsLast = false;
   bool hasTypeLast = false;
 
-  const auto& matches = matchedRulesFor("", className, id);
+  const auto& matches = matchedRulesFor(elementTagLower, className, id);
   size_t matchIndex = 0;
   for (const MatchedRule& matched : matches) {
     if ((matchIndex++ & 0x1Fu) == 0) {
@@ -1555,33 +1556,33 @@ uint8_t CssParser::getVerticalAlign(const std::string& elementTagLower, const st
 }
 
 int CssParser::getWidth(const std::string& className, const std::string& id, const std::string& styleAttr,
-                        int viewportWidth, int viewportHeight) const {
-  return getInlineOrSheetLength("width", className, id, styleAttr, viewportWidth, viewportHeight);
+                        int viewportWidth, int viewportHeight, const std::string& elementTagLower) const {
+  return getInlineOrSheetLength("width", className, id, styleAttr, viewportWidth, viewportHeight, elementTagLower);
 }
 
 int CssParser::getHeight(const std::string& className, const std::string& id, const std::string& styleAttr,
-                         int viewportWidth, int viewportHeight) const {
-  return getInlineOrSheetLength("height", className, id, styleAttr, viewportWidth, viewportHeight);
+                         int viewportWidth, int viewportHeight, const std::string& elementTagLower) const {
+  return getInlineOrSheetLength("height", className, id, styleAttr, viewportWidth, viewportHeight, elementTagLower);
 }
 
 int CssParser::getMaxWidth(const std::string& className, const std::string& id, const std::string& styleAttr,
-                           int viewportWidth, int viewportHeight) const {
-  return getInlineOrSheetLength("max-width", className, id, styleAttr, viewportWidth, viewportHeight);
+                           int viewportWidth, int viewportHeight, const std::string& elementTagLower) const {
+  return getInlineOrSheetLength("max-width", className, id, styleAttr, viewportWidth, viewportHeight, elementTagLower);
 }
 
 int CssParser::getMinWidth(const std::string& className, const std::string& id, const std::string& styleAttr,
-                           int viewportWidth, int viewportHeight) const {
-  return getInlineOrSheetLength("min-width", className, id, styleAttr, viewportWidth, viewportHeight);
+                           int viewportWidth, int viewportHeight, const std::string& elementTagLower) const {
+  return getInlineOrSheetLength("min-width", className, id, styleAttr, viewportWidth, viewportHeight, elementTagLower);
 }
 
 int CssParser::getMaxHeight(const std::string& className, const std::string& id, const std::string& styleAttr,
-                            int viewportWidth, int viewportHeight) const {
-  return getInlineOrSheetLength("max-height", className, id, styleAttr, viewportWidth, viewportHeight);
+                            int viewportWidth, int viewportHeight, const std::string& elementTagLower) const {
+  return getInlineOrSheetLength("max-height", className, id, styleAttr, viewportWidth, viewportHeight, elementTagLower);
 }
 
 int CssParser::getMinHeight(const std::string& className, const std::string& id, const std::string& styleAttr,
-                            int viewportWidth, int viewportHeight) const {
-  return getInlineOrSheetLength("min-height", className, id, styleAttr, viewportWidth, viewportHeight);
+                            int viewportWidth, int viewportHeight, const std::string& elementTagLower) const {
+  return getInlineOrSheetLength("min-height", className, id, styleAttr, viewportWidth, viewportHeight, elementTagLower);
 }
 
 void CssParser::noteBodyHtmlTextAlign(const std::string& selectorRaw, const CssProperties& props) {

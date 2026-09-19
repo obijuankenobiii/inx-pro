@@ -93,6 +93,58 @@ std::string lower(std::string value) {
   return value;
 }
 
+// Compare labels the way readers expect: "Volume 2" comes before
+// "Volume 10".  Numeric runs are compared by value while the surrounding
+// text remains case-insensitive.
+int naturalCompare(const std::string& left, const std::string& right) {
+  size_t leftPos = 0;
+  size_t rightPos = 0;
+  while (leftPos < left.size() && rightPos < right.size()) {
+    const unsigned char leftChar = static_cast<unsigned char>(left[leftPos]);
+    const unsigned char rightChar = static_cast<unsigned char>(right[rightPos]);
+    if (std::isdigit(leftChar) && std::isdigit(rightChar)) {
+      const size_t leftRunStart = leftPos;
+      const size_t rightRunStart = rightPos;
+      while (leftPos < left.size() &&
+             std::isdigit(static_cast<unsigned char>(left[leftPos]))) {
+        ++leftPos;
+      }
+      while (rightPos < right.size() &&
+             std::isdigit(static_cast<unsigned char>(right[rightPos]))) {
+        ++rightPos;
+      }
+
+      size_t leftSignificant = leftRunStart;
+      size_t rightSignificant = rightRunStart;
+      while (leftSignificant + 1 < leftPos && left[leftSignificant] == '0') ++leftSignificant;
+      while (rightSignificant + 1 < rightPos && right[rightSignificant] == '0') ++rightSignificant;
+
+      const size_t leftDigits = leftPos - leftSignificant;
+      const size_t rightDigits = rightPos - rightSignificant;
+      if (leftDigits != rightDigits) return leftDigits < rightDigits ? -1 : 1;
+
+      const int digitsComparison = left.compare(leftSignificant, leftDigits,
+                                                right, rightSignificant, rightDigits);
+      if (digitsComparison != 0) return digitsComparison < 0 ? -1 : 1;
+
+      // Equal numeric values: prefer the spelling with fewer leading zeroes.
+      const size_t leftRunLength = leftPos - leftRunStart;
+      const size_t rightRunLength = rightPos - rightRunStart;
+      if (leftRunLength != rightRunLength) return leftRunLength < rightRunLength ? -1 : 1;
+      continue;
+    }
+
+    const char leftLower = static_cast<char>(std::tolower(leftChar));
+    const char rightLower = static_cast<char>(std::tolower(rightChar));
+    if (leftLower != rightLower) return leftLower < rightLower ? -1 : 1;
+    ++leftPos;
+    ++rightPos;
+  }
+
+  if (leftPos == left.size() && rightPos == right.size()) return 0;
+  return leftPos == left.size() ? -1 : 1;
+}
+
 char firstLetter(const std::string& value) {
   for (const unsigned char c : value) {
     if (std::isalpha(c)) return static_cast<char>(std::toupper(c));
@@ -473,17 +525,22 @@ void Library::load() {
     if (sort == Sort::AuthorAZ || sort == Sort::AuthorZA) {
       const std::string leftAuthor = lower(left.author);
       const std::string rightAuthor = lower(right.author);
-      if (leftAuthor != rightAuthor) {
-        return sort == Sort::AuthorAZ ? leftAuthor < rightAuthor : leftAuthor > rightAuthor;
+      const int authorComparison = naturalCompare(leftAuthor, rightAuthor);
+      if (authorComparison != 0) {
+        return sort == Sort::AuthorAZ ? authorComparison < 0 : authorComparison > 0;
       }
     }
     if (sort == Sort::FolderAZ || sort == Sort::FolderZA) {
-      if (leftFolder != rightFolder) {
-        return sort == Sort::FolderAZ ? leftFolder < rightFolder : leftFolder > rightFolder;
+      const int folderComparison = naturalCompare(leftFolder, rightFolder);
+      if (folderComparison != 0) {
+        return sort == Sort::FolderAZ ? folderComparison < 0 : folderComparison > 0;
       }
     }
-    if (sort == Sort::TitleZA || sort == Sort::FolderZA || sort == Sort::AuthorZA) return leftTitle > rightTitle;
-    return leftTitle < rightTitle;
+    const int titleComparison = naturalCompare(leftTitle, rightTitle);
+    if (sort == Sort::TitleZA || sort == Sort::FolderZA || sort == Sort::AuthorZA) {
+      return titleComparison > 0;
+    }
+    return titleComparison < 0;
   });
   resetViews();
   thumb.setRoot(path == "/" && !allBooksMode);
