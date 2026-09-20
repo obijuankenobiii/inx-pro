@@ -176,6 +176,14 @@ std::string lower(std::string value) {
   return value;
 }
 
+std::string formatSeriesPosition(std::string value) {
+  const size_t decimal = value.find('.');
+  if (decimal == std::string::npos) return value;
+  while (value.size() > decimal + 1 && value.back() == '0') value.pop_back();
+  if (value.size() == decimal + 1) value.pop_back();
+  return value;
+}
+
 // Compare labels the way readers expect: "Volume 2" comes before
 // "Volume 10".  Numeric runs are compared by value while the surrounding
 // text remains case-insensitive.
@@ -318,7 +326,7 @@ Library::Library(GfxRenderer& renderer, MappedInputManager& mappedInput, std::st
             [this](const int index, const bool longPress) { select(index, longPress); },
             [this](const LibraryIndex::Book& book) { return isFavorite(book); },
             [this](const int x, const int y) { routeMenuAction(navigation::Menu::handleTap(x, y)); },
-            [this](const LibraryIndex::Book& group, const int limit) { return pluginGroupCovers(group, limit); }) {}
+            [this](const LibraryIndex::Book& group, const int limit) { return groupCovers(group, limit); }) {}
 
 void Library::onEnter() {
   Page::onEnter();
@@ -349,15 +357,68 @@ void Library::onEnter() {
   popupBook = -1;
   folderDeleteConfirm = false;
   sidebarOpen = false;
-  stateFilter = pluginMode_ ? StateFilter::Plugin : StateFilter::None;
+  stateFilter = StateFilter::None;
   activePluginGroup_.clear();
   metadataGroupKey_.clear();
   metadataIndexAvailable_ = false;
   sidebarScrollOffset_ = 0;
-  allBooksMode = !pluginMode_ && path == "/" && SETTINGS.libraryViewMode == SystemSetting::LIBRARY_VIEW_BOOKS;
-  if (path != "/" && SETTINGS.libraryViewMode != SystemSetting::LIBRARY_VIEW_FOLDERS) {
-    SETTINGS.libraryViewMode = SystemSetting::LIBRARY_VIEW_FOLDERS;
-    SETTINGS.saveToFile();
+  allBooksMode = false;
+
+  if (path == "/" && !pluginMode_ && SETTINGS.libraryViewMode == SystemSetting::LIBRARY_VIEW_PLUGIN) {
+    PluginManager::LibraryMenuLink savedPluginMenu;
+    if (PluginManager::findLibraryMenuPlugin(savedPluginMenu)) {
+      pluginMenu_ = std::move(savedPluginMenu);
+      pluginMode_ = true;
+    } else {
+      SETTINGS.libraryViewMode = SystemSetting::LIBRARY_VIEW_FOLDERS;
+      SETTINGS.saveToFile();
+    }
+  }
+
+  if (pluginMode_) {
+    stateFilter = StateFilter::Plugin;
+    if (SETTINGS.libraryViewMode != SystemSetting::LIBRARY_VIEW_PLUGIN) {
+      SETTINGS.libraryViewMode = SystemSetting::LIBRARY_VIEW_PLUGIN;
+      SETTINGS.saveToFile();
+    }
+  } else if (path != "/") {
+    if (SETTINGS.libraryViewMode != SystemSetting::LIBRARY_VIEW_FOLDERS) {
+      SETTINGS.libraryViewMode = SystemSetting::LIBRARY_VIEW_FOLDERS;
+      SETTINGS.saveToFile();
+    }
+  } else {
+    switch (SETTINGS.libraryViewMode) {
+      case SystemSetting::LIBRARY_VIEW_BOOKS:
+        allBooksMode = true;
+        break;
+      case SystemSetting::LIBRARY_VIEW_FAVORITES:
+        stateFilter = StateFilter::Favorites;
+        break;
+      case SystemSetting::LIBRARY_VIEW_READING:
+        stateFilter = StateFilter::Reading;
+        break;
+      case SystemSetting::LIBRARY_VIEW_FINISHED:
+        stateFilter = StateFilter::Finished;
+        break;
+      case SystemSetting::LIBRARY_VIEW_AUTHORS:
+        stateFilter = StateFilter::Metadata;
+        metadataKind_ = MetadataIndex::Kind::Authors;
+        break;
+      case SystemSetting::LIBRARY_VIEW_TAGS:
+        stateFilter = StateFilter::Metadata;
+        metadataKind_ = MetadataIndex::Kind::Tags;
+        break;
+      case SystemSetting::LIBRARY_VIEW_SERIES:
+        stateFilter = StateFilter::Metadata;
+        metadataKind_ = MetadataIndex::Kind::Series;
+        break;
+      default:
+        if (SETTINGS.libraryViewMode != SystemSetting::LIBRARY_VIEW_FOLDERS) {
+          SETTINGS.libraryViewMode = SystemSetting::LIBRARY_VIEW_FOLDERS;
+          SETTINGS.saveToFile();
+        }
+        break;
+    }
   }
   load();
 }
@@ -477,7 +538,8 @@ void Library::load() {
           book.author = std::move(entry.author);
           book.folder = parent(book.path);
           if (metadataKind_ == MetadataIndex::Kind::Series) {
-            const std::string position = entry.order.empty() ? std::to_string(i + 1) : entry.order;
+            const std::string position = entry.order.empty() ? std::to_string(i + 1)
+                                                             : formatSeriesPosition(entry.order);
             book.badge = "#" + position + "/" + std::to_string(group.count);
           }
           items.push_back(std::move(book));
@@ -846,20 +908,49 @@ void Library::content() {
   }
 }
 
-std::vector<std::string> Library::pluginGroupCovers(const LibraryIndex::Book& group, const int limit) const {
+std::vector<std::string> Library::groupCovers(const LibraryIndex::Book& group, const int limit) const {
   std::vector<std::string> covers;
-  if (stateFilter != StateFilter::Plugin || group.type != LibraryIndex::Book::Type::FOLDER || limit <= 0) {
+  if (group.type != LibraryIndex::Book::Type::FOLDER || limit <= 0) {
     return covers;
   }
-  const auto booksForGroup = pluginBooksByGroup_.find(group.path);
-  if (booksForGroup == pluginBooksByGroup_.end()) return covers;
-  const char* names[] = {"cover.jpg", "thumb.jpg", "cover.bmp", "thumb.png", "thumb.bmp"};
-  for (const LibraryIndex::Book& book : booksForGroup->second) {
-    const std::string directory = dataPath(book.path);
+
+  if (stateFilter == StateFilter::Plugin) {
+    const auto booksForGroup = pluginBooksByGroup_.find(group.path);
+    if (booksForGroup == pluginBooksByGroup_.end()) return covers;
+    const char* names[] = {"cover.jpg", "thumb.jpg", "cover.bmp", "thumb.png", "thumb.bmp"};
+    for (const LibraryIndex::Book& book : booksForGroup->second) {
+      const std::string directory = dataPath(book.path);
+      for (const char* name : names) {
+        const std::string coverPath = directory + "/" + name;
+        if (!SdMan.exists(coverPath.c_str())) continue;
+        covers.push_back(coverPath);
+        break;
+      }
+      if (static_cast<int>(covers.size()) >= limit) break;
+    }
+    return covers;
+  }
+
+  if (stateFilter != StateFilter::Metadata ||
+      (metadataKind_ != MetadataIndex::Kind::Authors && metadataKind_ != MetadataIndex::Kind::Series &&
+       metadataKind_ != MetadataIndex::Kind::Tags)) {
+    return covers;
+  }
+  const auto metadataKey = metadataKeyByGroup_.find(group.path);
+  if (metadataKey == metadataKeyByGroup_.end()) return covers;
+
+  MetadataIndex::Group groupIndex;
+  if (!MetadataIndex::findGroup(metadataKind_, metadataKey->second, groupIndex)) return covers;
+  std::vector<MetadataIndex::Entry> entries;
+  if (!MetadataIndex::loadGroup(metadataKind_, groupIndex, entries, 64)) return covers;
+
+  const char* names[] = {"thumb.jpg", "thumb.png", "thumb.bmp"};
+  for (const MetadataIndex::Entry& entry : entries) {
+    const std::string directory = dataPath(entry.path);
     for (const char* name : names) {
-      const std::string coverPath = directory + "/" + name;
-      if (!SdMan.exists(coverPath.c_str())) continue;
-      covers.push_back(coverPath);
+      const std::string thumbnailPath = directory + "/" + name;
+      if (!SdMan.exists(thumbnailPath.c_str())) continue;
+      covers.push_back(thumbnailPath);
       break;
     }
     if (static_cast<int>(covers.size()) >= limit) break;
@@ -1310,6 +1401,10 @@ bool Library::handleSidebarInput() {
   } else if (item == 1 || item == 2 || item == 3) {
     stateFilter = item == 1 ? StateFilter::Favorites
                             : (item == 2 ? StateFilter::Reading : StateFilter::Finished);
+    SETTINGS.libraryViewMode = item == 1 ? SystemSetting::LIBRARY_VIEW_FAVORITES
+                                         : (item == 2 ? SystemSetting::LIBRARY_VIEW_READING
+                                                      : SystemSetting::LIBRARY_VIEW_FINISHED);
+    SETTINGS.saveToFile();
     pluginMode_ = false;
     metadataGroupKey_.clear();
     allBooksMode = false;
@@ -1323,6 +1418,10 @@ bool Library::handleSidebarInput() {
   } else if (item >= 4 && item <= 6) {
     metadataKind_ = item == 4 ? MetadataIndex::Kind::Authors
                               : (item == 5 ? MetadataIndex::Kind::Tags : MetadataIndex::Kind::Series);
+    SETTINGS.libraryViewMode = item == 4 ? SystemSetting::LIBRARY_VIEW_AUTHORS
+                                         : (item == 5 ? SystemSetting::LIBRARY_VIEW_TAGS
+                                                      : SystemSetting::LIBRARY_VIEW_SERIES);
+    SETTINGS.saveToFile();
     metadataGroupKey_.clear();
     metadataIndexAvailable_ = false;
     stateFilter = StateFilter::Metadata;
@@ -1345,6 +1444,8 @@ bool Library::handleSidebarInput() {
     pluginMenu_ = pluginMenu;
     pluginMode_ = true;
     stateFilter = StateFilter::Plugin;
+    SETTINGS.libraryViewMode = SystemSetting::LIBRARY_VIEW_PLUGIN;
+    SETTINGS.saveToFile();
     path = "/";
     activePluginGroup_.clear();
     allBooksMode = false;

@@ -61,7 +61,7 @@ class LocalServer {
   void onWebSocketEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t length);
   static void wsEventCallback(uint8_t num, WStype_t type, uint8_t* payload, size_t length);
 
-  void scanFiles(const char* path, const std::function<void(FileInfo)>& callback) const;
+  void scanFiles(const char* path, const std::function<void(FileInfo)>& callback, bool includeHidden = false) const;
   String formatFileSize(size_t bytes) const;
   bool isEpubFile(const String& filename) const;
 

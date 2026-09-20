@@ -478,7 +478,11 @@ void loop() {
   }
 
   if (currentActivity && currentActivity->skipLoopDelay()) {
-    yield();
+    // Server activities stay continuously ready while polling sockets. A bare
+    // yield() can keep loopTask running and starve IDLE0, which trips the task
+    // watchdog during sustained Wi-Fi transfers. Block briefly so idle and
+    // network system tasks get scheduled.
+    delay(1);
   } else {
     delay(10);
   }

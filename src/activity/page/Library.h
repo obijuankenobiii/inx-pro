@@ -152,5 +152,5 @@ class Library final : public Page {
   bool handleSidebarInput();
   bool handleSidebarTap();
   void drawSidebar() const;
-  std::vector<std::string> pluginGroupCovers(const LibraryIndex::Book& group, int limit) const;
+  std::vector<std::string> groupCovers(const LibraryIndex::Book& group, int limit) const;
 };

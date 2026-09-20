@@ -280,12 +280,6 @@ void Carousel::render(const int index, const int x, const int y, const int width
   const auto& books = RECENT_BOOKS.getBooks();
   const size_t count = visibleBookCount(books, hideFirst);
   if (count == 0) {
-    const int coverWidth = std::min(210, std::max(40, width - 30));
-    const int coverHeight = std::min(318, std::max(40, height - 22));
-    const int coverX = x + (width - coverWidth) / 2;
-    const int coverY = y + (height - coverHeight) / 2;
-    renderer_.rectangle.fill(coverX, coverY, coverWidth, coverHeight, false);
-    renderer_.rectangle.render(coverX, coverY, coverWidth, coverHeight, true);
     renderer_.text.centered(MONTSERRAT_12_FONT_ID, content.y + content.height / 2, "No recent");
     return;
   }
@@ -420,6 +414,10 @@ void Carousel::preview(const int x, const int y, const int width, const int heig
   renderBackground(x, y, width, height, background);
   const ContentArea content = contentArea(y, height, showLabel);
   if (showLabel) renderLabel(x, y, "Continue Reading", labelColor);
+  if (RECENT_BOOKS.getBooks().empty()) {
+    renderer_.text.centered(MONTSERRAT_12_FONT_ID, content.y + content.height / 2, "No recent");
+    return;
+  }
   if (style == HomeTheme::CarouselStyle::Left) {
     previewLeft(x, content.y, width, content.height, shadowStyle, showProgress);
     return;

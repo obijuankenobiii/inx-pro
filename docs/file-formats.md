@@ -8,7 +8,7 @@ files:
 
 ```text
 lang/<langcode>/translate.yml
-lang/<langcode>/hyphenation.bin   # optional hypher-generated trie
+lang/<langcode>/hyphenation.bin   # optional compiled Liang pattern trie
 fonts/lang/<langcode>/<font>.bin
 ```
 

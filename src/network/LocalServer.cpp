@@ -1004,7 +1004,8 @@ void LocalServer::handleDeviceIdentityCardImage() const {
   sendIdentityImage(server.get(), DEVICE_IDENTITY_CARD, "image/jpeg");
 }
 
-void LocalServer::scanFiles(const char* path, const std::function<void(FileInfo)>& callback) const {
+void LocalServer::scanFiles(const char* path, const std::function<void(FileInfo)>& callback,
+                            const bool includeHidden) const {
   FsFile root = SdMan.open(path);
   if (!root) {
     INX_SERIAL.printf("[%lu] [WEB] Failed to open directory: %s\n", millis(), path);
@@ -1025,9 +1026,9 @@ void LocalServer::scanFiles(const char* path, const std::function<void(FileInfo)
     file.getName(name, sizeof(name));
     auto fileName = String(name);
 
-    bool shouldHide = fileName.startsWith(".");
+    bool shouldHide = !includeHidden && fileName.startsWith(".");
 
-    if (!shouldHide) {
+    if (!includeHidden && !shouldHide) {
       for (size_t i = 0; i < HIDDEN_ITEMS_COUNT; i++) {
         if (fileName.equals(HIDDEN_ITEMS[i])) {
           shouldHide = true;
@@ -1198,6 +1199,8 @@ void LocalServer::handleFileListData() const {
     }
   }
 
+  const bool includeHidden = server->hasArg("showHidden") && server->arg("showHidden") == "1";
+
   server->setContentLength(CONTENT_LENGTH_UNKNOWN);
   server->send(200, "application/json", "");
   server->sendContent("[");
@@ -1225,7 +1228,7 @@ void LocalServer::handleFileListData() const {
       seenFirst = true;
     }
     server->sendContent(output);
-  });
+  }, includeHidden);
   server->sendContent("]");
 
   server->sendContent("");

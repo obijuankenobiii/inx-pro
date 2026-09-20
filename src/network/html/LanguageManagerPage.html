@@ -239,8 +239,8 @@
           <div id="languageStep5" class="wizard-panel" hidden>
             <section class="card">
               <h2>Optional hyphenation</h2>
-              <p class="hint">Upload a hypher-generated binary trie. It is validated in the browser and copied unchanged as <code>hyphenation.bin</code>.</p>
-              <input id="hyphenationFile" type="file" accept=".bin,.trie.bin">
+              <p class="hint">Download the plain text TeX pattern file for this language from <a href="https://ftp.up.pt/pub/CTAN/language/hyph-utf8/tex/patterns/txt/" target="_blank" rel="noopener noreferrer">CTAN’s hyphenation patterns</a>, then select the downloaded <code>.pat.txt</code> file below. Choose a pattern file matching this language. Patterns separated by spaces or lines and <code>%</code> comments are supported; the browser converts the file for the reader. Hunspell word lists (<code>.dic</code>) are not pattern files. Existing binary tries (<code>.bin</code>) are also accepted.</p>
+              <input id="hyphenationFile" type="file" accept=".txt,.pat,.bin,text/plain,application/octet-stream">
             </section>
           </div>
 
@@ -892,14 +892,89 @@
     }
     async function prepareHyphenationFile(file) {
       if (!file) return null;
-      const bytes = await file.arrayBuffer();
-      if (bytes.byteLength < 8) throw new Error('Hyphenation file is too small.');
-      const view = new DataView(bytes);
-      const rootOffset = view.getUint32(0, false);
-      if (rootOffset < 4 || rootOffset >= bytes.byteLength) {
-        throw new Error('Invalid hypher trie: root offset is outside the file.');
+      if (/\.bin$/i.test(file.name)) {
+        const bytes = await file.arrayBuffer();
+        if (bytes.byteLength < 8) throw new Error('Hyphenation file is too small.');
+        const view = new DataView(bytes);
+        const isFibh = bytes.byteLength >= 12 && view.getUint32(0, false) === 0x46494248 && view.getUint16(4, true) === 1;
+        const rootOffset = view.getUint32(0, false);
+        if (!isFibh && (rootOffset < 4 || rootOffset >= bytes.byteLength)) {
+          throw new Error('Invalid trie. Upload a TeX pattern text file or a supported .bin trie.');
+        }
+        return new Blob([bytes], {type: 'application/octet-stream'});
       }
-      return new Blob([bytes], {type: 'application/octet-stream'});
+
+      const source = (await file.text()).replace(/^\uFEFF/, '');
+      const patternText = source.split(/\r?\n/).map(line => line.split('%', 1)[0]).join('\n')
+        .replace(/\\patterns\s*\{/g, ' ').replace(/\\endinput\b/g, ' ').replace(/[{}]/g, ' ');
+      const patterns = new Map();
+      let maxKeyLength = 0;
+      const encoder = new TextEncoder();
+      for (const token of patternText.split(/\s+/)) {
+        if (!token || token.includes('\\') || !/[0-9]/.test(token)) continue;
+        const chars = Array.from(token);
+        const keyChars = [];
+        const charScores = [0];
+        for (const ch of chars) {
+          if (/^[0-9]$/.test(ch)) charScores[charScores.length - 1] = Number(ch);
+          else {
+            const lowered = Array.from(ch.toLowerCase());
+            for (const lowerChar of lowered) {
+              keyChars.push(lowerChar);
+              charScores.push(0);
+            }
+          }
+        }
+        if (keyChars.length === 0) continue;
+        const key = encoder.encode(keyChars.join(''));
+        if (key.length > 255) continue;
+        const scores = [];
+        let charIndex = 0;
+        for (const ch of keyChars) {
+          scores.push(charScores[charIndex++]);
+          const byteWidth = encoder.encode(ch).length;
+          for (let i = 1; i < byteWidth; i++) scores.push(0);
+        }
+        scores.push(charScores[charScores.length - 1]);
+        const keyId = keyChars.join('');
+        const previous = patterns.get(keyId);
+        if (previous) {
+          for (let i = 0; i < scores.length; i++) previous.scores[i] = Math.max(previous.scores[i], scores[i]);
+        } else {
+          patterns.set(keyId, {key, scores});
+        }
+        maxKeyLength = Math.max(maxKeyLength, key.length);
+      }
+      if (patterns.size === 0) throw new Error('No Liang hyphenation patterns found. Choose a .pat.txt pattern file.');
+
+      const entries = Array.from(patterns.values()).sort((a, b) => {
+        const length = Math.min(a.key.length, b.key.length);
+        for (let i = 0; i < length; i++) if (a.key[i] !== b.key[i]) return a.key[i] - b.key[i];
+        return a.key.length - b.key.length;
+      });
+      const recordsLength = entries.reduce((sum, item) => sum + 2 + item.key.length * 2, 0);
+      const recordsOffset = 12 + entries.length * 4;
+      const totalLength = recordsOffset + recordsLength;
+      if (totalLength > 5 * 1024 * 1024) throw new Error('Compiled hyphenation patterns exceed the 5 MB package limit.');
+      const output = new Uint8Array(totalLength);
+      output.set([0x46, 0x49, 0x42, 0x48]);
+      const view = new DataView(output.buffer);
+      view.setUint16(4, 1, true);
+      output[6] = maxKeyLength;
+      output[7] = 0;
+      view.setUint32(8, entries.length, true);
+      let recordOffset = 0;
+      let recordCursor = recordsOffset;
+      entries.forEach((entry, index) => {
+        view.setUint32(12 + index * 4, recordOffset, true);
+        output[recordCursor++] = entry.key.length;
+        output.set(entry.key, recordCursor);
+        recordCursor += entry.key.length;
+        output.set(entry.scores, recordCursor);
+        recordCursor += entry.scores.length;
+        recordOffset = recordCursor - recordsOffset;
+      });
+      return new Blob([output], {type: 'application/octet-stream'});
     }
     async function buildLanguagePackage() {
       const regular = document.getElementById('languageFontRegular').files[0];

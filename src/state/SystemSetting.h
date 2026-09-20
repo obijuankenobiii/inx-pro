@@ -298,8 +298,14 @@ class SystemSetting {
   enum LIBRARY_VIEW_MODE {
     LIBRARY_VIEW_FOLDERS = 0,  ///< Folder/group browser
     LIBRARY_VIEW_BOOKS = 1,    ///< Flat book list
-    LIBRARY_VIEW_TAGS = 2,     ///< Tag collections
-    LIBRARY_VIEW_SHELF = 3,    ///< Cover-first shelf
+    LIBRARY_VIEW_TAGS = 2,     ///< Tag groups in the Library sidebar
+    LIBRARY_VIEW_SHELF = 3,    ///< Legacy reserved value; restored as folders
+    LIBRARY_VIEW_FAVORITES = 4,
+    LIBRARY_VIEW_READING = 5,
+    LIBRARY_VIEW_FINISHED = 6,
+    LIBRARY_VIEW_AUTHORS = 7,
+    LIBRARY_VIEW_SERIES = 8,
+    LIBRARY_VIEW_PLUGIN = 9,
     LIBRARY_VIEW_MODE_COUNT
   };
 
@@ -377,7 +383,7 @@ class SystemSetting {
   uint8_t refreshOnLoadSync = 0;
   uint8_t refreshOnLoadStatistics = 0;
   uint8_t libraryMode = LIBRARY_GRID;              ///< Library browser display mode
-  uint8_t libraryViewMode = LIBRARY_VIEW_FOLDERS;  ///< Last Library browser content view
+  uint8_t libraryViewMode = LIBRARY_VIEW_FOLDERS;  ///< Last selected Library sidebar view
   /** Library sort mode persisted when leaving Library (0=Title A–Z … 5=Read Z–A). */
   uint8_t librarySortMode = 0;
   /** Hide book titles below covers in Library thumbnail view. */

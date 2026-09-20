@@ -1883,9 +1883,6 @@ bool EpubActivity::composePreparedForwardPage() {
   preparedPage_.imagePlaceholder = imagePlaceholder;
   section->currentPage = savedPage;
 
-  INX_SERIAL.printf("[%lu] [EPA-PREP] ready spine=%d page=%d images=%d refresh=%d\n", millis(),
-                    preparedPage_.spineIndex, preparedPage_.pageIndex, hasImages ? 1 : 0,
-                    static_cast<int>(preparedPage_.refreshMode));
   return true;
 }
 
@@ -1919,8 +1916,6 @@ void EpubActivity::runIdleSecondNextPage() {
   const bool cached = section->preloadPage(targetPage);
   preloadedPageSpineIndex_ = currentSpineIndex;
   preloadedPageIndex_ = targetPage;
-  INX_SERIAL.printf("[%lu] [EPA-PREP] page-cache spine=%d page=%d ok=%d\n", millis(), currentSpineIndex,
-                    targetPage, cached ? 1 : 0);
   yield();
 }
 
@@ -2058,8 +2053,6 @@ bool EpubActivity::presentPreparedForwardPage() {
   invalidatePreparedPage();
   scheduleIdlePreparedPage();
 
-  INX_SERIAL.printf("[%lu] [EPA-PREP] displayed spine=%d page=%d\n", millis(), currentSpineIndex,
-                    section->currentPage);
   return true;
 }
 
@@ -2120,8 +2113,6 @@ void EpubActivity::jumpToPercent(int percent) {
  * @param forward True for forward page turn, false for backward
  */
 bool EpubActivity::pageTurn(bool forward) {
-  INX_SERIAL.printf("[%lu] [EPA] pageTurn forward=%d before spine=%d page=%d next=%d\n", millis(), forward ? 1 : 0,
-                currentSpineIndex, section ? section->currentPage : -1, nextPageNumber);
   if (!epub) {
     updateRequired = true;
     return false;
@@ -2186,8 +2177,6 @@ bool EpubActivity::pageTurn(bool forward) {
 
   startPageTimer();
   updateRequired = true;
-  INX_SERIAL.printf("[%lu] [EPA] pageTurn after spine=%d page=%d next=%d reload=%d\n", millis(), currentSpineIndex,
-                section ? section->currentPage : -1, nextPageNumber, needSectionReset ? 1 : 0);
   return false;
 }
 

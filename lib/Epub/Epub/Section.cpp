@@ -27,10 +27,10 @@
 namespace {
 // Heading font IDs are stored per h1-h6 semantic size for outline fonts, and heading/drop-cap layout changed.
 // Image bounds now match the aspect-fitted raster dimensions, which also changes cached page layout.
-constexpr uint8_t SECTION_FILE_VERSION = 99;
+constexpr uint8_t SECTION_FILE_VERSION = 100;
 constexpr uint32_t HEADER_SIZE = sizeof(uint8_t) + sizeof(int) + sizeof(float) + sizeof(float) + sizeof(bool) +
                                  sizeof(uint8_t) + sizeof(uint16_t) + sizeof(uint16_t) + sizeof(bool) + sizeof(bool) +
-                                 sizeof(bool) + sizeof(uint16_t) + sizeof(uint32_t);
+                                 sizeof(bool) + sizeof(uint32_t) + sizeof(uint16_t) + sizeof(uint32_t);
 constexpr uint16_t MAX_CACHED_PAGE_OFFSETS = 2048;
 }
 
@@ -116,6 +116,7 @@ void Section::writeSectionFileHeader(const int fontId, const float lineCompressi
   serialization::writePod(file, hyphenationEnabled);
   serialization::writePod(file, respectCssParagraphIndent);
   serialization::writePod(file, bionicReadingEnabled);
+  serialization::writePod(file, Hyphenator::cacheSignature());
   serialization::writePod(file, pageCount);
   serialization::writePod(file, static_cast<uint32_t>(0));
 }
@@ -145,6 +146,8 @@ bool Section::loadSectionFile(const int fontId, const float lineCompression, con
   pageOffsets.clear();
   clearPageCache();
 
+  if (epub) Hyphenator::setPreferredLanguage(epub->getLanguage());
+
   if (!SdMan.openFileForRead("SCT", filePath, file)) return false;
 
   uint8_t version;
@@ -165,6 +168,7 @@ bool Section::loadSectionFile(const int fontId, const float lineCompression, con
   bool storedHyphenationEnabled;
   bool storedRespectCssIndent = false;
   bool storedBionicReadingEnabled = false;
+  uint32_t storedHyphenationSignature = 0;
   uint16_t storedPageCount;
   uint32_t storedLutOffset;
 
@@ -178,6 +182,7 @@ bool Section::loadSectionFile(const int fontId, const float lineCompression, con
   serialization::readPod(file, storedHyphenationEnabled);
   serialization::readPod(file, storedRespectCssIndent);
   serialization::readPod(file, storedBionicReadingEnabled);
+  serialization::readPod(file, storedHyphenationSignature);
   serialization::readPod(file, storedPageCount);
   serialization::readPod(file, storedLutOffset);
 
@@ -192,6 +197,7 @@ bool Section::loadSectionFile(const int fontId, const float lineCompression, con
   settingsMatch &= (storedHyphenationEnabled == hyphenationEnabled);
   settingsMatch &= (storedRespectCssIndent == respectCssParagraphIndent);
   settingsMatch &= (storedBionicReadingEnabled == bionicReadingEnabled);
+  settingsMatch &= (storedHyphenationSignature == Hyphenator::cacheSignature());
 
   if (!settingsMatch) {
     file.close();
@@ -254,6 +260,7 @@ bool Section::loadSectionFileForPreview(int* outFontId) {
   bool storedHyphenationEnabled = false;
   bool storedRespectCssIndent = false;
   bool storedBionicReadingEnabled = false;
+  uint32_t storedHyphenationSignature = 0;
   uint16_t storedPageCount = 0;
   uint32_t storedLutOffset = 0;
 
@@ -267,6 +274,7 @@ bool Section::loadSectionFileForPreview(int* outFontId) {
   serialization::readPod(file, storedHyphenationEnabled);
   serialization::readPod(file, storedRespectCssIndent);
   serialization::readPod(file, storedBionicReadingEnabled);
+  serialization::readPod(file, storedHyphenationSignature);
   serialization::readPod(file, storedPageCount);
   serialization::readPod(file, storedLutOffset);
 
@@ -307,6 +315,7 @@ std::unique_ptr<Page> Section::loadCachedPage(const std::string& cachePath, cons
   bool storedHyphenationEnabled = false;
   bool storedRespectCssIndent = false;
   bool storedBionicReadingEnabled = false;
+  uint32_t storedHyphenationSignature = 0;
   uint16_t storedPageCount = 0;
   uint32_t storedLutOffset = 0;
 
@@ -320,6 +329,7 @@ std::unique_ptr<Page> Section::loadCachedPage(const std::string& cachePath, cons
   serialization::readPod(sectionFile, storedHyphenationEnabled);
   serialization::readPod(sectionFile, storedRespectCssIndent);
   serialization::readPod(sectionFile, storedBionicReadingEnabled);
+  serialization::readPod(sectionFile, storedHyphenationSignature);
   serialization::readPod(sectionFile, storedPageCount);
   serialization::readPod(sectionFile, storedLutOffset);
 

@@ -3,6 +3,8 @@ let pendingRename = null;
 let pendingDelete = null;
 let pendingBulkDelete = false;
 let toastTimer = null;
+const SHOW_HIDDEN_STORAGE_KEY = "inx-files-show-hidden";
+let showHiddenFiles = false;
 
 const ICONS = {
   folder:
@@ -611,7 +613,9 @@ async function hydrate() {
   document.getElementById("directory-breadcrumbs").innerHTML = formatBreadcrumb(currentPath);
   const list = document.getElementById("file-list");
   try {
-    const response = await fetch("/api/files?path=" + encodeURIComponent(currentPath));
+    const response = await fetch(
+      "/api/files?path=" + encodeURIComponent(currentPath) + "&showHidden=" + (showHiddenFiles ? "1" : "0")
+    );
     if (!response.ok) throw new Error("Unable to load folder");
     const items = await response.json();
     items.sort((a, b) =>
@@ -758,6 +762,18 @@ function initModals() {
 function init() {
   initDropzone();
   initModals();
+  const hiddenToggle = document.getElementById("show-hidden-toggle");
+  try {
+    showHiddenFiles = localStorage.getItem(SHOW_HIDDEN_STORAGE_KEY) === "1";
+  } catch (_) {}
+  hiddenToggle.checked = showHiddenFiles;
+  hiddenToggle.addEventListener("change", () => {
+    showHiddenFiles = hiddenToggle.checked;
+    try {
+      localStorage.setItem(SHOW_HIDDEN_STORAGE_KEY, showHiddenFiles ? "1" : "0");
+    } catch (_) {}
+    hydrate();
+  });
   document.getElementById("new-folder-btn").addEventListener("click", openFolderModal);
   document.getElementById("cover-upload-btn").addEventListener("click", openCoverModal);
   document.getElementById("folder-submit").addEventListener("click", createFolder);
