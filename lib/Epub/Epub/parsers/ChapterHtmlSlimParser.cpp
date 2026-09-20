@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstring>
 #include <exception>
 #include <vector>
@@ -825,26 +826,27 @@ void ChapterHtmlSlimParser::processImageElement(const char** atts) {
   int actualW = 0, actualH = 0;
   const uint8_t format = imageFormat(cacheImgPath);
   bool imageAvailable = imgWidth > 0 && imgHeight > 0;
-  // A CSS rule may provide only one dimension, e.g. the book's ornament images use
-  // height: 1.5em. We still need the intrinsic dimensions to derive the missing side;
-  // treating the partial CSS size as a complete image size loses the aspect ratio.
-  if (!imageAvailable) {
-    if (epub.getImageMetadata(cacheImgPath, &actualW, &actualH, format) && actualW > 0 && actualH > 0) {
-      imageAvailable = true;
-    } else {
+  const bool shouldProbeHighQualityGeometry = imgWidth > 100 && imgHeight > 100 &&
+                                              !StringUtils::checkFileExtension(cacheImgPath, ".png");
+  bool needsHighQualityGeometry = shouldProbeHighQualityGeometry;
+  // Intrinsic dimensions complete one-sided CSS sizes. For large raster images,
+  // they also let PageImage use the height the high quality renderer actually fits.
+  bool hasIntrinsicDimensions = false;
+  if (!imageAvailable || needsHighQualityGeometry) {
+    hasIntrinsicDimensions =
+        epub.getImageMetadata(cacheImgPath, &actualW, &actualH, format) && actualW > 0 && actualH > 0;
+    if (!hasIntrinsicDimensions) {
       actualW = 0;
       actualH = 0;
-    }
-    if (!imageAvailable) {
       {
         EpubImagePrefetch::IoLock ioLock;
         if (SdMan.exists(cacheImgPath.c_str())) {
-          imageAvailable = getImageDimensions(cacheImgPath, &actualW, &actualH);
+          hasIntrinsicDimensions = getImageDimensions(cacheImgPath, &actualW, &actualH);
         }
       }
-      if (!imageAvailable && epub.probeImageDimensions(fullInternalPath, &actualW, &actualH)) {
+      if (!hasIntrinsicDimensions && epub.probeImageDimensions(fullInternalPath, &actualW, &actualH)) {
         epub.setImageMetadata(cacheImgPath, actualW, actualH, format, true);
-        imageAvailable = true;
+        hasIntrinsicDimensions = true;
       }
     }
   }
@@ -871,8 +873,15 @@ void ChapterHtmlSlimParser::processImageElement(const char** atts) {
   completeImageDimensions();
   imageAvailable = imgWidth > 0 && imgHeight > 0;
   if (!imageAvailable && ensureImageCached(fullInternalPath, cacheImgPath, &actualW, &actualH)) {
+    hasIntrinsicDimensions = actualW > 0 && actualH > 0;
     completeImageDimensions();
     imageAvailable = imgWidth > 0 && imgHeight > 0;
+  }
+  needsHighQualityGeometry = imgWidth > 100 && imgHeight > 100 &&
+                             !StringUtils::checkFileExtension(cacheImgPath, ".png");
+  if (imageAvailable && needsHighQualityGeometry && !hasIntrinsicDimensions &&
+      ensureImageCached(fullInternalPath, cacheImgPath, &actualW, &actualH)) {
+    hasIntrinsicDimensions = actualW > 0 && actualH > 0;
   }
 
   if (imageAvailable) {
@@ -902,6 +911,18 @@ void ChapterHtmlSlimParser::processImageElement(const char** atts) {
     if (imgHeight > viewportHeight) {
       imgWidth = (imgWidth * viewportHeight) / imgHeight;
       imgHeight = viewportHeight;
+    }
+
+    // ImageRender fits raster content inside its target bounds while preserving
+    // the source aspect ratio. Keep large image bounds in sync with that fitted
+    // size so high quality rendering does not leave a taller box above and below.
+    if (needsHighQualityGeometry && hasIntrinsicDimensions && imgWidth > 0 && imgHeight > 0) {
+      const float fitScale = std::min(static_cast<float>(imgWidth) / actualW,
+                                      static_cast<float>(imgHeight) / actualH);
+      const int fittedWidth = std::max(1, static_cast<int>(std::lround(actualW * fitScale)));
+      const int fittedHeight = std::max(1, static_cast<int>(std::lround(actualH * fitScale)));
+      imgWidth = fittedWidth;
+      imgHeight = fittedHeight;
     }
 
     if (imgWidth < 1) imgWidth = 1;

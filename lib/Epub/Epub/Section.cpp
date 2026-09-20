@@ -25,10 +25,9 @@
 #include "parsers/ChapterHtmlSlimParser.h"
 
 namespace {
-// Heading font IDs are now stored per h1-h6 semantic size for outline fonts.
-// Invalidate older section pages so cached headers are rebuilt with the new mapping.
-// Heading/drop-cap font selection and first-line drop-cap clearance affect cached layout.
-constexpr uint8_t SECTION_FILE_VERSION = 98;
+// Heading font IDs are stored per h1-h6 semantic size for outline fonts, and heading/drop-cap layout changed.
+// Image bounds now match the aspect-fitted raster dimensions, which also changes cached page layout.
+constexpr uint8_t SECTION_FILE_VERSION = 99;
 constexpr uint32_t HEADER_SIZE = sizeof(uint8_t) + sizeof(int) + sizeof(float) + sizeof(float) + sizeof(bool) +
                                  sizeof(uint8_t) + sizeof(uint16_t) + sizeof(uint16_t) + sizeof(bool) + sizeof(bool) +
                                  sizeof(bool) + sizeof(uint16_t) + sizeof(uint32_t);

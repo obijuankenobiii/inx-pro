@@ -151,19 +151,12 @@ void ReaderPresetsActivity::onEnter() {
   const int screenH = renderer.getScreenHeight();
   const int listTop = navigation::Menu::height + 20 + Page::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra;
   const int contentBottom = screenH - navigation::Menu::bottomHeight - 10;
+  listItemHeight_ = kListItemHeight;
   if (!presetsOnly_) {
     const int rows = rowCount();
     const int availableHeight = std::max(0, contentBottom - listTop);
-    const int minimumReadableRowHeight = renderer.text.getLineHeight(systemFontId()) + 8;
-    if (availableHeight >= rows * minimumReadableRowHeight) {
-      listItemHeight_ = std::max(1, availableHeight / std::max(1, rows));
-      itemsPerPage_ = rows;
-    } else {
-      listItemHeight_ = kListItemHeight;
-      itemsPerPage_ = std::max(1, availableHeight / listItemHeight_);
-    }
+    itemsPerPage_ = std::min(rows, std::max(1, availableHeight / listItemHeight_));
   } else {
-    listItemHeight_ = kListItemHeight;
     const int presetListTop = listTop - kAddPresetButtonRaise + listItemHeight_ + kPresetListGap;
     itemsPerPage_ = std::min(kPresetVisibleCount, std::max(1, (contentBottom - presetListTop) / listItemHeight_));
   }

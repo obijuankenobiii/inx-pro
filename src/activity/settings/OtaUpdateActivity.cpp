@@ -340,10 +340,15 @@ void OtaUpdateActivity::render() {
   } else if (state == WAITING_SD_SELECTION) {
     const int totalFiles = static_cast<int>(sdFirmwareFiles.size());
     if (totalFiles == 0) {
-      renderer.text.render(systemFontId(), 20, bodyTop, "No firmware .bin files found.", true,
-                           EpdFontFamily::BOLD);
-      renderer.text.render(systemFontId(), 20, bodyTop + 32, "Put .bin files in / or /firmware.",
-                           true, EpdFontFamily::REGULAR);
+      constexpr int lineGap = 8;
+      const int lineHeight = renderer.text.getLineHeight(systemFontId());
+      const int messageHeight = lineHeight * 2 + lineGap;
+      const int bodyBottom = screenHeight - 80;
+      const int messageTop = bodyTop + std::max(0, (bodyBottom - bodyTop - messageHeight) / 2);
+      renderer.text.centered(systemFontId(), messageTop, "No firmware .bin files found.", true,
+                             EpdFontFamily::BOLD);
+      renderer.text.centered(systemFontId(), messageTop + lineHeight + lineGap,
+                             "Put .bin files in / or /firmware.", true, EpdFontFamily::REGULAR);
       const auto labels = mappedInput.mapLabels("« Back", "", "", "");
     } else {
       const int listBottom = screenHeight - 44;
