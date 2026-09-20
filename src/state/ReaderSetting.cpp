@@ -325,7 +325,7 @@ bool ReaderSetting::loadFromFile() {
     if (++settingsRead >= fileSettingsCount) break;
 
     serialization::readPod(inputFile, pageAutoTurnSeconds);
-    if (pageAutoTurnSeconds > 60 || pageAutoTurnSeconds % 10 != 0) pageAutoTurnSeconds = 0;
+    if (pageAutoTurnSeconds > 180 || pageAutoTurnSeconds % 10 != 0) pageAutoTurnSeconds = 0;
     if (++settingsRead >= fileSettingsCount) break;
 
     serialization::readPod(inputFile, readerImageGrayscale);

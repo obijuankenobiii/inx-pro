@@ -106,15 +106,6 @@ const char* systemRefreshLabel() {
   return buf;
 }
 
-const char* systemAutoTurnLabel() {
-  static char buf[12];
-  if (READER_SETTINGS.pageAutoTurnSeconds == 0) {
-    return "Off";
-  }
-  snprintf(buf, sizeof(buf), "%u sec", READER_SETTINGS.pageAutoTurnSeconds);
-  return buf;
-}
-
 const char* dailyReadingGoalLabel() {
   static char buf[16];
   if (READER_SETTINGS.dailyReadingGoalMinutes == 0) return "Off";
@@ -185,7 +176,7 @@ void ReaderPresetsActivity::onEnter() {
 
 void ReaderPresetsActivity::onExit() { exitActivity(); }
 
-constexpr int kSystemFixedRowCount = 5;
+constexpr int kSystemFixedRowCount = 4;
 
 bool ReaderPresetsActivity::isSystemSettingRow(const int row) const {
   if (presetsOnly_) return false;
@@ -277,14 +268,10 @@ void ReaderPresetsActivity::render() {
         value = systemRefreshLabel();
         isToggle = false;
       } else if (systemLocalRow == 3) {
-        label = "Page Auto Turn";
-        value = systemAutoTurnLabel();
-        isToggle = false;
-      } else if (systemLocalRow == 4) {
         label = "Image Quality";
         value = readerQualityLabel(READER_SETTINGS.readerImageGrayscale);
         isToggle = false;
-      } else if (systemLocalRow == 5) {
+      } else if (systemLocalRow == 4) {
         label = "Daily Reading Goal";
         value = dailyReadingGoalLabel();
         isToggle = false;
@@ -432,18 +419,6 @@ void ReaderPresetsActivity::openSelectorForRow(const int row) {
     return;
   }
   if (systemLocalRow == 3) {
-    std::vector<std::string> options;
-    for (int sec = 0; sec <= 180; sec += 10) {
-      options.push_back(sec == 0 ? "Off" : (std::to_string(sec) + " sec"));
-    }
-    const int idx = READER_SETTINGS.pageAutoTurnSeconds / 10;
-    openGenericSelector("Page Auto Turn", std::move(options), idx, [](const int chosen) {
-      READER_SETTINGS.pageAutoTurnSeconds = static_cast<uint8_t>(chosen * 10);
-      READER_SETTINGS.saveToFile();
-    });
-    return;
-  }
-  if (systemLocalRow == 4) {
     openGenericSelector("Image Quality", {"Low", "Medium", "High"}, READER_SETTINGS.readerImageGrayscale,
                         [](const int chosen) {
                           READER_SETTINGS.readerImageGrayscale = static_cast<uint8_t>(chosen);
@@ -451,7 +426,7 @@ void ReaderPresetsActivity::openSelectorForRow(const int row) {
                         });
     return;
   }
-  if (systemLocalRow == 5) {
+  if (systemLocalRow == 4) {
     std::vector<std::string> options = {"Off"};
     for (int minutes = 5; minutes <= 120; minutes += 5) {
       options.push_back(std::to_string(minutes) + " min");

@@ -124,7 +124,7 @@ struct BookSettings {
 
   /**
    * @brief Page auto-turn interval in seconds
-   * @details Values: 0 = off, increments of 10 (10, 20, 30, 40, 50, 60)
+   * @details Values: 0 = off, increments of 10 up to 180 seconds
    */
   uint8_t pageAutoTurnSeconds = 0;
   uint8_t readerImageGrayscale = SystemSetting::READER_IMAGE_LOW;
@@ -216,7 +216,7 @@ struct BookSettings {
         refreshFrequency != 15 && refreshFrequency != 30) {
       refreshFrequency = 0;
     }
-    if (pageAutoTurnSeconds > 60 || pageAutoTurnSeconds % 10 != 0) {
+    if (pageAutoTurnSeconds > 180 || pageAutoTurnSeconds % 10 != 0) {
       pageAutoTurnSeconds = 0;
     }
     if (readerImageGrayscale >= SystemSetting::READER_IMAGE_QUALITY_COUNT) {
@@ -333,7 +333,7 @@ struct BookSettings {
 
     if (bytesAvailable >= offset + 1) {
       pageAutoTurnSeconds = data[offset++];
-      if (pageAutoTurnSeconds > 60 || pageAutoTurnSeconds % 10 != 0) {
+      if (pageAutoTurnSeconds > 180 || pageAutoTurnSeconds % 10 != 0) {
         pageAutoTurnSeconds = 0;
       }
     } else {

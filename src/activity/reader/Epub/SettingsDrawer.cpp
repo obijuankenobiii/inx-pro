@@ -523,6 +523,24 @@ void SettingsDrawer::setupMenu() {
     };
     menuItems.push_back(orientationEntry);
 
+    MenuEntry pageAutoTurnEntry;
+    pageAutoTurnEntry.item = MenuItem::PageAutoTurn;
+    pageAutoTurnEntry.group = GroupType::CONTROLS;
+    pageAutoTurnEntry.name = "Page Auto Turn";
+    pageAutoTurnEntry.getValueText = [](const BookSettings& s) -> const char* {
+      static char buf[12];
+      if (s.pageAutoTurnSeconds == 0) return "Off";
+      snprintf(buf, sizeof(buf), "%u sec", static_cast<unsigned>(s.pageAutoTurnSeconds));
+      return buf;
+    };
+    pageAutoTurnEntry.change = [](BookSettings& s, const int delta) {
+      const int current = s.pageAutoTurnSeconds / 10;
+      const int next = std::max(0, std::min(18, current + delta));
+      s.pageAutoTurnSeconds = static_cast<uint8_t>(next * 10);
+      s.markCustomSettings();
+    };
+    menuItems.push_back(pageAutoTurnEntry);
+
     MenuEntry bionicEntry;
     bionicEntry.item = MenuItem::BionicReading;
     bionicEntry.group = GroupType::CONTROLS;
@@ -1079,6 +1097,7 @@ bool SettingsDrawer::isDropdownItem(const MenuItem item) const {
       return FontManager::isOutlineFontFamilySlot(settings.fontFamily);
     case MenuItem::PresetPicker:
     case MenuItem::ReadingOrientation:
+    case MenuItem::PageAutoTurn:
     case MenuItem::ReadingGuideLines:
     case MenuItem::StatusBarLeft:
     case MenuItem::StatusBarMiddle:
@@ -1124,6 +1143,12 @@ void SettingsDrawer::openSelector(const int menuIndex) {
   } else if (item == MenuItem::ReadingOrientation) {
     selectorOptions_ = {"Portrait", "Landscape CW", "Inverted", "Landscape CCW"};
     current = settings.orientation;
+  } else if (item == MenuItem::PageAutoTurn) {
+    selectorOptions_.push_back("Off");
+    for (int seconds = 10; seconds <= 180; seconds += 10) {
+      selectorOptions_.push_back(std::to_string(seconds) + " sec");
+    }
+    current = settings.pageAutoTurnSeconds / 10;
   } else if (item == MenuItem::ReadingGuideLines) {
     selectorOptions_ = {"Off", "Grid", "Notebook"};
     current = settings.readingGuideLinesEnabled;
@@ -1226,6 +1251,9 @@ void SettingsDrawer::commitSelectorSelection() {
     setupMenu();
   } else if (item == MenuItem::ReadingOrientation) {
     settings.orientation = static_cast<uint8_t>(selectorSelected_);
+    settings.markCustomSettings();
+  } else if (item == MenuItem::PageAutoTurn) {
+    settings.pageAutoTurnSeconds = static_cast<uint8_t>(selectorSelected_ * 10);
     settings.markCustomSettings();
   } else if (item == MenuItem::ReadingGuideLines) {
     settings.readingGuideLinesEnabled = static_cast<uint8_t>(selectorSelected_);

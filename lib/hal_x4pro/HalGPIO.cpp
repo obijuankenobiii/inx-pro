@@ -7,6 +7,8 @@
 #include <BoardConfig.h>
 #include <HalGPIO.h>
 #include <Rtc.h>
+#include <PowerManager.h>
+#include <driver/gpio.h>
 #include <esp_sleep.h>
 #include <esp_system.h>
 
@@ -169,13 +171,19 @@ HalGPIO::MotionGesture HalGPIO::readMotionGesture(const uint8_t orientation, con
 }
 
 void HalGPIO::startDeepSleep() {
-  const auto& in = BoardConfig::ACTIVE.input;
-  const bool pressedLevel = in.powerActiveHigh ? HIGH : LOW;
-  while (digitalRead(in.power) == pressedLevel) {
-    delay(50);
+  const auto& power = BoardConfig::ACTIVE.power;
+  // Keep the battery and peripheral rails latched while deep sleep isolates GPIOs.
+  for (const int8_t pin : {power.latch0, power.latch1}) {
+    if (pin < 0) continue;
+    const auto gpioPin = static_cast<gpio_num_t>(pin);
+    gpio_hold_dis(gpioPin);
+    pinMode(pin, OUTPUT);
+    digitalWrite(pin, HIGH);
+    gpio_hold_en(gpioPin);
   }
-  esp_sleep_enable_ext1_wakeup(1ULL << in.power, in.powerActiveHigh ? ESP_EXT1_WAKEUP_ANY_HIGH : ESP_EXT1_WAKEUP_ANY_LOW);
-  esp_deep_sleep_start();
+  // The caller has already put the panel to sleep and shut down mounted storage.
+  freeink::PowerManager::powerDownRailsForSleep();
+  freeink::PowerManager::deepSleepUntilPowerButton();
 }
 
 int HalGPIO::getBatteryPercentage() const {

@@ -78,7 +78,6 @@ std::function<void()> deferredActivitySwitch;
 unsigned long t1 = 0;
 unsigned long t2 = 0;
 
-void verifyPowerButtonDuration();
 void waitForPowerRelease();
 void enterDeepSleep();
 void onGoToHome();
@@ -307,32 +306,6 @@ void onGoToPluginLibrary() {
   switchTo<Library>(render, input, "/", std::move(link));
 }
 
-/**
- * @brief Set up application.
- */
-void verifyPowerButtonDuration() {
-  if (SETTINGS.shortPwrBtn == SystemSetting::SHORT_PWRBTN::SLEEP) return;
-  const auto start = millis();
-  bool abort = false;
-  gpio.update();
-  while (!gpio.isPressed(HalGPIO::BTN_POWER) && millis() - start < 1000) {
-    delay(10);
-    gpio.update();
-  }
-
-  if (gpio.isPressed(HalGPIO::BTN_POWER)) {
-    while (gpio.isPressed(HalGPIO::BTN_POWER) && gpio.getHeldTime() < SETTINGS.getPowerButtonDuration()) {
-      delay(10);
-      gpio.update();
-    }
-    abort = gpio.getHeldTime() < SETTINGS.getPowerButtonDuration();
-  } else {
-    abort = true;
-  }
-
-  if (abort) gpio.startDeepSleep();
-}
-
 void waitForPowerRelease() {
   constexpr uint8_t kWakeDebounceSamples = 3;
   bool powerPressed = false;
@@ -353,6 +326,7 @@ void waitForPowerRelease() {
 void enterDeepSleep() {
   switchTo<SleepActivity>(render, input);
   display.deepSleep();
+  SdMan.shutdown();
   gpio.startDeepSleep();
 }
 
@@ -399,17 +373,10 @@ void setup() {
 
   setupDisplayAndFonts();
 
-  if (gpio.isUsbConnected()) {
-    INX_SERIAL.begin(115200);
-    unsigned long start = millis();
-    while (!INX_SERIAL && (millis() - start) < 3000) delay(10);
-  }
-
   switch (gpio.getWakeupReason()) {
-    case HalGPIO::WakeupReason::PowerButton:
-      verifyPowerButtonDuration();
-      break;
     case HalGPIO::WakeupReason::AfterUSBPower:
+      display.deepSleep();
+      SdMan.shutdown();
       gpio.startDeepSleep();
       break;
     default:

@@ -1665,13 +1665,13 @@ void EpubActivity::loop() {
     return;
   }
 
-  if (READER_SETTINGS.pageAutoTurnSeconds > 0 && (!navigation_ || !navigation_->isTocOpen()) && !settingsDrawerVisible) {
+  if (bookSettings.pageAutoTurnSeconds > 0 && (!navigation_ || !navigation_->isTocOpen()) && !settingsDrawerVisible) {
     if (lastAutoPageTurnTime == 0) {
       lastAutoPageTurnTime = millis();
     }
 
     unsigned long elapsed = millis() - lastAutoPageTurnTime;
-    if (elapsed >= (READER_SETTINGS.pageAutoTurnSeconds * 1000UL)) {
+    if (elapsed >= (bookSettings.pageAutoTurnSeconds * 1000UL)) {
       lastAutoPageTurnTime = millis();
       endPageTimer();
       (void)pageTurn(true);

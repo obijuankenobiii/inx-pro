@@ -77,7 +77,7 @@ class ReaderSetting {
 
   /**
    * @brief Page auto-turn interval in seconds
-   * @details Values: 0 = off, increments of 10 (10, 20, 30, 40, 50, 60)
+   * @details Values: 0 = off, increments of 10 up to 180 seconds
    */
   uint8_t pageAutoTurnSeconds = 0;
 
