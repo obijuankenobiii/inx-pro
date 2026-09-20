@@ -1206,87 +1206,12 @@ void LocalServer::handleFileListData() const {
   bool seenFirst = false;
   JsonDocument doc;
 
-  scanFiles(currentPath.c_str(), [this, &output, &doc, seenFirst, currentPath](const FileInfo& info) mutable {
+  scanFiles(currentPath.c_str(), [this, &output, &doc, &seenFirst](const FileInfo& info) {
     doc.clear();
     doc["name"] = info.name;
     doc["size"] = info.size;
     doc["isDirectory"] = info.isDirectory;
     doc["isEpub"] = info.isEpub;
-    if (info.isDirectory) {
-      String folderPath = currentPath;
-      if (folderPath == "/") {
-        folderPath += info.name;
-      } else {
-        folderPath += "/";
-        folderPath += info.name;
-      }
-      std::vector<String> folderCoverUrls;
-      auto addFolderCover = [this, &folderCoverUrls](const String& bookPath) {
-        if (folderCoverUrls.size() >= 3) return;
-        const std::string cachePath = epubCachePathForBookPath(bookPath.c_str());
-        const char* coverNames[] = {"cover.jpg", "thumb.jpg", "cover.bmp", "thumb.png", "thumb.bmp"};
-        for (const char* coverName : coverNames) {
-          const std::string coverPath = cachePath + "/" + coverName;
-          if (!SdMan.exists(coverPath.c_str())) continue;
-          String coverUrl = "/download?path=";
-          coverUrl += coverPath.c_str();
-          coverUrl += "&inline=1";
-          folderCoverUrls.push_back(coverUrl);
-          break;
-        }
-      };
-
-      // Match the device library stack: prefer books directly in the folder,
-      // then fall back to books in nested folders when there are no direct covers.
-      uint8_t directChecked = 0;
-      scanFiles(folderPath.c_str(), [&](const FileInfo& child) {
-        if (directChecked >= 32 || !child.isEpub) return;
-        ++directChecked;
-        String bookPath = folderPath + "/" + child.name;
-        addFolderCover(bookPath);
-      });
-
-      if (folderCoverUrls.empty()) {
-        uint8_t nestedChecked = 0;
-        std::function<void(const String&)> scanNested = [&](const String& directory) {
-          if (folderCoverUrls.size() >= 3 || nestedChecked >= 64) return;
-          scanFiles(directory.c_str(), [&](const FileInfo& child) {
-            if (folderCoverUrls.size() >= 3 || nestedChecked >= 64) return;
-            ++nestedChecked;
-            const String childPath = directory + "/" + child.name;
-            if (child.isEpub) {
-              addFolderCover(childPath);
-            } else if (child.isDirectory) {
-              scanNested(childPath);
-            }
-          });
-        };
-        scanNested(folderPath);
-      }
-
-      for (size_t index = 0; index < folderCoverUrls.size() && index < 3; ++index) {
-        doc["coverUrls"][index] = folderCoverUrls[index];
-      }
-    } else if (info.isEpub) {
-      String bookPath = currentPath;
-      if (bookPath == "/") {
-        bookPath += info.name;
-      } else {
-        bookPath += "/";
-        bookPath += info.name;
-      }
-      const std::string cachePath = epubCachePathForBookPath(bookPath.c_str());
-      const char* coverNames[] = {"cover.jpg", "thumb.jpg", "cover.bmp", "thumb.png", "thumb.bmp"};
-      for (const char* coverName : coverNames) {
-        const std::string coverPath = cachePath + "/" + coverName;
-        if (!SdMan.exists(coverPath.c_str())) continue;
-        String coverUrl = "/download?path=";
-        coverUrl += coverPath.c_str();
-        coverUrl += "&inline=1";
-        doc["coverUrl"] = coverUrl;
-        break;
-      }
-    }
 
     const size_t written = serializeJson(doc, output, outputSize);
     if (written >= outputSize) {
