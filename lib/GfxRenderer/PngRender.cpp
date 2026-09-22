@@ -71,6 +71,7 @@ struct PngContext {
   uint32_t height = 0;
   uint8_t bitDepth = 0;
   uint8_t colorType = 0;
+  bool interlaced = false;
   uint8_t bytesPerPixel = 0;
   uint32_t rawRowBytes = 0;
 
@@ -248,7 +249,7 @@ bool beginPng(FsFile& pngFile, PngContext& ctx) {
   const uint8_t interlace = ihdrRest[4];
   pngFile.seekCur(4);
 
-  if (compression != 0 || filter != 0 || interlace != 0 || width == 0 || height == 0 ||
+  if (compression != 0 || filter != 0 || interlace > 1 || width == 0 || height == 0 ||
       width > kPngMaxSourceWidth || height > kPngMaxSourceHeight) {
     return false;
   }
@@ -287,6 +288,7 @@ bool beginPng(FsFile& pngFile, PngContext& ctx) {
   ctx.height = height;
   ctx.bitDepth = bitDepth;
   ctx.colorType = colorType;
+  ctx.interlaced = interlace == 1;
   ctx.bytesPerPixel = bytesPerPixel;
   ctx.rawRowBytes = rawRowBytes;
   memset(ctx.paletteAlpha, 255, sizeof(ctx.paletteAlpha));
@@ -568,6 +570,159 @@ bool drawGrayRow(RenderContext& ctx, const uint8_t* grayRow, const uint8_t* alph
   return true;
 }
 
+void* allocatePngDecodedBuffer(const size_t bytes) {
+  if (bytes == 0) return nullptr;
+  if (auto* psram = heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)) {
+    return psram;
+  }
+  return malloc(bytes);
+}
+
+void freePngDecodedBuffer(void* buffer) {
+  if (buffer) heap_caps_free(buffer);
+}
+
+bool decodeInterlacedAndRender(PngContext& ctx, RenderContext& renderCtx, const int outW, const int outH,
+                               const int srcX, const int srcY, const int srcW, const int srcH) {
+  // Adam7 delivers seven smaller images, so retain only source rows that the
+  // destination actually samples. This keeps a large source PNG bounded by
+  // the screen height instead of allocating width*height in PSRAM.
+  const size_t sourceWidth = ctx.width;
+  const size_t sourceHeight = ctx.height;
+  int32_t* rowSlots = static_cast<int32_t*>(allocatePngDecodedBuffer(sourceHeight * sizeof(int32_t)));
+  if (!rowSlots) return false;
+  std::fill_n(rowSlots, sourceHeight, -1);
+
+  int rowCount = 0;
+  for (int oy = 0; oy < outH; ++oy) {
+    const int sy = srcY + (outH <= 1 ? 0 : std::min(srcH - 1, (oy * srcH) / outH));
+    if (sy < 0 || static_cast<size_t>(sy) >= sourceHeight) {
+      freePngDecodedBuffer(rowSlots);
+      return false;
+    }
+    if (rowSlots[sy] < 0) rowSlots[sy] = rowCount++;
+  }
+
+  if (sourceWidth > SIZE_MAX / static_cast<size_t>(rowCount)) {
+    freePngDecodedBuffer(rowSlots);
+    return false;
+  }
+  const size_t sampledRowBytes = sourceWidth * static_cast<size_t>(rowCount);
+  uint8_t* grayRows = static_cast<uint8_t*>(allocatePngDecodedBuffer(sampledRowBytes));
+  uint8_t* alphaRows = renderCtx.preserveTransparency
+                           ? static_cast<uint8_t*>(allocatePngDecodedBuffer(sampledRowBytes))
+                           : nullptr;
+  uint8_t* passGray = static_cast<uint8_t*>(allocatePngDecodedBuffer(sourceWidth));
+  uint8_t* passAlpha = renderCtx.preserveTransparency
+                           ? static_cast<uint8_t*>(allocatePngDecodedBuffer(sourceWidth))
+                           : nullptr;
+  uint8_t* grayDst = static_cast<uint8_t*>(allocatePngDecodedBuffer(static_cast<size_t>(outW)));
+  uint8_t* alphaDst = renderCtx.preserveTransparency
+                          ? static_cast<uint8_t*>(allocatePngDecodedBuffer(static_cast<size_t>(outW)))
+                          : nullptr;
+  if (!grayRows || (renderCtx.preserveTransparency && !alphaRows) || !passGray ||
+      (renderCtx.preserveTransparency && !passAlpha) || !grayDst ||
+      (renderCtx.preserveTransparency && !alphaDst)) {
+    freePngDecodedBuffer(rowSlots);
+    freePngDecodedBuffer(grayRows);
+    freePngDecodedBuffer(alphaRows);
+    freePngDecodedBuffer(passGray);
+    freePngDecodedBuffer(passAlpha);
+    freePngDecodedBuffer(grayDst);
+    freePngDecodedBuffer(alphaDst);
+    return false;
+  }
+
+  static constexpr uint8_t kPassStartX[] = {0, 4, 0, 2, 0, 1, 0};
+  static constexpr uint8_t kPassStartY[] = {0, 0, 4, 0, 2, 0, 1};
+  static constexpr uint8_t kPassStepX[] = {8, 8, 4, 4, 2, 2, 1};
+  static constexpr uint8_t kPassStepY[] = {8, 8, 8, 4, 4, 2, 2};
+  PngServiceBudget service;
+  bool decoded = true;
+  for (int pass = 0; pass < 7 && decoded; ++pass) {
+    const int passWidth = sourceWidth <= kPassStartX[pass]
+                              ? 0
+                              : (static_cast<int>(sourceWidth) - kPassStartX[pass] + kPassStepX[pass] - 1) /
+                                    kPassStepX[pass];
+    const int passHeight = sourceHeight <= kPassStartY[pass]
+                               ? 0
+                               : (static_cast<int>(sourceHeight) - kPassStartY[pass] + kPassStepY[pass] - 1) /
+                                     kPassStepY[pass];
+    if (passWidth == 0 || passHeight == 0) continue;
+
+    ctx.width = static_cast<uint32_t>(passWidth);
+    ctx.rawRowBytes = (ctx.colorType == PNG_COLOR_RGB
+                           ? static_cast<uint32_t>(passWidth) * ctx.bytesPerPixel
+                           : ctx.colorType == PNG_COLOR_RGBA || ctx.colorType == PNG_COLOR_GRAYSCALE_ALPHA
+                                 ? static_cast<uint32_t>(passWidth) * ctx.bytesPerPixel
+                                 : ctx.colorType == PNG_COLOR_GRAYSCALE || ctx.colorType == PNG_COLOR_PALETTE
+                                       ? (static_cast<uint32_t>(passWidth) * ctx.bitDepth + 7) / 8
+                                       : 0);
+    if (ctx.rawRowBytes == 0 || ctx.rawRowBytes > 16384) {
+      decoded = false;
+      break;
+    }
+    memset(ctx.previousRow, 0, ctx.rawRowBytes);
+
+    for (int py = 0; py < passHeight; ++py) {
+      service.service();
+      if (!decodeScanline(ctx)) {
+        decoded = false;
+        break;
+      }
+      const int sourceY = kPassStartY[pass] + py * kPassStepY[pass];
+      if (sourceY < 0 || static_cast<size_t>(sourceY) >= sourceHeight || rowSlots[sourceY] < 0) {
+        advanceScanline(ctx);
+        continue;
+      }
+      convertScanlineToGray(ctx, passGray, passAlpha);
+      const size_t slotOffset = static_cast<size_t>(rowSlots[sourceY]) * sourceWidth;
+      for (int px = 0; px < passWidth; ++px) {
+        const int sourceX = kPassStartX[pass] + px * kPassStepX[pass];
+        if (sourceX >= 0 && static_cast<size_t>(sourceX) < sourceWidth) {
+          grayRows[slotOffset + sourceX] = passGray[px];
+          if (alphaRows) alphaRows[slotOffset + sourceX] = passAlpha[px];
+        }
+      }
+      advanceScanline(ctx);
+    }
+  }
+
+  if (decoded) {
+    for (int oy = 0; oy < outH; ++oy) {
+      const int sy = srcY + (outH <= 1 ? 0 : std::min(srcH - 1, (oy * srcH) / outH));
+      const int32_t slot = sy >= 0 && static_cast<size_t>(sy) < sourceHeight ? rowSlots[sy] : -1;
+      if (slot < 0) {
+        decoded = false;
+        break;
+      }
+      const size_t rowOffset = static_cast<size_t>(slot) * sourceWidth;
+      for (int ox = 0; ox < outW; ++ox) {
+        const int sx = srcX + (outW <= 1 ? 0 : std::min(srcW - 1, (ox * srcW) / outW));
+        if (sx < 0 || static_cast<size_t>(sx) >= sourceWidth) {
+          decoded = false;
+          break;
+        }
+        grayDst[ox] = grayRows[rowOffset + sx];
+        if (alphaDst) alphaDst[ox] = alphaRows[rowOffset + sx];
+      }
+      if (!decoded || !drawGrayRow(renderCtx, grayDst, alphaDst, outW, oy)) {
+        decoded = false;
+        break;
+      }
+    }
+  }
+
+  freePngDecodedBuffer(rowSlots);
+  freePngDecodedBuffer(grayRows);
+  freePngDecodedBuffer(alphaRows);
+  freePngDecodedBuffer(passGray);
+  freePngDecodedBuffer(passAlpha);
+  freePngDecodedBuffer(grayDst);
+  freePngDecodedBuffer(alphaDst);
+  return decoded;
+}
+
 bool decodeAndRender(FsFile& pngFile, RenderContext& renderCtx, int outW, int outH, int srcX, int srcY, int srcW,
                      int srcH) {
   PngContext* ctxPtr = new (std::nothrow) PngContext();
@@ -577,6 +732,13 @@ bool decodeAndRender(FsFile& pngFile, RenderContext& renderCtx, int outW, int ou
   if (!beginPng(pngFile, ctx)) {
     delete ctxPtr;
     return false;
+  }
+
+  if (ctx.interlaced) {
+    const bool ok = decodeInterlacedAndRender(ctx, renderCtx, outW, outH, srcX, srcY, srcW, srcH);
+    releasePng(ctx);
+    delete ctxPtr;
+    return ok;
   }
 
   uint8_t* graySrc = static_cast<uint8_t*>(malloc(static_cast<size_t>(ctx.width)));
@@ -594,13 +756,26 @@ bool decodeAndRender(FsFile& pngFile, RenderContext& renderCtx, int outW, int ou
   }
 
   int currentSrcY = -1;
+  bool truncatedAtEof = false;
   PngServiceBudget service;
   for (int oy = 0; oy < outH; oy++) {
     service.service();
     const int sy = srcY + (outH <= 1 ? 0 : std::min(srcH - 1, (oy * srcH) / outH));
     while (currentSrcY < sy) {
+      if (truncatedAtEof) {
+        currentSrcY = sy;
+        break;
+      }
       service.service();
       if (!decodeScanline(ctx)) {
+        if (ctx.idatFinished && currentSrcY >= 0) {
+          // Keep the last complete row when a PNG ends with a short IDAT tail.
+          // This preserves the image instead of falling back to the default
+          // sleep screen for a few missing trailing rows.
+          truncatedAtEof = true;
+          currentSrcY = sy;
+          break;
+        }
         free(graySrc);
         free(grayDst);
         free(alphaSrc);

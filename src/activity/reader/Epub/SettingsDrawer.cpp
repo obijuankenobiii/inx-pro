@@ -58,9 +58,8 @@ const char* statusBarItemName(const StatusBarItem item) {
 }
 
 constexpr int tabSize = 40;
-constexpr int tabVerticalPadding = FREEINK_DEVICE_X4PRO ? 20 : 14;
-constexpr int tabPadding = tabVerticalPadding;
-constexpr int tabHeight = tabSize + tabPadding * 2;
+constexpr int inBookTabVerticalPadding = 20;
+constexpr int embeddedTabVerticalPadding = 14;
 constexpr int selectorRows = 5;
 constexpr int selectorRowHeight = LIST_ITEM_HEIGHT;
 constexpr int standaloneRows = 5;
@@ -97,7 +96,13 @@ void freeSelectorFrame(uint8_t* frame) {
 #endif
 }
 
-int drawerListTop() { return tabHeight + (FREEINK_DEVICE_X4PRO ? 5 : 1); }
+int tabVerticalPadding(const bool embedded) {
+  return embedded ? embeddedTabVerticalPadding : inBookTabVerticalPadding;
+}
+
+int drawerTabHeight(const bool embedded) { return tabSize + tabVerticalPadding(embedded) * 2; }
+
+int drawerListTop(const bool embedded) { return drawerTabHeight(embedded) + (FREEINK_DEVICE_X4PRO ? 5 : 1); }
 constexpr int kDrawerListBottomPadding = 12;
 
 struct SelectorBounds {
@@ -279,20 +284,20 @@ void SettingsDrawer::setEmbeddedRegion(int x, int y, int w, int h) {
   drawerY = y;
   drawerWidth = w;
   drawerHeight = h;
-  itemsPerPage = std::max(1, (drawerHeight - drawerListTop() - kDrawerListBottomPadding) / itemHeight);
+  itemsPerPage = std::max(1, (drawerHeight - drawerListTop(embedded_) - kDrawerListBottomPadding) / itemHeight);
   setupMenu();
 }
 
 int SettingsDrawer::snapEmbeddedHeight(int maxHeight) const {
-  const int usable = maxHeight - drawerListTop() - kDrawerListBottomPadding;
+  const int usable = maxHeight - drawerListTop(embedded_) - kDrawerListBottomPadding;
   const int rows = std::min(5, std::max(1, usable / LIST_ITEM_HEIGHT));
-  return drawerListTop() + rows * LIST_ITEM_HEIGHT + kDrawerListBottomPadding;
+  return drawerListTop(embedded_) + rows * LIST_ITEM_HEIGHT + kDrawerListBottomPadding;
 }
 
 void SettingsDrawer::syncLayoutFromRenderer() {
   itemHeight = LIST_ITEM_HEIGHT;
   if (embedded_) {
-    itemsPerPage = std::max(1, (drawerHeight - drawerListTop() - kDrawerListBottomPadding) / itemHeight);
+    itemsPerPage = std::max(1, (drawerHeight - drawerListTop(embedded_) - kDrawerListBottomPadding) / itemHeight);
     return;
   }
   const int sw = renderer.getScreenWidth();
@@ -301,9 +306,9 @@ void SettingsDrawer::syncLayoutFromRenderer() {
   drawerWidth = sw;
   drawerY = 0;
 
-  const int maxRows = std::max(1, (sh - drawerListTop()) / itemHeight);
+  const int maxRows = std::max(1, (sh - drawerListTop(embedded_)) / itemHeight);
   itemsPerPage = std::min(standaloneRows, maxRows);
-  drawerHeight = drawerListTop() + itemsPerPage * itemHeight + 1;
+  drawerHeight = drawerListTop(embedded_) + itemsPerPage * itemHeight + 1;
 }
 
 /**
@@ -774,6 +779,8 @@ void SettingsDrawer::drawTabs() {
   const int y = drawerY + 1;
   const int width = std::max(1, drawerWidth / count);
   const int iconOffset = embedded_ ? 0 : (FREEINK_DEVICE_X4PRO ? 4 : 0);
+  const int tabPadding = tabVerticalPadding(embedded_);
+  const int tabHeight = drawerTabHeight(embedded_);
   for (int i = 0; i < count; ++i) {
     const int x = drawerX + i * width;
     const int w = i == count - 1 ? drawerX + drawerWidth - x : width;
@@ -998,7 +1005,7 @@ void SettingsDrawer::drawMenuItemRow(int visibleRow, int menuIndex) {
     return;
   }
 
-  const int startY = drawerY + drawerListTop();
+  const int startY = drawerY + drawerListTop(embedded_);
   const int itemY = startY + (visibleRow * itemHeight);
   const auto& entry = menuItems[static_cast<size_t>(menuIndex)];
   const bool isSelected = false;
@@ -1178,7 +1185,7 @@ void SettingsDrawer::openSelector(const int menuIndex) {
   selectorGroup_ = selectedGroup_;
   const int requestedRows = std::min(selectorRows, static_cast<int>(selectorOptions_.size()));
   const int selectedRow = selectorMenuIndex_ - scrollOffset;
-  const int fieldY = drawerY + drawerListTop() + selectedRow * itemHeight;
+  const int fieldY = drawerY + drawerListTop(embedded_) + selectedRow * itemHeight;
   const SelectorBounds box =
       selectorBounds(drawerX, drawerWidth, fieldY, itemHeight, renderer.getScreenHeight(), requestedRows,
                      selectorOpensUpward());
@@ -1287,7 +1294,7 @@ void SettingsDrawer::drawSelectorPopup() {
 
   const int requestedRows = std::min(selectorRows, static_cast<int>(selectorOptions_.size()));
   const int selectedRow = selectorMenuIndex_ - scrollOffset;
-  const int fieldY = drawerY + drawerListTop() + selectedRow * itemHeight;
+  const int fieldY = drawerY + drawerListTop(embedded_) + selectedRow * itemHeight;
   const SelectorBounds box =
       selectorBounds(drawerX, drawerWidth, fieldY, itemHeight, renderer.getScreenHeight(), requestedRows,
                      selectorOpensUpward());
@@ -1341,7 +1348,7 @@ bool SettingsDrawer::handleSelectorInput(MappedInputManager& input) {
   const int screenH = renderer.getScreenHeight();
   const int requestedRows = std::min(selectorRows, static_cast<int>(selectorOptions_.size()));
   const int selectedRow = selectorMenuIndex_ - scrollOffset;
-  const int fieldY = drawerY + drawerListTop() + selectedRow * itemHeight;
+  const int fieldY = drawerY + drawerListTop(embedded_) + selectedRow * itemHeight;
   const SelectorBounds box =
       selectorBounds(drawerX, drawerWidth, fieldY, itemHeight, screenH, requestedRows, selectorOpensUpward());
 
@@ -1374,7 +1381,7 @@ bool SettingsDrawer::handleSelectorInput(MappedInputManager& input) {
       }
     }
 
-    const int listTop = drawerY + drawerListTop();
+    const int listTop = drawerY + drawerListTop(embedded_);
     if (tapX >= drawerX && tapX < drawerX + drawerWidth && tapY >= drawerY && tapY < listTop) {
       static constexpr GroupType tabs[] = {
           GroupType::FONT,
@@ -1425,7 +1432,7 @@ void SettingsDrawer::drawScrollIndicator() {
   int totalItems = static_cast<int>(menuItems.size());
   if (totalItems <= itemsPerPage) return;
 
-  int startY = drawerY + drawerListTop();
+  int startY = drawerY + drawerListTop(embedded_);
   int listHeight = itemsPerPage * itemHeight;
   int thumbH = (itemsPerPage * listHeight) / totalItems;
   int thumbY = startY + (scrollOffset * listHeight) / totalItems;
@@ -1434,7 +1441,7 @@ void SettingsDrawer::drawScrollIndicator() {
 }
 
 void SettingsDrawer::clearScrollIndicatorArea() {
-  const int startY = drawerY + drawerListTop();
+  const int startY = drawerY + drawerListTop(embedded_);
   const int listHeight = itemsPerPage * itemHeight;
   renderer.rectangle.fill(drawerX + drawerWidth - 5, startY, 4, listHeight, false);
 }
@@ -1539,7 +1546,7 @@ void SettingsDrawer::handleInput(MappedInputManager& input) {
         return;
       }
 
-      const int listStartY = drawerY + drawerListTop();
+      const int listStartY = drawerY + drawerListTop(embedded_);
       if (tapY >= drawerY && tapY < listStartY) {
         static constexpr GroupType tabs[] = {
             GroupType::FONT,

@@ -99,6 +99,9 @@ function escapeAttr(s) {
 }
 
 function folderCoverStack(item) {
+  if (item.thumbnailUrl) {
+    return '<div class="inx-cover inx-folder-thumbnail has-thumbnail" aria-hidden="true"><img loading="lazy" src="' + escapeAttr(item.thumbnailUrl) + '" alt=""></div>';
+  }
   const covers = Array.isArray(item.coverUrls) ? item.coverUrls.filter(Boolean).slice(0, 3) : [];
   if (!covers.length) return '<div class="inx-cover inx-folder-cover">▱</div>';
   return '<div class="inx-cover inx-folder-stack has-thumbnail" aria-hidden="true">' +
@@ -860,6 +863,7 @@ function ensureFolderStackStyles() {
     ".inx-grid .book-open .inx-cover,.inx-grid .folder-open .inx-cover,.inx-folder-stack,.inx-folder-stack-card,.inx-folder-stack-card img{border-radius:0!important}" +
     ".inx-grid .inx-grid-delete{position:absolute;z-index:4;top:38px;right:7px;width:30px;height:30px;background:rgba(255,255,255,.94);border:1px solid rgba(255,255,255,.9);box-shadow:0 2px 6px rgba(30,34,38,.18);border-radius:4px!important}" +
     ".inx-folder-stack.has-thumbnail .folder-stack-1,.inx-folder-stack.has-thumbnail .folder-stack-2{background:#d9dcde!important;box-shadow:none!important}";
+  style.textContent += ".inx-grid .folder-open .inx-folder-thumbnail{aspect-ratio:225/340!important;overflow:hidden!important}.inx-grid .folder-open .inx-folder-thumbnail img{width:100%!important;height:100%!important;object-fit:cover!important;object-position:center!important;background:transparent!important;display:block!important}";
   style.textContent += ".file-list.inx-grid{grid-template-columns:repeat(7,minmax(0,1fr));justify-content:start}.inx-grid .book-card,.inx-grid .folder-card{max-width:288px}.inx-grid .inx-card-actions{justify-content:flex-end}.inx-grid .folder-open .inx-folder-cover,.inx-grid .book-open .inx-cover{width:100%!important;max-width:100%!important}";
   document.head.appendChild(style);
 }

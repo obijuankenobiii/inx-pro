@@ -471,7 +471,7 @@ async function decodeImage(file) {
   });
 }
 
-async function imageToRaster(file, maxWidth, maxHeight, cropSquare, mimeType, quality) {
+async function imageToRaster(file, maxWidth, maxHeight, cropToFill, mimeType, quality) {
   const image = await decodeImage(file);
   const sourceWidth = image.width;
   const sourceHeight = image.height;
@@ -481,12 +481,16 @@ async function imageToRaster(file, maxWidth, maxHeight, cropSquare, mimeType, qu
   let sourceY = 0;
   let drawWidth = sourceWidth;
   let drawHeight = sourceHeight;
-  if (cropSquare) {
-    const side = Math.min(sourceWidth, sourceHeight);
-    sourceX = (sourceWidth - side) / 2;
-    sourceY = (sourceHeight - side) / 2;
-    drawWidth = side;
-    drawHeight = side;
+  if (cropToFill) {
+    const targetAspect = maxWidth / maxHeight;
+    const sourceAspect = sourceWidth / sourceHeight;
+    if (sourceAspect > targetAspect) {
+      drawWidth = sourceHeight * targetAspect;
+      sourceX = (sourceWidth - drawWidth) / 2;
+    } else {
+      drawHeight = sourceWidth / targetAspect;
+      sourceY = (sourceHeight - drawHeight) / 2;
+    }
     targetWidth = maxWidth;
     targetHeight = maxHeight;
   } else {
@@ -524,7 +528,7 @@ async function uploadFolderThumbnail(path) {
   input.onchange = async () => {
     if (!input.files || !input.files[0]) return;
     try {
-      const jpeg = await imageToRaster(input.files[0], 200, 200, true, "image/jpeg");
+      const jpeg = await imageToRaster(input.files[0], 225, 340, true, "image/jpeg");
       await uploadBlobToPath(jpeg, "thumb.jpg", path);
       showToast("Folder thumbnail updated", false);
     } catch (error) {

@@ -363,6 +363,12 @@ void Library::onEnter() {
   metadataIndexAvailable_ = false;
   sidebarScrollOffset_ = 0;
   allBooksMode = false;
+  // Defer the expensive first library load so the top-level library shell can
+  // draw immediately. Folder and nested group pages should open synchronously.
+  loading = path == "/";
+  items.clear();
+  books.clear();
+  resetViews();
 
   if (path == "/" && !pluginMode_ && SETTINGS.libraryViewMode == SystemSetting::LIBRARY_VIEW_PLUGIN) {
     PluginManager::LibraryMenuLink savedPluginMenu;
@@ -420,7 +426,7 @@ void Library::onEnter() {
         break;
     }
   }
-  load();
+  if (!loading) load();
 }
 
 void Library::load() {
@@ -702,13 +708,6 @@ void Library::open(const int index) {
       updateRequired = true;
       return;
     }
-    if (view == View::Thumb && stateFilter == StateFilter::None && !allBooksMode) {
-      if (const LibraryIndex::Book* book = singleBookInFolder(item.path, books)) {
-        const std::string libraryPath = path;
-        openReaderFromCallback(book->path, [libraryPath] { onGoToLibrary(libraryPath); });
-        return;
-      }
-    }
     if (stateFilter == StateFilter::Metadata && metadataGroupKey_.empty()) {
       const auto group = metadataKeyByGroup_.find(item.path);
       if (group == metadataKeyByGroup_.end()) return;
@@ -727,6 +726,17 @@ void Library::open(const int index) {
 }
 
 void Library::loop() {
+  if (loading) {
+    if (updateRequired) {
+      renderPage();
+      return;
+    }
+    loading = false;
+    load();
+    updateRequired = true;
+    return;
+  }
+
   if (refreshing && !LibraryIndexRefresh::isRunning()) {
     refreshing = false;
     load();
@@ -883,6 +893,10 @@ void Library::loop() {
 }
 
 void Library::content() {
+  if (loading) {
+    renderer.text.centered(systemFontId(), renderer.getScreenHeight() / 2, "Loading library...");
+    return;
+  }
   if (items.empty()) {
     const char* message = stateFilter == StateFilter::Plugin
                               ? "No items in this plugin view"

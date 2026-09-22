@@ -1204,17 +1204,32 @@ void LocalServer::handleFileListData() const {
   server->setContentLength(CONTENT_LENGTH_UNKNOWN);
   server->send(200, "application/json", "");
   server->sendContent("[");
-  char output[512];
+  char output[1024];
   constexpr size_t outputSize = sizeof(output);
   bool seenFirst = false;
   JsonDocument doc;
 
-  scanFiles(currentPath.c_str(), [this, &output, &doc, &seenFirst](const FileInfo& info) {
+  scanFiles(currentPath.c_str(), [this, &currentPath, &output, &doc, &seenFirst](const FileInfo& info) {
     doc.clear();
     doc["name"] = info.name;
     doc["size"] = info.size;
     doc["isDirectory"] = info.isDirectory;
     doc["isEpub"] = info.isEpub;
+    if (info.isDirectory) {
+      String folderPath = currentPath;
+      if (!folderPath.endsWith("/")) folderPath += "/";
+      folderPath += info.name;
+      const char* thumbnailNames[] = {"thumb.jpg", "thumb.png", "thumb.bmp"};
+      for (const char* thumbnailName : thumbnailNames) {
+        String thumbnailPath = folderPath + "/" + thumbnailName;
+        if (!SdMan.exists(thumbnailPath.c_str())) continue;
+        String thumbnailUrl = "/download?path=";
+        thumbnailUrl += thumbnailPath;
+        thumbnailUrl += "&inline=1";
+        doc["thumbnailUrl"] = thumbnailUrl;
+        break;
+      }
+    }
 
     const size_t written = serializeJson(doc, output, outputSize);
     if (written >= outputSize) {

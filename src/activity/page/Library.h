@@ -95,6 +95,7 @@ class Library final : public Page {
   bool sortOpen = false;
   bool filterOpen = false;
   bool refreshing = false;
+  bool loading = false;
   int popupBook = -1;
   bool folderDeleteConfirm = false;
   bool sidebarOpen = false;

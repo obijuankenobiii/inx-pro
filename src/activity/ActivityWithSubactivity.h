@@ -24,6 +24,8 @@ class ActivityWithSubactivity : public Activity {
 
   /** Forwards the loop call to the active subactivity, if any. */
   void loop() override;
+  /** Keeps the parent awake whenever its active subactivity is doing work. */
+  bool preventAutoSleep() override { return subActivity && subActivity->preventAutoSleep(); }
   /** Cleans up the current subactivity on exit. */
   void onExit() override;
 };

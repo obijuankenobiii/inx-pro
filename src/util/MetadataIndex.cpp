@@ -6,6 +6,7 @@
 #include <Xtc.h>
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
@@ -576,10 +577,137 @@ bool generateAllMetadata(const std::function<void(int, int, const char*)>& progr
   return true;
 }
 
-bool generateSelected(const MetadataIndex::Kind kind, const std::function<void(int, int, const char*)>& progress,
+bool generateSelected(const MetadataIndex::Options& options,
+                      const std::function<void(int, int, const char*, const char*)>& progress,
                       const std::function<bool()>& shouldCancel) {
-  const bool includeXtc = kind == MetadataIndex::Kind::Authors;
-  return generateGrouped(kind, includeXtc, progress, shouldCancel);
+  constexpr std::array<MetadataIndex::Kind, 10> kinds = {
+      MetadataIndex::Kind::Authors,          MetadataIndex::Kind::Series,
+      MetadataIndex::Kind::Tags,             MetadataIndex::Kind::Publishers,
+      MetadataIndex::Kind::Languages,        MetadataIndex::Kind::Ratings,
+      MetadataIndex::Kind::PublicationDates, MetadataIndex::Kind::Identifiers,
+      MetadataIndex::Kind::TitleSorts,       MetadataIndex::Kind::AuthorSorts};
+
+  const auto selected = [&options](const MetadataIndex::Kind kind) {
+    switch (kind) {
+      case MetadataIndex::Kind::Authors: return options.authors;
+      case MetadataIndex::Kind::Series: return options.series;
+      case MetadataIndex::Kind::Tags: return options.tags;
+      case MetadataIndex::Kind::Publishers: return options.publishers;
+      case MetadataIndex::Kind::Languages: return options.languages;
+      case MetadataIndex::Kind::Ratings: return options.ratings;
+      case MetadataIndex::Kind::PublicationDates: return options.publicationDates;
+      case MetadataIndex::Kind::Identifiers: return options.identifiers;
+      case MetadataIndex::Kind::TitleSorts: return options.titleSorts;
+      case MetadataIndex::Kind::AuthorSorts: return options.authorSorts;
+    }
+    return false;
+  };
+
+  std::array<Records, kinds.size()> records;
+
+  FsFile allMetadataFile;
+  const std::string allMetadataPath = std::string(kDirectory) + "/all_metadata.idx";
+  const std::string allMetadataTempPath = allMetadataPath + ".tmp";
+  uint32_t allMetadataCount = 0;
+  uint32_t allMetadataCountOffset = 0;
+  bool allMetadataOpen = false;
+  if (options.completeRecords) {
+    if (!SdMan.openFileForWrite("MDX", allMetadataTempPath, allMetadataFile)) return false;
+    constexpr char magic[] = "BMDA";
+    const uint8_t version = 1;
+    bool headerOk = allMetadataFile.write(reinterpret_cast<const uint8_t*>(magic), sizeof(magic) - 1) == sizeof(magic) - 1 &&
+                    allMetadataFile.write(&version, sizeof(version)) == sizeof(version);
+    allMetadataCountOffset = allMetadataFile.position();
+    headerOk = headerOk &&
+               allMetadataFile.write(reinterpret_cast<const uint8_t*>(&allMetadataCount), sizeof(allMetadataCount)) ==
+                   sizeof(allMetadataCount);
+    if (!headerOk) {
+      allMetadataFile.close();
+      SdMan.remove(allMetadataTempPath.c_str());
+      return false;
+    }
+    allMetadataOpen = true;
+  }
+
+  const bool completed = scanLibrary(
+      options.authors,
+      [&progress](const int current, const int total, const char* path) {
+        if (progress) progress(current, total, "Metadata", path);
+      },
+      shouldCancel,
+      [&kinds, &records, &selected, &allMetadataFile, &allMetadataOpen, &allMetadataCount](
+          const std::string& path, const std::string& title, const std::string& author,
+          const BookMetadataCache::BookMetadata& metadata, const bool isXtc) {
+        for (size_t index = 0; index < kinds.size(); ++index) {
+          const MetadataIndex::Kind kind = kinds[index];
+          if (!selected(kind)) continue;
+
+          if (kind == MetadataIndex::Kind::Tags) {
+            for (const std::string& tag : metadata.tags) {
+              if (!addRecord(records[index], groupKeyFor(tag, kind), tag, path, title, author, "")) return false;
+            }
+            continue;
+          }
+          if (kind == MetadataIndex::Kind::Identifiers) {
+            for (const auto& field : metadata.fields) {
+              if (localName(field.name) == "identifier" && !field.value.empty() &&
+                  !addRecord(records[index], groupKeyFor(field.value, kind), field.value, path, title, author, "")) {
+                return false;
+              }
+            }
+            continue;
+          }
+
+          std::string value = kind == MetadataIndex::Kind::Authors && isXtc ? author : fieldValue(metadata, kind);
+          if (kind == MetadataIndex::Kind::Series && value.empty()) value = rawCalibreSeriesValue(metadata, false);
+          if (value.empty()) continue;
+          std::string order = kind == MetadataIndex::Kind::Series ? metadata.seriesIndex : "";
+          if (kind == MetadataIndex::Kind::Series && order.empty()) order = rawCalibreSeriesValue(metadata, true);
+          if (!addRecord(records[index], groupKeyFor(value, kind), value, path, title, author, order)) return false;
+        }
+
+        // The complete-record index has historically contained EPUB records only.
+        if (allMetadataOpen && !isXtc) {
+          if (!writeFullMetadata(allMetadataFile, path, metadata)) return false;
+          ++allMetadataCount;
+        }
+        return true;
+      });
+
+  if (allMetadataOpen) {
+    if (completed && !(shouldCancel && shouldCancel())) {
+      allMetadataFile.seek(allMetadataCountOffset);
+      if (allMetadataFile.write(reinterpret_cast<const uint8_t*>(&allMetadataCount), sizeof(allMetadataCount)) !=
+          sizeof(allMetadataCount)) {
+        allMetadataFile.close();
+        SdMan.remove(allMetadataTempPath.c_str());
+        return false;
+      }
+    }
+    allMetadataFile.close();
+  }
+
+  if (!completed || (shouldCancel && shouldCancel())) {
+    if (allMetadataOpen) SdMan.remove(allMetadataTempPath.c_str());
+    return false;
+  }
+
+  for (size_t index = 0; index < kinds.size(); ++index) {
+    if (!selected(kinds[index])) continue;
+    if (!writeGroupedIndex(kinds[index], records[index], shouldCancel)) {
+      if (allMetadataOpen) SdMan.remove(allMetadataTempPath.c_str());
+      return false;
+    }
+  }
+
+  if (allMetadataOpen) {
+    SdMan.remove(allMetadataPath.c_str());
+    if (!SdMan.rename(allMetadataTempPath.c_str(), allMetadataPath.c_str())) {
+      SdMan.remove(allMetadataTempPath.c_str());
+      return false;
+    }
+  }
+  return true;
 }
 }
 
@@ -745,36 +873,5 @@ bool MetadataIndex::generate(const Options& options,
   if (!SdMan.exists("/.metadata")) SdMan.mkdir("/.metadata");
   if (!SdMan.exists(kDirectory)) SdMan.mkdir(kDirectory);
 
-  const Kind kinds[] = {Kind::Authors, Kind::Series, Kind::Tags, Kind::Publishers, Kind::Languages, Kind::Ratings,
-                        Kind::PublicationDates, Kind::Identifiers, Kind::TitleSorts, Kind::AuthorSorts};
-  for (const Kind kind : kinds) {
-    bool selected = false;
-    switch (kind) {
-      case Kind::Authors: selected = options.authors; break;
-      case Kind::Series: selected = options.series; break;
-      case Kind::Tags: selected = options.tags; break;
-      case Kind::Publishers: selected = options.publishers; break;
-      case Kind::Languages: selected = options.languages; break;
-      case Kind::Ratings: selected = options.ratings; break;
-      case Kind::PublicationDates: selected = options.publicationDates; break;
-      case Kind::Identifiers: selected = options.identifiers; break;
-      case Kind::TitleSorts: selected = options.titleSorts; break;
-      case Kind::AuthorSorts: selected = options.authorSorts; break;
-    }
-    if (selected) {
-      const auto stageProgress = [&progress, kind](const int current, const int total, const char* path) {
-        if (!progress) return;
-        progress(current, total, kindLabel(kind), path);
-      };
-      if (!generateSelected(kind, stageProgress, shouldCancel)) return false;
-    }
-  }
-  if (options.completeRecords) {
-    const auto fullMetadataProgress = [&progress](const int current, const int total, const char* path) {
-      if (!progress) return;
-      progress(current, total, "Description + fields", path);
-    };
-    if (!generateAllMetadata(fullMetadataProgress, shouldCancel)) return false;
-  }
-  return !(shouldCancel && shouldCancel());
+  return generateSelected(options, progress, shouldCancel);
 }

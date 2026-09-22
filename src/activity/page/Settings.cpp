@@ -107,8 +107,6 @@ std::vector<SettingInfo> buildSystemSettings() {
                                        GroupType::DEVICE_DISPLAY));
   settings.push_back(SettingInfo::Toggle("Hide title for thumbnails", &SystemSetting::hideThumbnailTitles,
                                          GroupType::DEVICE_DISPLAY));
-  settings.push_back(SettingInfo::Enum("Thumbnail size", &SystemSetting::thumbnailSize, {"Actual", "Even"},
-                                       GroupType::DEVICE_DISPLAY));
 
   settings.push_back(SettingInfo::Separator("Clock", GroupType::CLOCK));
   settings.push_back(SettingInfo::Action("Face", GroupType::CLOCK));
