@@ -6,6 +6,7 @@
 #include "EpubActivity.h"
 
 #include <Bitmap.h>
+#include <ArduinoJson.h>
 #include <Epub/Page.h>
 #include <Epub/PageWordIndex.h>
 #include <GfxRenderer.h>
@@ -34,6 +35,7 @@
 #endif
 #include "KOReaderSyncActivity.h"
 #include "SettingsDrawer.h"
+#include "activity/page/components/global/Button.h"
 #include "activity/page/components/global/PopUp.h"
 #include "activity/util/KeyboardEntryActivity.h"
 #include "state/BookProgress.h"
@@ -45,19 +47,28 @@
 #include "state/Statistics.h"
 #include "state/SystemSetting.h"
 #include "system/FontManager.h"
+#include "system/LanguageManager.h"
 #include "system/Fonts.h"
 #include "system/Frontlight.h"
 #include "system/FrontlightPreferences.h"
 #include "system/MappedInputManager.h"
 #include "system/ScreenComponents.h"
+#include "system/PluginManager.h"
+
+extern "C" {
+#include "lua.h"
+}
+
+extern void openReaderFromCallback(const std::string& path, std::function<void()> returnToCaller);
 
 namespace {
 constexpr unsigned long goHomeMs = 1000;
 constexpr unsigned long bookmarkHoldMs = 1000;
-constexpr unsigned long wordSelectionHoldMs = 500;
+constexpr unsigned long wordSelectionHoldMs = 300;
 constexpr bool kReaderHighQualityFastLut = true;
-
-const std::vector<std::string> kBaseWordActions = {"Look up", "Highlight", "Add note"};
+constexpr int kWordSelectionHandleRadius = 11;
+constexpr int kWordSelectionActionGap = 14;
+constexpr bool kWordSelectionActionBarVertical = true;
 
 bool pageImageFootprintAtLeastHalfScreen(const Page& page, const GfxRenderer& renderer, int marginLeft, int marginTop) {
   if (!page.hasImages()) {
@@ -188,9 +199,10 @@ void EpubActivity::drawPreparingBookScreen() {
   renderer.displayBuffer();
 }
 
-void EpubActivity::readerPopup(const char* message) {
+void EpubActivity::readerPopup(const char* message, const uint32_t autoDismissMs) {
   invalidatePreparedPage();
   pauseReadingStats();
+  readerPopupExpiresAt_ = autoDismissMs == 0 ? 0 : millis() + autoDismissMs;
   renderer.syncWriteBufferFromActive();
   ScreenComponents::drawPopup(renderer, message);
 }
@@ -625,6 +637,12 @@ bool EpubActivity::slowPath() {
  */
 void EpubActivity::onEnter() {
   ActivityWithSubactivity::onEnter();
+  bookFinished_ = false;
+  readerSuggestionAvailable_ = false;
+  readerSuggestionPath_.clear();
+  readerSuggestionTitle_.clear();
+  readerSuggestionGroup_.clear();
+  readerSuggestionLabel_.clear();
   btnBindings_.reset();
   epub->setupCacheDir();
 
@@ -683,15 +701,39 @@ int EpubActivity::wordAt(const int x, const int y) const {
 }
 
 void EpubActivity::closeWordSelection() {
+  const bool hadWordSelection = wordSelectionOpen_;
   wordSelectionOpen_ = false;
   wordActionsOpen_ = false;
   selectedWord_ = -1;
+  wordSelectionAnchor_ = -1;
+  wordSelectionFocus_ = -1;
+  wordSelectionHandleDragActive_ = false;
+  wordSelectionDraggingStart_ = false;
+  wordSelectionDraggingOnWord_ = false;
+  if (hadWordSelection) {
+    annUi_.clearExternalFramebuffer();
+  }
   std::vector<PageWordHit>().swap(touchWords_);
 }
 
+bool EpubActivity::wordSelectionIsMultiple() const {
+  return wordSelectionAnchor_ >= 0 && wordSelectionFocus_ >= 0 && wordSelectionAnchor_ != wordSelectionFocus_;
+}
+
 std::vector<std::string> EpubActivity::currentWordActions() const {
-  std::vector<std::string> actions = kBaseWordActions;
-  if (selectedWord_ >= 0 && selectedWord_ < static_cast<int>(touchWords_.size()) &&
+  std::vector<std::string> actions;
+  if (!wordSelectionIsMultiple()) {
+    actions.push_back("Look up");
+  }
+  actions.push_back("Highlight");
+  actions.push_back(wordSelectionIsMultiple() ? "Add note" : "Add page note");
+  std::string pluginId;
+  std::string pluginLabel;
+  std::string pluginFunction;
+  if (PluginManager::findReaderSelectionPlugin(pluginId, pluginLabel, pluginFunction)) {
+    actions.push_back(pluginLabel);
+  }
+  if (!wordSelectionIsMultiple() && selectedWord_ >= 0 && selectedWord_ < static_cast<int>(touchWords_.size()) &&
       !touchWords_[static_cast<size_t>(selectedWord_)].footnoteTarget.empty()) {
     actions.push_back("View footnote");
   }
@@ -703,23 +745,200 @@ void EpubActivity::renderWordSelection() {
     return;
   }
 
-  renderer.syncWriteBufferFromActive();
+  if (!annUi_.restoreExternalFramebuffer(*this)) {
+    renderer.syncWriteBufferFromActive();
+  }
   renderer.setRenderMode(GfxRenderer::BW);
 
-  const PageWordHit& word = touchWords_[static_cast<size_t>(selectedWord_)];
-  renderer.ui.fillSparseInkLatticeInRect(word.screenX, std::max(0, word.screenY), std::max(1, word.screenW),
-                                         std::max(3, word.screenH), 2);
+  const size_t actionWordIndex = static_cast<size_t>(std::max(wordSelectionAnchor_, wordSelectionFocus_));
+  const PageWordHit& word = touchWords_[actionWordIndex < touchWords_.size() ? actionWordIndex
+                                                                              : static_cast<size_t>(selectedWord_)];
+  drawWordSelectionRange();
+  drawWordSelectionHandles();
 
-  if (wordActionsOpen_) {
-    const std::vector<std::string> actions = currentWordActions();
-    const PopUpBounds box = PopUp::bounds(renderer, static_cast<int>(actions.size()));
-    PopUp::background(renderer, box);
-    PopUp::title(renderer, box, word.text);
-    PopUp::list(renderer, box, actions, -1, 0);
-    PopUp::border(renderer, box);
+  if (wordActionsOpen_ && !wordSelectionHandleDragActive_) {
+    drawWordSelectionActionBar(word);
   }
 
   renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+}
+
+void EpubActivity::drawWordSelectionRange() {
+  if (wordSelectionAnchor_ < 0 || wordSelectionFocus_ < 0 || touchWords_.empty()) {
+    return;
+  }
+  const size_t lo = static_cast<size_t>(std::min(wordSelectionAnchor_, wordSelectionFocus_));
+  const size_t hi = static_cast<size_t>(std::max(wordSelectionAnchor_, wordSelectionFocus_));
+  if (lo >= touchWords_.size() || hi >= touchWords_.size()) {
+    return;
+  }
+
+  size_t first = lo;
+  while (first <= hi) {
+    const int lineY = touchWords_[first].screenY;
+    size_t last = first + 1;
+    int minX = touchWords_[first].screenX;
+    int maxR = touchWords_[first].screenX + touchWords_[first].screenW;
+    int lineHeight = std::max(3, touchWords_[first].screenH);
+    while (last <= hi && touchWords_[last].screenY == lineY) {
+      minX = std::min(minX, touchWords_[last].screenX);
+      maxR = std::max(maxR, touchWords_[last].screenX + touchWords_[last].screenW);
+      lineHeight = std::max(lineHeight, std::max(3, touchWords_[last].screenH));
+      ++last;
+    }
+    renderer.ui.fillSparseInkLatticeInRect(minX, std::max(0, lineY), std::max(1, maxR - minX), lineHeight, 2);
+    first = last;
+  }
+}
+
+void EpubActivity::drawWordSelectionHandles() {
+  if (wordSelectionAnchor_ < 0 || wordSelectionFocus_ < 0 || touchWords_.empty()) {
+    return;
+  }
+  const size_t lo = static_cast<size_t>(std::min(wordSelectionAnchor_, wordSelectionFocus_));
+  const size_t hi = static_cast<size_t>(std::max(wordSelectionAnchor_, wordSelectionFocus_));
+  if (lo >= touchWords_.size() || hi >= touchWords_.size()) {
+    return;
+  }
+
+  const PageWordHit& first = touchWords_[lo];
+  const PageWordHit& last = touchWords_[hi];
+  const int lineTop = first.screenY;
+  const int firstLineBottom = first.screenY + std::max(3, first.screenH);
+  const int lastLineTop = last.screenY;
+  const int startX = first.screenX;
+  const int startCenterY = std::max(kWordSelectionHandleRadius, lineTop - kWordSelectionHandleRadius);
+  const int endX = last.screenX + std::max(1, last.screenW);
+  const int endCenterY = std::min(renderer.getScreenHeight() - kWordSelectionHandleRadius,
+                                  last.screenY + std::max(3, last.screenH) + kWordSelectionHandleRadius);
+
+  renderer.line.render(startX, startCenterY + kWordSelectionHandleRadius, startX, firstLineBottom, true);
+  renderer.line.render(startX + 1, startCenterY + kWordSelectionHandleRadius, startX + 1, firstLineBottom, true);
+  renderer.circle.render(startX, startCenterY, kWordSelectionHandleRadius, true);
+  renderer.circle.render(startX, startCenterY, kWordSelectionHandleRadius - 2, false);
+  renderer.line.render(endX, lastLineTop, endX, endCenterY - kWordSelectionHandleRadius, true);
+  renderer.line.render(endX + 1, lastLineTop, endX + 1, endCenterY - kWordSelectionHandleRadius, true);
+  renderer.circle.render(endX, endCenterY, kWordSelectionHandleRadius, true);
+  renderer.circle.render(endX, endCenterY, kWordSelectionHandleRadius - 2, false);
+}
+
+int EpubActivity::wordSelectionHandleAt(const int x, const int y) const {
+  if (wordSelectionAnchor_ < 0 || wordSelectionFocus_ < 0 || touchWords_.empty()) {
+    return -1;
+  }
+  const size_t lo = static_cast<size_t>(std::min(wordSelectionAnchor_, wordSelectionFocus_));
+  const size_t hi = static_cast<size_t>(std::max(wordSelectionAnchor_, wordSelectionFocus_));
+  if (lo >= touchWords_.size() || hi >= touchWords_.size()) {
+    return -1;
+  }
+
+  const PageWordHit& first = touchWords_[lo];
+  const PageWordHit& last = touchWords_[hi];
+  const int startX = first.screenX;
+  const int startY = std::max(kWordSelectionHandleRadius, first.screenY - kWordSelectionHandleRadius);
+  const int endX = last.screenX + std::max(1, last.screenW);
+  const int endY = std::min(renderer.getScreenHeight() - kWordSelectionHandleRadius,
+                            last.screenY + std::max(3, last.screenH) + kWordSelectionHandleRadius);
+  const int hitRadius = kWordSelectionHandleRadius + 8;
+  const int startDx = x - startX;
+  const int startDy = y - startY;
+  if (startDx * startDx + startDy * startDy <= hitRadius * hitRadius) {
+    return 0;
+  }
+  const int endDx = x - endX;
+  const int endDy = y - endY;
+  if (endDx * endDx + endDy * endDy <= hitRadius * hitRadius) {
+    return 1;
+  }
+  return -1;
+}
+
+bool EpubActivity::wordSelectionActionBarBounds(const PageWordHit& word, int& x, int& y, int& width, int& height,
+                                                std::vector<int>* itemWidths) const {
+  if (!wordSelectionOpen_ || !wordActionsOpen_) {
+    return false;
+  }
+
+  const int font = MONTSERRAT_8_FONT_ID;
+  const std::vector<std::string> actions = currentWordActions();
+  if (actions.empty()) {
+    return false;
+  }
+
+  const bool vertical = kWordSelectionActionBarVertical;
+  width = 0;
+  height = vertical ? Button::height * static_cast<int>(actions.size()) : Button::height;
+  if (itemWidths) {
+    itemWidths->clear();
+  }
+  for (const std::string& action : actions) {
+    const int itemWidth = Button::width(renderer, action.c_str(), font);
+    width = vertical ? std::max(width, itemWidth) : width + itemWidth;
+    if (itemWidths) {
+      itemWidths->push_back(itemWidth);
+    }
+  }
+  // Give the vertical action panel enough breathing room that it reads as a
+  // proper menu and does not crowd the system-font text at the right edge.
+  if (vertical) {
+    width += 20;
+  }
+
+  constexpr int margin = 15;
+  const int lineBottom = word.screenY + std::max(3, word.screenH);
+  const int anchorX = word.screenX + std::max(1, word.screenW);
+  x = anchorX - width / 2;
+  y = lineBottom + kWordSelectionHandleRadius + kWordSelectionActionGap;
+  x = std::max(margin, std::min(x, renderer.getScreenWidth() - margin - width));
+  if (y + height > renderer.getScreenHeight() - margin) {
+    y = std::max(margin, word.screenY - height - kWordSelectionHandleRadius - kWordSelectionActionGap);
+  }
+  return true;
+}
+
+void EpubActivity::drawWordSelectionActionBar(const PageWordHit& word) {
+  int x = 0;
+  int y = 0;
+  int width = 0;
+  int height = 0;
+  std::vector<int> itemWidths;
+  if (!wordSelectionActionBarBounds(word, x, y, width, height, &itemWidths)) {
+    return;
+  }
+
+  const std::vector<std::string> actions = currentWordActions();
+  const bool vertical = kWordSelectionActionBarVertical;
+  renderer.rectangle.fill(x, y, width, height, false, vertical ? false : true, false);
+  renderer.rectangle.render(x, y, width, height, true, vertical ? false : true, false);
+
+  const int font = systemFontId();
+  const int textHeight = renderer.text.getLineHeight(font);
+  const int textY = y + (height - textHeight) / 2;
+  if (vertical) {
+    constexpr int verticalTextPadding = 16;
+    for (size_t i = 0; i < actions.size(); ++i) {
+      const int rowY = y + static_cast<int>(i) * Button::height;
+      renderer.text.render(font, x + verticalTextPadding, rowY + (Button::height - textHeight) / 2,
+                           actions[i].c_str(), true,
+                           EpdFontFamily::REGULAR);
+      if (i + 1 < actions.size()) {
+        renderer.line.render(x + 8, rowY + Button::height, x + width - 8, rowY + Button::height, true,
+                             LineRender::Style::Dotted);
+      }
+    }
+    return;
+  }
+
+  int itemX = x;
+  for (size_t i = 0; i < actions.size(); ++i) {
+    const int textWidth = renderer.text.getWidth(font, actions[i].c_str());
+    renderer.text.render(font, itemX + (itemWidths[i] - textWidth) / 2, textY, actions[i].c_str(), true,
+                         EpdFontFamily::REGULAR);
+    itemX += itemWidths[i];
+    if (i + 1 < actions.size()) {
+      renderer.line.render(itemX, y + 8, itemX, y + height - 8, true, LineRender::Style::Dotted);
+    }
+  }
 }
 
 bool EpubActivity::openWordSelection(const int x, const int y) {
@@ -747,30 +966,48 @@ bool EpubActivity::openWordSelection(const int x, const int y) {
 
   wordSelectionOpen_ = true;
   wordActionsOpen_ = true;
+  wordSelectionAnchor_ = selectedWord_;
+  wordSelectionFocus_ = selectedWord_;
+  wordSelectionHandleDragActive_ = false;
+  wordSelectionDraggingStart_ = false;
+  wordSelectionDraggingOnWord_ = false;
+  annUi_.captureExternalFramebuffer(*this);
   renderWordSelection();
   return true;
 }
 
 void EpubActivity::startVoiceNoteForSelection(const std::string& selectedText, const uint16_t wordLo,
-                                              const uint16_t wordHi) {
+                                              const uint16_t wordHi, const bool attachToHighlight) {
 #if !FREEINK_CAP_MIC
-  (void)wordLo;
-  (void)wordHi;
   if (selectedText.empty()) {
     return;
   }
   enterNewActivity(new KeyboardEntryActivity(
       renderer, mappedInput, "Add note", "", 10, 256, false,
-      [this](const std::string& note) {
+      [this, selectedText, wordLo, wordHi, attachToHighlight](const std::string& note) {
         exitActivity();
-        if (!note.empty() && annUi_.isActive()) {
-          annUi_.setPendingNoteText(note);
+        if (!note.empty()) {
+          if (attachToHighlight) {
+            if (!annUi_.saveExternalHighlight(*this, selectedText, wordLo, wordHi, note)) {
+              readerPopup("Could not save note");
+            }
+          } else if (annUi_.isActive()) {
+            annUi_.setPendingNoteText(note);
+          }
         }
-        updateRequired = true;
+        if (attachToHighlight) {
+          restoreWordSelectionAfterNote();
+        } else {
+          updateRequired = true;
+        }
       },
-      [this]() {
+      [this, attachToHighlight]() {
         exitActivity();
-        updateRequired = true;
+        if (attachToHighlight) {
+          restoreWordSelectionAfterNote();
+        } else {
+          updateRequired = true;
+        }
       }));
   return;
 #else
@@ -780,22 +1017,46 @@ void EpubActivity::startVoiceNoteForSelection(const std::string& selectedText, c
   const std::string voiceDirectory = epub->getCachePath() + "/voice";
   enterNewActivity(new VoiceNoteActivity(
       renderer, mappedInput, voiceDirectory,
-      [this](const std::string& audioPath, const bool success) {
+      [this, selectedText, wordLo, wordHi, attachToHighlight](const std::string& audioPath, const bool success) {
         INX_SERIAL.printf("[%lu] [VOICE-NOTE] captured path=%s success=%d\n", millis(), audioPath.c_str(),
                           success ? 1 : 0);
         exitActivity();
-        if (success && annUi_.isActive()) {
+        if (success && attachToHighlight) {
+          if (!annUi_.saveExternalHighlight(*this, selectedText, wordLo, wordHi, {}, audioPath)) {
+            readerPopup("Could not save note");
+          }
+        } else if (success && annUi_.isActive()) {
           annUi_.setPendingNoteAudioPath(audioPath);
         } else if (!success) {
           readerPopup("Could not record note");
         }
-        updateRequired = true;
+        if (attachToHighlight) {
+          restoreWordSelectionAfterNote();
+        } else {
+          updateRequired = true;
+        }
       },
-      [this]() {
+      [this, attachToHighlight]() {
         exitActivity();
-        updateRequired = true;
+        if (attachToHighlight) {
+          restoreWordSelectionAfterNote();
+        } else {
+          updateRequired = true;
+        }
       }));
 #endif
+}
+
+void EpubActivity::restoreWordSelectionAfterNote() {
+  if (!wordSelectionOpen_ || selectedWord_ < 0 || selectedWord_ >= static_cast<int>(touchWords_.size())) {
+    updateRequired = true;
+    return;
+  }
+
+  wordActionsOpen_ = true;
+  INX_SERIAL.printf("[%lu] [WORD_SELECTION] restored after note anchor=%d focus=%d\n", millis(),
+                    wordSelectionAnchor_, wordSelectionFocus_);
+  renderWordSelection();
 }
 
 bool EpubActivity::handleWordTouch() {
@@ -888,6 +1149,52 @@ bool EpubActivity::handleWordSelection() {
     return false;
   }
 
+  if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+    closeWordSelection();
+    renderScreen(true);
+    return true;
+  }
+
+  if (wordSelectionHandleDragActive_) {
+    float nx = 0.0f;
+    float ny = 0.0f;
+    if (mappedInput.isTouchHeldInScreen(renderer, nx, ny)) {
+      const int x = static_cast<int>(nx * renderer.getScreenWidth());
+      const int y = static_cast<int>(ny * renderer.getScreenHeight());
+      const int word = wordAt(x, y);
+      wordSelectionDraggingOnWord_ = word >= 0;
+      if (word >= 0) {
+        if (wordSelectionDraggingStart_) {
+          wordSelectionAnchor_ = word;
+        } else {
+          wordSelectionFocus_ = word;
+        }
+        selectedWord_ = wordSelectionDraggingStart_ ? wordSelectionAnchor_ : wordSelectionFocus_;
+        renderWordSelection();
+      }
+      return true;
+    }
+
+    wordSelectionHandleDragActive_ = false;
+    wordActionsOpen_ = wordSelectionDraggingOnWord_;
+    renderWordSelection();
+    return true;
+  }
+
+  float pressNx = 0.0f;
+  float pressNy = 0.0f;
+  if (mappedInput.wasTouchPressedInScreen(renderer, pressNx, pressNy)) {
+    const int pressX = static_cast<int>(pressNx * renderer.getScreenWidth());
+    const int pressY = static_cast<int>(pressNy * renderer.getScreenHeight());
+    const int handle = wordSelectionHandleAt(pressX, pressY);
+    if (handle >= 0) {
+      wordSelectionHandleDragActive_ = true;
+      wordSelectionDraggingStart_ = handle == 0;
+      wordSelectionDraggingOnWord_ = true;
+      return true;
+    }
+  }
+
   if (mappedInput.wasTouchSwipeUp() || mappedInput.wasTouchSwipeDown() || mappedInput.wasTouchSwipeLeft() ||
       mappedInput.wasTouchSwipeRight()) {
     closeWordSelection();
@@ -906,6 +1213,27 @@ bool EpubActivity::handleWordSelection() {
   INX_SERIAL.printf("[%lu] [WORD_SELECTION] touch=(%d,%d) actions=%d spine=%d page=%d\n", millis(), x, y,
                 wordActionsOpen_ ? 1 : 0, currentSpineIndex, section ? section->currentPage : -1);
 
+  auto focusWordFromTap = [this](const int tappedWord) {
+    const int currentLo = std::min(wordSelectionAnchor_, wordSelectionFocus_);
+    const int currentHi = std::max(wordSelectionAnchor_, wordSelectionFocus_);
+    if (tappedWord < currentLo) {
+      // Expand toward the beginning while preserving the current end.
+      wordSelectionAnchor_ = tappedWord;
+      wordSelectionFocus_ = currentHi;
+    } else if (tappedWord > currentHi) {
+      // Expand toward the end while preserving the current beginning.
+      wordSelectionAnchor_ = currentLo;
+      wordSelectionFocus_ = tappedWord;
+    } else {
+      // Move the active endpoint when tapping inside the current range.
+      wordSelectionFocus_ = tappedWord;
+    }
+    selectedWord_ = tappedWord;
+    // For a range, currentWordActions() removes only Look up and keeps the
+    // Highlight/Add note menu visible.
+    wordActionsOpen_ = true;
+  };
+
   if (!wordActionsOpen_) {
     const int word = wordAt(x, y);
     if (word < 0) {
@@ -913,40 +1241,124 @@ bool EpubActivity::handleWordSelection() {
       renderScreen(true);
       return true;
     }
-    selectedWord_ = word;
-    wordActionsOpen_ = true;
+    focusWordFromTap(word);
     renderWordSelection();
     return true;
   }
 
+  const size_t actionWordIndex = static_cast<size_t>(std::max(wordSelectionAnchor_, wordSelectionFocus_));
+  const PageWordHit& selected = touchWords_[actionWordIndex < touchWords_.size() ? actionWordIndex
+                                                                                   : static_cast<size_t>(selectedWord_)];
+  int barX = 0;
+  int barY = 0;
+  int barWidth = 0;
+  int barHeight = 0;
+  std::vector<int> itemWidths;
   const std::vector<std::string> actions = currentWordActions();
-  const PopUpBounds box = PopUp::bounds(renderer, static_cast<int>(actions.size()));
-  const int listY = box.y + box.header;
-  if (x < box.x || x >= box.x + box.width || y < listY || y >= listY + box.row * box.rows) {
+  if (!wordSelectionActionBarBounds(selected, barX, barY, barWidth, barHeight, &itemWidths) || x < barX ||
+      x >= barX + barWidth || y < barY || y >= barY + barHeight) {
+    const int tappedWord = wordAt(x, y);
+    if (tappedWord >= 0) {
+      focusWordFromTap(tappedWord);
+      INX_SERIAL.printf("[%lu] [WORD_SELECTION] focus word=%d anchor=%d multiple=%d\n", millis(), tappedWord,
+                    wordSelectionAnchor_, wordSelectionIsMultiple() ? 1 : 0);
+      renderWordSelection();
+      return true;
+    }
     closeWordSelection();
     renderScreen(true);
     return true;
   }
 
-  const int action = (y - listY) / box.row;
+  int action = -1;
+  if (kWordSelectionActionBarVertical) {
+    const int row = (y - barY) / Button::height;
+    if (row >= 0 && row < static_cast<int>(actions.size())) {
+      action = row;
+    }
+  } else {
+    int actionX = barX;
+    for (size_t i = 0; i < itemWidths.size(); ++i) {
+      if (x >= actionX && x < actionX + itemWidths[i]) {
+        action = static_cast<int>(i);
+        break;
+      }
+      actionX += itemWidths[i];
+    }
+  }
+  if (action < 0 || action >= static_cast<int>(actions.size())) {
+    return true;
+  }
   INX_SERIAL.printf("[%lu] [WORD_SELECTION] action=%d spine=%d page=%d\n", millis(), action, currentSpineIndex,
                 section ? section->currentPage : -1);
+  const int wordLo = std::min(wordSelectionAnchor_, wordSelectionFocus_);
+  const int wordHi = std::max(wordSelectionAnchor_, wordSelectionFocus_);
+  std::string selectedText;
+  for (int i = wordLo; i <= wordHi && i >= 0 && i < static_cast<int>(touchWords_.size()); ++i) {
+    if (!selectedText.empty()) {
+      selectedText += ' ';
+    }
+    selectedText += touchWords_[static_cast<size_t>(i)].text;
+  }
   const PageWordHit word = touchWords_[static_cast<size_t>(selectedWord_)];
-  closeWordSelection();
-  renderScreen(true);
+  const std::string actionLabel = actions[static_cast<size_t>(action)];
+  const bool keepSelectionForNote = actionLabel == "Add note";
+  bool highlighted = false;
+  bool pluginActionSucceeded = false;
+  std::string pluginId;
+  std::string pluginLabel;
+  std::string pluginFunction;
+  const bool hasPluginAction = PluginManager::findReaderSelectionPlugin(pluginId, pluginLabel, pluginFunction);
+  if (actionLabel == "Highlight") {
+    highlighted = annUi_.saveExternalHighlight(*this, selectedText, static_cast<size_t>(wordLo),
+                                                static_cast<size_t>(wordHi));
+  } else if (epub && section && hasPluginAction && actionLabel == pluginLabel) {
+    std::string luaError;
+    pluginActionSucceeded = PluginManager::invoke(
+        pluginId.c_str(), pluginFunction.c_str(),
+      [&](lua_State* state) {
+        lua_newtable(state);
+        const std::string book = epub->getTitle();
+        const std::string chapter = getCurrentChapterTitle();
+        lua_pushlstring(state, selectedText.c_str(), selectedText.size());
+        lua_setfield(state, -2, "selected_text");
+        lua_pushlstring(state, selectedText.c_str(), selectedText.size());
+        lua_setfield(state, -2, "selection_context");
+        lua_pushlstring(state, book.c_str(), book.size());
+        lua_setfield(state, -2, "book_title");
+        lua_pushlstring(state, chapter.c_str(), chapter.size());
+        lua_setfield(state, -2, "chapter_title");
+        lua_pushinteger(state, static_cast<lua_Integer>(section->currentPage));
+        lua_setfield(state, -2, "page_number");
+        lua_pushinteger(state, static_cast<lua_Integer>(currentSpineIndex));
+        lua_setfield(state, -2, "spine_index");
+        lua_pushinteger(state, static_cast<lua_Integer>(millis() / 1000));
+        lua_setfield(state, -2, "timestamp");
+      },
+        luaError);
+    if (!pluginActionSucceeded) INX_SERIAL.printf("[LUA] reader plugin action failed: %s\n", luaError.c_str());
+  }
+  if (!keepSelectionForNote) {
+    closeWordSelection();
+    renderScreen(true);
+  }
   pauseReadingStats();
 
-  if (action == 0) {
+  if (actionLabel == "Look up") {
     if (!dictUi_.lookupAt(*this, word.screenX + word.screenW / 2, word.screenY + word.screenH / 2)) {
       renderScreen(true);
     }
-  } else if (action == 1) {
-    if (!annUi_.startAt(*this, word.screenX + word.screenW / 2, word.screenY + word.screenH / 2)) {
-      renderScreen(true);
+  } else if (actionLabel == "Highlight") {
+    if (!highlighted) {
+      readerPopup("Could not save highlight");
     }
-  } else if (action == 2) {
+  } else if (actionLabel == "Add note") {
     startVoiceNoteForPage();
-  } else if (action == 3 && !word.footnoteTarget.empty()) {
+  } else if (actionLabel == "Add note") {
+    startVoiceNoteForSelection(selectedText, static_cast<uint16_t>(wordLo), static_cast<uint16_t>(wordHi), true);
+  } else if (hasPluginAction && actionLabel == pluginLabel) {
+    readerPopup(pluginActionSucceeded ? "Plugin action completed" : "Plugin action failed", 1400);
+  } else if (actionLabel == "View footnote" && !word.footnoteTarget.empty()) {
     footnoteBody_.show(*this, word.footnoteTarget, word.text);
   }
   return true;
@@ -1008,6 +1420,7 @@ void EpubActivity::onExit() {
   }
 
   FontManager::unloadAllSDFonts();
+  LanguageManager::setBookLanguage("");
 
   ActivityWithSubactivity::onExit();
 }
@@ -1021,6 +1434,18 @@ void EpubActivity::loop() {
   if (subActivity) {
     subActivity->loop();
     consumePageNoteVoiceCompletion();
+    return;
+  }
+
+  if (bookFinished_) {
+    if (handleFinishedBookInput()) return;
+    return;
+  }
+
+  if (readerPopupExpiresAt_ != 0 && static_cast<int32_t>(millis() - readerPopupExpiresAt_) >= 0) {
+    readerPopupExpiresAt_ = 0;
+    updateRequired = false;
+    renderScreen(true);
     return;
   }
 
@@ -1181,6 +1606,10 @@ void EpubActivity::loop() {
 
   const bool readerTouchEnabled = !settingsDrawer || settingsDrawer->isTouchEnabled();
 
+  if (readerTouchEnabled && annUi_.handlePreEntryTouchGesture(*this)) {
+    return;
+  }
+
   if (readerTouchEnabled) {
     if (READER_SETTINGS.pageTurnMode == ReaderSetting::PAGE_TURN_SWIPE) {
       if (mappedInput.wasTouchSwipeLeftForRenderer(renderer)) {
@@ -1236,13 +1665,13 @@ void EpubActivity::loop() {
     return;
   }
 
-  if (READER_SETTINGS.pageAutoTurnSeconds > 0 && (!navigation_ || !navigation_->isTocOpen()) && !settingsDrawerVisible) {
+  if (bookSettings.pageAutoTurnSeconds > 0 && (!navigation_ || !navigation_->isTocOpen()) && !settingsDrawerVisible) {
     if (lastAutoPageTurnTime == 0) {
       lastAutoPageTurnTime = millis();
     }
 
     unsigned long elapsed = millis() - lastAutoPageTurnTime;
-    if (elapsed >= (READER_SETTINGS.pageAutoTurnSeconds * 1000UL)) {
+    if (elapsed >= (bookSettings.pageAutoTurnSeconds * 1000UL)) {
       lastAutoPageTurnTime = millis();
       endPageTimer();
       (void)pageTurn(true);
@@ -1454,9 +1883,6 @@ bool EpubActivity::composePreparedForwardPage() {
   preparedPage_.imagePlaceholder = imagePlaceholder;
   section->currentPage = savedPage;
 
-  INX_SERIAL.printf("[%lu] [EPA-PREP] ready spine=%d page=%d images=%d refresh=%d\n", millis(),
-                    preparedPage_.spineIndex, preparedPage_.pageIndex, hasImages ? 1 : 0,
-                    static_cast<int>(preparedPage_.refreshMode));
   return true;
 }
 
@@ -1490,8 +1916,6 @@ void EpubActivity::runIdleSecondNextPage() {
   const bool cached = section->preloadPage(targetPage);
   preloadedPageSpineIndex_ = currentSpineIndex;
   preloadedPageIndex_ = targetPage;
-  INX_SERIAL.printf("[%lu] [EPA-PREP] page-cache spine=%d page=%d ok=%d\n", millis(), currentSpineIndex,
-                    targetPage, cached ? 1 : 0);
   yield();
 }
 
@@ -1629,8 +2053,6 @@ bool EpubActivity::presentPreparedForwardPage() {
   invalidatePreparedPage();
   scheduleIdlePreparedPage();
 
-  INX_SERIAL.printf("[%lu] [EPA-PREP] displayed spine=%d page=%d\n", millis(), currentSpineIndex,
-                    section->currentPage);
   return true;
 }
 
@@ -1691,8 +2113,6 @@ void EpubActivity::jumpToPercent(int percent) {
  * @param forward True for forward page turn, false for backward
  */
 bool EpubActivity::pageTurn(bool forward) {
-  INX_SERIAL.printf("[%lu] [EPA] pageTurn forward=%d before spine=%d page=%d next=%d\n", millis(), forward ? 1 : 0,
-                currentSpineIndex, section ? section->currentPage : -1, nextPageNumber);
   if (!epub) {
     updateRequired = true;
     return false;
@@ -1757,8 +2177,6 @@ bool EpubActivity::pageTurn(bool forward) {
 
   startPageTimer();
   updateRequired = true;
-  INX_SERIAL.printf("[%lu] [EPA] pageTurn after spine=%d page=%d next=%d reload=%d\n", millis(), currentSpineIndex,
-                section ? section->currentPage : -1, nextPageNumber, needSectionReset ? 1 : 0);
   return false;
 }
 
@@ -1776,8 +2194,13 @@ void EpubActivity::renderScreen(const bool clearFramebuffer) {
 
   if (currentSpineIndex >= totalSpine) {
     renderer.clearScreen(0xFF);
+    if (!bookFinished_) {
+      bookFinished_ = true;
+      loadReaderSuggestion();
+    }
     displayBookStats();
     BOOK_STATE.setFinished(epub->getPath(), true);
+    renderReaderSuggestion();
     return;
   }
 
@@ -1799,8 +2222,13 @@ void EpubActivity::renderScreen(const bool clearFramebuffer) {
                     currentSpineIndex, totalSpine);
       if (currentSpineIndex >= totalSpine) {
         renderer.clearScreen(0xFF);
+        if (!bookFinished_) {
+          bookFinished_ = true;
+          loadReaderSuggestion();
+        }
         displayBookStats();
         BOOK_STATE.setFinished(epub->getPath(), true);
+        renderReaderSuggestion();
         return;
       }
       if (wasLayoutReload) {
@@ -2241,6 +2669,8 @@ void EpubActivity::loadBookSettings() {
     } else {
       syncSettingsFromGlobalIfNeeded();
     }
+    // Book language selection is global; use the language enabled in Language Manager.
+    LanguageManager::setBookLanguage("");
     renderer.setDarkMode(bookSettings.darkMode != 0);
     pagesUntilFullRefresh = READER_SETTINGS.getRefreshFrequency();
   }
@@ -2292,10 +2722,13 @@ void EpubActivity::applyBookSettings() {
   setupOrientation();
 
   bookSettings.normalize();
+  // Book language selection is global; use the language enabled in Language Manager.
+  LanguageManager::setBookLanguage("");
   const int targetFontId = bookSettings.getReaderFontId();
   if (!FontManager::ensureReaderLayoutFonts(targetFontId, renderer)) {
     bookSettings = rollbackSettings;
     bookSettings.normalize();
+    LanguageManager::setBookLanguage("");
     renderer.setDarkMode(bookSettings.darkMode != 0);
     setupOrientation();
     bookLayoutAppliedOrientation_ = bookSettings.orientation;
@@ -2396,4 +2829,82 @@ void EpubActivity::displayBookStats() {
   if (epub) {
     readingStats_.display(renderer, *epub);
   }
+}
+
+void EpubActivity::loadReaderSuggestion() {
+  readerSuggestionAvailable_ = false;
+  readerSuggestionPath_.clear();
+  readerSuggestionTitle_.clear();
+  readerSuggestionGroup_.clear();
+  readerSuggestionLabel_.clear();
+  if (!epub) return;
+
+  PluginManager::ReaderSuggestionLink link;
+  if (!PluginManager::findReaderSuggestionPlugin(link)) return;
+
+  JsonDocument arguments;
+  arguments["path"] = epub->getPath();
+  arguments["title"] = epub->getTitle();
+  arguments["author"] = epub->getAuthor();
+  std::string argumentJson;
+  serializeJson(arguments, argumentJson);
+
+  std::string output;
+  std::string error;
+  if (!PluginManager::invokeStringJson(link.id.c_str(), link.function.c_str(), argumentJson, output, error)) return;
+
+  JsonDocument next;
+  if (deserializeJson(next, output) != DeserializationError::Ok || !next.is<JsonObject>()) return;
+  const char* path = next["path"] | "";
+  if (!path || !path[0]) return;
+  readerSuggestionPath_ = path;
+  readerSuggestionTitle_ = next["title"] | readerSuggestionPath_.c_str();
+  readerSuggestionGroup_ = next[link.groupField.c_str()] | "";
+  readerSuggestionLabel_ = link.label.empty() ? "Open suggested book" : link.label;
+  readerSuggestionAvailable_ = true;
+  INX_SERIAL.printf("[%lu] [PLUGIN] reader-suggestion plugin=%s path=%s\n", millis(), link.id.c_str(), path);
+}
+
+void EpubActivity::renderReaderSuggestion() {
+  if (!readerSuggestionAvailable_) return;
+  const int font = systemFontId();
+  const int width = renderer.getScreenWidth();
+  const int height = renderer.getScreenHeight();
+  if (!readerSuggestionGroup_.empty()) {
+    renderer.text.centered(MONTSERRAT_10_FONT_ID, height - Button::height - 58,
+                           readerSuggestionGroup_.c_str(), true);
+  }
+  const int buttonWidth = Button::width(renderer, readerSuggestionLabel_.c_str(), font);
+  const ButtonBounds button{(width - buttonWidth) / 2, height - Button::height - 20, buttonWidth, Button::height};
+  Button::render(renderer, button, readerSuggestionLabel_.c_str(), true, font);
+  renderer.text.centered(MONTSERRAT_8_FONT_ID, height - 8, readerSuggestionTitle_.c_str(), true);
+  renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+}
+
+bool EpubActivity::handleFinishedBookInput() {
+  if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+    onGoBack();
+    return true;
+  }
+
+  const int font = systemFontId();
+  const int buttonWidth = Button::width(renderer, readerSuggestionLabel_.c_str(), font);
+  const ButtonBounds button{(renderer.getScreenWidth() - buttonWidth) / 2,
+                            renderer.getScreenHeight() - Button::height - 20, buttonWidth, Button::height};
+  bool open = mappedInput.wasReleased(MappedInputManager::Button::Confirm);
+  if (mappedInput.hasTouch()) {
+    float nx = 0.0f;
+    float ny = 0.0f;
+    if (mappedInput.wasTouchTapInScreen(renderer, nx, ny)) {
+      const int x = static_cast<int>(nx * renderer.getScreenWidth());
+      const int y = static_cast<int>(ny * renderer.getScreenHeight());
+      open = x >= button.x && x < button.x + button.width && y >= button.y && y < button.y + button.height;
+    }
+  }
+  if (open && readerSuggestionAvailable_) {
+    const std::string path = readerSuggestionPath_;
+    openReaderFromCallback(path, onGoBack);
+    return true;
+  }
+  return false;
 }

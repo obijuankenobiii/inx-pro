@@ -9,6 +9,7 @@
 #include <ESPmDNS.h>
 #include <GfxRenderer.h>
 #include <WiFi.h>
+#include <esp_heap_caps.h>
 #include <esp_task_wdt.h>
 #include <qrcode.h>
 
@@ -84,7 +85,8 @@ void HotspotActivity::onEnter() {
   updateRequired = true;
   state = HotspotState::STARTING;
 
-  xTaskCreate(&HotspotActivity::taskTrampoline, "HotspotTask", STACK_SIZE, this, 1, &displayTaskHandle);
+  xTaskCreateWithCaps(&HotspotActivity::taskTrampoline, "HotspotTask", STACK_SIZE, this, 1, &displayTaskHandle,
+                      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 
   startAccessPoint();
 }
@@ -109,7 +111,7 @@ void HotspotActivity::onExit() {
   delay(30);
 
   if (displayTaskHandle) {
-    vTaskDelete(displayTaskHandle);
+    vTaskDeleteWithCaps(displayTaskHandle);
     displayTaskHandle = nullptr;
   }
 

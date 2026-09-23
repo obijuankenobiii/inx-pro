@@ -8,9 +8,11 @@
 #include <EnvironmentSensor.h>
 #include <HalGPIO.h>
 #include <Imu.h>
+#include <PowerManager.h>
 #include <Rtc.h>
 #include <esp_sleep.h>
 #include <esp_system.h>
+#include <driver/gpio.h>
 
 #include <cmath>
 
@@ -74,12 +76,10 @@ void HalGPIO::serviceTouchGestures() {
     const float dy = ey - sy;
     if (std::fabs(dy) > std::fabs(dx)) {
       touchSwipeDirection = dy < 0.0f ? TouchSwipe::Up : TouchSwipe::Down;
-      INX_SERIAL.printf("[STICKY][TOUCH] SWIPE %s\n", dy < 0.0f ? "up" : "down");
       return;
     }
 
     touchSwipeDirection = dx < 0.0f ? TouchSwipe::Left : TouchSwipe::Right;
-    INX_SERIAL.printf("[STICKY][TOUCH] SWIPE %s\n", dx < 0.0f ? "left" : "right");
 
     const bool startedAtEdge = sx < kEdgeSwipeMargin || sx > (1.0f - kEdgeSwipeMargin) || sy < kEdgeSwipeMargin ||
                                sy > (1.0f - kEdgeSwipeMargin);
@@ -93,22 +93,6 @@ void HalGPIO::serviceTouchGestures() {
 
 void HalGPIO::update() {
   inputMgr.update();
-  float pressedNx = 0.0f;
-  float pressedNy = 0.0f;
-  if (inputMgr.wasTouchPressedAt(pressedNx, pressedNy)) {
-    INX_SERIAL.printf("[STICKY][TOUCH] DOWN native=(%.3f,%.3f)\n", pressedNx, pressedNy);
-  }
-  if (inputMgr.wasTouchPressed()) {
-    const InputManager::TouchPoint point = inputMgr.getTouchPoint();
-    INX_SERIAL.printf("[STICKY][TOUCH] point=(%u,%u) valid=%d\n", point.x, point.y, point.valid ? 1 : 0);
-  }
-  if (inputMgr.wasTouchReleased()) {
-    float tapNx = 0.0f;
-    float tapNy = 0.0f;
-    const bool isTap = inputMgr.wasTouchTap(tapNx, tapNy);
-    INX_SERIAL.printf("[STICKY][TOUCH] UP tap=%d native=(%.3f,%.3f) held=%lu\n", isTap ? 1 : 0, tapNx, tapNy,
-                   inputMgr.lastTouchHeldMs());
-  }
   serviceTouchGestures();
 }
 
@@ -123,11 +107,7 @@ bool HalGPIO::isTouchHeldAt(float& nx, float& ny) const { return inputMgr.isTouc
 bool HalGPIO::wasTouchActivity() const { return inputMgr.wasTouchActivity(); }
 
 bool HalGPIO::wasTouchTap(float& nx, float& ny) const {
-  const bool tapped = inputMgr.wasTouchTap(nx, ny);
-  if (tapped) {
-    INX_SERIAL.printf("[STICKY] wasTouchTap() -> nx=%.3f ny=%.3f\n", nx, ny);
-  }
-  return tapped;
+  return inputMgr.wasTouchTap(nx, ny);
 }
 
 bool HalGPIO::touchSwipeStart(float& nx, float& ny) const {
@@ -244,13 +224,19 @@ HalGPIO::MotionGesture HalGPIO::readMotionGesture(const uint8_t orientation, con
 }
 
 void HalGPIO::startDeepSleep() {
-  const auto& in = BoardConfig::ACTIVE.input;
-  const bool pressedLevel = in.powerActiveHigh ? HIGH : LOW;
-  while (digitalRead(in.power) == pressedLevel) {
-    delay(50);
+  const auto& power = BoardConfig::ACTIVE.power;
+  // Keep the battery and peripheral rails latched while deep sleep isolates GPIOs.
+  for (const int8_t pin : {power.latch0, power.latch1}) {
+    if (pin < 0) continue;
+    const auto gpioPin = static_cast<gpio_num_t>(pin);
+    gpio_hold_dis(gpioPin);
+    pinMode(pin, OUTPUT);
+    digitalWrite(pin, HIGH);
+    gpio_hold_en(gpioPin);
   }
-  esp_sleep_enable_ext1_wakeup(1ULL << in.power, in.powerActiveHigh ? ESP_EXT1_WAKEUP_ANY_HIGH : ESP_EXT1_WAKEUP_ANY_LOW);
-  esp_deep_sleep_start();
+  // The caller has already put the panel to sleep and shut down mounted storage.
+  freeink::PowerManager::powerDownRailsForSleep();
+  freeink::PowerManager::deepSleepUntilPowerButton();
 }
 
 int HalGPIO::getBatteryPercentage() const {

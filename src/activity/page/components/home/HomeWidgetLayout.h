@@ -1,23 +1,25 @@
 #pragma once
 
+#include "../widget/Calendar.h"
 #include "../widget/Carousel.h"
 #include "../widget/Clock.h"
-#include "../widget/Calendar.h"
+#include "../widget/Description.h"
+#include "../widget/Favorites.h"
+#include "../widget/Heatmap.h"
+#include "../widget/Humidity.h"
+#include "../widget/Library.h"
 #include "../widget/Recent.h"
 #include "../widget/Shortcut.h"
 #include "../widget/ShortcutList.h"
 #include "../widget/Temperature.h"
-#include "../widget/Humidity.h"
 #include "../widget/TodaysReading.h"
-#include "../widget/Favorites.h"
-#include "../widget/Heatmap.h"
 #include "state/HomeTheme.h"
 
 class GfxRenderer;
 
 class HomeWidgetLayout final {
  public:
-  enum class HitType { None, Carousel, Recent, Favorites, TodaysReading, Heatmap, Shortcut };
+  enum class HitType { None, Carousel, Recent, Favorites, TodaysReading, Heatmap, Library, Shortcut };
   enum class SwipeTarget { None, Carousel, Favorites };
 
   struct HitResult {
@@ -32,8 +34,10 @@ class HomeWidgetLayout final {
   void invalidateFavorites() const;
   int favoriteCount() const;
   const std::string& favoritePath(int index) const;
+  const char* libraryFolder(const HomeTheme::Theme& theme, int slot) const;
   void renderSleep(const HomeTheme::Theme& theme) const;
   bool needsRefresh(const HomeTheme::Theme& theme) const;
+  int carouselBookCount(const HomeTheme::Theme& theme, int bookCount) const;
   HitResult hitTest(const HomeTheme::Theme& theme, int carouselIndex, int favoriteIndex, int bookCount, int x,
                     int y) const;
   SwipeTarget horizontalSwipeTarget(const HomeTheme::Theme& theme, int x, int y) const;
@@ -61,6 +65,7 @@ class HomeWidgetLayout final {
 
   Grid grid(const HomeTheme::Layout layout, bool sleep = false, const HomeTheme::Theme* theme = nullptr) const;
   Bounds slotBounds(const Grid& grid, int slot) const;
+  bool hideFirstCarouselBook(const HomeTheme::Theme& theme) const;
   void renderClassic(int carouselIndex) const;
   void renderGrid(const HomeTheme::Theme& theme, int carouselIndex, int favoriteIndex, bool sleep = false) const;
   void renderBorder(HomeTheme::Border border, const Grid& layout) const;
@@ -70,6 +75,7 @@ class HomeWidgetLayout final {
   int favoritesAt(const HomeTheme::Theme& theme, int carouselIndex, int x, int y) const;
   int todaysReadingAt(const HomeTheme::Theme& theme, int x, int y) const;
   int heatmapAt(const HomeTheme::Theme& theme, int x, int y) const;
+  int libraryAt(const HomeTheme::Theme& theme, int x, int y) const;
   int shortcutAt(const HomeTheme::Theme& theme, int x, int y) const;
 
   GfxRenderer& renderer_;
@@ -84,4 +90,6 @@ class HomeWidgetLayout final {
   TodaysReading todaysReading_;
   Favorites favorites_;
   Heatmap heatmap_;
+  LibraryWidget library_;
+  Description description_;
 };

@@ -12,7 +12,7 @@
 #include "system/MappedInputManager.h"
 
 int SubPage::header(const GfxRenderer& renderer, const char* name) {
-  constexpr int top = FREEINK_DEVICE_X4PRO ? 20 : 10;
+  constexpr int top = FREEINK_DEVICE_X4PRO ? 20 : 15;
   constexpr int size = 40;
   const int font = MONTSERRAT_16_FONT_ID;
   const int textY = top + (size - renderer.text.getLineHeight(font)) / 2;
@@ -41,7 +41,14 @@ bool SubPage::closeInput(GfxRenderer& renderer, MappedInputManager& mappedInput,
 
   const int x = static_cast<int>(tapX * renderer.getScreenWidth());
   const int y = static_cast<int>(tapY * renderer.getScreenHeight());
-  if (x >= renderer.getScreenWidth() - 60 && x < renderer.getScreenWidth() - 20 && y >= 20 && y < 60) {
+  constexpr int headerTop = FREEINK_DEVICE_X4PRO ? 20 : 10;
+  constexpr int closeSize = 40;
+  constexpr int closeTouchPadding = 10;
+  const int closeLeft = renderer.getScreenWidth() - 60 - closeTouchPadding;
+  const int closeRight = renderer.getScreenWidth() - 20 + closeTouchPadding;
+  const int closeTop = headerTop - closeTouchPadding;
+  const int closeBottom = headerTop + closeSize + closeTouchPadding;
+  if (x >= closeLeft && x < closeRight && y >= closeTop && y < closeBottom) {
     if (close) close();
     return true;
   }

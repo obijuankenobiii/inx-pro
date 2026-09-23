@@ -13,6 +13,7 @@
 #include <GfxRenderer.h>
 
 #include "state/SystemSetting.h"
+#include "system/LanguageManager.h"
 #include "system/TouchOrientation.h"
 
 namespace {
@@ -30,13 +31,8 @@ struct SideLayoutMap {
   ButtonIndex pageForward;
 };
 
-constexpr FrontLayoutMap kFrontLayouts[] = {
-    {HalGPIO::BTN_BACK, HalGPIO::BTN_CONFIRM, HalGPIO::BTN_LEFT, HalGPIO::BTN_RIGHT},
-    {HalGPIO::BTN_LEFT, HalGPIO::BTN_RIGHT, HalGPIO::BTN_BACK, HalGPIO::BTN_CONFIRM},
-    {HalGPIO::BTN_CONFIRM, HalGPIO::BTN_LEFT, HalGPIO::BTN_BACK, HalGPIO::BTN_RIGHT},
-    {HalGPIO::BTN_BACK, HalGPIO::BTN_CONFIRM, HalGPIO::BTN_RIGHT, HalGPIO::BTN_LEFT},
-    {HalGPIO::BTN_RIGHT, HalGPIO::BTN_LEFT, HalGPIO::BTN_BACK, HalGPIO::BTN_CONFIRM},
-};
+constexpr FrontLayoutMap kFrontLayout = {
+    HalGPIO::BTN_BACK, HalGPIO::BTN_CONFIRM, HalGPIO::BTN_LEFT, HalGPIO::BTN_RIGHT};
 
 constexpr SideLayoutMap kSideLayouts[] = {
     {HalGPIO::BTN_UP, HalGPIO::BTN_DOWN},
@@ -65,7 +61,7 @@ MappedInputManager::Button remapDirectional180(const MappedInputManager::Button 
 
 bool MappedInputManager::mapButton(const Button button, bool (HalGPIO::*fn)(uint8_t) const) const {
   const auto sideLayout = static_cast<SystemSetting::SIDE_BUTTON_LAYOUT>(SETTINGS.sideButtonLayout);
-  const auto& front = kFrontLayouts[SystemSetting::BACK_CONFIRM_LEFT_RIGHT];
+  const auto& front = kFrontLayout;
   const auto& side = kSideLayouts[sideLayout];
 
   const Button effective = invertDirectionalAxes180_ ? remapDirectional180(button) : button;
@@ -209,8 +205,6 @@ bool MappedInputManager::wasTouchTapInScreen(const GfxRenderer& renderer, float&
   }
 #endif
 
-  INX_SERIAL.printf("[TOUCH] MAP orientation=%d native=(%.3f,%.3f) logical=(%.3f,%.3f)\n",
-                 static_cast<int>(renderer.getOrientation()), nativeNx, nativeNy, nx, ny);
   return true;
 }
 
@@ -356,7 +350,8 @@ MappedInputManager::Labels MappedInputManager::mapLabels(const char* back, const
     std::swap(p, n);
   }
 
-  return {back, confirm, p, n};
+  return {LanguageManager::translateText(back), LanguageManager::translateText(confirm),
+          LanguageManager::translateText(p), LanguageManager::translateText(n)};
 }
 
 MappedInputManager::Labels MappedInputManager::mapLabelsWithReaderNav(const char* back, const char* confirm,

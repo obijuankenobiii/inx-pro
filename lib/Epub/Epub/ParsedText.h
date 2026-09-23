@@ -8,8 +8,8 @@
 #include <EpdFontFamily.h>
 
 #include <cstdint>
+#include <deque>
 #include <functional>
-#include <list>
 #include <memory>
 #include <string>
 #include <vector>
@@ -19,22 +19,22 @@
 class GfxRenderer;
 
 class ParsedText {
-  std::list<std::string> words;
-  std::list<EpdFontFamily::Style> wordStyles;
-  std::list<uint8_t> bionicPrefixBytes;
-  std::list<uint8_t> wordSmallCaps;
-  std::list<uint8_t> wordUnderline;
-  std::list<uint8_t> wordVerticalAlign;
-  std::list<int16_t> wordXOffset;
+  std::deque<std::string> words;
+  std::deque<EpdFontFamily::Style> wordStyles;
+  std::deque<uint8_t> bionicPrefixBytes;
+  std::deque<uint8_t> wordSmallCaps;
+  std::deque<uint8_t> wordUnderline;
+  std::deque<uint8_t> wordVerticalAlign;
+  std::deque<int16_t> wordXOffset;
   bool hasWordXOffsets_ = false;
   /** True when this token was split only by an inline style boundary and should not get an inter-word gap. */
-  std::list<uint8_t> wordJoinPrevious;
+  std::deque<uint8_t> wordJoinPrevious;
   bool hasJoinedWords_ = false;
-  std::list<std::string> wordImagePaths;
-  std::list<uint16_t> wordImageW;
-  std::list<uint16_t> wordImageH;
+  std::deque<std::string> wordImagePaths;
+  std::deque<uint16_t> wordImageW;
+  std::deque<uint16_t> wordImageH;
   bool hasInlineImages_ = false;
-  std::list<std::string> wordFootnoteTargets;
+  std::deque<std::string> wordFootnoteTargets;
   bool hasFootnoteLinks_ = false;
   /** Widest natural (pre-alignment) line content width seen during layout; used to size CSS border rules. */
   uint16_t maxLineContentWidth_ = 0;
@@ -42,6 +42,8 @@ class ParsedText {
   bool extraParagraphSpacing;
   bool hyphenationEnabled;
   bool bionicReadingEnabled;
+  /** True when the first strong character in this paragraph is RTL. */
+  bool rtlParagraph_ = false;
   /** Reader "Indent" / book setting: legacy first-line em and em-based CSS indent simulation. */
   bool respectParagraphIndent_ = true;
   /** Word-spacing multiplier (textSpace/100); scales the inter-word space used for layout. */
@@ -53,9 +55,11 @@ class ParsedText {
   uint16_t leftIndentLineCount = 0;
   void applyParagraphIndent(const GfxRenderer& renderer, int fontId);
   std::vector<size_t> computeLineBreaks(const GfxRenderer& renderer, int fontId, int pageWidth, int spaceWidth,
-                                        std::vector<uint16_t>& wordWidths, int dropIndentW, int dropIndentLines);
+                                        std::vector<uint16_t>& wordWidths, const std::vector<uint8_t>& joinPrevious,
+                                        int dropIndentW, int dropIndentLines);
   std::vector<size_t> computeHyphenatedLineBreaks(const GfxRenderer& renderer, int fontId, int pageWidth,
-                                                  int spaceWidth, std::vector<uint16_t>& wordWidths, int dropIndentW,
+                                                  int spaceWidth, std::vector<uint16_t>& wordWidths,
+                                                  const std::vector<uint8_t>& joinPrevious, int dropIndentW,
                                                   int dropIndentLines);
   bool hyphenateWordAtIndex(size_t wordIndex, int availableWidth, const GfxRenderer& renderer, int fontId,
                             std::vector<uint16_t>& wordWidths, bool allowFallbackBreaks);

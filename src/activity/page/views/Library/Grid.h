@@ -16,8 +16,7 @@ class Grid final {
   Grid(GfxRenderer& renderer, MappedInputManager& mappedInput,
        const std::vector<LibraryIndex::Book>& items, std::function<void(int, bool)> select,
        std::function<bool(const LibraryIndex::Book&)> isFavorite,
-       std::function<void(int, int)> outsideTap,
-       std::function<bool(const LibraryIndex::Book&)> isAuthorFolder);
+       std::function<void(int, int)> outsideTap);
 
   void reset();
   bool handleInput();
@@ -40,7 +39,6 @@ class Grid final {
   std::function<void(int, bool)> select;
   std::function<bool(const LibraryIndex::Book&)> isFavorite;
   std::function<void(int, int)> outsideTap;
-  std::function<bool(const LibraryIndex::Book&)> isAuthorFolder;
   int page = 0;
 
   int pageCount() const;

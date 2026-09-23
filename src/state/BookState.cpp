@@ -282,19 +282,32 @@ void BookState::setReading(const std::string& path, const bool isReading, const 
   writeAllBooks(books, nextId);
 }
 
-void BookState::setFinished(const std::string& path, const bool finished) {
+void BookState::setFinished(const std::string& path, const bool finished, const std::string& fallbackTitle) {
   std::vector<Book> books;
-  const uint32_t nextId = loadAllBooks(books);
+  uint32_t nextId = loadAllBooks(books);
 
+  Book* target = nullptr;
   for (auto& b : books) {
     if (b.path == path) {
-      b.isFinished = finished;
-      if (finished) b.isReading = false;
-      compactForWrite(books);
-      writeAllBooks(books, nextId);
-      return;
+      target = &b;
+      break;
     }
   }
+
+  if (target == nullptr) {
+    if (!finished) return;
+    books.push_back(Book(path, fallbackTitle, "", nextId++));
+    target = &books.back();
+  }
+
+  target->isFinished = finished;
+  if (finished) {
+    target->isReading = false;
+    if (target->title.empty()) target->title = fallbackTitle;
+  }
+
+  compactForWrite(books);
+  writeAllBooks(books, nextId);
 }
 
 void BookState::removeBook(const std::string& path) {

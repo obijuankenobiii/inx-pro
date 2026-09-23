@@ -2,10 +2,10 @@
 
 #include <GfxRenderer.h>
 #include <WiFi.h>
+#include <esp_heap_caps.h>
 
 #include <algorithm>
 #include <cctype>
-#include <cmath>
 #include <cstdio>
 
 #include "activity/page/SubPage.h"
@@ -17,6 +17,7 @@
 #include "images/Trash.h"
 #include "state/ReaderSetting.h"
 #include "system/FontManager.h"
+#include "system/FontPreviews.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
 #include "util/StringUtils.h"
@@ -27,10 +28,7 @@ constexpr uint32_t kInstallTaskStack = 8192;
 constexpr int kBottomMargin = 44;
 constexpr int kSideMargin = 20;
 constexpr int kActionIconSize = 40;
-constexpr int kActionIconGap = 12;
 constexpr int kScrollCaretSize = 40;
-constexpr int kTabWidth = 120;
-constexpr int kTabHeight = Button::height - 10;
 constexpr int kCategoryFilterWidth = 150;
 constexpr int kCategoryFilterRowHeight = UiLayout::LIST_ITEM_HEIGHT;
 
@@ -95,46 +93,6 @@ ButtonBounds scrollCaretBounds(const GfxRenderer& renderer) {
           kScrollCaretSize, kScrollCaretSize};
 }
 
-void renderVariantTab(const GfxRenderer& renderer, const int x, const int y, const char* label, const bool selected,
-                      const bool roundLeft, const bool roundRight) {
-  constexpr int corner = 4;
-  const int tone = selected ? static_cast<int>(GfxRenderer::FillTone::Ink)
-                            : static_cast<int>(GfxRenderer::FillTone::Paper);
-  renderer.rectangle.fill(x, y, kTabWidth, kTabHeight, tone, false);
-  renderer.rectangle.render(x, y, kTabWidth, kTabHeight, true, false);
-
-  auto clearOutsideCorner = [&](const int cornerX, const int cornerY, const bool left, const bool top) {
-    for (int dy = 0; dy <= corner; ++dy) {
-      for (int dx = 0; dx <= corner; ++dx) {
-        const int distanceX = left ? dx - corner : dx;
-        const int distanceY = top ? dy - corner : dy;
-        if (distanceX * distanceX + distanceY * distanceY > corner * corner) {
-          renderer.drawPixel(cornerX + dx, cornerY + dy, false);
-        }
-      }
-    }
-    for (int offset = 0; offset <= corner; ++offset) {
-      const int span = static_cast<int>(std::sqrt(corner * corner - (corner - offset) * (corner - offset)));
-      const int arcX = left ? cornerX + corner - span : cornerX + span;
-      const int arcY = top ? cornerY + offset : cornerY + corner - offset;
-      renderer.drawPixel(arcX, arcY, true);
-    }
-  };
-
-  if (roundLeft) {
-    clearOutsideCorner(x, y, true, true);
-    clearOutsideCorner(x, y + kTabHeight - corner - 1, true, false);
-  }
-  if (roundRight) {
-    clearOutsideCorner(x + kTabWidth - corner - 1, y, false, true);
-    clearOutsideCorner(x + kTabWidth - corner - 1, y + kTabHeight - corner - 1, false, false);
-  }
-
-  const int font = systemFontId();
-  const int textWidth = renderer.text.getWidth(font, label);
-  const int textY = y + (kTabHeight - renderer.text.getLineHeight(font)) / 2;
-  renderer.text.render(font, x + (kTabWidth - textWidth) / 2, textY, label, !selected, EpdFontFamily::REGULAR);
-}
 }
 
 void FontManagerActivity::displayTaskTrampoline(void* param) {
@@ -147,7 +105,7 @@ void FontManagerActivity::installTaskTrampoline(void* param) {
 
 void FontManagerActivity::onEnter() {
   ActivityWithSubactivity::onEnter();
-  state_ = State::Loading;
+  state_ = State::Ready;
   status_.clear();
   selectedIndex_ = 0;
   scrollOffset_ = 0;
@@ -155,15 +113,16 @@ void FontManagerActivity::onEnter() {
   categoryFilterOpen_ = false;
   categoryFilter_ = CategoryFilter::All;
   packages_.clear();
-  activeVariant_ = 1;
   installingPackageIndex_ = -1;
   progressDownloaded_ = 0;
   progressTotal_ = 0;
   updateRequired_ = false;
   shuttingDown_ = false;
+  showCompletionCheck_ = false;
+  completionCheckExpiresAt_ = 0;
+  fontCatalogNeedsRescan_ = false;
   lastProgressPercent_ = -1;
   lastProgressUpdateMs_ = 0;
-  render();
   loadPackages();
 }
 
@@ -177,16 +136,20 @@ void FontManagerActivity::onExit() {
   ActivityWithSubactivity::onExit();
 
   if (installTaskHandle_) {
-    vTaskDelete(installTaskHandle_);
+    vTaskDeleteWithCaps(installTaskHandle_);
     installTaskHandle_ = nullptr;
   }
   if (displayTaskHandle_) {
-    vTaskDelete(displayTaskHandle_);
+    vTaskDeleteWithCaps(displayTaskHandle_);
     displayTaskHandle_ = nullptr;
   }
   if (renderingMutex_) {
     vSemaphoreDelete(renderingMutex_);
     renderingMutex_ = nullptr;
+  }
+  if (fontCatalogNeedsRescan_) {
+    FontManager::scanSDFonts("/fonts", true);
+    fontCatalogNeedsRescan_ = false;
   }
 }
 
@@ -209,7 +172,7 @@ int FontManagerActivity::visibleRowCount(const int bodyTop) const {
 int FontManagerActivity::visiblePackageCount() const {
   int count = 0;
   for (const FontPackageManager::Package& package : packages_) {
-    if (package.variant == activeVariantName() && matchesCategory(package)) ++count;
+    if (matchesCategory(package)) ++count;
   }
   return count;
 }
@@ -219,20 +182,11 @@ int FontManagerActivity::packageIndexAt(const int visibleIndex) const {
   int index = 0;
   for (int packageIndex = 0; packageIndex < static_cast<int>(packages_.size()); ++packageIndex) {
     const FontPackageManager::Package& package = packages_[static_cast<size_t>(packageIndex)];
-    if (package.variant != activeVariantName() || !matchesCategory(package)) continue;
+    if (!matchesCategory(package)) continue;
     if (index == visibleIndex) return packageIndex;
     ++index;
   }
   return -1;
-}
-
-void FontManagerActivity::selectVariant(const int variant) {
-  if (variant < 0 || variant > 1 || variant == activeVariant_) return;
-  activeVariant_ = variant;
-  selectedIndex_ = 0;
-  scrollOffset_ = 0;
-  selectedVisible_ = false;
-  updateDisplay();
 }
 
 int FontManagerActivity::categoryFilterCount() const { return 3; }
@@ -257,12 +211,13 @@ bool FontManagerActivity::matchesCategory(const FontPackageManager::Package& pac
 }
 
 ButtonBounds FontManagerActivity::categoryFilterBounds() const {
-  return {kSideMargin, pageBodyTop(), kCategoryFilterWidth, kTabHeight};
+  return {renderer.getScreenWidth() - kSideMargin - kCategoryFilterWidth, pageBodyTop(), kCategoryFilterWidth,
+          kFilterHeight};
 }
 
 void FontManagerActivity::categoryFilterDropdown() const {
-  const int x = kSideMargin;
-  const int y = pageBodyTop() + kTabHeight;
+  const int x = renderer.getScreenWidth() - kSideMargin - kCategoryFilterWidth;
+  const int y = pageBodyTop() + kFilterHeight;
   const int height = categoryFilterCount() * kCategoryFilterRowHeight + 1;
   const char* labels[] = {"All", "Sans Serif", "Serif"};
   const int font = systemFontId();
@@ -281,8 +236,8 @@ void FontManagerActivity::categoryFilterDropdown() const {
 }
 
 void FontManagerActivity::handleCategoryFilterTap(const int tapX, const int tapY) {
-  const int x = kSideMargin;
-  const int y = pageBodyTop() + kTabHeight;
+  const int x = renderer.getScreenWidth() - kSideMargin - kCategoryFilterWidth;
+  const int y = pageBodyTop() + kFilterHeight;
   const int height = categoryFilterCount() * kCategoryFilterRowHeight + 1;
   if (tapX >= x && tapX < x + kCategoryFilterWidth && tapY >= y && tapY < y + height) {
     applyCategoryFilter((tapY - y) / kCategoryFilterRowHeight);
@@ -319,6 +274,8 @@ void FontManagerActivity::installSelected() {
   state_ = State::Downloading;
   status_ = "Downloading and installing...";
   installingPackageIndex_ = packageIndex;
+  showCompletionCheck_ = false;
+  completionCheckExpiresAt_ = 0;
   progressDownloaded_ = 0;
   progressTotal_ = 0;
   lastProgressPercent_ = -1;
@@ -341,7 +298,16 @@ void FontManagerActivity::selectInstalled() {
     return;
   }
 
-  READER_SETTINGS.fontFamily = static_cast<uint8_t>(std::distance(families.begin(), familyIt));
+  const uint8_t newFamily = static_cast<uint8_t>(std::distance(families.begin(), familyIt));
+  const bool wasOutline = FontManager::isOutlineFontFamilySlot(READER_SETTINGS.fontFamily);
+  const bool isOutline = FontManager::isOutlineFontFamilySlot(newFamily);
+  if (isOutline && !wasOutline) {
+    READER_SETTINGS.fontSize = static_cast<uint8_t>(
+        FontManager::pointSizeForLegacyReaderSize(READER_SETTINGS.fontSize));
+  } else if (!isOutline && wasOutline) {
+    READER_SETTINGS.fontSize = FontManager::legacyReaderSizeForPointSize(READER_SETTINGS.fontSize);
+  }
+  READER_SETTINGS.fontFamily = newFamily;
   READER_SETTINGS.saveToFile();
   status_ = "Font selected.";
   selectedVisible_ = false;
@@ -367,9 +333,11 @@ void FontManagerActivity::removeSelected() {
   }
 
   if (wasSelectedReaderFont) {
-    READER_SETTINGS.fontFamily = SystemSetting::CHAREINK;
+    READER_SETTINGS.fontFamily = SystemSetting::MONTSERRAT;
     READER_SETTINGS.saveToFile();
   }
+  showCompletionCheck_ = false;
+  completionCheckExpiresAt_ = 0;
   selectedVisible_ = false;
   status_ = "Font removed.";
   updateDisplay();
@@ -387,17 +355,18 @@ void FontManagerActivity::startInstallation() {
   }
 
   if (!displayTaskHandle_ &&
-      xTaskCreatePinnedToCore(&FontManagerActivity::displayTaskTrampoline, "FontDisplayTask", kDisplayTaskStack,
-                              this, 1, &displayTaskHandle_, 1) != pdPASS) {
+      xTaskCreatePinnedToCoreWithCaps(&FontManagerActivity::displayTaskTrampoline, "FontDisplayTask", kDisplayTaskStack,
+                                      this, 1, &displayTaskHandle_, 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
     state_ = State::Failed;
     status_ = "Could not start download.";
     updateDisplay();
     return;
   }
+  INX_SERIAL.printf("[%lu] [FONT-UI] display task ready handle=%p\n", millis(), displayTaskHandle_);
 
   updateRequired_ = true;
-  if (xTaskCreatePinnedToCore(&FontManagerActivity::installTaskTrampoline, "FontInstallTask", kInstallTaskStack, this,
-                              1, &installTaskHandle_, 0) != pdPASS) {
+  if (xTaskCreatePinnedToCoreWithCaps(&FontManagerActivity::installTaskTrampoline, "FontInstallTask", kInstallTaskStack,
+                                      this, 1, &installTaskHandle_, 0, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
     installTaskHandle_ = nullptr;
     state_ = State::Failed;
     status_ = "Could not start download.";
@@ -406,10 +375,20 @@ void FontManagerActivity::startInstallation() {
 }
 
 void FontManagerActivity::displayTaskLoop() {
+  INX_SERIAL.printf("[%lu] [FONT-UI] display task started\n", millis());
   while (true) {
+    if (showCompletionCheck_ && completionCheckExpiresAt_ != 0 &&
+        static_cast<int32_t>(millis() - completionCheckExpiresAt_) >= 0) {
+      showCompletionCheck_ = false;
+      completionCheckExpiresAt_ = 0;
+      updateRequired_ = true;
+    }
     if (updateRequired_) {
       updateRequired_ = false;
       if (renderingMutex_ && xSemaphoreTake(renderingMutex_, pdMS_TO_TICKS(100)) == pdTRUE) {
+        INX_SERIAL.printf("[%lu] [FONT-UI] render state=%d downloaded=%u total=%u\n", millis(),
+                          static_cast<int>(state_), static_cast<unsigned>(progressDownloaded_),
+                          static_cast<unsigned>(progressTotal_));
         render();
         xSemaphoreGive(renderingMutex_);
       }
@@ -435,22 +414,30 @@ void FontManagerActivity::installTaskLoop() {
             lastProgressUpdateMs_ = now;
             updateRequired_ = true;
           }
-        });
+        },
+        false);
+    if (installed) fontCatalogNeedsRescan_ = true;
   }
 
   if (!shuttingDown_) {
     if (installed) {
       state_ = State::Ready;
       status_ = "Font installed.";
+      showCompletionCheck_ = true;
+      completionCheckExpiresAt_ = millis() + 2000;
       selectedVisible_ = false;
     } else {
       state_ = State::Failed;
       status_ = error.empty() ? "Font installation failed." : error;
+      showCompletionCheck_ = false;
+      completionCheckExpiresAt_ = 0;
     }
     updateRequired_ = true;
   }
+  INX_SERIAL.printf("[%lu] [FONT-UI] install returned installed=%d state=%d\n", millis(), installed,
+                    static_cast<int>(state_));
   installTaskHandle_ = nullptr;
-  vTaskDelete(nullptr);
+  vTaskDeleteWithCaps(nullptr);
 }
 
 void FontManagerActivity::updateDisplay() {
@@ -468,33 +455,34 @@ void FontManagerActivity::launchWifiSelection() {
 }
 
 void FontManagerActivity::onWifiSelectionComplete(const bool connected) {
+  INX_SERIAL.printf("[%lu] [FONT-WIFI] complete connected=%d status=%d ip=%s\n", millis(), connected,
+                    static_cast<int>(WiFi.status()), WiFi.localIP().toString().c_str());
   exitActivity();
-
+  INX_SERIAL.printf("[%lu] [FONT-WIFI] subactivity exited\n", millis());
   if (!connected || WiFi.status() != WL_CONNECTED || WiFi.localIP() == IPAddress(0, 0, 0, 0)) {
     state_ = State::Failed;
     status_ = "Wi-Fi connection failed. Tap Retry.";
-    updateDisplay();
+    render();
     return;
   }
-
+  renderer.syncWriteBufferFromActive();
+  render();
+  INX_SERIAL.printf("[%lu] [FONT-WIFI] starting font install\n", millis());
   installSelected();
 }
 
+
 void FontManagerActivity::render() {
+  // WifiSelectionActivity leaves the X4 Pro renderer after an async refresh.
+  // Re-seed the writable framebuffer from the frame actually on the panel
+  // before replacing it with the Font Manager screen.
+  renderer.syncWriteBufferFromActive();
   renderer.clearScreen();
   const int bodyTop = SubPage::header(renderer, "Font Manager");
   const int fontListTop = listTop(bodyTop);
   const int font = systemFontId();
   const int screenW = renderer.getScreenWidth();
   const int screenH = renderer.getScreenHeight();
-
-  if (state_ == State::Loading) {
-    renderer.text.centered(font, screenH / 2 - 16, "Loading fonts...", true, EpdFontFamily::BOLD);
-    renderer.text.centered(font, screenH / 2 + 18, "Please wait", true, EpdFontFamily::REGULAR);
-    mappedInput.mapLabels("\xC2\xAB Back", "", "", "");
-    renderer.displayBuffer();
-    return;
-  }
 
   if (state_ == State::Downloading) {
     const int centerY = bodyTop + (screenH - bodyTop - 80) / 2;
@@ -503,8 +491,12 @@ void FontManagerActivity::render() {
     const std::string packageName = packageIndex >= 0 && packageIndex < static_cast<int>(packages_.size())
                                         ? displayFontName(packages_[static_cast<size_t>(packageIndex)].name)
                                         : "Font";
-    const std::string name = renderer.text.truncate(font, packageName.c_str(), screenW - 60);
-    renderer.text.centered(font, centerY - 34, name.c_str(), true, EpdFontFamily::BOLD);
+    const int previewFont = packageIndex >= 0 && packageIndex < static_cast<int>(packages_.size())
+                                ? FontPreviews::fontIdForFamily(packages_[static_cast<size_t>(packageIndex)].installFamily)
+                                : -1;
+    const int nameFont = previewFont >= 0 ? previewFont : font;
+    const std::string name = renderer.text.truncate(nameFont, packageName.c_str(), screenW - 60);
+    renderer.text.centered(nameFont, centerY - 34, name.c_str(), true, EpdFontFamily::REGULAR);
     renderer.text.centered(font, centerY + 4, "Installing font package", true, EpdFontFamily::REGULAR);
 
     const size_t downloaded = progressDownloaded_;
@@ -526,7 +518,7 @@ void FontManagerActivity::render() {
     return;
   }
 
-  if (state_ == State::Ready && !packages_.empty()) {
+  if (!packages_.empty()) {
     const int total = visiblePackageCount();
     const int visibleRows = visibleRowCount(fontListTop);
     const int maxScroll = std::max(0, total - visibleRows);
@@ -536,14 +528,7 @@ void FontManagerActivity::render() {
       if (selectedIndex_ >= scrollOffset_ + visibleRows) scrollOffset_ = selectedIndex_ - visibleRows + 1;
     }
 
-    const int tabsX = screenW - kSideMargin - kTabWidth * 2;
     Button::render(renderer, categoryFilterBounds(), categoryFilterLabel(), categoryFilterOpen_, font);
-    for (int tab = 0; tab < 2; ++tab) {
-      const int tabX = tabsX + tab * kTabWidth;
-      const bool selectedTab = tab == activeVariant_;
-      const char* label = tab == 0 ? "1-bit" : "2-bit";
-      renderVariantTab(renderer, tabX, bodyTop, label, selectedTab, tab == 0, tab == 1);
-    }
 
     const int end = std::min(total, scrollOffset_ + visibleRows);
     for (int index = scrollOffset_; index < end; ++index) {
@@ -552,24 +537,43 @@ void FontManagerActivity::render() {
       const int y = fontListTop + (index - scrollOffset_) * kRowHeight;
       const bool selected = selectedVisible_ && index == selectedIndex_;
       if (selected) renderer.rectangle.fill(0, y, screenW, kRowHeight, static_cast<int>(GfxRenderer::FillTone::Ink));
-      const int textY = y + (kRowHeight - renderer.text.getLineHeight(font)) / 2;
       const int deleteIconX = screenW - kSideMargin - kActionIconSize;
-      const int actionIconX = deleteIconX - kActionIconGap - kActionIconSize;
-      const int maxNameWidth = screenW - (kSideMargin * 2) - (kActionIconSize * 2) - kActionIconGap - 20;
+      const bool downloadingCurrent = state_ == State::Downloading && packageIndex == installingPackageIndex_;
+      const size_t downloaded = progressDownloaded_;
+      const size_t totalBytes = progressTotal_;
+      const int percent = totalBytes > 0
+                              ? std::max(0, std::min(100, static_cast<int>((downloaded * 100) / totalBytes)))
+                              : 0;
+      const std::string percentText = std::to_string(percent) + "%";
+      const int percentWidth = renderer.text.getWidth(font, percentText.c_str());
+      const int maxNameWidth = downloadingCurrent
+                                   ? screenW - (kSideMargin * 2) - percentWidth - 20
+                                   : screenW - (kSideMargin * 2) - kActionIconSize - 20;
       const std::string displayName = displayFontName(packages_[static_cast<size_t>(packageIndex)].name);
-      const std::string packageName = renderer.text.truncate(font, displayName.c_str(), maxNameWidth,
+      // FontPackageManager rescans and unloads SD streaming fonts when the
+      // install finishes. Keep the download UI on the built-in system font so
+      // it cannot render a preview font while that catalog is being replaced.
+      const int previewFont = state_ == State::Downloading
+                                  ? -1
+                                  : FontPreviews::fontIdForFamily(packages_[static_cast<size_t>(packageIndex)].installFamily);
+      const int nameFont = previewFont >= 0 ? previewFont : font;
+      const int textY = y + (kRowHeight - renderer.text.getLineHeight(nameFont)) / 2;
+      const std::string packageName = renderer.text.truncate(nameFont, displayName.c_str(), maxNameWidth,
                                                               EpdFontFamily::REGULAR);
       const bool installed = FontPackageManager::isInstalled(packages_[static_cast<size_t>(packageIndex)]);
       if (installed && !selected) {
-        renderer.text.renderGray(font, kSideMargin, textY, packageName.c_str(), true, EpdFontFamily::REGULAR);
+        renderer.text.renderGray(nameFont, kSideMargin, textY, packageName.c_str(), true, EpdFontFamily::REGULAR);
       } else {
-        renderer.text.render(font, kSideMargin, textY, packageName.c_str(), !selected, EpdFontFamily::REGULAR);
+        renderer.text.render(nameFont, kSideMargin, textY, packageName.c_str(), !selected, EpdFontFamily::REGULAR);
       }
       const int iconY = y + (kRowHeight - kActionIconSize) / 2;
-      if (installed) {
-        renderer.bitmap.icon(Check, actionIconX, iconY, kActionIconSize, kActionIconSize,
-                             BitmapRender::Orientation::None, selected);
-        renderer.bitmap.icon(Trash, deleteIconX, iconY, kActionIconSize, kActionIconSize,
+      if (downloadingCurrent) {
+        renderer.text.render(font, screenW - kSideMargin - percentWidth,
+                             y + (kRowHeight - renderer.text.getLineHeight(font)) / 2, percentText.c_str(),
+                             !selected, EpdFontFamily::REGULAR);
+      } else if (installed) {
+        const bool showCheck = showCompletionCheck_ && packageIndex == installingPackageIndex_;
+        renderer.bitmap.icon(showCheck ? Check : Trash, deleteIconX, iconY, kActionIconSize, kActionIconSize,
                              BitmapRender::Orientation::None, selected);
       } else {
         renderer.bitmap.icon(Download, deleteIconX, iconY, kActionIconSize, kActionIconSize,
@@ -585,8 +589,9 @@ void FontManagerActivity::render() {
                                                                : BitmapRender::Orientation::Rotate90CW;
     renderer.bitmap.iconScaled(LibraryFilterRight, caretBounds.x, caretBounds.y, 30, 30, kScrollCaretSize,
                                kScrollCaretSize, caretOrientation);
-    mappedInput.mapLabels("\xC2\xAB Back", "Download", "Up", "Down");
-    if (categoryFilterOpen_) categoryFilterDropdown();
+    mappedInput.mapLabels("\xC2\xAB Back", state_ == State::Downloading ? "" : "Download",
+                          state_ == State::Downloading ? "" : "Up", state_ == State::Downloading ? "" : "Down");
+    if (categoryFilterOpen_ && state_ != State::Downloading) categoryFilterDropdown();
   } else {
     const int centerY = bodyTop + (screenH - bodyTop - 80) / 2;
     renderer.text.centered(font, centerY - 26, status_.c_str(), true, EpdFontFamily::BOLD);
@@ -642,12 +647,6 @@ void FontManagerActivity::loop() {
           updateDisplay();
           return;
         }
-        const int tabsX = renderer.getScreenWidth() - kSideMargin - kTabWidth * 2;
-        if (y >= bodyTop && y < bodyTop + kTabHeight && x >= tabsX && x < tabsX + kTabWidth * 2) {
-          selectVariant((x - tabsX) / kTabWidth);
-          return;
-        }
-
         const int visibleRows = visibleRowCount(fontListTop);
         const int maxScroll = std::max(0, visiblePackageCount() - visibleRows);
         if (maxScroll > 0 && contains(scrollCaretBounds(renderer), x, y)) {
@@ -677,9 +676,6 @@ void FontManagerActivity::loop() {
           }
         }
       } else if (state_ == State::Failed && contains(actionBounds(renderer), x, y)) {
-        state_ = State::Loading;
-        status_.clear();
-        updateDisplay();
         loadPackages();
       } else if (state_ == State::Ready && packages_.empty()) {
         goBack_();
@@ -712,8 +708,6 @@ void FontManagerActivity::loop() {
       return;
     }
   } else if (state_ == State::Failed && mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
-    state_ = State::Loading;
-    updateDisplay();
     loadPackages();
   }
 }

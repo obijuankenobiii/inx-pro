@@ -64,8 +64,10 @@ bool spineHrefLooksLikeRenderableHtml(const std::string& href) {
 
 constexpr const char* kPackagedDeviceThumbnailPath = "META-INF/thumbnail.jpg";
 constexpr const char* kBookMetadataCacheFile = "/book.bin";
-constexpr int kThumbnailMaxWidth = 360;
-constexpr int kThumbnailMaxHeight = 540;
+// Keep generated EPUB thumbnails at the X4 Pro's native portrait width scale so
+// library/carousel views do not have to enlarge a low-resolution cover.
+constexpr int kThumbnailMaxWidth = 480;
+constexpr int kThumbnailMaxHeight = 720;
 constexpr uint8_t kThumbnailJpegQuality = 96;
 constexpr size_t kSlowPathCoverPsramMaxBytes = 1024 * 1024;
 constexpr size_t kImageMetadataProbeBytes = 64 * 1024;
@@ -939,13 +941,9 @@ bool Epub::parseContentOpf(BookMetadataCache::BookMetadata& bookMetadata) {
   ContentOpfParser opfParser(getCachePath(), getBasePath(), opfSize, bookMetadataCache.get());
   if (!opfParser.setup() || !readItemContentsToStream(opfPath, opfParser, 1024)) return false;
 
-  bookMetadata.title = opfParser.title;
-  bookMetadata.author = opfParser.author;
-  bookMetadata.language = opfParser.language;
-  bookMetadata.coverItemHref = opfParser.coverItemHref;
-  bookMetadata.textReferenceHref = opfParser.textReferenceHref;
   if (!opfParser.tocNcxPath.empty()) tocNcxItem = opfParser.tocNcxPath;
   if (!opfParser.tocNavPath.empty()) tocNavItem = opfParser.tocNavPath;
+  bookMetadata = opfParser.takeMetadata();
 
   return true;
 }
@@ -1073,13 +1071,9 @@ bool Epub::load(const bool buildIfMissing) {
     return false;
   }
 
-  meta.title = opfParser.title;
-  meta.author = opfParser.author;
-  meta.language = opfParser.language;
-  meta.coverItemHref = opfParser.coverItemHref;
-  meta.textReferenceHref = opfParser.textReferenceHref;
   if (!opfParser.tocNcxPath.empty()) tocNcxItem = opfParser.tocNcxPath;
   if (!opfParser.tocNavPath.empty()) tocNavItem = opfParser.tocNavPath;
+  meta = opfParser.takeMetadata();
 
   bookMetadataCache->endContentOpfPass();
 
@@ -1182,6 +1176,11 @@ const std::string& Epub::getAuthor() const {
  */
 const std::string& Epub::getLanguage() const {
   return (bookMetadataCache && bookMetadataCache->isLoaded()) ? bookMetadataCache->coreMetadata.language : kEmptyString;
+}
+
+const BookMetadataCache::BookMetadata& Epub::getBookMetadata() const {
+  static const BookMetadataCache::BookMetadata emptyMetadata;
+  return (bookMetadataCache && bookMetadataCache->isLoaded()) ? bookMetadataCache->coreMetadata : emptyMetadata;
 }
 
 /**

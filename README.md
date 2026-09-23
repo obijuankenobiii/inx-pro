@@ -165,6 +165,10 @@ python3 scripts/generate_epub_thumbnails.py /path/to/books --recursive --in-plac
 
 Inx supports EPUB dictionary lookup with StarDict dictionaries stored on the SD card.
 
+The device Store can download the Oxford English dictionary directly. The ZIP is downloaded to
+the SD card and extracted there in bounded chunks; the roughly 124 MB uncompressed dictionary is
+not included in firmware and is not loaded into RAM as one buffer.
+
 You can download a ready-to-use dictionary pack here:
 
 [Download dictionary pack](https://drive.google.com/file/d/1N7aUdO93xyO8Cvgr_u2sX5-dJ_a-piCK/view?usp=sharing)
@@ -190,24 +194,22 @@ Only uncompressed `.dict` files are supported. Compressed `.dict.dz` dictionarie
 
 ## Fonts
 
-Inx includes built-in **Atkinson Hyperlegible** and **ChareInk** reader fonts.
+Inx includes the built-in **Montserrat** reader font.
 
 You can also install fonts on the SD card:
 
 ```text
 /fonts/
   MyFont/
-    Regular_10.bin
-    Regular_12.bin
-    Regular_14.bin
-    Bold_14.bin
-    Italic_14.bin
-    BoldItalic_14.bin
-```
+    Regular.ttf
+    Bold.ttf
+    Italic.ttf
+    BoldItalic.ttf
+  ```
 
-The web font manager converts TTF/OTF files into the `.bin` format used by the reader. Regular is required; bold, italic, and bold italic are optional.
+The reader loads TTF/OTF files from SD and rasterizes them on demand. Regular is required; bold, italic, and bold italic are optional.
 
-The device **Settings -> Reader -> Font Manager** lists the static ZIP catalog from the [`inx-font`](https://github.com/obijuankenobiii/inx-font) repository. Each font is available as a `1-bit` and `2-bit` pack. Select a pack to download it; the compiled files are extracted into `/fonts/<family> <variant>/` and become available in Reader presets. Packs are limited to 5 MB.
+The device **Settings -> Reader -> Font Manager** lists one ZIP per font family from the [`inx-store`](https://github.com/obijuankenobiii/inx-store) repository. Select a family to download it; the TTF/OTF files are extracted into `/fonts/<family>/` and become available in Reader presets. Packs are limited to 5 MB.
 
 ## Custom Sleep Images
 
@@ -222,6 +224,7 @@ Put sleep images on the SD card:
 /sleep.bmp
 /sleep.jpg
 /sleep.jpeg
+/sleep.png
 ```
 
 You can choose a fixed sleep image from settings, or let the device pick one randomly.

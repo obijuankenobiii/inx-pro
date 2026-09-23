@@ -599,25 +599,10 @@ void EpubAnnotations::mergeStoredRangesForPage(const std::vector<EpubAnnotationR
       continue;
     }
     const size_t n = annWords.size();
-    for (size_t a = 0; a < aw.size(); ++a) {
-      for (size_t i = 0; i < n; ++i) {
-        const size_t firstConsumed = matchWordAllowingHyphenation(annWords, i, aw[a]);
-        if (firstConsumed == 0) {
-          continue;
-        }
-        size_t pos = i + firstConsumed;
-        size_t k = 1;
-        while (a + k < aw.size() && pos < n) {
-          const size_t consumed = matchWordAllowingHyphenation(annWords, pos, aw[a + k]);
-          if (consumed == 0) {
-            break;
-          }
-          pos += consumed;
-          ++k;
-        }
-        if (a + k == aw.size() || pos == n) {
-          raw.emplace_back(i, pos - 1);
-        }
+    for (size_t i = 0; i < n; ++i) {
+      const size_t consumed = matchPhraseAt(annWords, i, aw);
+      if (consumed > 0) {
+        raw.emplace_back(i, i + consumed - 1);
       }
     }
   }

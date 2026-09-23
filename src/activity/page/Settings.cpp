@@ -82,10 +82,11 @@ void renderPanelTab(const GfxRenderer& renderer, const int x, const int y, const
   }
 
   const int font = systemFontId();
-  const int textWidth = renderer.text.getWidth(font, label ? label : "");
+  const std::string shown = renderer.text.truncate(font, label ? label : "", std::max(1, width - 16));
+  const int textWidth = renderer.text.getUntranslatedWidth(font, shown.c_str());
   const int textY = y + (height - renderer.text.getLineHeight(font)) / 2;
   const int textX = x + (width - textWidth) / 2;
-  renderer.text.render(font, textX, textY, label ? label : "", !selected, EpdFontFamily::REGULAR);
+  renderer.text.renderUntranslated(font, textX, textY, shown.c_str(), !selected, EpdFontFamily::REGULAR);
 }
 
 std::vector<SettingInfo> buildSystemSettings() {
@@ -106,8 +107,6 @@ std::vector<SettingInfo> buildSystemSettings() {
                                        GroupType::DEVICE_DISPLAY));
   settings.push_back(SettingInfo::Toggle("Hide title for thumbnails", &SystemSetting::hideThumbnailTitles,
                                          GroupType::DEVICE_DISPLAY));
-  settings.push_back(SettingInfo::Enum("Thumbnail size", &SystemSetting::thumbnailSize, {"Actual", "Even"},
-                                       GroupType::DEVICE_DISPLAY));
 
   settings.push_back(SettingInfo::Separator("Clock", GroupType::CLOCK));
   settings.push_back(SettingInfo::Action("Face", GroupType::CLOCK));
@@ -133,6 +132,7 @@ std::vector<SettingInfo> buildSystemSettings() {
                                        GroupType::DEVICE_ADVANCED));
   settings.push_back(SettingInfo::Enum("Boot Mode", &SystemSetting::bootSetting, {"Recent Book", "Home Page"},
                                        GroupType::DEVICE_ADVANCED));
+  settings.push_back(SettingInfo::Action("Language", GroupType::DEVICE_ADVANCED));
 #if FREEINK_DEVICE_STICKY
   settings.push_back(SettingInfo::Enum("Flick page turn", &SystemSetting::shakePageTurn,
                                        {"Off", "Normal", "Inverted"}, GroupType::DEVICE_ADVANCED));
@@ -147,8 +147,7 @@ std::vector<SettingInfo> buildSystemSettings() {
 
   settings.push_back(SettingInfo::Separator("Actions", GroupType::DEVICE_ACTIONS));
   settings.push_back(SettingInfo::Action("Delete Cache", GroupType::DEVICE_ACTIONS));
-  settings.push_back(SettingInfo::Action("Generate thumbnails", GroupType::DEVICE_ACTIONS));
-  settings.push_back(SettingInfo::Action("Generate Authors", GroupType::DEVICE_ACTIONS));
+  settings.push_back(SettingInfo::Action("Generate Metadata", GroupType::DEVICE_ACTIONS));
   return settings;
 }
 

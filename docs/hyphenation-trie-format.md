@@ -64,3 +64,15 @@ To refresh the firmware assets after updating the `.bin` files, run:
     --input lib/Epub/Epub/hyphenation/tries/ru.bin \
     --output lib/Epub/Epub/hyphenation/generated/hyph-ru.trie.h
 ```
+
+## User-installed pattern files
+
+The Language Manager accepts plain text TeX/Liang patterns, commonly distributed
+as `hyph-<language>.pat.txt`. Patterns may be separated by spaces or newlines;
+lines can use `%` comments and a `\patterns{...}` wrapper. The browser compiles
+the text into the reader's FIBH binary trie and installs it as
+`/.system/lang/<language-code>/hyphenation.bin`. EPUB hyphenation loads that trie
+when the book's primary language tag matches the installed language code.
+
+The upload also accepts existing `.bin` tries: FIBH files and the older Hypher
+automata format are both understood by the reader.

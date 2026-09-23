@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstring>
+#include <esp_heap_caps.h>
 
 #include "images/Close.h"
 #include "images/Delete.h"
@@ -102,8 +103,9 @@ void KeyboardEntryActivity::onEnter() {
   renderingMutex = xSemaphoreCreateMutex();
   updateRequired = true;
 
-  const BaseType_t created = xTaskCreate(&KeyboardEntryActivity::taskTrampoline, "KeyboardEntryActivity",
-                                         kDisplayTaskStackBytes, this, 1, &displayTaskHandle);
+  const BaseType_t created = xTaskCreateWithCaps(&KeyboardEntryActivity::taskTrampoline, "KeyboardEntryActivity",
+                                                 kDisplayTaskStackBytes, this, 1, &displayTaskHandle,
+                                                 MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   if (title == "Enter WiFi Password") {
     INX_SERIAL.printf("[%lu] [KEYBOARD] wifi task result=%d handle=%p\n", millis(), static_cast<int>(created),
                    displayTaskHandle);
@@ -115,7 +117,7 @@ void KeyboardEntryActivity::onExit() {
 
   xSemaphoreTake(renderingMutex, portMAX_DELAY);
   if (displayTaskHandle) {
-    vTaskDelete(displayTaskHandle);
+    vTaskDeleteWithCaps(displayTaskHandle);
     displayTaskHandle = nullptr;
   }
   vSemaphoreDelete(renderingMutex);

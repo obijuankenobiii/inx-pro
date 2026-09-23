@@ -49,7 +49,8 @@ class BookState {
   /** Sets the reading flag, tracking the book first (using fallbackTitle) if isReading and it wasn't
    *  already, and restoring fallbackTitle the same way toggleFavorite does. */
   void setReading(const std::string& path, bool isReading, const std::string& fallbackTitle = "");
-  void setFinished(const std::string& path, bool isFinished);
+  /** Sets the finished flag, tracking the book first when marking it finished. */
+  void setFinished(const std::string& path, bool isFinished, const std::string& fallbackTitle = "");
   void removeBook(const std::string& path);
 
   /** Repoints an existing book's path entry (favorite/reading/finished flags, id) after a rename/move.

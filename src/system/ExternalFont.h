@@ -1,4 +1,6 @@
 #pragma once
+#include <cstddef>
+#include <cstdint>
 #include <string>
 
 #include "EpdFontData.h"
@@ -10,10 +12,15 @@ class ExternalFont {
   ExternalFont();
   /** Unload the font and release its resources. */
   ~ExternalFont();
-  /** Load font metadata from an on-disk font file at path, keeping glyph data on SD for on-demand reads. */
-  bool load(const char* path, bool enableGlyphBitmapCache = true);
+  /**
+   * Load a font from disk. Legacy .bin files are streamed from SD; .ttf/.otf
+   * files are copied into PSRAM when available and rasterized on demand.
+   */
+  bool load(const char* path, bool enableGlyphBitmapCache = true, uint16_t pointSize = 0);
   /** Close the font file and release cached glyph data. */
   void unload();
+  /** Drop the persistent PSRAM cache used to reuse TTF/OTF file bytes across loads. */
+  static void clearTtfCache();
   /** Enable or disable the shared glyph bitmap cache for this font instance. */
   void setGlyphBitmapCacheEnabled(bool enabled);
   /** Look up glyph metadata for a code point, using the metadata cache when possible. */
@@ -37,7 +44,11 @@ class ExternalFont {
   /** Look up a glyph's metadata in the per-instance metadata cache. */
   bool metaCacheLookup(uint32_t cp, EpdGlyph& out);
   /** Store a glyph's metadata in the per-instance metadata cache, evicting the oldest entry if full. */
-  void metaCacheStore(uint32_t cp, const EpdGlyph& g);
+  size_t metaCacheStore(uint32_t cp, const EpdGlyph& g);
+  /** Allocate the large per-font metadata cache in PSRAM when available. */
+  void allocateMetaCache();
+  /** Release the per-font metadata cache. */
+  void releaseMetaCache();
   /** Clear the per-instance glyph metadata cache. */
   void metaCacheClear();
   /** Look up cached bitmap data for this font at offset/length, copying it into outputBuffer if found. */
@@ -48,6 +59,28 @@ class ExternalFont {
   void bitmapCacheClear();
   /** Return whether the given offset/length is eligible for bitmap caching. */
   bool bitmapCacheCanStore(uint32_t offset, uint32_t length) const;
+  bool loadTtf(const char* path, uint16_t pointSize);
+  bool getTtfGlyphMetadata(uint32_t cp, EpdGlyph& out);
+  bool getTtfGlyphBitmap(uint32_t offset, uint32_t length, uint8_t* outputBuffer);
+  bool ensureTtfBitmap(size_t metaSlot);
+  void releaseTtfResources();
+
+  static constexpr uint32_t kTtfBitmapOffsetBase = 0x80000000u;
+  static constexpr uint32_t kTtfBitmapOffsetSlotShift = 20;
+  static constexpr uint32_t kTtfBitmapOffsetRelativeMask = (1u << kTtfBitmapOffsetSlotShift) - 1u;
+  static constexpr size_t kTtfFontInfoBytes = 176;
+  static constexpr size_t kTtfSharedCacheSlots = 8;
+
+  struct TtfSharedCacheSlot {
+    std::string path;
+    uint8_t* data = nullptr;
+    uint32_t size = 0;
+    uint32_t lastUsed = 0;
+    uint8_t users = 0;
+    bool inPsram = false;
+  };
+  static TtfSharedCacheSlot s_ttfSharedCache[kTtfSharedCacheSlots];
+  static uint32_t s_ttfSharedCacheGeneration;
 
   static constexpr size_t kGlyphMetaCacheSlots = 512;
   static constexpr size_t kGlyphBitmapCacheSlots = 128;
@@ -56,7 +89,8 @@ class ExternalFont {
     uint32_t stamp = 0;
     EpdGlyph glyph{};
   };
-  GlyphMetaCacheSlot m_metaCache[kGlyphMetaCacheSlots];
+  GlyphMetaCacheSlot* m_metaCache = nullptr;
+  bool m_metaCacheInPsram = false;
   uint32_t m_metaCacheGen = 0;
 
   static constexpr size_t kGlyphBitmapCacheMaxBytes = 512;
@@ -76,8 +110,21 @@ class ExternalFont {
   EpdFontData* m_fontData;
   std::string m_filePath;
   FsFile m_file;
+  uint32_t m_fileSize = 0;
   uint32_t m_glyphTableStart = 0;
   uint32_t m_glyphCount = 0;
   uint32_t m_bitmapDataStart = 0;
   bool m_hasAntiAliasData = false;
+
+  bool m_isTtf = false;
+  uint8_t* m_ttfData = nullptr;
+  uint32_t m_ttfDataSize = 0;
+  bool m_ttfDataInPsram = false;
+  int8_t m_ttfSharedCacheSlot = -1;
+  uint16_t m_ttfPointSize = 0;
+  alignas(8) uint8_t m_ttfFontInfo[kTtfFontInfoBytes] = {};
+  uint8_t* m_ttfBitmapBuffer = nullptr;
+  size_t m_ttfBitmapBufferSize = 0;
+  uint32_t m_ttfBitmapToken = 0;
+  uint32_t m_ttfBitmapLength = 0;
 };

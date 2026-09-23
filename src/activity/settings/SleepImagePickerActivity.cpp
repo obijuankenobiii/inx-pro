@@ -89,7 +89,8 @@ void SleepImagePickerActivity::rebuildRows() {
       std::string filename = name;
       const bool supported = StringUtils::checkFileExtension(filename, ".bmp") ||
                              StringUtils::checkFileExtension(filename, ".jpg") ||
-                             StringUtils::checkFileExtension(filename, ".jpeg");
+                             StringUtils::checkFileExtension(filename, ".jpeg") ||
+                             StringUtils::checkFileExtension(filename, ".png");
       if (filename[0] != '.' && supported) {
         folderImages.push_back({filename, filename, std::string("/sleep/") + filename});
       }
@@ -110,6 +111,9 @@ void SleepImagePickerActivity::rebuildRows() {
   }
   if (SdMan.exists("/sleep.jpeg")) {
     rows.push_back({"sleep.jpeg (SD root)", "/sleep.jpeg", "/sleep.jpeg"});
+  }
+  if (SdMan.exists("/sleep.png")) {
+    rows.push_back({"sleep.png (SD root)", "/sleep.png", "/sleep.png"});
   }
 }
 

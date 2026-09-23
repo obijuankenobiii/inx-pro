@@ -10,6 +10,7 @@
 #include <ESPmDNS.h>
 #include <GfxRenderer.h>
 #include <WiFi.h>
+#include <esp_heap_caps.h>
 
 #include "activity/page/SubPage.h"
 #include "WifiSelectionActivity.h"
@@ -71,7 +72,8 @@ void CalibreConnectActivity::onEnter() {
     connectedSSID = WiFi.SSID().c_str();
   }
 
-  xTaskCreate(&CalibreConnectActivity::taskTrampoline, "CalibreConnectTask", 8192, this, 1, &displayTaskHandle);
+  xTaskCreateWithCaps(&CalibreConnectActivity::taskTrampoline, "CalibreConnectTask", 8192, this, 1,
+                      &displayTaskHandle, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 
   if (alreadyConnected) {
     startWebServer();
@@ -95,7 +97,7 @@ void CalibreConnectActivity::onExit() {
   if (renderingMutex) {
     xSemaphoreTake(renderingMutex, portMAX_DELAY);
     if (displayTaskHandle) {
-      vTaskDelete(displayTaskHandle);
+      vTaskDeleteWithCaps(displayTaskHandle);
       displayTaskHandle = nullptr;
     }
     vSemaphoreDelete(renderingMutex);

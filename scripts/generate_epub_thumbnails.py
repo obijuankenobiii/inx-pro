@@ -2,7 +2,7 @@
 """Embed fast device thumbnails in EPUB files.
 
 The reader extracts META-INF/thumbnail.jpg before it tries to decode an EPUB
-cover on-device. This tool finds the EPUB cover, produces the same 225 x 340
+cover on-device. This tool finds the EPUB cover, produces the same 480 x 720
 maximum JPEG thumbnail used by the firmware, then stores it at that path.
 
 Requires Pillow:
@@ -184,8 +184,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--recursive", action="store_true", help="Include EPUBs in subfolders")
     parser.add_argument("--in-place", action="store_true", help="Atomically replace each source EPUB")
     parser.add_argument("--output", help="Output EPUB for one source, or output folder for multiple sources")
-    parser.add_argument("--width", type=int, default=225, help="Maximum thumbnail width (default: 225)")
-    parser.add_argument("--height", type=int, default=340, help="Maximum thumbnail height (default: 340)")
+    parser.add_argument("--width", type=int, default=480, help="Maximum thumbnail width (default: 480)")
+    parser.add_argument("--height", type=int, default=720, help="Maximum thumbnail height (default: 720)")
     parser.add_argument("--quality", type=int, default=92, help="JPEG quality from 1 to 95 (default: 92)")
     return parser.parse_args()
 

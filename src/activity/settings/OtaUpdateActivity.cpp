@@ -11,6 +11,7 @@
 #include <WiFi.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <esp_heap_caps.h>
 
 #include <algorithm>
 #include <string>
@@ -25,6 +26,7 @@
 #include "esp_task_wdt.h"
 
 namespace {
+constexpr uint32_t kDisplayTaskStack = 8192;
 constexpr int kSourceItemHeight = Page::LIST_ITEM_HEIGHT;
 constexpr int kFirmwareItemHeight = Page::LIST_ITEM_HEIGHT;
 const std::string kEmptyPath;
@@ -202,7 +204,8 @@ void OtaUpdateActivity::onEnter() {
   sdFirmwareSelectionVisible = false;
   updateRequired = true;
 
-  xTaskCreate(&OtaUpdateActivity::taskTrampoline, "OtaUpdateActivityTask", 4096, this, 1, &displayTaskHandle);
+  xTaskCreateWithCaps(&OtaUpdateActivity::taskTrampoline, "OtaUpdateActivityTask", kDisplayTaskStack, this, 1,
+                      &displayTaskHandle, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 
   INX_SERIAL.printf("[%lu] [OTA] Waiting for update source selection\n", millis());
 }
@@ -260,7 +263,7 @@ void OtaUpdateActivity::onExit() {
 
   xSemaphoreTake(renderingMutex, portMAX_DELAY);
   if (displayTaskHandle) {
-    vTaskDelete(displayTaskHandle);
+    vTaskDeleteWithCaps(displayTaskHandle);
     displayTaskHandle = nullptr;
   }
   vSemaphoreDelete(renderingMutex);
@@ -337,10 +340,15 @@ void OtaUpdateActivity::render() {
   } else if (state == WAITING_SD_SELECTION) {
     const int totalFiles = static_cast<int>(sdFirmwareFiles.size());
     if (totalFiles == 0) {
-      renderer.text.render(systemFontId(), 20, bodyTop, "No firmware .bin files found.", true,
-                           EpdFontFamily::BOLD);
-      renderer.text.render(systemFontId(), 20, bodyTop + 32, "Put .bin files in / or /firmware.",
-                           true, EpdFontFamily::REGULAR);
+      constexpr int lineGap = 8;
+      const int lineHeight = renderer.text.getLineHeight(systemFontId());
+      const int messageHeight = lineHeight * 2 + lineGap;
+      const int bodyBottom = screenHeight - 80;
+      const int messageTop = bodyTop + std::max(0, (bodyBottom - bodyTop - messageHeight) / 2);
+      renderer.text.centered(systemFontId(), messageTop, "No firmware .bin files found.", true,
+                             EpdFontFamily::BOLD);
+      renderer.text.centered(systemFontId(), messageTop + lineHeight + lineGap,
+                             "Put .bin files in / or /firmware.", true, EpdFontFamily::REGULAR);
       const auto labels = mappedInput.mapLabels("« Back", "", "", "");
     } else {
       const int listBottom = screenHeight - 44;

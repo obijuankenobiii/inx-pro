@@ -58,6 +58,11 @@ void HalDisplay::displayBufferAsync(HalDisplay::RefreshMode mode) {
   display.displayBufferAsync(convertRefreshMode(mode));
 }
 
+void HalDisplay::displayGrayscaleBase(const HalDisplay::RefreshMode mode, const bool turnOffScreen) {
+  (void)turnOffScreen;
+  display.displayBuffer(convertRefreshMode(mode));
+}
+
 void HalDisplay::syncWriteBufferFromActive() const { display.syncWriteBufferFromActive(); }
 
 bool HalDisplay::refreshBusy() { return display.refreshBusy(); }

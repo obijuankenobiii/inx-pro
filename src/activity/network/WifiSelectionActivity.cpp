@@ -8,6 +8,7 @@
 
 #include <GfxRenderer.h>
 #include <WiFi.h>
+#include <esp_heap_caps.h>
 
 extern "C" {
 #include <esp_err.h>
@@ -20,12 +21,17 @@ extern "C" {
 #include "activity/util/KeyboardEntryActivity.h"
 #include "state/NetworkCredential.h"
 #include "system/Fonts.h"
+#include "system/LanguageManager.h"
 #include "system/ScreenComponents.h"
 #include "system/MappedInputManager.h"
 
 namespace {
 constexpr int LIST_ITEM_HEIGHT = Page::LIST_ITEM_HEIGHT;
 constexpr uint32_t scanMaxMs = 120;
+// Wi-Fi renders translated labels and may resolve the first non-ASCII glyph by
+// loading a streamed language font. TextRender also uses a bounded glyph buffer
+// on the task stack, so the old 4 KB stack was not sufficient for CJK packages.
+constexpr uint32_t WIFI_DISPLAY_TASK_STACK = 8192;
 }
 
 /**
@@ -40,7 +46,7 @@ void WifiSelectionActivity::taskTrampoline(void* param) {
 void WifiSelectionActivity::scanTaskTrampoline(void* param) {
   auto* self = static_cast<WifiSelectionActivity*>(param);
   self->scanTaskLoop();
-  vTaskDelete(nullptr);
+  vTaskDeleteWithCaps(nullptr);
 }
 
 /**
@@ -79,14 +85,15 @@ void WifiSelectionActivity::onEnter() {
   uint8_t mac[6];
   WiFi.macAddress(mac);
   char macStr[32];
-  snprintf(macStr, sizeof(macStr), "MAC address: %02x-%02x-%02x-%02x-%02x-%02x", mac[0], mac[1], mac[2], mac[3], mac[4],
-           mac[5]);
+  snprintf(macStr, sizeof(macStr), LanguageManager::translateText("MAC address: %02x-%02x-%02x-%02x-%02x-%02x"),
+           mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
   cachedMacAddress = std::string(macStr);
 
   updateRequired = true;
 
-  const BaseType_t taskResult =
-      xTaskCreate(&WifiSelectionActivity::taskTrampoline, "WifiSelectionTask", 4096, this, 1, &displayTaskHandle);
+  const BaseType_t taskResult = xTaskCreateWithCaps(
+      &WifiSelectionActivity::taskTrampoline, "WifiSelectionTask", WIFI_DISPLAY_TASK_STACK, this, 1,
+      &displayTaskHandle, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   INX_SERIAL.printf("[%lu] [WIFI] display task result=%d handle=%p\n", millis(), static_cast<int>(taskResult),
                  displayTaskHandle);
 
@@ -117,12 +124,12 @@ void WifiSelectionActivity::onExit() {
   cachedMacAddress.clear();
 
   if (displayTaskHandle) {
-    vTaskDelete(displayTaskHandle);
+    vTaskDeleteWithCaps(displayTaskHandle);
     displayTaskHandle = nullptr;
   }
 
   if (scanTaskHandle) {
-    vTaskDelete(scanTaskHandle);
+    vTaskDeleteWithCaps(scanTaskHandle);
     scanTaskHandle = nullptr;
   }
 
@@ -152,9 +159,9 @@ void WifiSelectionActivity::startWifiScan() {
   delay(100);
   scanStartedAt = millis();
   scanCancelled = false;
-  const BaseType_t result =
-      xTaskCreatePinnedToCore(&WifiSelectionActivity::scanTaskTrampoline, "WifiScanTask", 4096, this, 1,
-                              &scanTaskHandle, 1);
+  const BaseType_t result = xTaskCreatePinnedToCoreWithCaps(
+      &WifiSelectionActivity::scanTaskTrampoline, "WifiScanTask", 4096, this, 1, &scanTaskHandle, 1,
+      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   INX_SERIAL.printf("[%lu] [WIFI] native scan task result=%d handle=%p mode-set=%d disconnect=%d dwell=%lums mode=%d status=%d\n",
                  millis(), static_cast<int>(result), scanTaskHandle, modeSet, disconnected,
                  static_cast<unsigned long>(scanMaxMs), static_cast<int>(WiFi.getMode()), static_cast<int>(WiFi.status()));
@@ -606,8 +613,9 @@ void WifiSelectionActivity::displayTaskLoop() {
       const unsigned long renderStartedAt = millis();
       INX_SERIAL.printf("[%lu] [WIFI] render start state=%d\n", renderStartedAt, static_cast<int>(renderState));
       render(fullRefresh);
-      INX_SERIAL.printf("[%lu] [WIFI] render complete state=%d elapsed=%lums\n", millis(),
-                     static_cast<int>(renderState), millis() - renderStartedAt);
+      INX_SERIAL.printf("[%lu] [WIFI] render complete state=%d elapsed=%lums stack-free=%u\n", millis(),
+                     static_cast<int>(renderState), millis() - renderStartedAt,
+                     static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
     }
     xSemaphoreGive(renderingMutex);
     vTaskDelay(10 / portTICK_PERIOD_MS);
@@ -732,7 +740,7 @@ void WifiSelectionActivity::renderNetworkList(int screenWidth, int screenHeight,
     }
 
     char countStr[32];
-    snprintf(countStr, sizeof(countStr), "%zu networks found", networks.size());
+    snprintf(countStr, sizeof(countStr), LanguageManager::translateText("%zu networks found"), networks.size());
     renderer.text.render(MONTSERRAT_8_FONT_ID, 20, screenHeight - 90, countStr);
     renderer.text.render(MONTSERRAT_8_FONT_ID, 20, screenHeight - 105, cachedMacAddress.c_str());
   }
@@ -776,7 +784,7 @@ void WifiSelectionActivity::renderConnectionFailed(const int screenWidth, const 
   const int errorY = dividerY + 40;
   renderer.text.centered(MONTSERRAT_10_FONT_ID, errorY - 20, connectionError.c_str());
 
-  std::string ssidInfo = "Network: " + selectedSSID;
+  std::string ssidInfo = std::string(LanguageManager::translateText("Network:")) + " " + selectedSSID;
   if (ssidInfo.length() > 25) {
     ssidInfo.replace(22, ssidInfo.length() - 22, "...");
   }

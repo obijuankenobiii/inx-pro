@@ -148,7 +148,7 @@ bool ImageRender::render(int x, int y, int width, int height, const Options& opt
     effectiveOptions.mode = ImageRenderMode::OneBit;
     effectiveOptions.quality = false;
     effectiveOptions.fastQuality = false;
-    if (renderer_.getRenderMode() != GfxRenderer::BW) {
+    if (!effectiveOptions.preserveTransparency && renderer_.getRenderMode() != GfxRenderer::BW) {
       renderer_.rectangle.fill(x, y, width, height, false);
     }
   }
@@ -157,7 +157,8 @@ bool ImageRender::render(int x, int y, int width, int height, const Options& opt
   // dark mode the page background is black, so seed only the image rectangle
   // with white before rendering; otherwise white image pixels are captured as
   // black and the resulting display-cache entry is unusable.
-  if (renderer_.isDarkMode() && renderer_.getRenderMode() == GfxRenderer::BW) {
+  if (renderer_.isDarkMode() && renderer_.getRenderMode() == GfxRenderer::BW &&
+      !effectiveOptions.preserveTransparency) {
     renderer_.rectangle.fill(x, y, width, height, false);
   }
   ImageDisplayCacheOptions cacheOptions;
@@ -199,7 +200,7 @@ bool ImageRender::render(int x, int y, int width, int height, const Options& opt
     } else if (format_ == Format::Png) {
       PngRender png(renderer_);
       ok = png.fromPath(path_, x, y, width, height, effectiveOptions.cropToFill, effectiveOptions.mode,
-                        effectiveOptions.cropAnchorX, jpegCapture);
+                        effectiveOptions.cropAnchorX, jpegCapture, effectiveOptions.preserveTransparency);
     } else {
       FsFile file;
       if (!SdMan.openFileForRead("EHP", path_, file)) {

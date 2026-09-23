@@ -12,12 +12,14 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <iterator>
 #include <limits>
 #include <vector>
 
 #include "hyphenation/Hyphenator.h"
+#include "../../GfxRenderer/RtlText.h"
 
 constexpr int MAX_COST = std::numeric_limits<int>::max();
 
@@ -28,56 +30,51 @@ constexpr size_t SOFT_HYPHEN_BYTES = 2;
 constexpr uint8_t kScriptScalePct = 70;
 
 template <typename T>
-std::vector<T> moveListPrefixToVector(std::list<T>& values, const size_t count) {
+std::vector<T> moveListPrefixToVector(std::deque<T>& values, const size_t count) {
   const size_t take = std::min(count, values.size());
   std::vector<T> out;
   out.reserve(take);
-  auto endIt = values.begin();
-  std::advance(endIt, static_cast<std::ptrdiff_t>(take));
-  for (auto it = values.begin(); it != endIt; ++it) {
-    out.push_back(std::move(*it));
+  for (size_t i = 0; i < take; ++i) {
+    out.push_back(std::move(values.front()));
+    values.pop_front();
   }
-  values.erase(values.begin(), endIt);
   return out;
 }
 
-std::vector<EpdFontFamily::Style> moveStylePrefixToVector(std::list<EpdFontFamily::Style>& values,
+std::vector<EpdFontFamily::Style> moveStylePrefixToVector(std::deque<EpdFontFamily::Style>& values,
                                                           const size_t count) {
   const size_t take = std::min(count, values.size());
-  auto endIt = values.begin();
-  std::advance(endIt, static_cast<std::ptrdiff_t>(take));
-  if (std::all_of(values.begin(), endIt,
+  if (std::all_of(values.begin(), values.begin() + static_cast<std::ptrdiff_t>(take),
                   [](EpdFontFamily::Style style) { return style == EpdFontFamily::REGULAR; })) {
-    values.erase(values.begin(), endIt);
+    for (size_t i = 0; i < take; ++i) values.pop_front();
     return {};
   }
   std::vector<EpdFontFamily::Style> out;
   out.reserve(take);
-  for (auto it = values.begin(); it != endIt; ++it) {
-    out.push_back(*it);
+  for (size_t i = 0; i < take; ++i) {
+    out.push_back(values.front());
+    values.pop_front();
   }
-  values.erase(values.begin(), endIt);
   return out;
 }
 
-uint8_t moveBytePrefixToCompactVector(std::list<uint8_t>& values, const size_t count, const uint8_t emptyDefault,
+uint8_t moveBytePrefixToCompactVector(std::deque<uint8_t>& values, const size_t count, const uint8_t emptyDefault,
                                       std::vector<uint8_t>& out) {
   const size_t take = std::min(count, values.size());
-  auto endIt = values.begin();
-  std::advance(endIt, static_cast<std::ptrdiff_t>(take));
-  if (values.begin() == endIt) {
+  if (take == 0) {
     return emptyDefault;
   }
   const uint8_t first = values.front();
-  if (std::all_of(values.begin(), endIt, [first](uint8_t value) { return value == first; })) {
-    values.erase(values.begin(), endIt);
+  if (std::all_of(values.begin(), values.begin() + static_cast<std::ptrdiff_t>(take),
+                  [first](uint8_t value) { return value == first; })) {
+    for (size_t i = 0; i < take; ++i) values.pop_front();
     return first;
   }
   out.reserve(take);
-  for (auto it = values.begin(); it != endIt; ++it) {
-    out.push_back(*it);
+  for (size_t i = 0; i < take; ++i) {
+    out.push_back(values.front());
+    values.pop_front();
   }
-  values.erase(values.begin(), endIt);
   return emptyDefault;
 }
 
@@ -197,11 +194,10 @@ uint16_t measureWordWidthForAlign(const GfxRenderer& renderer, const int fontId,
  */
 std::vector<size_t> computeGreedyLineBreaksWithDropIndent(const int pageWidth, const int spaceWidth,
                                                           const std::vector<uint16_t>& wordWidths,
-                                                          const std::list<uint8_t>& wordJoinPrevious,
+                                                          const std::vector<uint8_t>& joinPrevious,
                                                           const int dropIndentW, const int dropIndentLines) {
   std::vector<size_t> lineBreakIndices;
   const size_t n = wordWidths.size();
-  std::vector<uint8_t> joinPrevious(wordJoinPrevious.begin(), wordJoinPrevious.end());
   size_t currentIndex = 0;
   int lineNum = 0;
 
@@ -301,27 +297,46 @@ void ParsedText::layoutAndExtractLines(const GfxRenderer& renderer, const int fo
     return;
   }
 
+  rtlParagraph_ = false;
+  for (const auto& word : words) {
+    const RtlText::Direction direction = RtlText::firstStrongDirection(word.c_str());
+    if (direction == RtlText::Direction::RTL) {
+      rtlParagraph_ = true;
+      break;
+    }
+    if (direction == RtlText::Direction::LTR) {
+      break;
+    }
+  }
+  // EPUBs commonly omit text-align for RTL paragraphs. In that case the
+  // logical "left/start" edge is the right edge of the page.
+  if (rtlParagraph_ && style == TextBlock::LEFT_ALIGN) {
+    style = TextBlock::RIGHT_ALIGN;
+  }
+
   applyParagraphIndent(renderer, fontId);
 
   const int pageWidth = viewportWidth;
   const int spaceWidth =
       std::max(1, static_cast<int>(std::lround(renderer.text.getSpaceWidth(fontId) * wordSpacingFactor_)));
   auto wordWidths = calculateWordWidths(renderer, fontId);
+  const std::vector<uint8_t> joinPreviousSnapshot =
+      hasJoinedWords_ ? std::vector<uint8_t>(wordJoinPrevious.begin(), wordJoinPrevious.end()) : std::vector<uint8_t>();
   std::vector<size_t> lineBreakIndices;
   const int dropW = static_cast<int>(leftIndentWidth);
   const int dropL = static_cast<int>(leftIndentLineCount);
   if (hyphenationEnabled) {
-    lineBreakIndices = computeHyphenatedLineBreaks(renderer, fontId, pageWidth, spaceWidth, wordWidths, dropW, dropL);
+    lineBreakIndices =
+        computeHyphenatedLineBreaks(renderer, fontId, pageWidth, spaceWidth, wordWidths, joinPreviousSnapshot, dropW,
+                                    dropL);
   } else {
-    lineBreakIndices = computeLineBreaks(renderer, fontId, pageWidth, spaceWidth, wordWidths, dropW, dropL);
+    lineBreakIndices =
+        computeLineBreaks(renderer, fontId, pageWidth, spaceWidth, wordWidths, joinPreviousSnapshot, dropW, dropL);
   }
   if (lineBreakIndices.empty() || (!includeLastLine && lineBreakIndices.size() <= 1)) {
     return;
   }
   const size_t lineCount = includeLastLine ? lineBreakIndices.size() : lineBreakIndices.size() - 1;
-  const std::vector<uint8_t> joinPreviousSnapshot =
-      hasJoinedWords_ ? std::vector<uint8_t>(wordJoinPrevious.begin(), wordJoinPrevious.end()) : std::vector<uint8_t>();
-
   for (size_t i = 0; i < lineCount; ++i) {
     extractLine(i, pageWidth, spaceWidth, wordWidths, lineBreakIndices, joinPreviousSnapshot, processLine);
   }
@@ -369,7 +384,8 @@ std::vector<uint16_t> ParsedText::calculateWordWidths(const GfxRenderer& rendere
 
 std::vector<size_t> ParsedText::computeLineBreaks(const GfxRenderer& renderer, const int fontId, const int pageWidth,
                                                   const int spaceWidth, std::vector<uint16_t>& wordWidths,
-                                                  int dropIndentW, int dropIndentLines) {
+                                                  const std::vector<uint8_t>& joinPrevious, const int dropIndentW,
+                                                  const int dropIndentLines) {
   if (words.empty()) {
     return {};
   }
@@ -390,7 +406,7 @@ std::vector<size_t> ParsedText::computeLineBreaks(const GfxRenderer& renderer, c
     const size_t totalWordCount = words.size();
     constexpr size_t kMaxOptimalLineBreakWords = 220;
     if (totalWordCount > kMaxOptimalLineBreakWords) {
-      return computeGreedyLineBreaksWithDropIndent(pageWidth, spaceWidth, wordWidths, wordJoinPrevious, dropIndentW,
+      return computeGreedyLineBreaksWithDropIndent(pageWidth, spaceWidth, wordWidths, joinPrevious, dropIndentW,
                                                    dropIndentLines);
     }
 
@@ -405,7 +421,7 @@ std::vector<size_t> ParsedText::computeLineBreaks(const GfxRenderer& renderer, c
       dp[static_cast<size_t>(i)] = MAX_COST;
 
       for (size_t j = static_cast<size_t>(i); j < totalWordCount; ++j) {
-        const bool joinedToPrevious = j > static_cast<size_t>(i) && *std::next(wordJoinPrevious.begin(), j) != 0;
+        const bool joinedToPrevious = j > static_cast<size_t>(i) && j < joinPrevious.size() && joinPrevious[j] != 0;
         const int gap = (j == static_cast<size_t>(i) || joinedToPrevious) ? 0 : spaceWidth;
         currlen += wordWidths[j] + gap;
         if (gap > 0) {
@@ -459,7 +475,7 @@ std::vector<size_t> ParsedText::computeLineBreaks(const GfxRenderer& renderer, c
    * plenty stable and avoids the quadratic allocation entirely.
    */
   if (dropIndentLines <= 1) {
-    return computeGreedyLineBreaksWithDropIndent(pageWidth, spaceWidth, wordWidths, wordJoinPrevious, dropIndentW,
+    return computeGreedyLineBreaksWithDropIndent(pageWidth, spaceWidth, wordWidths, joinPrevious, dropIndentW,
                                                  dropIndentLines);
   }
 
@@ -467,7 +483,7 @@ std::vector<size_t> ParsedText::computeLineBreaks(const GfxRenderer& renderer, c
   constexpr size_t kMaxDropIndentDpCells = 4800;
   const size_t gridCells = static_cast<size_t>(n + 1) * static_cast<size_t>(n + 2);
   if (gridCells > kMaxDropIndentDpCells) {
-    return computeGreedyLineBreaksWithDropIndent(pageWidth, spaceWidth, wordWidths, wordJoinPrevious, dropIndentW,
+    return computeGreedyLineBreaksWithDropIndent(pageWidth, spaceWidth, wordWidths, joinPrevious, dropIndentW,
                                                  dropIndentLines);
   }
 
@@ -490,8 +506,7 @@ std::vector<size_t> ParsedText::computeLineBreaks(const GfxRenderer& renderer, c
       dp[static_cast<size_t>(i)][static_cast<size_t>(ell)] = MAX_COST;
 
       for (int j = i; j < n; ++j) {
-        const bool joinedToPrevious =
-            j > i && *std::next(wordJoinPrevious.begin(), static_cast<std::ptrdiff_t>(j)) != 0;
+        const bool joinedToPrevious = j > i && j < joinPrevious.size() && joinPrevious[static_cast<size_t>(j)] != 0;
         currlen += wordWidths[static_cast<size_t>(j)] + ((j == i || joinedToPrevious) ? 0 : spaceWidth);
         if (currlen > W) {
           break;
@@ -573,8 +588,9 @@ void ParsedText::applyParagraphIndent(const GfxRenderer& renderer, const int fon
 
 std::vector<size_t> ParsedText::computeHyphenatedLineBreaks(const GfxRenderer& renderer, const int fontId,
                                                             const int pageWidth, const int spaceWidth,
-                                                            std::vector<uint16_t>& wordWidths, int dropIndentW,
-                                                            int dropIndentLines) {
+                                                            std::vector<uint16_t>& wordWidths,
+                                                            const std::vector<uint8_t>& joinPrevious,
+                                                            const int dropIndentW, const int dropIndentLines) {
   std::vector<size_t> lineBreakIndices;
   size_t currentIndex = 0;
   int lineNum = 0;
@@ -586,14 +602,13 @@ std::vector<size_t> ParsedText::computeHyphenatedLineBreaks(const GfxRenderer& r
 
     while (currentIndex < wordWidths.size()) {
       const bool isFirstWord = currentIndex == lineStart;
-      const bool joinedToPrevious =
-          currentIndex < wordJoinPrevious.size() && *std::next(wordJoinPrevious.begin(), currentIndex) != 0;
+      const bool joinedToPrevious = currentIndex < joinPrevious.size() && joinPrevious[currentIndex] != 0;
       const int spacing = (isFirstWord || joinedToPrevious) ? 0 : spaceWidth;
       const int candidateWidth = spacing + wordWidths[currentIndex];
 
       int naturalGapCount = 0;
       for (size_t gi = lineStart + 1; gi <= currentIndex; ++gi) {
-        if (*std::next(wordJoinPrevious.begin(), gi) == 0) {
+        if (gi >= joinPrevious.size() || joinPrevious[gi] == 0) {
           ++naturalGapCount;
         }
       }
@@ -804,7 +819,9 @@ void ParsedText::extractLine(const size_t breakIndex, const int pageWidth, const
   }
 
   uint16_t xpos = currentIndent;
-  if (style == TextBlock::RIGHT_ALIGN && spareSpace >= 0) {
+  if ((style == TextBlock::RIGHT_ALIGN ||
+       (rtlParagraph_ && style == TextBlock::JUSTIFIED && isLastLine)) &&
+      spareSpace >= 0) {
     xpos += spareSpace - gapCount * spaceWidth;
   } else if (style == TextBlock::CENTER_ALIGN && spareSpace >= 0) {
     xpos += (spareSpace - gapCount * spaceWidth) / 2;
@@ -867,12 +884,10 @@ void ParsedText::extractLine(const size_t breakIndex, const int pageWidth, const
   const uint8_t underlineDefault = moveBytePrefixToCompactVector(wordUnderline, lineWordCount, 0, lineWordUnderline);
   const uint8_t verticalAlignDefault =
       moveBytePrefixToCompactVector(wordVerticalAlign, lineWordCount, TextBlock::BASELINE, lineWordVerticalAlign);
-  auto joinPreviousEndIt = wordJoinPrevious.begin();
-  std::advance(joinPreviousEndIt, static_cast<std::ptrdiff_t>(std::min(lineWordCount, wordJoinPrevious.size())));
-  wordJoinPrevious.erase(wordJoinPrevious.begin(), joinPreviousEndIt);
-  auto xOffsetEndIt = wordXOffset.begin();
-  std::advance(xOffsetEndIt, static_cast<std::ptrdiff_t>(std::min(lineWordCount, wordXOffset.size())));
-  wordXOffset.erase(wordXOffset.begin(), xOffsetEndIt);
+  const size_t joinCount = std::min(lineWordCount, wordJoinPrevious.size());
+  for (size_t i = 0; i < joinCount; ++i) wordJoinPrevious.pop_front();
+  const size_t xOffsetCount = std::min(lineWordCount, wordXOffset.size());
+  for (size_t i = 0; i < xOffsetCount; ++i) wordXOffset.pop_front();
 
   std::vector<std::string> lineWordImagePaths;
   std::vector<uint16_t> lineWordImageW;

@@ -20,14 +20,17 @@
 
 #include "Page.h"
 #include "ImagePrefetch.h"
+#include "../../../src/system/EpubPerf.h"
 #include "hyphenation/Hyphenator.h"
 #include "parsers/ChapterHtmlSlimParser.h"
 
 namespace {
-constexpr uint8_t SECTION_FILE_VERSION = 81;
+// Heading font IDs are stored per h1-h6 semantic size for outline fonts, and heading/drop-cap layout changed.
+// Image bounds now match the aspect-fitted raster dimensions, which also changes cached page layout.
+constexpr uint8_t SECTION_FILE_VERSION = 100;
 constexpr uint32_t HEADER_SIZE = sizeof(uint8_t) + sizeof(int) + sizeof(float) + sizeof(float) + sizeof(bool) +
                                  sizeof(uint8_t) + sizeof(uint16_t) + sizeof(uint16_t) + sizeof(bool) + sizeof(bool) +
-                                 sizeof(bool) + sizeof(uint16_t) + sizeof(uint32_t);
+                                 sizeof(bool) + sizeof(uint32_t) + sizeof(uint16_t) + sizeof(uint32_t);
 constexpr uint16_t MAX_CACHED_PAGE_OFFSETS = 2048;
 }
 
@@ -44,7 +47,6 @@ Section::Section(const std::string& cachePath, const int spineIndexIn, GfxRender
       filePath(cachePath + "/sections/" + std::to_string(spineIndexIn) + ".bin") {}
 
 Section::~Section() {
-  cancelIncrementalBuild();
   clearPageCache();
   if (file) {
     file.close();
@@ -114,6 +116,7 @@ void Section::writeSectionFileHeader(const int fontId, const float lineCompressi
   serialization::writePod(file, hyphenationEnabled);
   serialization::writePod(file, respectCssParagraphIndent);
   serialization::writePod(file, bionicReadingEnabled);
+  serialization::writePod(file, Hyphenator::cacheSignature());
   serialization::writePod(file, pageCount);
   serialization::writePod(file, static_cast<uint32_t>(0));
 }
@@ -143,6 +146,8 @@ bool Section::loadSectionFile(const int fontId, const float lineCompression, con
   pageOffsets.clear();
   clearPageCache();
 
+  if (epub) Hyphenator::setPreferredLanguage(epub->getLanguage());
+
   if (!SdMan.openFileForRead("SCT", filePath, file)) return false;
 
   uint8_t version;
@@ -163,6 +168,7 @@ bool Section::loadSectionFile(const int fontId, const float lineCompression, con
   bool storedHyphenationEnabled;
   bool storedRespectCssIndent = false;
   bool storedBionicReadingEnabled = false;
+  uint32_t storedHyphenationSignature = 0;
   uint16_t storedPageCount;
   uint32_t storedLutOffset;
 
@@ -176,6 +182,7 @@ bool Section::loadSectionFile(const int fontId, const float lineCompression, con
   serialization::readPod(file, storedHyphenationEnabled);
   serialization::readPod(file, storedRespectCssIndent);
   serialization::readPod(file, storedBionicReadingEnabled);
+  serialization::readPod(file, storedHyphenationSignature);
   serialization::readPod(file, storedPageCount);
   serialization::readPod(file, storedLutOffset);
 
@@ -190,6 +197,7 @@ bool Section::loadSectionFile(const int fontId, const float lineCompression, con
   settingsMatch &= (storedHyphenationEnabled == hyphenationEnabled);
   settingsMatch &= (storedRespectCssIndent == respectCssParagraphIndent);
   settingsMatch &= (storedBionicReadingEnabled == bionicReadingEnabled);
+  settingsMatch &= (storedHyphenationSignature == Hyphenator::cacheSignature());
 
   if (!settingsMatch) {
     file.close();
@@ -252,6 +260,7 @@ bool Section::loadSectionFileForPreview(int* outFontId) {
   bool storedHyphenationEnabled = false;
   bool storedRespectCssIndent = false;
   bool storedBionicReadingEnabled = false;
+  uint32_t storedHyphenationSignature = 0;
   uint16_t storedPageCount = 0;
   uint32_t storedLutOffset = 0;
 
@@ -265,6 +274,7 @@ bool Section::loadSectionFileForPreview(int* outFontId) {
   serialization::readPod(file, storedHyphenationEnabled);
   serialization::readPod(file, storedRespectCssIndent);
   serialization::readPod(file, storedBionicReadingEnabled);
+  serialization::readPod(file, storedHyphenationSignature);
   serialization::readPod(file, storedPageCount);
   serialization::readPod(file, storedLutOffset);
 
@@ -305,6 +315,7 @@ std::unique_ptr<Page> Section::loadCachedPage(const std::string& cachePath, cons
   bool storedHyphenationEnabled = false;
   bool storedRespectCssIndent = false;
   bool storedBionicReadingEnabled = false;
+  uint32_t storedHyphenationSignature = 0;
   uint16_t storedPageCount = 0;
   uint32_t storedLutOffset = 0;
 
@@ -318,6 +329,7 @@ std::unique_ptr<Page> Section::loadCachedPage(const std::string& cachePath, cons
   serialization::readPod(sectionFile, storedHyphenationEnabled);
   serialization::readPod(sectionFile, storedRespectCssIndent);
   serialization::readPod(sectionFile, storedBionicReadingEnabled);
+  serialization::readPod(sectionFile, storedHyphenationSignature);
   serialization::readPod(sectionFile, storedPageCount);
   serialization::readPod(sectionFile, storedLutOffset);
 
@@ -423,7 +435,6 @@ bool Section::createSectionFile(const int fontId, const int headerFontId, const 
                   spineIndex, localPath.c_str());
     success = false;
   }
-
   if (!success) {
     INX_SERIAL.printf(
         "[%lu] [SCT] createSectionFile: parser returned false spine=%d href=%s file=%s book=%s title=%s pages=%u "
@@ -467,193 +478,6 @@ bool Section::createSectionFile(const int fontId, const int headerFontId, const 
   }
   epub->flushImageMetadata();
   return true;
-}
-
-bool Section::beginIncrementalBuild(
-    const int fontId, const int headerFontId, const int maxFontId, const float lineCompression,
-    const float wordSpacing, const bool extraParagraphSpacing, const uint8_t paragraphAlignment,
-    const uint16_t viewportWidth, const uint16_t viewportHeight, const bool hyphenationEnabled,
-    const bool respectCssParagraphIndent, const bool bionicReadingEnabled, const bool skipImages) {
-  if (!epub || incrementalBuildActive()) {
-    return false;
-  }
-
-  cancelIncrementalBuild();
-  clearPageCache();
-  pageOffsets.clear();
-  pageCount = 0;
-  incrementalLut_.clear();
-  incrementalBytesParsed_ = 0;
-  incrementalTotalBytes_ = 0;
-  incrementalBuildStartedAt_ = millis();
-  incrementalLastProgressLogAt_ = incrementalBuildStartedAt_;
-
-  const std::string localPath = epub->getSpineItem(spineIndex).href;
-  if (localPath.empty()) {
-    incrementalBuildStatus_ = IncrementalBuildStatus::Failed;
-    return false;
-  }
-  (void)epub->getItemSize(localPath, &incrementalTotalBytes_);
-  const size_t lastSlash = localPath.find_last_of('/');
-  const std::string contentBasePath =
-      lastSlash == std::string::npos ? std::string() : localPath.substr(0, lastSlash);
-
-  SdMan.mkdir((epub->getCachePath() + "/sections").c_str());
-  incrementalTempPath_ = filePath + ".build.tmp";
-  SdMan.remove(incrementalTempPath_.c_str());
-  if (!SdMan.openFileForWrite("SCT", incrementalTempPath_, file)) {
-    incrementalTempPath_.clear();
-    incrementalBuildStatus_ = IncrementalBuildStatus::Failed;
-    return false;
-  }
-
-  writeSectionFileHeader(fontId, lineCompression, wordSpacing, extraParagraphSpacing, paragraphAlignment, viewportWidth,
-                         viewportHeight, hyphenationEnabled, respectCssParagraphIndent, bionicReadingEnabled);
-
-  incrementalParser_ = std::make_unique<ChapterHtmlSlimParser>(
-      localPath, *epub, epub->getCachePath(), contentBasePath, renderer, fontId, headerFontId, maxFontId,
-      lineCompression, wordSpacing, extraParagraphSpacing, paragraphAlignment, viewportWidth, viewportHeight,
-      hyphenationEnabled, respectCssParagraphIndent, bionicReadingEnabled,
-      [this](std::unique_ptr<Page> page) { incrementalLut_.emplace_back(onPageComplete(std::move(page), nullptr)); });
-  incrementalParser_->internalPath = localPath;
-
-  Hyphenator::setPreferredLanguage(epub->getLanguage());
-  if (!incrementalParser_->beginIncremental(skipImages)) {
-    cancelIncrementalBuild();
-    incrementalBuildStatus_ = IncrementalBuildStatus::Failed;
-    return false;
-  }
-
-  incrementalStream_ = epub->openItemStream(localPath);
-  if (!incrementalStream_) {
-    cancelIncrementalBuild();
-    incrementalBuildStatus_ = IncrementalBuildStatus::Failed;
-    return false;
-  }
-
-  incrementalBuildStatus_ = IncrementalBuildStatus::Building;
-  INX_SERIAL.printf("[%lu] [SCT-IDLE] started spine=%d href=%s\n", millis(), spineIndex, localPath.c_str());
-  return true;
-}
-
-Section::IncrementalBuildStatus Section::stepIncrementalBuild(const size_t maxInflatedBytes) {
-  if (incrementalBuildStatus_ != IncrementalBuildStatus::Building || !incrementalParser_ || !incrementalStream_) {
-    return incrementalBuildStatus_;
-  }
-
-  class ParserSink final : public Print {
-   public:
-    explicit ParserSink(ChapterHtmlSlimParser& parser) : parser_(parser) {}
-    size_t write(const uint8_t* data, const size_t size) override {
-      if (!parser_.feedIncremental(data, size)) {
-        return 0;
-      }
-      bytesWritten_ += size;
-      return size;
-    }
-    size_t write(const uint8_t value) override { return write(&value, 1); }
-    size_t bytesWritten() const { return bytesWritten_; }
-
-   private:
-    ChapterHtmlSlimParser& parser_;
-    size_t bytesWritten_ = 0;
-  } sink(*incrementalParser_);
-
-  Epub::ItemStream::Result streamResult = Epub::ItemStream::Result::Error;
-  try {
-    streamResult = incrementalStream_->pump(sink, maxInflatedBytes);
-  } catch (const std::bad_alloc&) {
-    INX_SERIAL.printf("[%lu] [SCT-IDLE] OOM spine=%d\n", millis(), spineIndex);
-    streamResult = Epub::ItemStream::Result::Error;
-  } catch (...) {
-    INX_SERIAL.printf("[%lu] [SCT-IDLE] parser exception spine=%d\n", millis(), spineIndex);
-    streamResult = Epub::ItemStream::Result::Error;
-  }
-
-  incrementalBytesParsed_ += sink.bytesWritten();
-  const uint32_t now = millis();
-  if (streamResult == Epub::ItemStream::Result::More && now - incrementalLastProgressLogAt_ >= 2000) {
-    const unsigned progress =
-        incrementalTotalBytes_ == 0
-            ? 0
-            : static_cast<unsigned>(std::min<uint64_t>(
-                  99, (static_cast<uint64_t>(incrementalBytesParsed_) * 100) / incrementalTotalBytes_));
-    INX_SERIAL.printf("[%lu] [SCT-IDLE] progress spine=%d %lu/%lu (%u%%) pages=%u\n", now, spineIndex,
-                      static_cast<unsigned long>(incrementalBytesParsed_),
-                      static_cast<unsigned long>(incrementalTotalBytes_), progress, static_cast<unsigned>(pageCount));
-    incrementalLastProgressLogAt_ = now;
-  }
-
-  if (streamResult == Epub::ItemStream::Result::More) {
-    return incrementalBuildStatus_;
-  }
-  if (streamResult == Epub::ItemStream::Result::Error || !incrementalParser_->finishIncremental()) {
-    INX_SERIAL.printf("[%lu] [SCT-IDLE] failed spine=%d pages=%u\n", millis(), spineIndex,
-                      static_cast<unsigned>(pageCount));
-    cancelIncrementalBuild();
-    incrementalBuildStatus_ = IncrementalBuildStatus::Failed;
-    return incrementalBuildStatus_;
-  }
-
-  bool valid = pageCount > 0;
-  for (const uint32_t offset : incrementalLut_) {
-    valid = valid && offset != 0;
-  }
-  if (valid) {
-    EpubImagePrefetch::IoLock ioLock;
-    const uint32_t buildLutOffset = file.position();
-    for (const uint32_t offset : incrementalLut_) {
-      serialization::writePod(file, offset);
-    }
-    file.seek(HEADER_SIZE - sizeof(uint32_t) - sizeof(pageCount));
-    serialization::writePod(file, pageCount);
-    serialization::writePod(file, buildLutOffset);
-    file.sync();
-    file.close();
-
-    const std::string backupPath = filePath + ".build.old";
-    SdMan.remove(backupPath.c_str());
-    const bool hadPrevious = SdMan.exists(filePath.c_str());
-    const bool backedUp = !hadPrevious || SdMan.rename(filePath.c_str(), backupPath.c_str());
-    const bool published = backedUp && SdMan.rename(incrementalTempPath_.c_str(), filePath.c_str());
-    if (!published && backedUp && hadPrevious) {
-      SdMan.rename(backupPath.c_str(), filePath.c_str());
-    }
-    if (published) {
-      SdMan.remove(backupPath.c_str());
-      incrementalTempPath_.clear();
-      incrementalParser_.reset();
-      incrementalStream_.reset();
-      incrementalLut_.clear();
-      epub->flushImageMetadata();
-      incrementalBuildStatus_ = IncrementalBuildStatus::Ready;
-      INX_SERIAL.printf("[%lu] [SCT-IDLE] ready spine=%d pages=%u bytes=%lu elapsed=%lums\n", millis(), spineIndex,
-                        static_cast<unsigned>(pageCount), static_cast<unsigned long>(incrementalBytesParsed_),
-                        static_cast<unsigned long>(millis() - incrementalBuildStartedAt_));
-      return incrementalBuildStatus_;
-    }
-  }
-
-  INX_SERIAL.printf("[%lu] [SCT-IDLE] publish failed spine=%d\n", millis(), spineIndex);
-  cancelIncrementalBuild();
-  incrementalBuildStatus_ = IncrementalBuildStatus::Failed;
-  return incrementalBuildStatus_;
-}
-
-void Section::cancelIncrementalBuild() {
-  incrementalParser_.reset();
-  incrementalStream_.reset();
-  incrementalLut_.clear();
-  if (file) {
-    file.close();
-  }
-  if (!incrementalTempPath_.empty()) {
-    SdMan.remove(incrementalTempPath_.c_str());
-    incrementalTempPath_.clear();
-  }
-  if (incrementalBuildStatus_ == IncrementalBuildStatus::Building) {
-    incrementalBuildStatus_ = IncrementalBuildStatus::Idle;
-  }
 }
 
 /**

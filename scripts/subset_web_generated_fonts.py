@@ -268,7 +268,7 @@ def main() -> int:
     parser.add_argument("--check", action="store_true", help="report headers that would change")
     args = parser.parse_args()
     changed = False
-    for path in sorted(FONT_DIR.glob("atkinson_hyperlegible_*.h")) + sorted(FONT_DIR.glob("chareink_*.h")):
+    for path in sorted(FONT_DIR.glob("atkinson_hyperlegible_*.h")):
         original = path.read_bytes()
         stats = rewrite(path)
         if path.read_bytes() != original:

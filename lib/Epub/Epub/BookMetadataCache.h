@@ -13,12 +13,39 @@
 
 class BookMetadataCache {
  public:
+  struct MetadataAttribute {
+    std::string name;
+    std::string value;
+  };
+
+  /** One original OPF metadata element, including its attributes. This keeps
+   * Calibre and publisher-specific fields available even before the firmware
+   * has dedicated accessors for them. */
+  struct MetadataField {
+    std::string name;
+    std::string value;
+    std::vector<MetadataAttribute> attributes;
+  };
+
   struct BookMetadata {
     std::string title;
     std::string author;
+    std::string description;
     std::string language;
     std::string coverItemHref;
     std::string textReferenceHref;
+    std::string titleSort;
+    std::string authorSort;
+    std::string series;
+    /** Kept as text to preserve Calibre's numeric formatting, e.g. "3.00". */
+    std::string seriesIndex;
+    std::string rating;
+    std::string publisher;
+    std::string publicationDate;
+    std::string calibreTimestamp;
+    std::string calibreUuid;
+    std::vector<std::string> tags;
+    std::vector<MetadataField> fields;
   };
 
   struct SpineEntry {

@@ -9,9 +9,6 @@
 
 #include "images/BookLarge.h"
 #include "images/FolderLarge.h"
-#define FolderLarge FolderAuthorLarge
-#include "images/FolderAuthorLarge.h"
-#undef FolderLarge
 #include "images/ImageLarge.h"
 #include "images/Pdf72.h"
 #include "images/Star.h"
@@ -95,8 +92,25 @@ void titleLines(const GfxRenderer& renderer, const std::string& value, const int
   second = renderer.text.truncate(font, value.substr(best).c_str(), width);
 }
 
+void drawItemBadge(const GfxRenderer& renderer, const int x, const int y, const int width,
+                   const std::string& label) {
+  if (label.empty() || width < 8) return;
+  constexpr int paddingX = 5;
+  constexpr int paddingY = 3;
+  constexpr int margin = 5;
+  constexpr int font = MONTSERRAT_8_FONT_ID;
+  const int badgeWidth = renderer.text.getWidth(font, label.c_str()) + paddingX * 2;
+  const int badgeHeight = renderer.text.getLineHeight(font) + paddingY * 2;
+  const int badgeX = x + std::max(0, width - badgeWidth - margin);
+  const int badgeY = y + margin;
+  renderer.rectangle.fill(badgeX, badgeY, badgeWidth, badgeHeight,
+                          static_cast<int>(GfxRenderer::FillTone::Ink), true);
+  renderer.rectangle.render(badgeX, badgeY, badgeWidth, badgeHeight, false, true);
+  renderer.text.render(font, badgeX + paddingX, badgeY + paddingY, label.c_str(), false);
+}
+
 void drawItem(const GfxRenderer& renderer, const LibraryIndex::Book& item, const int x, const int y,
-              const int width, const int height, const bool favorite, const bool authorFolder) {
+              const int width, const int height, const bool favorite) {
   constexpr int labelGap = 4;
   constexpr int labelHeight = 36;
   const int iconX = x + 8;
@@ -107,11 +121,12 @@ void drawItem(const GfxRenderer& renderer, const LibraryIndex::Book& item, const
   const int drawX = iconX + (iconWidth - iconSize) / 2;
   const int drawY = iconY + (iconHeight - iconSize) / 2;
   const uint8_t* icon = item.type == LibraryIndex::Book::Type::FOLDER
-                            ? (authorFolder ? FolderAuthorLarge : FolderLarge)
+                            ? FolderLarge
                             : (isImage(item.path)
                                   ? ImageLarge
                                   : (isPdf(item.path) ? Pdf72 : (isTxt(item.path) ? Txt72 : BookLarge)));
   renderer.bitmap.icon(icon, drawX, drawY, iconSize, iconSize);
+  drawItemBadge(renderer, x, y, width, item.badge);
   if (favorite) renderer.bitmap.icon(Star, x + width - 30, y + 6, 24, 24);
   const int font = systemFontId();
   const int available = std::max(20, width - 10);
@@ -134,18 +149,17 @@ void drawItem(const GfxRenderer& renderer, const LibraryIndex::Book& item, const
 Grid::Grid(GfxRenderer& renderer, MappedInputManager& mappedInput,
            const std::vector<LibraryIndex::Book>& items, std::function<void(int, bool)> select,
            std::function<bool(const LibraryIndex::Book&)> isFavorite,
-           std::function<void(int, int)> outsideTap,
-           std::function<bool(const LibraryIndex::Book&)> isAuthorFolder)
+           std::function<void(int, int)> outsideTap)
     : renderer(renderer), mappedInput(mappedInput), items(items), select(std::move(select)),
       isFavorite(std::move(isFavorite)),
-      outsideTap(std::move(outsideTap)), isAuthorFolder(std::move(isAuthorFolder)) {}
+      outsideTap(std::move(outsideTap)) {}
 
 void Grid::reset() { page = 0; }
 
 int Grid::top() const { return navigation::Menu::height; }
 
 int Grid::visibleHeight() const {
-  return std::max(1, renderer.getScreenHeight() - top() - navigation::Menu::bottomHeight - 10);
+  return std::max(1, renderer.getScreenHeight() - top() - navigation::Menu::bottomHeight - 30);
 }
 
 int Grid::pageCount() const {
@@ -221,8 +235,7 @@ void Grid::render() const {
     int height = 0;
     itemBounds(index, x, y, width, height);
     const LibraryIndex::Book& item = items[static_cast<size_t>(start + index)];
-    drawItem(renderer, item, x, y, width, height, isFavorite && isFavorite(item),
-             isAuthorFolder && isAuthorFolder(item));
+    drawItem(renderer, item, x, y, width, height, isFavorite && isFavorite(item));
   }
 }
 

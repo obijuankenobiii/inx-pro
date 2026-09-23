@@ -71,6 +71,7 @@ struct PngContext {
   uint32_t height = 0;
   uint8_t bitDepth = 0;
   uint8_t colorType = 0;
+  bool interlaced = false;
   uint8_t bytesPerPixel = 0;
   uint32_t rawRowBytes = 0;
 
@@ -103,6 +104,7 @@ struct RenderContext {
   FourToneImageDitherer* twoBitDitherer;
   Atkinson1BitDitherer* oneBitDitherer;
   JpegLevelCapture* capture;
+  bool preserveTransparency;
 };
 
 bool readBE32(FsFile& file, uint32_t& value) {
@@ -247,7 +249,7 @@ bool beginPng(FsFile& pngFile, PngContext& ctx) {
   const uint8_t interlace = ihdrRest[4];
   pngFile.seekCur(4);
 
-  if (compression != 0 || filter != 0 || interlace != 0 || width == 0 || height == 0 ||
+  if (compression != 0 || filter != 0 || interlace > 1 || width == 0 || height == 0 ||
       width > kPngMaxSourceWidth || height > kPngMaxSourceHeight) {
     return false;
   }
@@ -286,6 +288,7 @@ bool beginPng(FsFile& pngFile, PngContext& ctx) {
   ctx.height = height;
   ctx.bitDepth = bitDepth;
   ctx.colorType = colorType;
+  ctx.interlaced = interlace == 1;
   ctx.bytesPerPixel = bytesPerPixel;
   ctx.rawRowBytes = rawRowBytes;
   memset(ctx.paletteAlpha, 255, sizeof(ctx.paletteAlpha));
@@ -390,19 +393,25 @@ bool decodeScanline(PngContext& ctx) {
   return true;
 }
 
-void convertScanlineToGray(const PngContext& ctx, uint8_t* grayRow) {
+void convertScanlineToGray(const PngContext& ctx, uint8_t* grayRow, uint8_t* alphaRow) {
   const uint8_t* src = ctx.currentRow;
   const uint32_t w = ctx.width;
+  if (alphaRow) memset(alphaRow, 255, w);
   switch (ctx.colorType) {
     case PNG_COLOR_GRAYSCALE:
       if (ctx.bitDepth == 8) {
-        for (uint32_t x = 0; x < w; x++)
-          grayRow[x] = (ctx.hasTransparentGray && src[x] == ctx.transparentGray) ? 255 : src[x];
+        for (uint32_t x = 0; x < w; x++) {
+          const bool transparent = ctx.hasTransparentGray && src[x] == ctx.transparentGray;
+          grayRow[x] = transparent ? 255 : src[x];
+          if (alphaRow && transparent) alphaRow[x] = 0;
+        }
       } else if (ctx.bitDepth == 16) {
         for (uint32_t x = 0; x < w; x++) {
           const uint8_t* p = src + x * 2;
           const uint16_t gray16 = static_cast<uint16_t>(p[0]) << 8 | p[1];
-          grayRow[x] = (ctx.hasTransparentGray && gray16 == ctx.transparentGray) ? 255 : p[0];
+          const bool transparent = ctx.hasTransparentGray && gray16 == ctx.transparentGray;
+          grayRow[x] = transparent ? 255 : p[0];
+          if (alphaRow && transparent) alphaRow[x] = 0;
         }
       } else {
         const int ppb = 8 / ctx.bitDepth;
@@ -410,7 +419,9 @@ void convertScanlineToGray(const PngContext& ctx, uint8_t* grayRow) {
         for (uint32_t x = 0; x < w; x++) {
           const int shift = (ppb - 1 - (x % ppb)) * ctx.bitDepth;
           const uint8_t sample = (src[x / ppb] >> shift) & mask;
-          grayRow[x] = (ctx.hasTransparentGray && sample == ctx.transparentGray) ? 255 : sample * 255 / mask;
+          const bool transparent = ctx.hasTransparentGray && sample == ctx.transparentGray;
+          grayRow[x] = transparent ? 255 : sample * 255 / mask;
+          if (alphaRow && transparent) alphaRow[x] = 0;
         }
       }
       break;
@@ -422,7 +433,10 @@ void convertScanlineToGray(const PngContext& ctx, uint8_t* grayRow) {
           const uint16_t r = ctx.bitDepth == 16 ? (static_cast<uint16_t>(p[0]) << 8 | p[1]) : p[0];
           const uint16_t g = ctx.bitDepth == 16 ? (static_cast<uint16_t>(p[2]) << 8 | p[3]) : p[1];
           const uint16_t b = ctx.bitDepth == 16 ? (static_cast<uint16_t>(p[4]) << 8 | p[5]) : p[2];
-          if (r == ctx.transparentRed && g == ctx.transparentGreen && b == ctx.transparentBlue) gray = 255;
+          if (r == ctx.transparentRed && g == ctx.transparentGreen && b == ctx.transparentBlue) {
+            gray = 255;
+            if (alphaRow) alphaRow[x] = 0;
+          }
         }
         grayRow[x] = gray;
       }
@@ -434,22 +448,28 @@ void convertScanlineToGray(const PngContext& ctx, uint8_t* grayRow) {
         const int shift = (ppb - 1 - (x % ppb)) * ctx.bitDepth;
         uint8_t idx = (src[x / ppb] >> shift) & mask;
         if (idx >= ctx.paletteSize) idx = 0;
+        const uint8_t alpha = ctx.paletteAlpha[idx];
         grayRow[x] = compositeOverWhite(
-            rgbToGray(ctx.palette[idx * 3], ctx.palette[idx * 3 + 1], ctx.palette[idx * 3 + 2]), ctx.paletteAlpha[idx]);
+            rgbToGray(ctx.palette[idx * 3], ctx.palette[idx * 3 + 1], ctx.palette[idx * 3 + 2]), alpha);
+        if (alphaRow) alphaRow[x] = alpha;
       }
       break;
     }
     case PNG_COLOR_GRAYSCALE_ALPHA:
       for (uint32_t x = 0; x < w; x++) {
-        grayRow[x] = ctx.bitDepth == 16 ? compositeOverWhite(src[x * 4], src[x * 4 + 2])
-                                        : compositeOverWhite(src[x * 2], src[x * 2 + 1]);
+        const uint8_t alpha = ctx.bitDepth == 16 ? src[x * 4 + 2] : src[x * 2 + 1];
+        grayRow[x] = compositeOverWhite(ctx.bitDepth == 16 ? src[x * 4] : src[x * 2], alpha);
+        if (alphaRow) alphaRow[x] = alpha;
       }
       break;
     case PNG_COLOR_RGBA:
       for (uint32_t x = 0; x < w; x++) {
         const uint8_t* p = src + x * (ctx.bitDepth == 16 ? 8 : 4);
-        grayRow[x] = ctx.bitDepth == 16 ? compositeOverWhite(rgbToGray(p[0], p[2], p[4]), p[6])
-                                        : compositeOverWhite(rgbToGray(p[0], p[1], p[2]), p[3]);
+        const uint8_t alpha = ctx.bitDepth == 16 ? p[6] : p[3];
+        grayRow[x] = compositeOverWhite(ctx.bitDepth == 16 ? rgbToGray(p[0], p[2], p[4])
+                                                            : rgbToGray(p[0], p[1], p[2]),
+                                        alpha);
+        if (alphaRow) alphaRow[x] = alpha;
       }
       break;
   }
@@ -477,29 +497,34 @@ void drawQuantizedPixel(const RenderContext& ctx, const int x, const int y, cons
   }
 
   const uint8_t level = adjustTwoBitImageLevelForDisplay(FourToneImageDitherer::levelFromValue(q));
+  // Keep PNG's grayscale plane polarity identical to the working JPEG medium
+  // path.  The panel's tone-code order is device-specific; level 1/2 cannot
+  // be hard-coded here because that reverses dark/light gray on some panels.
+  const uint8_t grayscaleCode = grayscaleCodeTable()[level & 3u];
   GfxRenderer::RenderMode renderMode = ctx.renderer->getRenderMode();
-  if (renderMode == GfxRenderer::GRAY2_LSB) {
-    renderMode = GfxRenderer::GRAYSCALE_LSB;
-  } else if (renderMode == GfxRenderer::GRAY2_MSB) {
-    renderMode = GfxRenderer::GRAYSCALE_MSB;
-  }
   if (renderMode == GfxRenderer::BW) {
     if ((ctx.mode == ImageRenderMode::TwoBit && level > 0) || (ctx.mode == ImageRenderMode::OneBit && level < 3)) {
       ctx.renderer->drawPixel(x, y, true);
     }
-  } else if (renderMode == GfxRenderer::GRAYSCALE_MSB && (level == 1 || level == 2)) {
+  } else if (renderMode == GfxRenderer::GRAYSCALE_MSB && (grayscaleCode & 0b10u) != 0u) {
     ctx.renderer->drawPixel(x, y, false);
-  } else if (renderMode == GfxRenderer::GRAYSCALE_LSB && level == 1) {
+  } else if (renderMode == GfxRenderer::GRAYSCALE_LSB && (grayscaleCode & 0b01u) != 0u) {
     ctx.renderer->drawPixel(x, y, false);
+  } else if (renderMode == GfxRenderer::GRAY2_LSB || renderMode == GfxRenderer::GRAY2_MSB) {
+    const uint8_t bit = renderMode == GfxRenderer::GRAY2_LSB ? 0b01u : 0b10u;
+    if ((mapQualityGray2Level(level) & bit) == 0u) {
+      ctx.renderer->drawPixel(x, y, true);
+    }
   }
 }
 
-bool drawGrayRow(RenderContext& ctx, const uint8_t* grayRow, int width, int rowIndex) {
+bool drawGrayRow(RenderContext& ctx, const uint8_t* grayRow, const uint8_t* alphaRow, int width, int rowIndex) {
   if (!grayRow || width <= 0 || width != ctx.width) return false;
   const int screenY = ctx.y + rowIndex;
   for (int step = 0; step < width; step++) {
     const int ox = step;
-    const int gray = grayRow[ox];
+    const bool transparent = ctx.preserveTransparency && alphaRow && alphaRow[ox] == 0;
+    const int gray = transparent ? 255 : grayRow[ox];
 
     int q;
     const int solidBlackMax = ctx.mode == ImageRenderMode::TwoBit ? kPngTwoBitSolidBlackMax : kPngDitherSolidBlackMax;
@@ -518,13 +543,23 @@ bool drawGrayRow(RenderContext& ctx, const uint8_t* grayRow, int width, int rowI
       }
     }
 
-    if (ctx.mode == ImageRenderMode::TwoBit && ctx.capture && ctx.capture->captured) {
+    if (!transparent && ctx.mode == ImageRenderMode::TwoBit && ctx.capture && ctx.capture->captured) {
       const uint8_t level = adjustTwoBitImageLevelForDisplay(FourToneImageDitherer::levelFromValue(q));
       const size_t pixelIndex = static_cast<size_t>(rowIndex) * width + step;
       ctx.capture->values[pixelIndex / 4] |= static_cast<uint8_t>((level & 0x3) << ((pixelIndex % 4) * 2));
     }
 
-    drawQuantizedPixel(ctx, ctx.x + ox, screenY, q);
+    if (!transparent) {
+      // Normal image rendering can leave white pixels untouched because the image
+      // rectangle is cleared first. A transparent overlay is different: an opaque
+      // white pixel must cover the page underneath, while alpha==0 must not touch it.
+      const bool opaqueWhite = ctx.preserveTransparency && alphaRow && alphaRow[ox] == 255 && q == 255;
+      if (opaqueWhite) {
+        ctx.renderer->drawPixel(ctx.x + ox, screenY, false);
+      } else {
+        drawQuantizedPixel(ctx, ctx.x + ox, screenY, q);
+      }
+    }
   }
 
   if (ctx.mode == ImageRenderMode::TwoBit) {
@@ -533,6 +568,159 @@ bool drawGrayRow(RenderContext& ctx, const uint8_t* grayRow, int width, int rowI
     ctx.oneBitDitherer->nextRow();
   }
   return true;
+}
+
+void* allocatePngDecodedBuffer(const size_t bytes) {
+  if (bytes == 0) return nullptr;
+  if (auto* psram = heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)) {
+    return psram;
+  }
+  return malloc(bytes);
+}
+
+void freePngDecodedBuffer(void* buffer) {
+  if (buffer) heap_caps_free(buffer);
+}
+
+bool decodeInterlacedAndRender(PngContext& ctx, RenderContext& renderCtx, const int outW, const int outH,
+                               const int srcX, const int srcY, const int srcW, const int srcH) {
+  // Adam7 delivers seven smaller images, so retain only source rows that the
+  // destination actually samples. This keeps a large source PNG bounded by
+  // the screen height instead of allocating width*height in PSRAM.
+  const size_t sourceWidth = ctx.width;
+  const size_t sourceHeight = ctx.height;
+  int32_t* rowSlots = static_cast<int32_t*>(allocatePngDecodedBuffer(sourceHeight * sizeof(int32_t)));
+  if (!rowSlots) return false;
+  std::fill_n(rowSlots, sourceHeight, -1);
+
+  int rowCount = 0;
+  for (int oy = 0; oy < outH; ++oy) {
+    const int sy = srcY + (outH <= 1 ? 0 : std::min(srcH - 1, (oy * srcH) / outH));
+    if (sy < 0 || static_cast<size_t>(sy) >= sourceHeight) {
+      freePngDecodedBuffer(rowSlots);
+      return false;
+    }
+    if (rowSlots[sy] < 0) rowSlots[sy] = rowCount++;
+  }
+
+  if (sourceWidth > SIZE_MAX / static_cast<size_t>(rowCount)) {
+    freePngDecodedBuffer(rowSlots);
+    return false;
+  }
+  const size_t sampledRowBytes = sourceWidth * static_cast<size_t>(rowCount);
+  uint8_t* grayRows = static_cast<uint8_t*>(allocatePngDecodedBuffer(sampledRowBytes));
+  uint8_t* alphaRows = renderCtx.preserveTransparency
+                           ? static_cast<uint8_t*>(allocatePngDecodedBuffer(sampledRowBytes))
+                           : nullptr;
+  uint8_t* passGray = static_cast<uint8_t*>(allocatePngDecodedBuffer(sourceWidth));
+  uint8_t* passAlpha = renderCtx.preserveTransparency
+                           ? static_cast<uint8_t*>(allocatePngDecodedBuffer(sourceWidth))
+                           : nullptr;
+  uint8_t* grayDst = static_cast<uint8_t*>(allocatePngDecodedBuffer(static_cast<size_t>(outW)));
+  uint8_t* alphaDst = renderCtx.preserveTransparency
+                          ? static_cast<uint8_t*>(allocatePngDecodedBuffer(static_cast<size_t>(outW)))
+                          : nullptr;
+  if (!grayRows || (renderCtx.preserveTransparency && !alphaRows) || !passGray ||
+      (renderCtx.preserveTransparency && !passAlpha) || !grayDst ||
+      (renderCtx.preserveTransparency && !alphaDst)) {
+    freePngDecodedBuffer(rowSlots);
+    freePngDecodedBuffer(grayRows);
+    freePngDecodedBuffer(alphaRows);
+    freePngDecodedBuffer(passGray);
+    freePngDecodedBuffer(passAlpha);
+    freePngDecodedBuffer(grayDst);
+    freePngDecodedBuffer(alphaDst);
+    return false;
+  }
+
+  static constexpr uint8_t kPassStartX[] = {0, 4, 0, 2, 0, 1, 0};
+  static constexpr uint8_t kPassStartY[] = {0, 0, 4, 0, 2, 0, 1};
+  static constexpr uint8_t kPassStepX[] = {8, 8, 4, 4, 2, 2, 1};
+  static constexpr uint8_t kPassStepY[] = {8, 8, 8, 4, 4, 2, 2};
+  PngServiceBudget service;
+  bool decoded = true;
+  for (int pass = 0; pass < 7 && decoded; ++pass) {
+    const int passWidth = sourceWidth <= kPassStartX[pass]
+                              ? 0
+                              : (static_cast<int>(sourceWidth) - kPassStartX[pass] + kPassStepX[pass] - 1) /
+                                    kPassStepX[pass];
+    const int passHeight = sourceHeight <= kPassStartY[pass]
+                               ? 0
+                               : (static_cast<int>(sourceHeight) - kPassStartY[pass] + kPassStepY[pass] - 1) /
+                                     kPassStepY[pass];
+    if (passWidth == 0 || passHeight == 0) continue;
+
+    ctx.width = static_cast<uint32_t>(passWidth);
+    ctx.rawRowBytes = (ctx.colorType == PNG_COLOR_RGB
+                           ? static_cast<uint32_t>(passWidth) * ctx.bytesPerPixel
+                           : ctx.colorType == PNG_COLOR_RGBA || ctx.colorType == PNG_COLOR_GRAYSCALE_ALPHA
+                                 ? static_cast<uint32_t>(passWidth) * ctx.bytesPerPixel
+                                 : ctx.colorType == PNG_COLOR_GRAYSCALE || ctx.colorType == PNG_COLOR_PALETTE
+                                       ? (static_cast<uint32_t>(passWidth) * ctx.bitDepth + 7) / 8
+                                       : 0);
+    if (ctx.rawRowBytes == 0 || ctx.rawRowBytes > 16384) {
+      decoded = false;
+      break;
+    }
+    memset(ctx.previousRow, 0, ctx.rawRowBytes);
+
+    for (int py = 0; py < passHeight; ++py) {
+      service.service();
+      if (!decodeScanline(ctx)) {
+        decoded = false;
+        break;
+      }
+      const int sourceY = kPassStartY[pass] + py * kPassStepY[pass];
+      if (sourceY < 0 || static_cast<size_t>(sourceY) >= sourceHeight || rowSlots[sourceY] < 0) {
+        advanceScanline(ctx);
+        continue;
+      }
+      convertScanlineToGray(ctx, passGray, passAlpha);
+      const size_t slotOffset = static_cast<size_t>(rowSlots[sourceY]) * sourceWidth;
+      for (int px = 0; px < passWidth; ++px) {
+        const int sourceX = kPassStartX[pass] + px * kPassStepX[pass];
+        if (sourceX >= 0 && static_cast<size_t>(sourceX) < sourceWidth) {
+          grayRows[slotOffset + sourceX] = passGray[px];
+          if (alphaRows) alphaRows[slotOffset + sourceX] = passAlpha[px];
+        }
+      }
+      advanceScanline(ctx);
+    }
+  }
+
+  if (decoded) {
+    for (int oy = 0; oy < outH; ++oy) {
+      const int sy = srcY + (outH <= 1 ? 0 : std::min(srcH - 1, (oy * srcH) / outH));
+      const int32_t slot = sy >= 0 && static_cast<size_t>(sy) < sourceHeight ? rowSlots[sy] : -1;
+      if (slot < 0) {
+        decoded = false;
+        break;
+      }
+      const size_t rowOffset = static_cast<size_t>(slot) * sourceWidth;
+      for (int ox = 0; ox < outW; ++ox) {
+        const int sx = srcX + (outW <= 1 ? 0 : std::min(srcW - 1, (ox * srcW) / outW));
+        if (sx < 0 || static_cast<size_t>(sx) >= sourceWidth) {
+          decoded = false;
+          break;
+        }
+        grayDst[ox] = grayRows[rowOffset + sx];
+        if (alphaDst) alphaDst[ox] = alphaRows[rowOffset + sx];
+      }
+      if (!decoded || !drawGrayRow(renderCtx, grayDst, alphaDst, outW, oy)) {
+        decoded = false;
+        break;
+      }
+    }
+  }
+
+  freePngDecodedBuffer(rowSlots);
+  freePngDecodedBuffer(grayRows);
+  freePngDecodedBuffer(alphaRows);
+  freePngDecodedBuffer(passGray);
+  freePngDecodedBuffer(passAlpha);
+  freePngDecodedBuffer(grayDst);
+  freePngDecodedBuffer(alphaDst);
+  return decoded;
 }
 
 bool decodeAndRender(FsFile& pngFile, RenderContext& renderCtx, int outW, int outH, int srcX, int srcY, int srcW,
@@ -546,32 +734,58 @@ bool decodeAndRender(FsFile& pngFile, RenderContext& renderCtx, int outW, int ou
     return false;
   }
 
+  if (ctx.interlaced) {
+    const bool ok = decodeInterlacedAndRender(ctx, renderCtx, outW, outH, srcX, srcY, srcW, srcH);
+    releasePng(ctx);
+    delete ctxPtr;
+    return ok;
+  }
+
   uint8_t* graySrc = static_cast<uint8_t*>(malloc(static_cast<size_t>(ctx.width)));
   uint8_t* grayDst = static_cast<uint8_t*>(malloc(static_cast<size_t>(outW)));
-  if (!graySrc || !grayDst) {
+  uint8_t* alphaSrc = renderCtx.preserveTransparency ? static_cast<uint8_t*>(malloc(static_cast<size_t>(ctx.width))) : nullptr;
+  uint8_t* alphaDst = renderCtx.preserveTransparency ? static_cast<uint8_t*>(malloc(static_cast<size_t>(outW))) : nullptr;
+  if (!graySrc || !grayDst || (renderCtx.preserveTransparency && (!alphaSrc || !alphaDst))) {
     free(graySrc);
     free(grayDst);
+    free(alphaSrc);
+    free(alphaDst);
     releasePng(ctx);
     delete ctxPtr;
     return false;
   }
 
   int currentSrcY = -1;
+  bool truncatedAtEof = false;
   PngServiceBudget service;
   for (int oy = 0; oy < outH; oy++) {
     service.service();
     const int sy = srcY + (outH <= 1 ? 0 : std::min(srcH - 1, (oy * srcH) / outH));
     while (currentSrcY < sy) {
+      if (truncatedAtEof) {
+        currentSrcY = sy;
+        break;
+      }
       service.service();
       if (!decodeScanline(ctx)) {
+        if (ctx.idatFinished && currentSrcY >= 0) {
+          // Keep the last complete row when a PNG ends with a short IDAT tail.
+          // This preserves the image instead of falling back to the default
+          // sleep screen for a few missing trailing rows.
+          truncatedAtEof = true;
+          currentSrcY = sy;
+          break;
+        }
         free(graySrc);
         free(grayDst);
+        free(alphaSrc);
+        free(alphaDst);
         releasePng(ctx);
         delete ctxPtr;
         return false;
       }
       if (currentSrcY + 1 == sy) {
-        convertScanlineToGray(ctx, graySrc);
+        convertScanlineToGray(ctx, graySrc, alphaSrc);
       }
       advanceScanline(ctx);
       currentSrcY++;
@@ -580,10 +794,13 @@ bool decodeAndRender(FsFile& pngFile, RenderContext& renderCtx, int outW, int ou
     for (int ox = 0; ox < outW; ox++) {
       const int sx = srcX + (outW <= 1 ? 0 : std::min(srcW - 1, (ox * srcW) / outW));
       grayDst[ox] = graySrc[sx];
+      if (alphaDst) alphaDst[ox] = alphaSrc[sx];
     }
-    if (!drawGrayRow(renderCtx, grayDst, outW, oy)) {
+    if (!drawGrayRow(renderCtx, grayDst, alphaDst, outW, oy)) {
       free(graySrc);
       free(grayDst);
+      free(alphaSrc);
+      free(alphaDst);
       releasePng(ctx);
       delete ctxPtr;
       return false;
@@ -592,6 +809,8 @@ bool decodeAndRender(FsFile& pngFile, RenderContext& renderCtx, int outW, int ou
 
   free(graySrc);
   free(grayDst);
+  free(alphaSrc);
+  free(alphaDst);
   releasePng(ctx);
   delete ctxPtr;
   return true;
@@ -599,7 +818,8 @@ bool decodeAndRender(FsFile& pngFile, RenderContext& renderCtx, int outW, int ou
 }
 
 bool PngRender::render(FsFile& pngFile, int x, int y, int targetWidth, int targetHeight, bool cropToFill,
-                       const ImageRenderMode mode, const float cropAnchorX, JpegLevelCapture* capture) const {
+                       const ImageRenderMode mode, const float cropAnchorX, JpegLevelCapture* capture,
+                       const bool preserveTransparency) const {
   if (!pngFile || targetWidth <= 0 || targetHeight <= 0) return false;
 
   int sourceW = 0;
@@ -670,7 +890,8 @@ bool PngRender::render(FsFile& pngFile, int x, int y, int targetWidth, int targe
                        .mode = mode,
                        .twoBitDitherer = twoBitDitherer,
                        .oneBitDitherer = oneBitDitherer,
-                       .capture = capture};
+                       .capture = capture,
+                       .preserveTransparency = preserveTransparency};
   const bool ok = decodeAndRender(pngFile, ctx, outW, outH, srcX, srcY, srcW, srcH);
   delete twoBitDitherer;
   delete oneBitDitherer;
@@ -678,10 +899,12 @@ bool PngRender::render(FsFile& pngFile, int x, int y, int targetWidth, int targe
 }
 
 bool PngRender::fromPath(const std::string& path, int x, int y, int targetWidth, int targetHeight, bool cropToFill,
-                         const ImageRenderMode mode, const float cropAnchorX, JpegLevelCapture* capture) const {
+                         const ImageRenderMode mode, const float cropAnchorX, JpegLevelCapture* capture,
+                         const bool preserveTransparency) const {
   FsFile file;
   if (!SdMan.openFileForRead("PNG", path, file)) return false;
-  const bool ok = render(file, x, y, targetWidth, targetHeight, cropToFill, mode, cropAnchorX, capture);
+  const bool ok = render(file, x, y, targetWidth, targetHeight, cropToFill, mode, cropAnchorX, capture,
+                         preserveTransparency);
   file.close();
   return ok;
 }

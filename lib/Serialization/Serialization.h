@@ -33,7 +33,9 @@ inline void writeString(FsFile& file, const std::string& s) {
     const size_t chunk = std::min(kWriteChunk, static_cast<size_t>(len) - offset);
     file.write(reinterpret_cast<const uint8_t*>(s.data()) + offset, chunk);
     offset += chunk;
-    delay(1);
+    // Let the scheduler run without adding a fixed millisecond to every
+    // serialized word. Chapters can contain thousands of short strings.
+    yield();
   }
 }
 

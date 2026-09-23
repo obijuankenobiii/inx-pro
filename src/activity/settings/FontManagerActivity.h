@@ -13,7 +13,7 @@
 #include "activity/page/components/global/Button.h"
 #include "system/FontPackageManager.h"
 
-/** Downloads compiled SD-font packages and refreshes the local FontManager catalog. */
+/** Downloads TTF/OTF font packages and refreshes the local FontManager catalog. */
 class FontManagerActivity final : public ActivityWithSubactivity {
  public:
   explicit FontManagerActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
@@ -26,18 +26,15 @@ class FontManagerActivity final : public ActivityWithSubactivity {
   bool preventAutoSleep() override { return state_ == State::Downloading; }
 
  private:
-  enum class State : uint8_t { Loading, Ready, Downloading, Failed };
+  enum class State : uint8_t { Ready, Downloading, Failed };
   enum class CategoryFilter : uint8_t { All, SansSerif, Serif };
 
   static constexpr int kRowHeight = Page::LIST_ITEM_HEIGHT;
-  static constexpr int kTabHeight = Button::height - 10;
-  static constexpr int kTabWidth = 120;
-  static constexpr int kTabGap = 0;
+  static constexpr int kFilterHeight = Button::height - 10;
 
   const std::function<void()> goBack_;
   std::vector<FontPackageManager::Package> packages_;
   std::string status_;
-  int activeVariant_ = 1;
   int selectedIndex_ = 0;
   int scrollOffset_ = 0;
   bool selectedVisible_ = false;
@@ -47,7 +44,10 @@ class FontManagerActivity final : public ActivityWithSubactivity {
   volatile size_t progressDownloaded_ = 0;
   volatile size_t progressTotal_ = 0;
   volatile bool updateRequired_ = false;
-  volatile State state_ = State::Loading;
+  volatile State state_ = State::Ready;
+  volatile bool showCompletionCheck_ = false;
+  volatile uint32_t completionCheckExpiresAt_ = 0;
+  bool fontCatalogNeedsRescan_ = false;
   TaskHandle_t displayTaskHandle_ = nullptr;
   TaskHandle_t installTaskHandle_ = nullptr;
   SemaphoreHandle_t renderingMutex_ = nullptr;
@@ -69,11 +69,9 @@ class FontManagerActivity final : public ActivityWithSubactivity {
   void render();
   void updateDisplay();
   int visibleRowCount(int bodyTop) const;
-  int listTop(int bodyTop) const { return bodyTop + kTabHeight + kTabGap + 20; }
-  const char* activeVariantName() const { return activeVariant_ == 0 ? "1-bit" : "2-bit"; }
+  int listTop(int bodyTop) const { return bodyTop + kFilterHeight + 20; }
   int visiblePackageCount() const;
   int packageIndexAt(int visibleIndex) const;
-  void selectVariant(int variant);
   int categoryFilterCount() const;
   const char* categoryFilterLabel() const;
   bool matchesCategory(const FontPackageManager::Package& package) const;

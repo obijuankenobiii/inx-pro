@@ -1,8 +1,10 @@
 #pragma once
 
 #include <functional>
+#include <utility>
 
 #include "activity/ActivityWithSubactivity.h"
+#include "activity/settings/BaseDescriptionActivity.h"
 #include "activity/page/components/widget/Calendar.h"
 #include "activity/page/components/widget/Carousel.h"
 #include "activity/page/components/widget/Clock.h"
@@ -14,6 +16,8 @@
 #include "activity/page/components/widget/TodaysReading.h"
 #include "activity/page/components/widget/Favorites.h"
 #include "activity/page/components/widget/Heatmap.h"
+#include "activity/page/components/widget/Library.h"
+#include "activity/page/components/widget/Description.h"
 #include "state/HomeTheme.h"
 
 class ThemePickerActivity final : public ActivityWithSubactivity {
@@ -23,14 +27,14 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
       : ActivityWithSubactivity("ThemePicker", renderer, mappedInput), carousel_(renderer), shortcut_(renderer),
         shortcutList_(renderer), clock_(renderer), calendar_(renderer), recent_(renderer), temperature_(renderer),
         humidity_(renderer), todaysReading_(renderer),
-        favorites_(renderer), heatmap_(renderer),
+        favorites_(renderer), heatmap_(renderer), library_(renderer), description_(renderer),
         onBack_(std::move(onBack)), openSleepTheme_(openSleepTheme) {}
 
   void onEnter() override;
   void loop() override;
 
  private:
-  enum class Screen { List, Layout, Widgets };
+  enum class Screen { List, Widgets };
 
   Screen screen_ = Screen::List;
   int selected_ = 0;
@@ -41,9 +45,19 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
   uint8_t backgrounds_[4] = {};
   HomeTheme::CarouselStyle carouselStyles_[4] = {};
   uint8_t carouselLabels_[4] = {};
+  uint8_t descriptionTitles_[4] = {};
+  uint8_t descriptionAuthors_[4] = {};
+  uint8_t descriptionProgress_[4] = {};
+  uint8_t descriptionRatings_[4] = {};
+  uint8_t recentTitles_[4] = {};
+  uint8_t recentAuthors_[4] = {};
+  uint8_t recentProgress_[4] = {};
+  uint8_t recentRatings_[4] = {};
+  uint8_t carouselProgress_[4] = {};
   HomeTheme::CarouselLabelColor carouselLabelColors_[4] = {};
   HomeTheme::CarouselShadowStyle carouselShadowStyles_[4] = {};
   HomeTheme::HeatmapView heatmapViews_[4] = {};
+  char libraryFolders_[4][3][128] = {};
   bool editingExisting_ = false;
   bool editingSleep_ = false;
   bool openSleepTheme_ = false;
@@ -52,6 +66,8 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
   bool carouselSettingsFinished_ = false;
   bool heatmapSettingsFinished_ = false;
   bool temperatureSettingsFinished_ = false;
+  bool librarySettingsFinished_ = false;
+  bool descriptionSettingsFinished_ = false;
   int popupSelected_ = 0;
   int widgetPopupScroll_ = 0;
   int borderPopupSelected_ = 0;
@@ -66,15 +82,20 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
   TodaysReading todaysReading_;
   Favorites favorites_;
   Heatmap heatmap_;
+  LibraryWidget library_;
+  Description description_;
   std::function<void()> onBack_;
 
   void render();
   void renderList();
-  void renderLayoutPicker();
   void renderWidgetPicker();
   void renderWidgetPreview(HomeTheme::Widget widget, int x, int y, int width, int height, bool background,
                            HomeTheme::CarouselStyle style, bool showLabel, HomeTheme::CarouselLabelColor labelColor,
-                           HomeTheme::CarouselShadowStyle shadowStyle, HomeTheme::HeatmapView heatmapView);
+                           HomeTheme::CarouselShadowStyle shadowStyle, HomeTheme::HeatmapView heatmapView,
+                           const char (*libraryFolders)[128], bool descriptionShowTitle, bool descriptionShowAuthor,
+                           bool descriptionShowProgress, bool descriptionShowRating,
+                           bool recentShowTitle, bool recentShowAuthor,
+                           bool recentShowProgress, bool recentShowRating, bool carouselShowProgress);
   void renderBorder(HomeTheme::Border border, int x, int y, int width, int height);
   void handleTouch(int x, int y);
   void editTheme();
@@ -85,6 +106,8 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
   void openCarouselSettings(int slot);
   void openHeatmapSettings(int slot);
   void openTemperatureSettings(int slot);
+  void openLibrarySettings(int slot);
+  void openDescriptionSettings(int slot);
   void renderBorderPopup();
   void moveWidgetPopupSelection(int delta);
   void pageWidgetPopup(int delta);

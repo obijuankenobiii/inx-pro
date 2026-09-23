@@ -11,10 +11,13 @@
 #include <cstdint>
 
 const uint8_t* grayscaleCodeTable() {
+  // Sticky's medium waveform orders the panel codes from lightest to darkest
+  // as 00, 11, 10, 01.  Image level 1 is dark gray and level 2 is light gray,
+  // so the two middle codes must be assigned in the reverse order.
   static constexpr uint8_t kTable[4] = {
       0b00,
-      0b10,
       0b11,
+      0b10,
       0b01,
   };
   return kTable;

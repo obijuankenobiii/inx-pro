@@ -262,3 +262,14 @@ bool WordLookup::restoreFramebuffer(EpubActivity& activity) const {
   }
   return true;
 }
+
+void WordLookup::clearFramebufferCapture() {
+  for (auto& chunk : captureChunks_) {
+    chunk.reset();
+  }
+  std::vector<CaptureBuffer>().swap(captureChunks_);
+  captureMonolithic_.reset();
+  captureUsesMonolithic_ = false;
+  captureBytes_ = 0;
+  captureValid_ = false;
+}

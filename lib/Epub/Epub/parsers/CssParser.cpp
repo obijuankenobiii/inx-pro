@@ -19,19 +19,23 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <new>
 #include <vector>
 
 namespace {
 
 inline void cssParserCooperativeYield() {
 #ifdef ARDUINO
-  delay(1);
+  // Keep long selector scans cooperative without sleeping for a full
+  // millisecond on every batch. Large chapters can hit this thousands of
+  // times, and delay(1) turns CSS matching into the dominant parse cost.
+  yield();
 #endif
 }
 
 constexpr size_t kMaxCssRules = 4096;
 constexpr uint32_t kCssParserCacheMagic = 0x43535042;
-constexpr uint16_t kCssParserCacheVersion = 6;
+constexpr uint16_t kCssParserCacheVersion = 7;
 constexpr uint8_t kCssPropertyInvalid = 0xFF;
 
 uint8_t cssPropertyId(const std::string& name) {
@@ -44,7 +48,7 @@ uint8_t cssPropertyId(const std::string& name) {
       "margin-top",       "max-height",       "max-width",        "min-height",   "min-width",
       "padding",          "padding-bottom",   "padding-left",     "padding-right", "padding-top",
       "text-align",       "text-indent",      "vertical-align",   "width",        "float",
-      "list-style",       "list-style-type",  "page-break-before", "page-break-after",
+      "list-style",       "list-style-type",  "page-break-before", "page-break-after", "color",
   };
   for (uint8_t i = 0; i < sizeof(kNames) / sizeof(kNames[0]); ++i) {
     if (name == kNames[i]) {
@@ -64,7 +68,7 @@ const char* cssPropertyName(const uint8_t id) {
       "margin-top",       "max-height",       "max-width",        "min-height",   "min-width",
       "padding",          "padding-bottom",   "padding-left",     "padding-right", "padding-top",
       "text-align",       "text-indent",      "vertical-align",   "width",        "float",
-      "list-style",       "list-style-type",  "page-break-before", "page-break-after",
+      "list-style",       "list-style-type",  "page-break-before", "page-break-after", "color",
   };
   return id < sizeof(kNames) / sizeof(kNames[0]) ? kNames[id] : "";
 }
@@ -653,6 +657,10 @@ void CssParser::clear() {
   bodyTextAlignRaw.clear();
   mcValid_ = false;
   mcMatched_.clear();
+  if (winningRuleCache_) {
+    winningRuleCache_[0].valid = false;
+    winningRuleCache_[1].valid = false;
+  }
   tagRuleIndex_.clear();
   classRuleIndex_.clear();
   idRuleIndex_.clear();
@@ -799,6 +807,10 @@ bool CssParser::loadBinary(FsFile& file) {
 
   mcValid_ = false;
   mcMatched_.clear();
+  if (winningRuleCache_) {
+    winningRuleCache_[0].valid = false;
+    winningRuleCache_[1].valid = false;
+  }
   selectorIndexValid_ = false;
   return true;
 }
@@ -937,6 +949,10 @@ void CssParser::parse(const std::string& cssContent, const std::string& sourcePa
 
   mcValid_ = false;
   mcMatched_.clear();
+  if (winningRuleCache_) {
+    winningRuleCache_[0].valid = false;
+    winningRuleCache_[1].valid = false;
+  }
   selectorIndexValid_ = false;
 
   INX_SERIAL.printf("[CSSP] Parsed %zu CSS rules\n", rules.size());
@@ -1172,7 +1188,8 @@ int CssParser::parseDimensionValue(const std::string& valueIn, int viewportWidth
 }
 
 int CssParser::getInlineOrSheetLength(const std::string& propName, const std::string& className, const std::string& id,
-                                      const std::string& styleAttr, int viewportWidth, int viewportHeight) const {
+                                      const std::string& styleAttr, int viewportWidth, int viewportHeight,
+                                      const std::string& elementTagLower) const {
   const PercentRefersTo pct = (propName == "height" || propName == "min-height" || propName == "max-height")
                                   ? PercentRefersTo::Height
                                   : PercentRefersTo::Width;
@@ -1192,7 +1209,7 @@ int CssParser::getInlineOrSheetLength(const std::string& propName, const std::st
   bool hasClsLast = false;
   bool hasTypeLast = false;
 
-  const auto& matches = matchedRulesFor("", className, id);
+  const auto& matches = matchedRulesFor(elementTagLower, className, id);
   size_t matchIndex = 0;
   for (const MatchedRule& matched : matches) {
     if ((matchIndex++ & 0x1Fu) == 0) {
@@ -1515,6 +1532,16 @@ float CssParser::getFontSizeEm(const std::string& elementTagLower, const std::st
   return num;
 }
 
+bool CssParser::hasFontSizeSpecified(const std::string& elementTagLower, const std::string& className,
+                                     const std::string& id, const std::string& styleAttr) const {
+  std::map<std::string, std::string> inlineMap;
+  parseInlineStyle(styleAttr, inlineMap);
+  if (inlineMap.find("font-size") != inlineMap.end()) {
+    return true;
+  }
+  return !getCascadedPropertyValue("font-size", className, id, styleAttr, elementTagLower).empty();
+}
+
 uint8_t CssParser::getVerticalAlign(const std::string& elementTagLower, const std::string& className,
                                     const std::string& id, const std::string& styleAttr) const {
   std::string raw = getCascadedPropertyValue("vertical-align", className, id, styleAttr, elementTagLower);
@@ -1529,33 +1556,33 @@ uint8_t CssParser::getVerticalAlign(const std::string& elementTagLower, const st
 }
 
 int CssParser::getWidth(const std::string& className, const std::string& id, const std::string& styleAttr,
-                        int viewportWidth, int viewportHeight) const {
-  return getInlineOrSheetLength("width", className, id, styleAttr, viewportWidth, viewportHeight);
+                        int viewportWidth, int viewportHeight, const std::string& elementTagLower) const {
+  return getInlineOrSheetLength("width", className, id, styleAttr, viewportWidth, viewportHeight, elementTagLower);
 }
 
 int CssParser::getHeight(const std::string& className, const std::string& id, const std::string& styleAttr,
-                         int viewportWidth, int viewportHeight) const {
-  return getInlineOrSheetLength("height", className, id, styleAttr, viewportWidth, viewportHeight);
+                         int viewportWidth, int viewportHeight, const std::string& elementTagLower) const {
+  return getInlineOrSheetLength("height", className, id, styleAttr, viewportWidth, viewportHeight, elementTagLower);
 }
 
 int CssParser::getMaxWidth(const std::string& className, const std::string& id, const std::string& styleAttr,
-                           int viewportWidth, int viewportHeight) const {
-  return getInlineOrSheetLength("max-width", className, id, styleAttr, viewportWidth, viewportHeight);
+                           int viewportWidth, int viewportHeight, const std::string& elementTagLower) const {
+  return getInlineOrSheetLength("max-width", className, id, styleAttr, viewportWidth, viewportHeight, elementTagLower);
 }
 
 int CssParser::getMinWidth(const std::string& className, const std::string& id, const std::string& styleAttr,
-                           int viewportWidth, int viewportHeight) const {
-  return getInlineOrSheetLength("min-width", className, id, styleAttr, viewportWidth, viewportHeight);
+                           int viewportWidth, int viewportHeight, const std::string& elementTagLower) const {
+  return getInlineOrSheetLength("min-width", className, id, styleAttr, viewportWidth, viewportHeight, elementTagLower);
 }
 
 int CssParser::getMaxHeight(const std::string& className, const std::string& id, const std::string& styleAttr,
-                            int viewportWidth, int viewportHeight) const {
-  return getInlineOrSheetLength("max-height", className, id, styleAttr, viewportWidth, viewportHeight);
+                            int viewportWidth, int viewportHeight, const std::string& elementTagLower) const {
+  return getInlineOrSheetLength("max-height", className, id, styleAttr, viewportWidth, viewportHeight, elementTagLower);
 }
 
 int CssParser::getMinHeight(const std::string& className, const std::string& id, const std::string& styleAttr,
-                            int viewportWidth, int viewportHeight) const {
-  return getInlineOrSheetLength("min-height", className, id, styleAttr, viewportWidth, viewportHeight);
+                            int viewportWidth, int viewportHeight, const std::string& elementTagLower) const {
+  return getInlineOrSheetLength("min-height", className, id, styleAttr, viewportWidth, viewportHeight, elementTagLower);
 }
 
 void CssParser::noteBodyHtmlTextAlign(const std::string& selectorRaw, const CssProperties& props) {
@@ -1672,6 +1699,10 @@ const std::vector<CssParser::MatchedRule>& CssParser::matchedRulesFor(const std:
   mcClass_ = className;
   mcId_ = id;
   mcMatched_.clear();
+  if (winningRuleCache_) {
+    winningRuleCache_[0].valid = false;
+    winningRuleCache_[1].valid = false;
+  }
 
   const std::string idLower = toLower(trim(id));
   std::vector<std::string> classTokens;
@@ -1730,22 +1761,61 @@ bool CssParser::ruleHasProperty(const CssRule& rule, const std::string& propName
 const CssParser::CssRule* CssParser::winningRuleForProperty(const std::string& propName, const std::string& className,
                                                             const std::string& id, const std::string& elementTagLower,
                                                             const bool ignoreContextual) const {
-  const CssRule* best = nullptr;
-  int bestPriority = -1;
-  for (const auto& m : matchedRulesFor(elementTagLower, className, id)) {
-    if (ignoreContextual && m.contextual) {
-      continue;
-    }
-    if (!ruleHasProperty(*m.rule, propName)) {
-      continue;
-    }
-    const int priority = m.tier * 2 + (m.contextual ? 0 : 1);
-    if (priority >= bestPriority) {
-      bestPriority = priority;
-      best = m.rule;
+  const uint8_t propertyId = cssPropertyId(propName);
+  if (propertyId == kCssPropertyInvalid) {
+    return nullptr;
+  }
+
+  const auto& matches = matchedRulesFor(elementTagLower, className, id);
+  if (!winningRuleCache_) {
+    winningRuleCache_.reset(new (std::nothrow) WinningRuleCacheTable[2]);
+    if (!winningRuleCache_) {
+      // Preserve correctness if the optimization cache cannot be allocated.
+      const CssRule* best = nullptr;
+      int bestPriority = -1;
+      for (const auto& matched : matches) {
+        if (ignoreContextual && matched.contextual) continue;
+        if (!ruleHasProperty(*matched.rule, propName)) continue;
+        const int priority = matched.tier * 2 + (matched.contextual ? 0 : 1);
+        if (priority >= bestPriority) {
+          bestPriority = priority;
+          best = matched.rule;
+        }
+      }
+      return best;
     }
   }
-  return best;
+
+  auto& table = winningRuleCache_[ignoreContextual ? 1 : 0];
+  if (!table.valid) {
+    table.winners.fill(nullptr);
+    table.priorities.fill(-1);
+    table.present.fill(false);
+
+    // One selector pass resolves every tracked property. The old path did
+    // this scan independently for each margin, border, font, and display
+    // query made while opening the same element.
+    for (const auto& matched : matches) {
+      if (ignoreContextual && matched.contextual) {
+        continue;
+      }
+      const int priority = matched.tier * 2 + (matched.contextual ? 0 : 1);
+      const size_t end = std::min(properties_.size(),
+                                  static_cast<size_t>(matched.rule->propertyStart) + matched.rule->propertyCount);
+      for (size_t i = matched.rule->propertyStart; i < end; ++i) {
+        const uint8_t id = properties_[i].id;
+        if (!table.present[id] || priority >= table.priorities[id]) {
+          table.present[id] = true;
+          table.priorities[id] = static_cast<int8_t>(priority);
+          table.winners[id] = matched.rule;
+        }
+      }
+    }
+    table.valid = true;
+  }
+
+  const CssRule* result = table.present[propertyId] ? table.winners[propertyId] : nullptr;
+  return result;
 }
 
 std::string CssParser::getCascadedPropertyValue(const std::string& propName, const std::string& className,
@@ -2008,7 +2078,14 @@ bool CssParser::resolveFontItalic(const std::string& elementTagLower, const std:
   if (inlineIt != inlineMap.end()) {
     return mapStyle(inlineIt->second, inheritedItalic);
   }
-  const std::string sheet = getCascadedPropertyValue("font-style", className, id, styleAttr, elementTagLower);
+  // Contextual selectors (for example `blockquote p` or
+  // `section.some-type blockquote p`) are only indexed by their final
+  // element.  The lightweight parser cannot verify the ancestor chain here,
+  // so accepting one would incorrectly make unrelated paragraphs italic.
+  // Semantic <i>/<em> handling and direct element/class/id rules still apply.
+  const CssRule* winner = winningRuleForProperty("font-style", className, id, elementTagLower, true);
+  const std::string* sheetValue = winner != nullptr ? rulePropertyValue(*winner, "font-style") : nullptr;
+  const std::string sheet = sheetValue != nullptr ? *sheetValue : std::string();
   if (!sheet.empty()) {
     return mapStyle(sheet, inheritedItalic);
   }
@@ -2105,6 +2182,200 @@ bool CssParser::hasFirstLetterDropCapHint(const std::string& elementTagLower, co
     }
   }
   return false;
+}
+
+float CssParser::getFirstLetterFontSizeEm(const std::string& elementTagLower, const std::string& className,
+                                          const std::string& id, const std::string& styleAttr) const {
+  auto parseFontSizeEm = [this](std::string raw) -> float {
+    raw = toLower(trim(raw));
+    if (raw.empty()) return 0.0f;
+    if (raw == "medium") return 1.0f;
+    if (raw == "small") return 0.83f;
+    if (raw == "x-small") return 0.69f;
+    if (raw == "xx-small") return 0.58f;
+    if (raw == "large") return 1.2f;
+    if (raw == "x-large") return 1.5f;
+    if (raw == "xx-large") return 2.0f;
+    if (raw == "larger") return 1.2f;
+    if (raw == "smaller") return 0.83f;
+
+    std::string numStr;
+    std::string unit;
+    bool foundDigit = false;
+    for (char ch : raw) {
+      const unsigned char c = static_cast<unsigned char>(ch);
+      if (std::isdigit(c) != 0 || ch == '.' || (ch == '-' && !foundDigit)) {
+        numStr += ch;
+        foundDigit = true;
+      } else if (foundDigit && (std::isalpha(c) != 0 || ch == '%')) {
+        unit += ch;
+      } else if (!foundDigit && !std::isspace(c)) {
+        break;
+      }
+    }
+    if (numStr.empty()) return 0.0f;
+    const float num = std::strtof(numStr.c_str(), nullptr);
+    if (num <= 0.0f) return 0.0f;
+    if (unit == "em" || unit == "rem") return num;
+    if (unit == "%") return num / 100.0f;
+    if (unit == "px") return num / 16.0f;
+    if (unit == "pt") return (num * 96.0f / 72.0f) / 16.0f;
+    return num;
+  };
+
+  // An inline font-size on the element is still the closest style available to
+  // the first letter when no pseudo-element rule overrides it.
+  std::map<std::string, std::string> inlineMap;
+  parseInlineStyle(styleAttr, inlineMap);
+  const auto inlineIt = inlineMap.find("font-size");
+  const float inlineSize = inlineIt == inlineMap.end() ? 0.0f : parseFontSizeEm(inlineIt->second);
+
+  const std::string idLower = toLower(trim(id));
+  std::vector<std::string> classTokens;
+  splitClassTokens(className, classTokens);
+  for (auto& t : classTokens) {
+    t = toLower(trim(t));
+  }
+
+  const CssRule* bestRule = nullptr;
+  int bestPriority = -1;
+  std::vector<uint16_t> candidates;
+  collectCandidateRuleIndexes(elementTagLower, classTokens, idLower, candidates);
+  for (const uint16_t ruleIndex : candidates) {
+    if (ruleIndex >= rules.size()) continue;
+    const CssRule& rule = rules[ruleIndex];
+    if (!rule.isFirstLetterPseudo) continue;
+    const SelectorMatchInfo matchInfo =
+        matchSelectorList(rule.selectorLower, elementTagLower, classTokens, idLower, true);
+    if (!matchInfo.matched || !ruleHasProperty(rule, "font-size")) continue;
+    const int tier = matchInfo.hasId ? 2 : (matchInfo.hasClass ? 1 : 0);
+    const int priority = tier * 2 + (matchInfo.contextual ? 0 : 1);
+    if (priority >= bestPriority) {
+      bestPriority = priority;
+      bestRule = &rule;
+    }
+  }
+
+  if (bestRule) {
+    const std::string* value = rulePropertyValue(*bestRule, "font-size");
+    const float size = value ? parseFontSizeEm(*value) : 0.0f;
+    if (size > 0.0f) return size;
+  }
+  return inlineSize;
+}
+
+float CssParser::getFirstLetterLineHeightEm(const std::string& elementTagLower, const std::string& className,
+                                            const std::string& id, const std::string& styleAttr) const {
+  auto parseLineHeight = [this](std::string raw) -> float {
+    raw = trim(raw);
+    if (raw.empty() || raw == "normal") return 0.0f;
+
+    std::string numStr;
+    std::string unit;
+    bool foundDigit = false;
+    for (char ch : raw) {
+      const unsigned char c = static_cast<unsigned char>(ch);
+      if (std::isdigit(c) != 0 || ch == '.' || (ch == '-' && !foundDigit)) {
+        numStr += ch;
+        foundDigit = true;
+      } else if (foundDigit && (std::isalpha(c) != 0 || ch == '%')) {
+        unit += ch;
+      } else if (!foundDigit && !std::isspace(c)) {
+        break;
+      }
+    }
+    if (numStr.empty()) return 0.0f;
+    const float num = std::strtof(numStr.c_str(), nullptr);
+    if (num <= 0.0f) return 0.0f;
+    if (unit.empty() || unit == "em" || unit == "rem") return num;
+    if (unit == "%") return num / 100.0f;
+    if (unit == "px") return num / 16.0f;
+    if (unit == "pt") return (num * 96.0f / 72.0f) / 16.0f;
+    return 0.0f;
+  };
+
+  std::map<std::string, std::string> inlineMap;
+  parseInlineStyle(styleAttr, inlineMap);
+  float inheritedSize = 0.0f;
+  const auto inlineIt = inlineMap.find("line-height");
+  if (inlineIt != inlineMap.end()) {
+    inheritedSize = parseLineHeight(inlineIt->second);
+  } else {
+    inheritedSize = parseLineHeight(getCascadedPropertyValue("line-height", className, id, styleAttr,
+                                                              elementTagLower));
+  }
+
+  const std::string idLower = toLower(trim(id));
+  std::vector<std::string> classTokens;
+  splitClassTokens(className, classTokens);
+  for (auto& t : classTokens) {
+    t = toLower(trim(t));
+  }
+
+  const CssRule* bestRule = nullptr;
+  int bestPriority = -1;
+  std::vector<uint16_t> candidates;
+  collectCandidateRuleIndexes(elementTagLower, classTokens, idLower, candidates);
+  for (const uint16_t ruleIndex : candidates) {
+    if (ruleIndex >= rules.size()) continue;
+    const CssRule& rule = rules[ruleIndex];
+    if (!rule.isFirstLetterPseudo) continue;
+    const SelectorMatchInfo matchInfo =
+        matchSelectorList(rule.selectorLower, elementTagLower, classTokens, idLower, true);
+    if (!matchInfo.matched || !ruleHasProperty(rule, "line-height")) continue;
+    const int tier = matchInfo.hasId ? 2 : (matchInfo.hasClass ? 1 : 0);
+    const int priority = tier * 2 + (matchInfo.contextual ? 0 : 1);
+    if (priority >= bestPriority) {
+      bestPriority = priority;
+      bestRule = &rule;
+    }
+  }
+  if (bestRule) {
+    const std::string* value = rulePropertyValue(*bestRule, "line-height");
+    const float size = value ? parseLineHeight(*value) : 0.0f;
+    if (size > 0.0f) return size;
+  }
+  return inheritedSize;
+}
+
+uint8_t CssParser::getFirstLetterTextTone(const std::string& elementTagLower, const std::string& className,
+                                          const std::string& id, const std::string& styleAttr) const {
+  std::map<std::string, std::string> inlineMap;
+  parseInlineStyle(styleAttr, inlineMap);
+  const auto inlineIt = inlineMap.find("color");
+  const std::string inlineColor = inlineIt == inlineMap.end() ? std::string() : inlineIt->second;
+
+  const std::string idLower = toLower(trim(id));
+  std::vector<std::string> classTokens;
+  splitClassTokens(className, classTokens);
+  for (auto& t : classTokens) {
+    t = toLower(trim(t));
+  }
+
+  const CssRule* bestRule = nullptr;
+  int bestPriority = -1;
+  std::vector<uint16_t> candidates;
+  collectCandidateRuleIndexes(elementTagLower, classTokens, idLower, candidates);
+  for (const uint16_t ruleIndex : candidates) {
+    if (ruleIndex >= rules.size()) continue;
+    const CssRule& rule = rules[ruleIndex];
+    if (!rule.isFirstLetterPseudo) continue;
+    const SelectorMatchInfo matchInfo =
+        matchSelectorList(rule.selectorLower, elementTagLower, classTokens, idLower, true);
+    if (!matchInfo.matched || !ruleHasProperty(rule, "color")) continue;
+    const int tier = matchInfo.hasId ? 2 : (matchInfo.hasClass ? 1 : 0);
+    const int priority = tier * 2 + (matchInfo.contextual ? 0 : 1);
+    if (priority >= bestPriority) {
+      bestPriority = priority;
+      bestRule = &rule;
+    }
+  }
+  if (bestRule) {
+    const std::string* value = rulePropertyValue(*bestRule, "color");
+    if (value) return toneFromCssColor(*value, 1);
+  }
+  if (!inlineColor.empty()) return toneFromCssColor(inlineColor, 1);
+  return 1;
 }
 
 uint8_t CssParser::getFirstLetterDropCapLineCount(const std::string& elementTagLower, const std::string& className,

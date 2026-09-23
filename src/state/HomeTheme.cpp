@@ -2,6 +2,7 @@
 
 #include <SDCardManager.h>
 #include <Serialization.h>
+#include <esp_heap_caps.h>
 
 #include <algorithm>
 #include <cstring>
@@ -11,17 +12,51 @@ namespace HomeTheme {
 namespace {
 
 constexpr char kThemeFile[] = "/.system/home_themes.bin";
-constexpr uint8_t kVersion = 12;
+constexpr uint8_t kVersion = 22;
+constexpr uint8_t kDescriptionOptionsVersion = 17;
+constexpr uint8_t kRecentOptionsVersion = 18;
+constexpr uint8_t kCarouselProgressVersion = 19;
+constexpr uint8_t kBookDetailsOptionsVersion = 20;
+constexpr uint8_t kLegacyFavoriteIconOptionVersion = 20;
+constexpr uint8_t kVersionBeforeRecentRatingOptions = 21;
+constexpr uint8_t kRecentRatingOptionsVersion = 22;
+constexpr uint8_t kLibraryFoldersVersion = 17;
+constexpr uint8_t kLegacyLibraryFoldersVersion = 13;
+constexpr uint8_t kLegacyMultiLibraryFoldersVersion = 14;
+constexpr uint8_t kLegacySingleLibraryFoldersVersion = 15;
+constexpr uint8_t kHeatmapViewVersion = 12;
 constexpr uint8_t kLegacyCarouselShadowVersion = 8;
 constexpr uint8_t kLegacyCarouselShadowStyleVersion = 9;
 constexpr uint8_t kSleepThemeVersion = 3;
 constexpr int kMaxThemes = 8;
 
-Theme themes[kMaxThemes] = {};
-Theme sleepTheme = {};
+// These tables are persistent settings, not hot rendering buffers. Allocate
+// them once from PSRAM so the internal heap remains available to the reader
+// and display paths while preserving the existing reference-based API.
+Theme* themeStorage = nullptr;
+Theme* themes = nullptr;
+Theme* sleepThemeStorage = nullptr;
+#define sleepTheme (*sleepThemeStorage)
 int themeCount = 0;
 int selectedTheme = 0;
 bool loaded = false;
+
+bool ensureStorage() {
+  if (themeStorage != nullptr) return true;
+
+  constexpr uint32_t caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
+  themeStorage = static_cast<Theme*>(heap_caps_calloc(kMaxThemes + 1, sizeof(Theme), caps));
+  if (themeStorage == nullptr) {
+    // Keep the reader functional if PSRAM is unavailable, while still
+    // preferring PSRAM on the target boards.
+    themeStorage = static_cast<Theme*>(heap_caps_calloc(kMaxThemes + 1, sizeof(Theme), MALLOC_CAP_8BIT));
+  }
+  if (themeStorage == nullptr) return false;
+
+  themes = themeStorage;
+  sleepThemeStorage = themeStorage + kMaxThemes;
+  return true;
+}
 
 void setName(Theme& theme, const std::string& name) {
   std::strncpy(theme.name, name.c_str(), sizeof(theme.name) - 1);
@@ -37,7 +72,11 @@ void setDefaultCarouselLabels(Theme& theme);
 CarouselLabelColor defaultCarouselLabelColor(Widget widget);
 void setDefaultCarouselLabelColors(Theme& theme);
 void setDefaultCarouselShadowStyles(Theme& theme);
+void setDefaultDescriptionOptions(Theme& theme);
+void setDefaultRecentOptions(Theme& theme);
+void setDefaultCarouselProgress(Theme& theme);
 void setDefaultHeatmapViews(Theme& theme);
+void setDefaultLibraryFolders(Theme& theme);
 
 void makeDefault() {
   themeCount = 1;
@@ -46,18 +85,31 @@ void makeDefault() {
   setName(themes[0], "Home");
   themes[0].layout = Layout::OneByTwo;
   for (Widget& widget : themes[0].widgets) widget = Widget::Empty;
-  themes[0].widgets[0] = Widget::TodaysReading;
-  themes[0].widgets[1] = Widget::Carousel;
+  themes[0].widgets[0] = Widget::Carousel;
+  themes[0].widgets[1] = Widget::Description;
   setDefaultBackgrounds(themes[0]);
   setDefaultCarouselStyles(themes[0]);
   setDefaultCarouselLabels(themes[0]);
   setDefaultCarouselLabelColors(themes[0]);
   setDefaultCarouselShadowStyles(themes[0]);
+  setDefaultDescriptionOptions(themes[0]);
+  setDefaultRecentOptions(themes[0]);
+  setDefaultCarouselProgress(themes[0]);
   setDefaultHeatmapViews(themes[0]);
+  setDefaultLibraryFolders(themes[0]);
+  themes[0].carouselStyles[0] = CarouselStyle::Left;
+  themes[0].borders[0] = Border::Normal;
+  themes[0].carouselLabels[0] = 0;
+  themes[0].backgrounds[0] = 1;
+  themes[0].carouselShadowStyles[0] = CarouselShadowStyle::Gray;
+  themes[0].carouselProgress[0] = 1;
+  themes[0].backgrounds[1] = 0;
+  themes[0].descriptionProgress[1] = 0;
   sleepTheme = {};
   setName(sleepTheme, "Sleep");
   sleepTheme.layout = Layout::OneByTwo;
   sleepTheme.widgets[0] = Widget::Clock;
+  setDefaultLibraryFolders(sleepTheme);
 }
 
 bool repairEmptyHomeTheme() {
@@ -65,14 +117,26 @@ bool repairEmptyHomeTheme() {
       themes[0].widgets[0] != Widget::Empty || themes[0].widgets[1] != Widget::Empty) {
     return false;
   }
-  themes[0].widgets[0] = Widget::TodaysReading;
-  themes[0].widgets[1] = Widget::Carousel;
+  themes[0].widgets[0] = Widget::Carousel;
+  themes[0].widgets[1] = Widget::Description;
   setDefaultBackgrounds(themes[0]);
   setDefaultCarouselStyles(themes[0]);
   setDefaultCarouselLabels(themes[0]);
   setDefaultCarouselLabelColors(themes[0]);
   setDefaultCarouselShadowStyles(themes[0]);
+  setDefaultDescriptionOptions(themes[0]);
+  setDefaultRecentOptions(themes[0]);
+  setDefaultCarouselProgress(themes[0]);
   setDefaultHeatmapViews(themes[0]);
+  setDefaultLibraryFolders(themes[0]);
+  themes[0].carouselStyles[0] = CarouselStyle::Left;
+  themes[0].borders[0] = Border::Normal;
+  themes[0].carouselLabels[0] = 0;
+  themes[0].backgrounds[0] = 1;
+  themes[0].carouselShadowStyles[0] = CarouselShadowStyle::Gray;
+  themes[0].carouselProgress[0] = 1;
+  themes[0].backgrounds[1] = 0;
+  themes[0].descriptionProgress[1] = 0;
   return true;
 }
 
@@ -80,12 +144,10 @@ void ensureLoaded() {
   if (!loaded) load();
 }
 
-bool validLayout(const uint8_t value) {
-  return value <= static_cast<uint8_t>(Layout::TwoByTwo);
-}
+bool validLayout(const uint8_t value) { return value <= static_cast<uint8_t>(Layout::TwoByTwo); }
 
 bool validWidget(const uint8_t value) {
-  return value <= static_cast<uint8_t>(Widget::Heatmap);
+  return value <= static_cast<uint8_t>(Widget::Description);
 }
 
 bool validBorder(const uint8_t value) {
@@ -136,13 +198,56 @@ void setDefaultCarouselShadowStyles(Theme& theme) {
   for (CarouselShadowStyle& style : theme.carouselShadowStyles) style = CarouselShadowStyle::None;
 }
 
+void setDefaultDescriptionOptions(Theme& theme) {
+  for (int i = 0; i < 4; ++i) {
+    theme.descriptionTitles[i] = 1;
+    theme.descriptionAuthors[i] = 1;
+    theme.descriptionProgress[i] = 1;
+    theme.descriptionRatings[i] = 1;
+  }
+}
+
+void setDefaultRecentOptions(Theme& theme) {
+  for (int i = 0; i < 4; ++i) {
+    theme.recentTitles[i] = 1;
+    theme.recentAuthors[i] = 1;
+    theme.recentProgress[i] = 1;
+    theme.recentRatings[i] = 1;
+  }
+}
+
+void setDefaultCarouselProgress(Theme& theme) {
+  for (uint8_t& value : theme.carouselProgress) value = 1;
+}
+
 void setDefaultHeatmapViews(Theme& theme) {
   for (HeatmapView& view : theme.heatmapViews) view = HeatmapView::Weekly;
+}
+
+void setDefaultLibraryFolders(Theme& theme) {
+  for (auto& library : theme.libraryFolders) {
+    for (char (&folder)[128] : library) {
+      std::strncpy(folder, "/", sizeof(folder) - 1);
+      folder[sizeof(folder) - 1] = '\0';
+    }
+  }
+}
+
+void setLibraryFolder(char (&destination)[128], const char* source) {
+  const std::string value = source && source[0] == '/' ? source : "/";
+  std::strncpy(destination, value.c_str(), sizeof(destination) - 1);
+  destination[sizeof(destination) - 1] = '\0';
 }
 
 }
 
 void load() {
+  if (!ensureStorage()) {
+    loaded = true;
+    themeCount = 0;
+    selectedTheme = 0;
+    return;
+  }
   loaded = true;
   makeDefault();
 
@@ -157,7 +262,12 @@ void load() {
   serialization::readPod(file, storedActive);
   if ((version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != 7 &&
        version != kLegacyCarouselShadowVersion && version != kLegacyCarouselShadowStyleVersion &&
-       version != 10 && version != 11 && version != kVersion) || storedCount == 0 ||
+       version != 10 && version != 11 && version != kHeatmapViewVersion && version != kLegacyLibraryFoldersVersion &&
+       version != kLegacyMultiLibraryFoldersVersion && version != kLegacySingleLibraryFoldersVersion && version != 16 &&
+       version != 17 && version != 18 && version != kCarouselProgressVersion &&
+       version != kVersionBeforeRecentRatingOptions &&
+       version != kLegacyFavoriteIconOptionVersion &&
+       version != kVersion) || storedCount == 0 ||
       storedCount > kMaxThemes) {
     file.close();
     return;
@@ -169,11 +279,11 @@ void load() {
     uint8_t layout = 0;
     serialization::readString(file, name);
     serialization::readPod(file, layout);
-    if (!validLayout(layout) || name.empty()) return false;
+    if ((!validLayout(layout) && layout != 3) || name.empty()) return false;
 
     theme = {};
     setName(theme, name);
-    theme.layout = static_cast<Layout>(layout);
+    theme.layout = layout == 3 ? Layout::OneByTwo : static_cast<Layout>(layout);
     for (Widget& widget : theme.widgets) {
       uint8_t value = 0;
       serialization::readPod(file, value);
@@ -219,7 +329,7 @@ void load() {
       }
       serialization::readPod(file, theme.carouselLabels[i]);
       theme.carouselLabels[i] = theme.carouselLabels[i] != 0 ? 1 : 0;
-      if (version < kVersion && theme.widgets[i] == Widget::Heatmap) theme.carouselLabels[i] = 1;
+      if (version < kDescriptionOptionsVersion && theme.widgets[i] == Widget::Heatmap) theme.carouselLabels[i] = 1;
     }
     for (int i = 0; i < 4; ++i) {
       if (version < kLegacyCarouselShadowVersion) {
@@ -255,13 +365,94 @@ void load() {
       theme.carouselShadowStyles[i] = style;
     }
     for (int i = 0; i < 4; ++i) {
-      if (version < kVersion) {
+      if (version < kDescriptionOptionsVersion) {
+        theme.descriptionTitles[i] = 1;
+        theme.descriptionAuthors[i] = 1;
+        theme.descriptionProgress[i] = 1;
+        theme.descriptionRatings[i] = 1;
+        continue;
+      }
+      serialization::readPod(file, theme.descriptionTitles[i]);
+      serialization::readPod(file, theme.descriptionAuthors[i]);
+      serialization::readPod(file, theme.descriptionProgress[i]);
+      theme.descriptionTitles[i] = theme.descriptionTitles[i] != 0 ? 1 : 0;
+      theme.descriptionAuthors[i] = theme.descriptionAuthors[i] != 0 ? 1 : 0;
+      theme.descriptionProgress[i] = theme.descriptionProgress[i] != 0 ? 1 : 0;
+      if (version >= kBookDetailsOptionsVersion) {
+        if (version <= kLegacyFavoriteIconOptionVersion) {
+          uint8_t ignoredFavoriteIconOption = 0;
+          serialization::readPod(file, ignoredFavoriteIconOption);
+        }
+        serialization::readPod(file, theme.descriptionRatings[i]);
+      } else {
+        theme.descriptionRatings[i] = 1;
+      }
+      theme.descriptionRatings[i] = theme.descriptionRatings[i] != 0 ? 1 : 0;
+    }
+    for (int i = 0; i < 4; ++i) {
+      if (version < kRecentOptionsVersion) {
+        theme.recentTitles[i] = 1;
+        theme.recentAuthors[i] = 1;
+        theme.recentProgress[i] = 1;
+        theme.recentRatings[i] = 1;
+        continue;
+      }
+      serialization::readPod(file, theme.recentTitles[i]);
+      serialization::readPod(file, theme.recentAuthors[i]);
+      serialization::readPod(file, theme.recentProgress[i]);
+      if (version >= kRecentRatingOptionsVersion) {
+        serialization::readPod(file, theme.recentRatings[i]);
+      } else {
+        theme.recentRatings[i] = 1;
+      }
+      theme.recentTitles[i] = theme.recentTitles[i] != 0 ? 1 : 0;
+      theme.recentAuthors[i] = theme.recentAuthors[i] != 0 ? 1 : 0;
+      theme.recentProgress[i] = theme.recentProgress[i] != 0 ? 1 : 0;
+      theme.recentRatings[i] = theme.recentRatings[i] != 0 ? 1 : 0;
+    }
+    for (int i = 0; i < 4; ++i) {
+      if (version < kCarouselProgressVersion) {
+        theme.carouselProgress[i] = 1;
+        continue;
+      }
+      serialization::readPod(file, theme.carouselProgress[i]);
+      theme.carouselProgress[i] = theme.carouselProgress[i] != 0 ? 1 : 0;
+    }
+    for (int i = 0; i < 4; ++i) {
+      if (version < kHeatmapViewVersion) {
         theme.heatmapViews[i] = HeatmapView::Weekly;
         continue;
       }
       uint8_t value = 0;
       serialization::readPod(file, value);
       theme.heatmapViews[i] = validHeatmapView(value) ? static_cast<HeatmapView>(value) : HeatmapView::Weekly;
+    }
+    if (version >= kLibraryFoldersVersion || version == kLegacyMultiLibraryFoldersVersion) {
+      for (auto& library : theme.libraryFolders) {
+        std::string value;
+        serialization::readString(file, value);
+        setLibraryFolder(library[0], value.c_str());
+        if (version >= kLibraryFoldersVersion || version == kLegacyMultiLibraryFoldersVersion) {
+          for (int extra = 1; extra < 3; ++extra) {
+            if (version >= kLibraryFoldersVersion || version == kLegacyMultiLibraryFoldersVersion) {
+              serialization::readString(file, value);
+              setLibraryFolder(library[extra], value.c_str());
+            } else {
+              setLibraryFolder(library[extra], "/");
+            }
+          }
+        }
+      }
+    } else if (version == kLegacyLibraryFoldersVersion || version == kLegacySingleLibraryFoldersVersion) {
+      for (auto& library : theme.libraryFolders) {
+        std::string value;
+        serialization::readString(file, value);
+        setLibraryFolder(library[0], value.c_str());
+        setLibraryFolder(library[1], "/");
+        setLibraryFolder(library[2], "/");
+      }
+    } else {
+      setDefaultLibraryFolders(theme);
     }
     if (theme.layout == Layout::Classic) {
       theme.layout = Layout::OneByTwo;
@@ -272,7 +463,11 @@ void load() {
       for (uint8_t& label : theme.carouselLabels) label = 0;
       for (CarouselLabelColor& color : theme.carouselLabelColors) color = CarouselLabelColor::Black;
       for (CarouselShadowStyle& style : theme.carouselShadowStyles) style = CarouselShadowStyle::None;
+      setDefaultDescriptionOptions(theme);
+      setDefaultRecentOptions(theme);
+      setDefaultCarouselProgress(theme);
       for (HeatmapView& view : theme.heatmapViews) view = HeatmapView::Weekly;
+      setDefaultLibraryFolders(theme);
     }
     return true;
   };
@@ -344,8 +539,24 @@ bool save() {
     for (const CarouselShadowStyle style : theme.carouselShadowStyles) {
       serialization::writePod(file, static_cast<uint8_t>(style));
     }
+    for (int i = 0; i < 4; ++i) {
+      serialization::writePod(file, theme.descriptionTitles[i]);
+      serialization::writePod(file, theme.descriptionAuthors[i]);
+      serialization::writePod(file, theme.descriptionProgress[i]);
+      serialization::writePod(file, theme.descriptionRatings[i]);
+    }
+    for (int i = 0; i < 4; ++i) {
+      serialization::writePod(file, theme.recentTitles[i]);
+      serialization::writePod(file, theme.recentAuthors[i]);
+      serialization::writePod(file, theme.recentProgress[i]);
+      serialization::writePod(file, theme.recentRatings[i]);
+    }
+    for (int i = 0; i < 4; ++i) serialization::writePod(file, theme.carouselProgress[i]);
     for (const HeatmapView view : theme.heatmapViews) {
       serialization::writePod(file, static_cast<uint8_t>(view));
+    }
+    for (const auto& library : theme.libraryFolders) {
+      for (const char (&folder)[128] : library) serialization::writeString(file, std::string(folder));
     }
   };
   for (int i = 0; i < themeCount; ++i) writeTheme(themes[i]);
@@ -387,7 +598,11 @@ void activate(const int index) {
 int add(const Layout layout, const Widget* widgets, const Border* borders, const uint8_t* backgrounds,
         const CarouselStyle* carouselStyles, const uint8_t* carouselLabels,
         const CarouselLabelColor* carouselLabelColors, const CarouselShadowStyle* carouselShadowStyles,
-        const HeatmapView* heatmapViews,
+        const HeatmapView* heatmapViews, const uint8_t* descriptionTitles, const uint8_t* descriptionAuthors,
+        const uint8_t* descriptionProgress, const uint8_t* descriptionRatings,
+        const uint8_t* recentTitles, const uint8_t* recentAuthors,
+        const uint8_t* recentProgress, const uint8_t* recentRatings, const uint8_t* carouselProgress,
+        const char (*libraryFolders)[3][128],
         const int slotCountValue) {
   ensureLoaded();
   if (themeCount >= kMaxThemes) return -1;
@@ -417,10 +632,42 @@ int add(const Layout layout, const Widget* widgets, const Border* borders, const
                                             validCarouselShadowStyle(static_cast<uint8_t>(carouselShadowStyles[i]))
                                         ? carouselShadowStyles[i]
                                         : CarouselShadowStyle::None;
+    theme.descriptionTitles[i] = layout != Layout::Classic && descriptionTitles && i < slotCountValue
+                                     ? (descriptionTitles[i] != 0 ? 1 : 0)
+                                     : 1;
+    theme.descriptionAuthors[i] = layout != Layout::Classic && descriptionAuthors && i < slotCountValue
+                                      ? (descriptionAuthors[i] != 0 ? 1 : 0)
+                                      : 1;
+    theme.descriptionProgress[i] = layout != Layout::Classic && descriptionProgress && i < slotCountValue
+                                       ? (descriptionProgress[i] != 0 ? 1 : 0)
+                                       : 1;
+    theme.descriptionRatings[i] = layout != Layout::Classic && descriptionRatings && i < slotCountValue
+                                      ? (descriptionRatings[i] != 0 ? 1 : 0)
+                                      : 1;
+    theme.recentTitles[i] = layout != Layout::Classic && recentTitles && i < slotCountValue
+                                ? (recentTitles[i] != 0 ? 1 : 0)
+                                : 1;
+    theme.recentAuthors[i] = layout != Layout::Classic && recentAuthors && i < slotCountValue
+                                 ? (recentAuthors[i] != 0 ? 1 : 0)
+                                 : 1;
+    theme.recentProgress[i] = layout != Layout::Classic && recentProgress && i < slotCountValue
+                                  ? (recentProgress[i] != 0 ? 1 : 0)
+                                  : 1;
+    theme.recentRatings[i] = layout != Layout::Classic && recentRatings && i < slotCountValue
+                                 ? (recentRatings[i] != 0 ? 1 : 0)
+                                 : 1;
+    theme.carouselProgress[i] = layout != Layout::Classic && carouselProgress && i < slotCountValue
+                                    ? (carouselProgress[i] != 0 ? 1 : 0)
+                                    : 1;
     theme.heatmapViews[i] = layout != Layout::Classic && heatmapViews && i < slotCountValue &&
                                    validHeatmapView(static_cast<uint8_t>(heatmapViews[i]))
                                ? heatmapViews[i]
                                : HeatmapView::Weekly;
+    for (int folder = 0; folder < 3; ++folder) {
+      setLibraryFolder(theme.libraryFolders[i][folder], layout != Layout::Classic && libraryFolders && i < slotCountValue
+                                                         ? libraryFolders[i][folder]
+                                                         : "/");
+    }
   }
   ++themeCount;
   selectedTheme = themeCount - 1;
@@ -431,7 +678,11 @@ int add(const Layout layout, const Widget* widgets, const Border* borders, const
 void update(const int index, const Layout layout, const Widget* widgets, const Border* borders,
             const uint8_t* backgrounds, const CarouselStyle* carouselStyles, const uint8_t* carouselLabels,
             const CarouselLabelColor* carouselLabelColors, const CarouselShadowStyle* carouselShadowStyles,
-            const HeatmapView* heatmapViews,
+            const HeatmapView* heatmapViews, const uint8_t* descriptionTitles, const uint8_t* descriptionAuthors,
+            const uint8_t* descriptionProgress, const uint8_t* descriptionRatings,
+            const uint8_t* recentTitles, const uint8_t* recentAuthors,
+            const uint8_t* recentProgress, const uint8_t* recentRatings, const uint8_t* carouselProgress,
+            const char (*libraryFolders)[3][128],
             const int slotCountValue) {
   ensureLoaded();
   if (index < 0 || index >= themeCount) return;
@@ -458,10 +709,42 @@ void update(const int index, const Layout layout, const Widget* widgets, const B
                                             validCarouselShadowStyle(static_cast<uint8_t>(carouselShadowStyles[i]))
                                         ? carouselShadowStyles[i]
                                         : CarouselShadowStyle::None;
+    theme.descriptionTitles[i] = layout != Layout::Classic && descriptionTitles && i < slotCountValue
+                                     ? (descriptionTitles[i] != 0 ? 1 : 0)
+                                     : 1;
+    theme.descriptionAuthors[i] = layout != Layout::Classic && descriptionAuthors && i < slotCountValue
+                                      ? (descriptionAuthors[i] != 0 ? 1 : 0)
+                                      : 1;
+    theme.descriptionProgress[i] = layout != Layout::Classic && descriptionProgress && i < slotCountValue
+                                       ? (descriptionProgress[i] != 0 ? 1 : 0)
+                                       : 1;
+    theme.descriptionRatings[i] = layout != Layout::Classic && descriptionRatings && i < slotCountValue
+                                      ? (descriptionRatings[i] != 0 ? 1 : 0)
+                                      : 1;
+    theme.recentTitles[i] = layout != Layout::Classic && recentTitles && i < slotCountValue
+                                ? (recentTitles[i] != 0 ? 1 : 0)
+                                : 1;
+    theme.recentAuthors[i] = layout != Layout::Classic && recentAuthors && i < slotCountValue
+                                 ? (recentAuthors[i] != 0 ? 1 : 0)
+                                 : 1;
+    theme.recentProgress[i] = layout != Layout::Classic && recentProgress && i < slotCountValue
+                                  ? (recentProgress[i] != 0 ? 1 : 0)
+                                  : 1;
+    theme.recentRatings[i] = layout != Layout::Classic && recentRatings && i < slotCountValue
+                                 ? (recentRatings[i] != 0 ? 1 : 0)
+                                 : 1;
+    theme.carouselProgress[i] = layout != Layout::Classic && carouselProgress && i < slotCountValue
+                                    ? (carouselProgress[i] != 0 ? 1 : 0)
+                                    : 1;
     theme.heatmapViews[i] = layout != Layout::Classic && heatmapViews && i < slotCountValue &&
                                    validHeatmapView(static_cast<uint8_t>(heatmapViews[i]))
                                ? heatmapViews[i]
                                : HeatmapView::Weekly;
+    for (int folder = 0; folder < 3; ++folder) {
+      setLibraryFolder(theme.libraryFolders[i][folder], layout != Layout::Classic && libraryFolders && i < slotCountValue
+                                                         ? libraryFolders[i][folder]
+                                                         : "/");
+    }
   }
   selectedTheme = index;
   save();
@@ -470,7 +753,11 @@ void update(const int index, const Layout layout, const Widget* widgets, const B
 void updateSleep(const Layout layout, const Widget* widgets, const Border* borders, const uint8_t* backgrounds,
                  const CarouselStyle* carouselStyles, const uint8_t* carouselLabels,
                  const CarouselLabelColor* carouselLabelColors, const CarouselShadowStyle* carouselShadowStyles,
-                 const HeatmapView* heatmapViews,
+                 const HeatmapView* heatmapViews, const uint8_t* descriptionTitles, const uint8_t* descriptionAuthors,
+                 const uint8_t* descriptionProgress, const uint8_t* descriptionRatings,
+                 const uint8_t* recentTitles, const uint8_t* recentAuthors,
+                 const uint8_t* recentProgress, const uint8_t* recentRatings, const uint8_t* carouselProgress,
+                 const char (*libraryFolders)[3][128],
                  const int slotCountValue) {
   ensureLoaded();
   sleepTheme.layout = layout;
@@ -495,10 +782,43 @@ void updateSleep(const Layout layout, const Widget* widgets, const Border* borde
                                                  validCarouselShadowStyle(static_cast<uint8_t>(carouselShadowStyles[i]))
                                              ? carouselShadowStyles[i]
                                              : CarouselShadowStyle::None;
+    sleepTheme.descriptionTitles[i] = layout != Layout::Classic && descriptionTitles && i < slotCountValue
+                                          ? (descriptionTitles[i] != 0 ? 1 : 0)
+                                          : 1;
+    sleepTheme.descriptionAuthors[i] = layout != Layout::Classic && descriptionAuthors && i < slotCountValue
+                                           ? (descriptionAuthors[i] != 0 ? 1 : 0)
+                                           : 1;
+    sleepTheme.descriptionProgress[i] = layout != Layout::Classic && descriptionProgress && i < slotCountValue
+                                            ? (descriptionProgress[i] != 0 ? 1 : 0)
+                                            : 1;
+    sleepTheme.descriptionRatings[i] = layout != Layout::Classic && descriptionRatings && i < slotCountValue
+                                           ? (descriptionRatings[i] != 0 ? 1 : 0)
+                                           : 1;
+    sleepTheme.recentTitles[i] = layout != Layout::Classic && recentTitles && i < slotCountValue
+                                     ? (recentTitles[i] != 0 ? 1 : 0)
+                                     : 1;
+    sleepTheme.recentAuthors[i] = layout != Layout::Classic && recentAuthors && i < slotCountValue
+                                      ? (recentAuthors[i] != 0 ? 1 : 0)
+                                      : 1;
+    sleepTheme.recentProgress[i] = layout != Layout::Classic && recentProgress && i < slotCountValue
+                                       ? (recentProgress[i] != 0 ? 1 : 0)
+                                       : 1;
+    sleepTheme.recentRatings[i] = layout != Layout::Classic && recentRatings && i < slotCountValue
+                                      ? (recentRatings[i] != 0 ? 1 : 0)
+                                      : 1;
+    sleepTheme.carouselProgress[i] = layout != Layout::Classic && carouselProgress && i < slotCountValue
+                                         ? (carouselProgress[i] != 0 ? 1 : 0)
+                                         : 1;
     sleepTheme.heatmapViews[i] = layout != Layout::Classic && heatmapViews && i < slotCountValue &&
                                          validHeatmapView(static_cast<uint8_t>(heatmapViews[i]))
                                      ? heatmapViews[i]
                                      : HeatmapView::Weekly;
+    for (int folder = 0; folder < 3; ++folder) {
+      setLibraryFolder(sleepTheme.libraryFolders[i][folder],
+                       layout != Layout::Classic && libraryFolders && i < slotCountValue
+                           ? libraryFolders[i][folder]
+                           : "/");
+    }
   }
   save();
 }
@@ -557,6 +877,10 @@ const char* widgetLabel(const Widget widget) {
       return "Favorite Carousel";
     case Widget::Heatmap:
       return "Reading Heatmap";
+    case Widget::Library:
+      return "Library";
+    case Widget::Description:
+      return "Book Details";
     default:
       return "Unknown";
   }
@@ -614,6 +938,8 @@ const char* heatmapViewLabel(const HeatmapView view) {
   }
 }
 
-int slotCount(const Layout layout) { return layout == Layout::TwoByTwo ? 4 : layout == Layout::OneByTwo ? 2 : 0; }
+int slotCount(const Layout layout) {
+  return layout == Layout::TwoByTwo ? 4 : layout == Layout::OneByTwo ? 2 : 0;
+}
 
 }

@@ -117,6 +117,8 @@ class LocalNetworkActivity final : public ActivityWithSubactivity {
   SemaphoreHandle_t renderingMutex; /**< Mutex for thread-safe rendering */
   bool updateRequired;              /**< Flag indicating render update needed */
   LocalNetworkState state;          /**< Current activity state */
+  bool wifiSelectionResultPending = false;
+  bool wifiSelectionConnected = false;
 
   std::string connectedIP;                /**< IP address of connected WiFi */
   std::string connectedSSID;              /**< SSID of connected WiFi network */

@@ -26,6 +26,7 @@
 
 #include "../../../src/images/Hr.h"
 #include "../../../src/system/EpubPerf.h"
+#include "../../../src/system/FontManager.h"
 #include "../../../src/util/StringUtils.h"
 #include "ImagePrefetch.h"
 
@@ -375,7 +376,8 @@ std::unique_ptr<PageSmallCaps> PageSmallCaps::deserialize(FsFile& file) {
  */
 void PageHeader::render(GfxRenderer& renderer, const int fontId, const int xOffset, const int yOffset,
                         ImageRenderMode) {
-  block.render(renderer, headerFontId, xPos + xOffset, yPos + yOffset);
+  const int renderFontId = FontManager::ensureFontReady(headerFontId, renderer) ? headerFontId : fontId;
+  block.render(renderer, renderFontId, xPos + xOffset, yPos + yOffset);
 }
 
 /**
@@ -417,18 +419,29 @@ std::unique_ptr<PageHeader> PageHeader::deserialize(FsFile& file) {
  */
 void PageDropCap::render(GfxRenderer& renderer, const int fontId, const int xOffset, const int yOffset,
                          ImageRenderMode) {
+  // Cached pages retain the proportional drop-cap font ID, but the font itself
+  // may have been unloaded when the book was closed. Rebind it before measuring
+  // or drawing; otherwise TextRender silently has no family and the drop cap is blank.
+  const int renderDropCapFontId = FontManager::ensureFontReady(dropCapFontId, renderer) ? dropCapFontId : fontId;
   const uint8_t* p = reinterpret_cast<const uint8_t*>(text.c_str());
   const uint32_t dropCp = utf8NextCodepoint(&p);
-  int alignY = yPos + yOffset - 2;
+  // Use the first line's actual glyph metrics as the vertical reference. The
+  // old fixed -2px nudge made the drop-cap drift relative to the first line
+  // between font families and sizes.
+  int alignY = yPos + yOffset;
   if (inlineFirstLine) {
     const int bodyBaseline = yPos + yOffset + renderer.text.getFontAscenderSize(fontId);
-    alignY = bodyBaseline - renderer.text.getFontAscenderSize(dropCapFontId);
+    alignY = bodyBaseline - renderer.text.getFontAscenderSize(renderDropCapFontId);
   } else {
-    const int dropInset = renderer.text.getGlyphTopInset(dropCapFontId, dropCp, style);
+    const int dropInset = renderer.text.getGlyphTopInset(renderDropCapFontId, dropCp, style);
     const int bodyInset = renderer.text.getGlyphTopInset(fontId, 'H', EpdFontFamily::REGULAR);
     alignY += (bodyInset - dropInset) + PageDropCap::VERTICAL_ADJUSTMENT;
   }
-  renderer.text.render(dropCapFontId, xPos + xOffset, alignY, text.c_str(), true, style);
+  if (textTone == 2) {
+    renderer.text.renderGray(renderDropCapFontId, xPos + xOffset, alignY, text.c_str(), true, style);
+  } else {
+    renderer.text.render(renderDropCapFontId, xPos + xOffset, alignY, text.c_str(), textTone != 0, style);
+  }
 }
 
 /**
@@ -443,6 +456,7 @@ bool PageDropCap::serialize(FsFile& file) {
   serialization::writePod(file, dropCapFontId);
   serialization::writePod(file, inlineFirstLine);
   serialization::writePod(file, static_cast<uint8_t>(style));
+  serialization::writePod(file, textTone);
   serialization::writeString(file, text);
   return true;
 }
@@ -464,11 +478,14 @@ std::unique_ptr<PageDropCap> PageDropCap::deserialize(FsFile& file) {
   serialization::readPod(file, inlineFirstLine);
   uint8_t styleValue = static_cast<uint8_t>(EpdFontFamily::BOLD);
   serialization::readPod(file, styleValue);
+  uint8_t textTone = 1;
+  serialization::readPod(file, textTone);
   serialization::readString(file, text);
   const auto style = styleValue <= static_cast<uint8_t>(EpdFontFamily::BOLD_ITALIC)
                          ? static_cast<EpdFontFamily::Style>(styleValue)
                          : EpdFontFamily::BOLD;
-  return std::unique_ptr<PageDropCap>(new PageDropCap(text, x, y, dcFontId, inlineFirstLine, style));
+  return std::unique_ptr<PageDropCap>(new PageDropCap(text, x, y, dcFontId, inlineFirstLine, style,
+                                                       textTone <= 2 ? textTone : 1));
 }
 
 void PageListMarker::render(GfxRenderer& renderer, const int fontId, const int xOffset, const int yOffset,
@@ -1159,7 +1176,13 @@ void Page::render(GfxRenderer& renderer, const int fontId, const int headerFontI
       line->getTextBlock().render(renderer, fontId, textX, textY, !isInvertedText(textX, textY, fontId));
     } else if (tag == TAG_PageHeader) {
       const auto* header = static_cast<const PageHeader*>(element.get());
-      const int feId = header->getHeaderFontId() > 0 ? header->getHeaderFontId() : headerFontId;
+      int feId = header->getHeaderFontId() > 0 ? header->getHeaderFontId() : headerFontId;
+      // Page::render() draws the TextBlock directly, so PageHeader::render()
+      // cannot repair a cached outline font by itself after reopening a book.
+      // Rebind it here before layout-dependent rendering and fall back safely.
+      if (!FontManager::ensureFontReady(feId, renderer)) {
+        feId = FontManager::ensureFontReady(headerFontId, renderer) ? headerFontId : fontId;
+      }
       const int textX = header->xPos + xOffset;
       const int textY = header->yPos + yOffset;
       header->getTextBlock().render(renderer, feId, textX, textY, !isInvertedText(textX, textY, feId));

@@ -70,6 +70,12 @@ class ChapterHtmlSlimParser {
   int dropCapDepth = INT_MAX;
   bool dropCapConsumeWholeContainer = false;
   uint8_t dropCapLineCount = 3;
+  /** Explicit CSS font-size multiplier for the active drop cap; 0 means use initial-letter line count. */
+  float dropCapFontSizeEm = 0.0f;
+  /** CSS ::first-letter line-height multiplier; below 1 uses baseline alignment. */
+  float dropCapLineHeightEm = 0.0f;
+  /** CSS ::first-letter text tone: 0 white, 1 black, 2 gray. */
+  uint8_t dropCapTextTone = 1;
 
   char partWordBuffer[MAX_WORD_SIZE + 1] = {};
   int partWordBufferIndex = 0;
@@ -175,6 +181,7 @@ class ChapterHtmlSlimParser {
   int currentCssInsetRightPx = 0;
   int currentBlockBottomSpacingPx = 0;
   bool currentBlockSpacingFromCss = false;
+  int dropCapPageStartMarginPx_ = 0;
   int currentBlockMarginBottomPx = 0;
   int currentBlockPaddingBottomPx = 0;
   int currentBlockBorderTopPx = 0;
@@ -222,19 +229,17 @@ class ChapterHtmlSlimParser {
   bool tableCaptureTruncated_ = false;
 
   XML_Parser xmlParser_ = nullptr;
-  bool incrementalParseActive_ = false;
-  bool incrementalParseFailed_ = false;
-  enum XML_Error incrementalXmlError_ = XML_ERROR_NONE;
-  XML_Size incrementalXmlLine_ = 0;
-  XML_Size incrementalXmlColumn_ = 0;
-  XML_Index incrementalXmlByte_ = 0;
-  uint32_t incrementalParseStartedAt_ = 0;
-
+  bool parseActive_ = false;
+  bool parseFailed_ = false;
+  enum XML_Error parseXmlError_ = XML_ERROR_NONE;
+  XML_Size parseXmlLine_ = 0;
+  XML_Size parseXmlColumn_ = 0;
+  XML_Index parseXmlByte_ = 0;
   void resetStructuralStateForParsePass();
 
   bool parseHtmlThroughExpat(bool callProgressPopup);
   bool prepareParse(bool skipImageProcessing);
-  void recordIncrementalXmlError();
+  void recordParseXmlError();
 
   /**
    * Creates a new text block with the specified style.
@@ -303,6 +308,11 @@ class ChapterHtmlSlimParser {
                         const std::string& styleAttr);
   /** Current text layout width after inherited CSS margin/padding-left/right. */
   int activeBlockContentWidth() const;
+  /** Selects the semantic heading size relative to the active reader font. */
+  int headingFontIdForTag(const std::string& tagLower, const std::string& classAttr, const std::string& idAttr,
+                          const std::string& styleAttr) const;
+  /** Advances the active reader font by a capped number of available sizes. */
+  int headingFontIdForSteps(int steps) const;
   /** Current text x offset after inherited CSS margin/padding-left. */
   int activeBlockContentX() const;
   /** Captures the current CSS horizontal inset for the active text block. */
@@ -314,12 +324,8 @@ class ChapterHtmlSlimParser {
   int activeBlockFontId() const {
     return currentBlockFontId >= 0 ? currentBlockFontId : (inHeader ? headerFontId : fontId);
   }
-  /** Maps a CSS font-size em multiplier to a larger reader font id, or -1 to keep the default. */
-  int blockFontIdForEm(float em) const {
-    if (em >= 1.5f) return maxFontId;
-    if (em >= 1.2f) return headerFontId;
-    return -1;
-  }
+  /** Maps a CSS font-size em multiplier relative to the active block font, or -1 to keep the default. */
+  int blockFontIdForEm(float em) const;
 
   /**
    * Adds an image to the current page layout.
@@ -346,11 +352,12 @@ class ChapterHtmlSlimParser {
   TextBlock::Style resolveTextAlignFromAttributes(const XML_Char* elementName, const XML_Char** atts,
                                                   TextBlock::Style inheritedStyle) const;
 
-  /** Picks a block element's paragraph alignment: in FOLLOW_CSS mode the element's own text-align (else
-   *  justified); otherwise the user's fixed alignment, with an explicit element text-align still honored. */
+  /** Picks a block element's paragraph alignment from book CSS or the user's fixed alignment. */
   TextBlock::Style resolveBlockStyle(const XML_Char* elementName, const XML_Char** atts,
                                      bool elementHasExplicitTextAlign, TextBlock::Style elementCssStyle,
                                      TextBlock::Style inheritedCssStyle) const;
+  /** Applies book CSS text layout to every element except paragraphs in fixed reader-style mode. */
+  bool shouldApplyCssTextLayout(const std::string& tagLower) const;
 
   /**
    * Processes an img element with CSS class support.
@@ -443,10 +450,10 @@ class ChapterHtmlSlimParser {
    */
   bool parseAndBuildPages(bool skipImageProcessing = false);
 
-  /** Begins a resumable SAX/layout pass. Call feedIncremental() in small chunks, then finishIncremental(). */
-  bool beginIncremental(bool skipImageProcessing = false);
-  bool feedIncremental(const uint8_t* data, size_t size);
-  bool finishIncremental();
-  void cancelIncremental();
-  bool incrementalActive() const { return incrementalParseActive_; }
+  /** Begins the SAX/layout pass used by the streaming EPUB parser. */
+  bool beginParse(bool skipImageProcessing = false);
+  bool feedParse(const uint8_t* data, size_t size);
+  bool finishParse();
+  void cancelParse();
+  bool parseActive() const { return parseActive_; }
 };

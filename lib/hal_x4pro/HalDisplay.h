@@ -75,6 +75,7 @@ class HalDisplay {
 
   void displayGrayBuffer(bool quality = false, bool trackForRevert = true);
   void displayGrayBufferFastQuality();
+  void displayGrayscaleBase(RefreshMode fallback = HALF_REFRESH, bool turnOffScreen = false);
   void prepareQualityGrayscale();
 
   /** Force which OEM AA grayscale table the UltraChip drivers use (0x02 or 0x68).
@@ -89,4 +90,3 @@ class HalDisplay {
  private:
   EInkDisplay display;
 };
-

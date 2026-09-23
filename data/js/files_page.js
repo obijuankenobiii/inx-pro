@@ -3,6 +3,8 @@ let pendingRename = null;
 let pendingDelete = null;
 let pendingBulkDelete = false;
 let toastTimer = null;
+const SHOW_HIDDEN_STORAGE_KEY = "inx-files-show-hidden";
+let showHiddenFiles = false;
 
 const ICONS = {
   folder:
@@ -21,6 +23,8 @@ const ICONS = {
     '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 4v9m-3.5-3.5L10 13l3.5-3.5M4 16h12"/></svg>',
   trash:
     '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h12M8 3.5h4L13 6H7l1-2.5ZM6 6l.7 10h6.6L14 6M8.5 8.5v5M11.5 8.5v5"/></svg>',
+  move:
+    '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3v14M3 10h14M6.5 6.5 10 3l3.5 3.5M6.5 13.5 10 17l3.5-3.5M6.5 6.5 3 10l3.5 3.5M13.5 6.5 17 10l-3.5 3.5"/></svg>',
 };
 
 function getCurrentPath() {
@@ -205,6 +209,150 @@ function openRename(path, name, type) {
   });
 }
 
+let moveFolderCache = null;
+let movePickerState = null;
+
+function ensureMovePicker() {
+  if (document.getElementById("move-picker")) return document.getElementById("move-picker");
+  const style = document.createElement("style");
+  style.id = "move-picker-styles";
+  style.textContent =
+    ".inx-move-overlay{position:fixed;inset:0;z-index:1200;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(20,24,28,.42)}" +
+    ".inx-move-overlay.open{display:flex}" +
+    ".inx-move-dialog{width:min(460px,100%);background:#fff;border:1px solid #d9dde1;border-radius:7px;box-shadow:0 18px 50px rgba(25,30,35,.22);padding:20px;color:#202428}" +
+    ".inx-move-header{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:18px;font-weight:650}" +
+    ".inx-move-close{border:0;background:transparent;color:#687078;font-size:24px;line-height:1;cursor:pointer;padding:0 2px}" +
+    ".inx-move-copy{margin:8px 0 18px;color:#687078;font-size:13px;overflow-wrap:anywhere}" +
+    ".inx-move-label{display:block;color:#42484e;font-size:12px;font-weight:600;margin-bottom:7px}" +
+    ".inx-move-select{display:block;width:100%;height:42px;border:1px solid #cfd5da;border-radius:5px;background:#fff;color:#202428;padding:0 11px;font:inherit}" +
+    ".inx-move-error{min-height:18px;margin-top:8px;color:#b42318;font-size:12px}" +
+    ".inx-move-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}" +
+    ".inx-move-btn{border:1px solid #cfd5da;border-radius:5px;background:#fff;color:#202428;padding:9px 15px;font:inherit;cursor:pointer}" +
+    ".inx-move-btn.primary{border-color:#202428;background:#202428;color:#fff}" +
+    ".inx-move-btn:disabled{opacity:.48;cursor:wait}";
+  document.head.appendChild(style);
+
+  const overlay = document.createElement("div");
+  overlay.id = "move-picker";
+  overlay.className = "inx-move-overlay";
+  overlay.innerHTML =
+    '<div class="inx-move-dialog" role="dialog" aria-modal="true" aria-labelledby="move-picker-title">' +
+    '<div class="inx-move-header"><span id="move-picker-title">Move item</span><button type="button" class="inx-move-close" aria-label="Close">×</button></div>' +
+    '<div class="inx-move-copy"></div>' +
+    '<label class="inx-move-label" for="move-picker-select">Destination folder</label>' +
+    '<select id="move-picker-select" class="inx-move-select"></select>' +
+    '<div class="inx-move-error" aria-live="polite"></div>' +
+    '<div class="inx-move-actions"><button type="button" class="inx-move-btn cancel">Cancel</button><button type="button" class="inx-move-btn primary submit" disabled>Move here</button></div>' +
+    "</div>";
+  document.body.appendChild(overlay);
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay || event.target.closest(".inx-move-close,.inx-move-btn.cancel")) {
+      overlay.classList.remove("open");
+      movePickerState = null;
+    }
+  });
+  overlay.querySelector(".submit").addEventListener("click", submitMovePicker);
+  return overlay;
+}
+
+async function loadMoveFolders() {
+  if (moveFolderCache) return moveFolderCache;
+  const folders = new Set(["/"]);
+  const queue = ["/"];
+  let next = 0;
+  async function worker() {
+    while (next < queue.length) {
+      const folder = queue[next++];
+      try {
+        const response = await fetch("/api/files?path=" + encodeURIComponent(folder));
+        if (!response.ok) continue;
+        const items = await response.json();
+        for (const item of items) {
+          if (!item.isDirectory) continue;
+          const child = joinPath(folder, item.name);
+          if (!folders.has(child)) {
+            folders.add(child);
+            queue.push(child);
+          }
+        }
+      } catch (_) {
+        // Keep folders already discovered usable if one directory disappears while scanning.
+      }
+    }
+  }
+  await Promise.all([worker(), worker(), worker(), worker()]);
+  moveFolderCache = Array.from(folders).sort((a, b) => {
+    if (a === "/") return -1;
+    if (b === "/") return 1;
+    return a.localeCompare(b);
+  });
+  return moveFolderCache;
+}
+
+async function promptMove(path, name) {
+  const overlay = ensureMovePicker();
+  const select = overlay.querySelector(".inx-move-select");
+  const copy = overlay.querySelector(".inx-move-copy");
+  const error = overlay.querySelector(".inx-move-error");
+  const submit = overlay.querySelector(".submit");
+  movePickerState = { path, name };
+  copy.textContent = 'Choose where to move “' + name + '”.';
+  error.textContent = "";
+  select.disabled = true;
+  submit.disabled = true;
+  select.innerHTML = "<option>Loading folders…</option>";
+  overlay.classList.add("open");
+  try {
+    const folders = await loadMoveFolders();
+    if (!movePickerState || movePickerState.path !== path) return;
+    const source = path.replace(/\/+$/, "") || "/";
+    const valid = folders.filter((folder) => !(folder === source || (source !== "/" && folder.startsWith(source + "/"))));
+    select.innerHTML = "";
+    for (const folder of valid) {
+      const option = document.createElement("option");
+      option.value = folder;
+      option.textContent = folder;
+      select.appendChild(option);
+    }
+    if (!valid.length) throw new Error("No valid destination folders found.");
+    const preferred = valid.includes(currentPath) ? currentPath : "/";
+    select.value = preferred;
+    select.disabled = false;
+    submit.disabled = false;
+  } catch (moveError) {
+    select.innerHTML = "<option>Unable to load folders</option>";
+    error.textContent = moveError.message || "Unable to load folders.";
+  }
+}
+
+async function submitMovePicker() {
+  if (!movePickerState) return;
+  const overlay = document.getElementById("move-picker");
+  const select = overlay.querySelector(".inx-move-select");
+  const error = overlay.querySelector(".inx-move-error");
+  const submit = overlay.querySelector(".submit");
+  const destination = select.value;
+  if (!destination || !destination.startsWith("/")) return;
+  const form = new FormData();
+  form.append("path", movePickerState.path);
+  form.append("destination", destination);
+  submit.disabled = true;
+  error.textContent = "Moving…";
+  try {
+    const response = await fetch("/move", { method: "POST", body: form });
+    if (!response.ok) throw new Error((await response.text()) || "Unable to move item.");
+    const name = movePickerState.name;
+    overlay.classList.remove("open");
+    movePickerState = null;
+    moveFolderCache = null;
+    showToast("Moved " + name, false);
+    await hydrate();
+  } catch (moveError) {
+    submit.disabled = false;
+    error.textContent = moveError.message || "Unable to move item.";
+  }
+}
+
 async function submitRename() {
   if (!pendingRename) return;
   const input = document.getElementById("rename-name");
@@ -323,7 +471,7 @@ async function decodeImage(file) {
   });
 }
 
-async function imageToJpeg(file, maxWidth, maxHeight, cropSquare, quality) {
+async function imageToRaster(file, maxWidth, maxHeight, cropToFill, mimeType, quality) {
   const image = await decodeImage(file);
   const sourceWidth = image.width;
   const sourceHeight = image.height;
@@ -333,12 +481,16 @@ async function imageToJpeg(file, maxWidth, maxHeight, cropSquare, quality) {
   let sourceY = 0;
   let drawWidth = sourceWidth;
   let drawHeight = sourceHeight;
-  if (cropSquare) {
-    const side = Math.min(sourceWidth, sourceHeight);
-    sourceX = (sourceWidth - side) / 2;
-    sourceY = (sourceHeight - side) / 2;
-    drawWidth = side;
-    drawHeight = side;
+  if (cropToFill) {
+    const targetAspect = maxWidth / maxHeight;
+    const sourceAspect = sourceWidth / sourceHeight;
+    if (sourceAspect > targetAspect) {
+      drawWidth = sourceHeight * targetAspect;
+      sourceX = (sourceWidth - drawWidth) / 2;
+    } else {
+      drawHeight = sourceWidth / targetAspect;
+      sourceY = (sourceHeight - drawHeight) / 2;
+    }
     targetWidth = maxWidth;
     targetHeight = maxHeight;
   } else {
@@ -350,8 +502,10 @@ async function imageToJpeg(file, maxWidth, maxHeight, cropSquare, quality) {
   canvas.width = targetWidth;
   canvas.height = targetHeight;
   const context = canvas.getContext("2d");
-  context.fillStyle = "#fff";
-  context.fillRect(0, 0, targetWidth, targetHeight);
+  if (mimeType !== "image/png") {
+    context.fillStyle = "#fff";
+    context.fillRect(0, 0, targetWidth, targetHeight);
+  }
   context.imageSmoothingEnabled = true;
   context.imageSmoothingQuality = "high";
   context.drawImage(image, sourceX, sourceY, drawWidth, drawHeight, 0, 0, targetWidth, targetHeight);
@@ -359,18 +513,22 @@ async function imageToJpeg(file, maxWidth, maxHeight, cropSquare, quality) {
     if (image.close) image.close();
   } catch (_) {}
   return await new Promise((resolve, reject) =>
-    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("JPEG conversion failed"))), "image/jpeg", quality ?? 0.82)
+    canvas.toBlob(
+      (blob) => (blob ? resolve(blob) : reject(new Error(mimeType === "image/png" ? "PNG conversion failed" : "JPEG conversion failed"))),
+      mimeType,
+      mimeType === "image/png" ? undefined : quality ?? 0.82
+    )
   );
 }
 
 async function uploadFolderThumbnail(path) {
   const input = document.createElement("input");
   input.type = "file";
-  input.accept = "image/*,.bmp";
+  input.accept = "image/png,image/jpeg,image/bmp,.png,.jpg,.jpeg,.bmp";
   input.onchange = async () => {
     if (!input.files || !input.files[0]) return;
     try {
-      const jpeg = await imageToJpeg(input.files[0], 200, 200, true);
+      const jpeg = await imageToRaster(input.files[0], 225, 340, true, "image/jpeg");
       await uploadBlobToPath(jpeg, "thumb.jpg", path);
       showToast("Folder thumbnail updated", false);
     } catch (error) {
@@ -381,7 +539,13 @@ async function uploadFolderThumbnail(path) {
 }
 
 function openCoverModal() {
-  document.getElementById("cover-input").value = "";
+  const input = document.getElementById("cover-input");
+  input.value = "";
+  input.accept = "image/png,image/jpeg,image/bmp,.png,.jpg,.jpeg,.bmp";
+  const copy = document.querySelector("#cover-modal .modal-copy");
+  if (copy) copy.textContent = "Images are resized for the display and saved in /sleep. PNG transparency is preserved.";
+  const options = document.querySelector("#cover-modal .cover-options");
+  if (options) options.textContent = "Maximum 480 × 800 · PNG transparency preserved · JPG/BMP converted to JPEG";
   document.getElementById("cover-error").textContent = "";
   openModal("cover-modal");
 }
@@ -403,9 +567,11 @@ async function uploadCovers() {
     const file = files[index];
     setUploadStatus("Converting " + file.name, index + 1 + "/" + files.length, (index / files.length) * 100, true);
     try {
-      const jpeg = await imageToJpeg(file, 480, 800, false, 1);
-      const outputName = file.name.replace(/\.[^.]+$/, "") + ".jpg";
-      await uploadBlobToPath(jpeg, outputName, "/sleep");
+      const preservePng = file.type === "image/png" || /\.png$/i.test(file.name);
+      const mimeType = preservePng ? "image/png" : "image/jpeg";
+      const image = await imageToRaster(file, 480, 800, false, mimeType, preservePng ? undefined : 1);
+      const outputName = file.name.replace(/\.[^.]+$/, "") + (preservePng ? ".png" : ".jpg");
+      await uploadBlobToPath(image, outputName, "/sleep");
       completed++;
     } catch (error) {
       showToast(file.name + ": " + error.message, true);
@@ -451,7 +617,9 @@ async function hydrate() {
   document.getElementById("directory-breadcrumbs").innerHTML = formatBreadcrumb(currentPath);
   const list = document.getElementById("file-list");
   try {
-    const response = await fetch("/api/files?path=" + encodeURIComponent(currentPath));
+    const response = await fetch(
+      "/api/files?path=" + encodeURIComponent(currentPath) + "&showHidden=" + (showHiddenFiles ? "1" : "0")
+    );
     if (!response.ok) throw new Error("Unable to load folder");
     const items = await response.json();
     items.sort((a, b) =>
@@ -525,8 +693,9 @@ async function hydrate() {
       } else {
         html += actionButton("download", path, item.name, type, ICONS.download, "Download", false);
       }
-      html += actionButton("rename", path, item.name, type, ICONS.rename, "Rename", false);
       html += actionButton("delete", path, item.name, type, ICONS.trash, "Delete", true);
+      html += actionButton("move", path, item.name, type, ICONS.move, "Move to folder", false);
+      html += actionButton("rename", path, item.name, type, ICONS.rename, "Rename", false);
       html += "</div></div>";
     }
     html += "</div>";
@@ -540,6 +709,7 @@ async function hydrate() {
         const type = button.dataset.type;
         if (action === "rename") openRename(path, name, type);
         if (action === "delete") openDelete(path, name, type);
+        if (action === "move") promptMove(path, name);
         if (action === "thumbnail") uploadFolderThumbnail(path);
         if (action === "download") window.location.href = "/download?path=" + encodeURIComponent(path);
       })
@@ -596,6 +766,18 @@ function initModals() {
 function init() {
   initDropzone();
   initModals();
+  const hiddenToggle = document.getElementById("show-hidden-toggle");
+  try {
+    showHiddenFiles = localStorage.getItem(SHOW_HIDDEN_STORAGE_KEY) === "1";
+  } catch (_) {}
+  hiddenToggle.checked = showHiddenFiles;
+  hiddenToggle.addEventListener("change", () => {
+    showHiddenFiles = hiddenToggle.checked;
+    try {
+      localStorage.setItem(SHOW_HIDDEN_STORAGE_KEY, showHiddenFiles ? "1" : "0");
+    } catch (_) {}
+    hydrate();
+  });
   document.getElementById("new-folder-btn").addEventListener("click", openFolderModal);
   document.getElementById("cover-upload-btn").addEventListener("click", openCoverModal);
   document.getElementById("folder-submit").addEventListener("click", createFolder);

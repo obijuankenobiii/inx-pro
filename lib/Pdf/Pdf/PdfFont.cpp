@@ -294,8 +294,8 @@ uint32_t PdfFont::unicodeForCid(const PdfFontInfo& font, const uint32_t cid) {
 
 int PdfFont::nearestBuiltinFontId(const double devicePixelSize) {
   static const std::pair<int, int> kSizes[] = {
-      {8, CHAREINK_10_FONT_ID},  {10, CHAREINK_10_FONT_ID}, {12, CHAREINK_12_FONT_ID},
-      {14, CHAREINK_14_FONT_ID}, {16, CHAREINK_16_FONT_ID}, {18, CHAREINK_18_FONT_ID},
+      {8, MONTSERRAT_10_FONT_ID},  {10, MONTSERRAT_10_FONT_ID}, {12, MONTSERRAT_12_FONT_ID},
+      {14, MONTSERRAT_14_FONT_ID}, {16, MONTSERRAT_16_FONT_ID}, {18, MONTSERRAT_18_FONT_ID},
   };
   int best = kSizes[0].second;
   double bestDelta = 1e9;

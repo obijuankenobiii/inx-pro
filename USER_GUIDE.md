@@ -139,7 +139,7 @@ The Settings screen allows you to configure the device's behavior. There are a f
   - "Page Scroll" - Long-pressing scrolls a page up/down
 - Swap the order of the up and down volume buttons from Previous/Next to Next/Previous. This change is only in effect when reading.
 - **Reader Font Family**: Choose the font used for reading:
-  - "ChareInk" (default)
+  - "Montserrat" (default)
   - "Atkinson Hyperlegible"
 - **Reader Font Size**: Adjust the text size for reading; options are "Small", "Medium", "Large", or "X Large".
 - **Reader Line Spacing**: Adjust the spacing between lines; options are "Tight", "Normal", or "Wide".

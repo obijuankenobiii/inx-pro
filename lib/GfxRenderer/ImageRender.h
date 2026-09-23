@@ -25,6 +25,8 @@ class ImageRender {
     bool asyncDisplayCache = false;
     bool quality = false;
     bool fastQuality = false;
+    /** Keep fully transparent PNG pixels untouched when drawing over an existing framebuffer. */
+    bool preserveTransparency = false;
     float cropAnchorX = 0.5f;
   };
 

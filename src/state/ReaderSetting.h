@@ -33,7 +33,7 @@ class ReaderSetting {
   ReaderSetting(const ReaderSetting&) = delete;
   ReaderSetting& operator=(const ReaderSetting&) = delete;
 
-  uint8_t statusBar = 2;  ///< Legacy status bar mode (SystemSetting::STATUS_BAR_MODE::FULL)
+  uint8_t statusBar = 2;  ///< Text-reader status bar mode (SystemSetting::STATUS_BAR_MODE::FULL)
 
   uint8_t statusBarLeft = 6;    ///< Left status bar section (SystemSetting::STATUS_ITEM_BATTERY_ICON_WITH_PERCENT)
   uint8_t statusBarMiddle = 3;  ///< Middle status bar section (SystemSetting::STATUS_ITEM_CHAPTER_TITLE)
@@ -50,27 +50,16 @@ class ReaderSetting {
   uint8_t extraParagraphSpacing = 1;  ///< Extra paragraph spacing enabled
   uint8_t textAntiAliasing = 0;       ///< New-install default: text anti-aliasing off
 
-  /** Superseded by btnPowerShortAction (see below) - kept only for serialization backward-compat and
-   *  as the migration source for it. No longer consulted by the reader. */
-  uint8_t readerShortPwrBtn = 1;             ///< SystemSetting::READER_PAGE_REFRESH
-  uint8_t xtcShortPwrBtn = 0;                ///< SystemSetting::XTC_POWER_NEXT
-  uint8_t xtcPageAutoTurnSeconds = 0;        ///< XTC auto page turn interval, 0=off
-  uint8_t xtcImageQuality = 0;               ///< SystemSetting::READER_IMAGE_LOW
-  uint8_t xtcRefreshFrequency = 15;          ///< XTC full refresh cadence in pages
-
   /** Selected /dictionaries/<folder> for EPUB dictionary lookup. Empty = none selected. */
   char dictionaryFolder[64] = "";
 
-  /** Power Button (short-press only, no long-press pair). Supersedes readerShortPwrBtn's
-   *  narrower 4-option READER_SHORT_PWRBTN enum; that field stays for serialization backward-compat
-   *  (loadFromFile() migrates its value into this field on first load of an older settings file) but is
-   *  no longer consulted by the reader. */
+  /** Power Button (short-press only, no long-press pair). */
   uint8_t btnPowerShortAction = 6;  ///< BTN_ACTION_PAGE_REFRESH
 
   uint8_t orientation = 0;  ///< SystemSetting::PORTRAIT
 
-  uint8_t fontFamily = SystemSetting::CHAREINK;
-  uint8_t fontSize = SystemSetting::SMALL;  ///< 12 pt ChareInk on a fresh install
+  uint8_t fontFamily = SystemSetting::MONTSERRAT;
+  uint8_t fontSize = SystemSetting::SMALL;  ///< Legacy index for built-in/.bin fonts; actual 8-60pt for TTF/OTF
   uint8_t lineHeight = 100;                 ///< Reader line height, % of natural (10-200)
   uint8_t textSpace = 100;                  ///< Reader word spacing, % of natural (10-200)
   uint8_t paragraphAlignment = 4;           ///< SystemSetting::FOLLOW_CSS
@@ -88,7 +77,7 @@ class ReaderSetting {
 
   /**
    * @brief Page auto-turn interval in seconds
-   * @details Values: 0 = off, increments of 10 (10, 20, 30, 40, 50, 60)
+   * @details Values: 0 = off, increments of 10 up to 180 seconds
    */
   uint8_t pageAutoTurnSeconds = 0;
 
@@ -98,13 +87,7 @@ class ReaderSetting {
   /** When set, image-heavy EPUB pages use a gentler (half) refresh before/after transitions. */
   uint8_t readerSmartRefreshOnImages = 0;
 
-  /** Legacy ignored value retained for settings-file compatibility. */
-  uint8_t legacyReaderImagePresentation = 1;
-  /** Legacy ignored value retained for settings-file compatibility. */
-  uint8_t readerImageDither = 2;  ///< SystemSetting::IMAGE_DITHER_ATKINSON
-
-  /** Long-press on prev/next: 0=off, 1=chapter skip (EPUB), 2=skip 5 pages (EPUB). Legacy files used 0/1 only.
-   *  Values match SystemSetting::LONG_PRESS_OFF/LONG_PRESS_CHAPTER_SKIP/LONG_PRESS_PAGE_SKIP_5. */
+  /** Long-press on prev/next: 0=off, 1=chapter skip (EPUB), 2=skip 5 pages (EPUB). */
   uint8_t longPressChapterSkip = 1;  ///< SystemSetting::LONG_PRESS_CHAPTER_SKIP
 
   /** Bitmask of SystemSetting::READER_BUTTON_ACTION values (bit N = 1u << N) included in the
@@ -132,6 +115,9 @@ class ReaderSetting {
 
   /** Reader double-tap action. BTN_ACTION_NONE disables the gesture. */
   uint8_t doubleTapAction = SystemSetting::BTN_ACTION_NONE;
+
+  /** Default language package for books. Empty means follow the system UI language. */
+  char defaultLanguageCode[33] = "";
 
   ~ReaderSetting() = default;
 

@@ -7,6 +7,7 @@
 
 #include <GfxRenderer.h>
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -29,6 +30,10 @@ class FontManager {
   /** SD streaming font IDs (must not overlap built-in reader/system font ranges). */
   static constexpr int SD_FONT_START_ID = 5000;
 
+  /** Point-size range exposed for TrueType/OpenType reader fonts. */
+  static constexpr uint8_t OUTLINE_FONT_MIN_POINT_SIZE = 8;
+  static constexpr uint8_t OUTLINE_FONT_MAX_POINT_SIZE = 45;
+
   static void initialize(GfxRenderer& renderer);
 
   static int getNextFont(int currentFontId);
@@ -39,17 +44,30 @@ class FontManager {
 
   /**
    * Reader "Font Family" slot encoding stored in SystemSetting::fontFamily / BookSettings::fontFamily:
-   * 0 = ChareInk, 1 = Montserrat, 2+ = SD folder names (sorted),
+   * 0 = Montserrat, 1+ = SD folder names (sorted),
    * see readerFontFamilyOptionCount().
    */
   static uint32_t readerFontFamilyOptionCount();
   static std::vector<std::string> readerFontFamilyEnumLabels();
   static std::string readerFontFamilyLabel(uint8_t slot);
   static void clampReaderFontFamilySlot(uint8_t& slot);
+  static bool isOutlineFontFamily(const std::string& family);
+  static bool isOutlineFontFamilySlot(uint8_t slot);
+  /** Convert the legacy five-position reader size to its equivalent point size. */
+  static int pointSizeForLegacyReaderSize(uint8_t sizeIndex);
+  /** Convert an outline point size to the closest legacy five-position size. */
+  static uint8_t legacyReaderSizeForPointSize(int pointSize);
   static int getFontIdNearestPointSize(const std::string& family, int preferredPt);
+  /** Select the largest installed font at or below the requested point size. */
+  static int getFontIdAtOrBelowPointSize(const std::string& family, int preferredPt);
+  /** Select the proportional drop-cap size for the active reader font. */
+  static int getDropCapFontId(int bodyFontId, uint8_t lineCount);
 
   static bool loadFontFromSD(int fontId, GfxRenderer& renderer, bool enableGlyphBitmapCache = true);
   static bool ensureFontReady(int fontId, GfxRenderer& renderer);
+  /** Find an installed language font that really contains this codepoint. */
+  static int findLanguageFontForCodepoint(uint32_t codepoint, int preferredPt, EpdFontFamily::Style style,
+                                          GfxRenderer& renderer, const char* preferredLanguageCode = nullptr);
   /** Preload body, next-larger, and max-in-family SD slots used together during EPUB layout. */
   static bool ensureReaderLayoutFonts(int bodyFontId, GfxRenderer& renderer);
   static bool unloadFont(int fontId);
@@ -88,6 +106,7 @@ class FontManager {
     EpdFont* italicFont;
     EpdFont* boldItalic;
     EpdFontFamily* fontFamily;
+    bool isLanguage;
     bool isLoaded;
     uint32_t lastUsed;
   };

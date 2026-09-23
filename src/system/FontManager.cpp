@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <cctype>
 #include <climits>
+#include <cstdlib>
+#include <cstring>
 #include <map>
 #include <memory>
 #include <set>
@@ -12,6 +14,7 @@
 
 #include "EpdFontFamily.h"
 #include "ExternalFont.h"
+#include "FontPreviews.h"
 #include "SDCardManager.h"
 #include "system/Fonts.h"
 
@@ -27,11 +30,12 @@ bool FontManager::g_scannedForFonts = false;
 
 namespace {
 std::vector<std::string> g_sdFamiliesSorted;
+constexpr int kPsramResidentFontLimit = 16;
 }
 
 /**
- * @brief Extracts font size from filename (pt), e.g. Regular_14.bin -> 14.
- * Prefers the trailing "_<digits>" stem suffix so names like "4001_Regular_12.bin" still map to 12pt.
+ * @brief Extracts font size from filename (pt), e.g. Regular_14.ttf -> 14.
+ * Prefers the trailing "_<digits>" stem suffix so names like "4001_Regular_12.ttf" still map to 12pt.
  */
 static int extractSizeFromFilename(const std::string& filename) {
   const size_t dot = filename.rfind('.');
@@ -82,6 +86,42 @@ static std::string extractStyleFromFilename(const std::string& filename) {
   return "regular";
 }
 
+static bool hasFontExtension(const std::string& filename, const char* extension) {
+  const size_t extensionLength = strlen(extension);
+  if (filename.size() < extensionLength) return false;
+  const size_t start = filename.size() - extensionLength;
+  for (size_t i = 0; i < extensionLength; ++i) {
+    char a = filename[start + i];
+    char b = extension[i];
+    if (a >= 'A' && a <= 'Z') a = static_cast<char>(a - 'A' + 'a');
+    if (b >= 'A' && b <= 'Z') b = static_cast<char>(b - 'A' + 'a');
+    if (a != b) return false;
+  }
+  return true;
+}
+
+static bool isFontFile(const std::string& filename) {
+  return hasFontExtension(filename, ".bin") || hasFontExtension(filename, ".ttf") ||
+         hasFontExtension(filename, ".otf");
+}
+
+static bool isOutlineFontFile(const std::string& filename) {
+  return hasFontExtension(filename, ".ttf") || hasFontExtension(filename, ".otf");
+}
+
+static bool shouldPreferFontPath(const std::string& current, const std::string& candidate, const bool preferPacked) {
+  if (current.empty()) return true;
+  if (preferPacked && isOutlineFontFile(candidate) != isOutlineFontFile(current)) {
+    return !isOutlineFontFile(candidate);
+  }
+  if (isOutlineFontFile(candidate) != isOutlineFontFile(current)) {
+    return isOutlineFontFile(candidate);
+  }
+  return hasFontExtension(candidate, ".ttf") && hasFontExtension(current, ".otf");
+}
+
+static constexpr int kLegacyReaderPointSizes[] = {10, 12, 14, 16, 18};
+
 /**
  * @brief Initializes the font manager with built-in fonts
  */
@@ -94,40 +134,9 @@ void FontManager::initialize(GfxRenderer& renderer) {
   g_loadedFontCount = 0;
   g_scannedForFonts = false;
 
-  static EpdFont chareink10RegularFont(&chareink_10_regular);
-  static EpdFont chareink10BoldFont(&chareink_10_bold);
-  static EpdFont chareink10ItalicFont(&chareink_10_italic);
-  static EpdFont chareink10BoldItalicFont(&chareink_10_bolditalic);
-  static EpdFontFamily chareink10FontFamily(&chareink10RegularFont, &chareink10BoldFont, &chareink10ItalicFont,
-                                            &chareink10BoldItalicFont);
-
-  static EpdFont chareink12RegularFont(&chareink_12_regular);
-  static EpdFont chareink12BoldFont(&chareink_12_bold);
-  static EpdFont chareink12ItalicFont(&chareink_12_italic);
-  static EpdFont chareink12BoldItalicFont(&chareink_12_bolditalic);
-  static EpdFontFamily chareink12FontFamily(&chareink12RegularFont, &chareink12BoldFont, &chareink12ItalicFont,
-                                            &chareink12BoldItalicFont);
-
-  static EpdFont chareink14RegularFont(&chareink_14_regular);
-  static EpdFont chareink14BoldFont(&chareink_14_bold);
-  static EpdFont chareink14ItalicFont(&chareink_14_italic);
-  static EpdFont chareink14BoldItalicFont(&chareink_14_bolditalic);
-  static EpdFontFamily chareink14FontFamily(&chareink14RegularFont, &chareink14BoldFont, &chareink14ItalicFont,
-                                            &chareink14BoldItalicFont);
-
-  static EpdFont chareink16RegularFont(&chareink_16_regular);
-  static EpdFont chareink16BoldFont(&chareink_16_bold);
-  static EpdFont chareink16ItalicFont(&chareink_16_italic);
-  static EpdFont chareink16BoldItalicFont(&chareink_16_bolditalic);
-  static EpdFontFamily chareink16FontFamily(&chareink16RegularFont, &chareink16BoldFont, &chareink16ItalicFont,
-                                            &chareink16BoldItalicFont);
-
-  static EpdFont chareink18RegularFont(&chareink_18_regular);
-  static EpdFont chareink18BoldFont(&chareink_18_bold);
-  static EpdFont chareink18ItalicFont(&chareink_18_italic);
-  static EpdFont chareink18BoldItalicFont(&chareink_18_bolditalic);
-  static EpdFontFamily chareink18FontFamily(&chareink18RegularFont, &chareink18BoldFont, &chareink18ItalicFont,
-                                            &chareink18BoldItalicFont);
+  // This firmware targets PSRAM hardware. Keep the reader's common font sizes
+  // alive instead of rebuilding them whenever a heading or CSS size is used.
+  g_maxLoadedFonts = std::max(g_maxLoadedFonts, kPsramResidentFontLimit);
 
   static EpdFont montserrat8RegularFont(&montserrat_8_regular);
   static EpdFontFamily montserrat8FontFamily(&montserrat8RegularFont, nullptr, nullptr, nullptr);
@@ -172,12 +181,6 @@ void FontManager::initialize(GfxRenderer& renderer) {
   static EpdFontFamily montserratClock70FontFamily(&montserratClock70RegularFont, &montserratClock70BoldFont, nullptr,
                                                    nullptr);
 
-  renderer.insertFont(CHAREINK_10_FONT_ID, chareink10FontFamily);
-  renderer.insertFont(CHAREINK_12_FONT_ID, chareink12FontFamily);
-  renderer.insertFont(CHAREINK_14_FONT_ID, chareink14FontFamily);
-  renderer.insertFont(CHAREINK_16_FONT_ID, chareink16FontFamily);
-  renderer.insertFont(CHAREINK_18_FONT_ID, chareink18FontFamily);
-
   renderer.insertFont(MONTSERRAT_8_FONT_ID, montserrat8FontFamily);
   renderer.insertFont(MONTSERRAT_10_FONT_ID, montserrat10FontFamily);
   renderer.insertFont(MONTSERRAT_12_FONT_ID, montserrat12FontFamily);
@@ -186,8 +189,9 @@ void FontManager::initialize(GfxRenderer& renderer) {
   renderer.insertFont(MONTSERRAT_18_FONT_ID, montserrat18FontFamily);
 
   renderer.insertFont(MONTSERRAT_CLOCK_70_FONT_ID, montserratClock70FontFamily);
+  FontPreviews::initialize(renderer);
 
-  INX_SERIAL.println("[FontManager] Initialized (Montserrat + ChareInk reader + Montserrat clock + SD streaming)");
+  INX_SERIAL.println("[FontManager] Initialized (Montserrat + SD streaming)");
 }
 
 /**
@@ -195,15 +199,6 @@ void FontManager::initialize(GfxRenderer& renderer) {
  */
 int FontManager::getNextFont(int currentFontId) {
   switch (currentFontId) {
-    case CHAREINK_10_FONT_ID:
-      return CHAREINK_12_FONT_ID;
-    case CHAREINK_12_FONT_ID:
-      return CHAREINK_14_FONT_ID;
-    case CHAREINK_14_FONT_ID:
-      return CHAREINK_16_FONT_ID;
-    case CHAREINK_16_FONT_ID:
-    case CHAREINK_18_FONT_ID:
-      return CHAREINK_18_FONT_ID;
     case MONTSERRAT_8_FONT_ID:
       return MONTSERRAT_10_FONT_ID;
     case MONTSERRAT_10_FONT_ID:
@@ -255,6 +250,7 @@ bool FontManager::scanSDFonts(const char* sdPath, bool forceRescan) {
 
   if (forceRescan) {
     unloadAllSDFonts();
+    ExternalFont::clearTtfCache();
   }
 
   g_sdFonts.clear();
@@ -300,12 +296,56 @@ bool FontManager::scanSDFonts(const char* sdPath, bool forceRescan) {
   struct FontGroup {
     std::string family;
     int size;
+    bool isLanguage = false;
     std::string regularPath;
     std::string boldPath;
     std::string italicPath;
     std::string boldItalicPath;
   };
   std::map<std::pair<std::string, int>, FontGroup> groups;
+
+  auto addFontFile = [&](const std::string& family, const bool isLanguage, const std::string& familyPath,
+                         const std::string& filename) {
+    const int parsedSize = extractSizeFromFilename(filename);
+    const int* sizes = &parsedSize;
+    size_t sizeCount = 1;
+    if (isOutlineFontFile(filename)) {
+      // An outline font can be rasterized at any point size. The filename's
+      // numeric suffix is only a legacy hint, not a restriction on the
+      // sizes that the reader can expose.
+      static int outlineSizes[OUTLINE_FONT_MAX_POINT_SIZE - OUTLINE_FONT_MIN_POINT_SIZE + 1];
+      static bool initialized = false;
+      if (!initialized) {
+        for (int i = OUTLINE_FONT_MIN_POINT_SIZE; i <= OUTLINE_FONT_MAX_POINT_SIZE; ++i) {
+          outlineSizes[i - OUTLINE_FONT_MIN_POINT_SIZE] = i;
+        }
+        initialized = true;
+      }
+      sizes = outlineSizes;
+      sizeCount = sizeof(outlineSizes) / sizeof(outlineSizes[0]);
+    } else if (parsedSize == 0) {
+      return;
+    }
+
+    const std::string fullPath = familyPath + "/" + filename;
+    const std::string style = extractStyleFromFilename(filename);
+    for (size_t i = 0; i < sizeCount; ++i) {
+      const int size = sizes[i];
+      const auto key = std::make_pair(family, size);
+      if (style == "regular" && shouldPreferFontPath(groups[key].regularPath, fullPath, isLanguage)) {
+        groups[key].regularPath = fullPath;
+      } else if (style == "bold" && shouldPreferFontPath(groups[key].boldPath, fullPath, isLanguage)) {
+        groups[key].boldPath = fullPath;
+      } else if (style == "italic" && shouldPreferFontPath(groups[key].italicPath, fullPath, isLanguage)) {
+        groups[key].italicPath = fullPath;
+      } else if (style == "bolditalic" && shouldPreferFontPath(groups[key].boldItalicPath, fullPath, isLanguage)) {
+        groups[key].boldItalicPath = fullPath;
+      }
+      groups[key].family = family;
+      groups[key].size = size;
+      groups[key].isLanguage = isLanguage;
+    }
+  };
 
   for (const auto& family : families) {
     std::string familyPath = std::string(sdPath) + "/" + family;
@@ -325,30 +365,49 @@ bool FontManager::scanSDFonts(const char* sdPath, bool forceRescan) {
         continue;
       }
 
-      if (!file.isDirectory() && filename.length() > 4 && filename.substr(filename.length() - 4) == ".bin") {
-        int size = extractSizeFromFilename(filename);
-        if (size > 0) {
-          auto key = std::make_pair(family, size);
-          std::string fullPath = familyPath + "/" + filename;
-          std::string style = extractStyleFromFilename(filename);
-
-          if (style == "regular") {
-            groups[key].regularPath = fullPath;
-          } else if (style == "bold") {
-            groups[key].boldPath = fullPath;
-          } else if (style == "italic") {
-            groups[key].italicPath = fullPath;
-          } else if (style == "bolditalic") {
-            groups[key].boldItalicPath = fullPath;
-          }
-          groups[key].family = family;
-          groups[key].size = size;
-        }
+      if (!file.isDirectory() && isFontFile(filename)) {
+        addFontFile(family, false, familyPath, filename);
       }
       file.close();
     }
     familyDir.close();
   }
+
+  // Language packages keep their fonts below /fonts/lang/<code>/ so they do
+  // not appear as selectable reader families. Scan that one extra level and
+  // retain the language marker for glyph fallback below.
+  const std::string languageRootPath = std::string(sdPath) + "/lang";
+  auto languageRoot = SdMan.open(languageRootPath.c_str());
+  if (languageRoot && languageRoot.isDirectory()) {
+    for (auto languageDir = languageRoot.openNextFile(); languageDir; languageDir = languageRoot.openNextFile()) {
+      languageDir.getName(name, sizeof(name));
+      const std::string languageCode = name;
+      if (!languageDir.isDirectory() || languageCode.empty() || languageCode == "." || languageCode == "..") {
+        languageDir.close();
+        continue;
+      }
+
+      const std::string languagePath = languageRootPath + "/" + languageCode;
+      languageDir.close();
+      auto fontDir = SdMan.open(languagePath.c_str());
+      if (!fontDir || !fontDir.isDirectory()) {
+        if (fontDir) fontDir.close();
+        continue;
+      }
+
+      const std::string familyName = "lang/" + languageCode;
+      for (auto file = fontDir.openNextFile(); file; file = fontDir.openNextFile()) {
+        file.getName(name, sizeof(name));
+        const std::string filename = name;
+        if (!file.isDirectory() && isFontFile(filename)) {
+          addFontFile(familyName, true, languagePath, filename);
+        }
+        file.close();
+      }
+      fontDir.close();
+    }
+  }
+  if (languageRoot) languageRoot.close();
 
   for (auto& group : groups) {
     if (group.second.regularPath.empty()) {
@@ -367,11 +426,13 @@ bool FontManager::scanSDFonts(const char* sdPath, bool forceRescan) {
     entry.italicFont = nullptr;
     entry.boldItalic = nullptr;
     entry.fontFamily = nullptr;
+    entry.isLanguage = group.second.isLanguage;
     entry.isLoaded = false;
     entry.lastUsed = 0;
     g_sdFonts.push_back(entry);
 
-    INX_SERIAL.printf("[FontManager] Found font: %s %dpt (ID: %d)\n", entry.family.c_str(), entry.size, entry.id);
+    INX_SERIAL.printf("[FontManager] Found %sfont: %s %dpt (ID: %d)\n", entry.isLanguage ? "language " : "",
+                      entry.family.c_str(), entry.size, entry.id);
   }
 
   g_scannedForFonts = true;
@@ -450,7 +511,7 @@ int FontManager::getLoadedFontCount() { return g_loadedFontCount; }
 
 /**
  * @brief Loads a specific font from SD card by ID
- * Uses streaming ExternalFont with on-demand glyph table reads (no full index in RAM).
+ * Uses streaming ExternalFont for .bin files and PSRAM-backed on-demand TTF/OTF rasterization.
  */
 bool FontManager::loadFontFromSD(int fontId, GfxRenderer& renderer, const bool enableGlyphBitmapCache) {
   if (!g_scannedForFonts) {
@@ -483,7 +544,7 @@ bool FontManager::loadFontFromSD(int fontId, GfxRenderer& renderer, const bool e
       return nullptr;
     }
     auto stream = std::unique_ptr<ExternalFont>(new ExternalFont());
-    if (!stream->load(path.c_str(), enableGlyphBitmapCache)) {
+    if (!stream->load(path.c_str(), enableGlyphBitmapCache, static_cast<uint16_t>(entry->size))) {
       INX_SERIAL.printf("[FontManager] Skipping %s (failed to load): %s\n", label, path.c_str());
       return nullptr;
     }
@@ -491,7 +552,7 @@ bool FontManager::loadFontFromSD(int fontId, GfxRenderer& renderer, const bool e
   };
 
   std::unique_ptr<ExternalFont> regularStream(new ExternalFont());
-  if (!regularStream->load(entry->regularPath.c_str(), enableGlyphBitmapCache)) {
+  if (!regularStream->load(entry->regularPath.c_str(), enableGlyphBitmapCache, static_cast<uint16_t>(entry->size))) {
     INX_SERIAL.printf("[FontManager] Failed to load regular: %s\n", entry->regularPath.c_str());
     return false;
   }
@@ -537,19 +598,21 @@ bool FontManager::loadFontFromSD(int fontId, GfxRenderer& renderer, const bool e
     renderer.addStreamingFontStyle(entry->id, EpdFontFamily::BOLD_ITALIC, std::move(boldItalicStream));
   }
 
-  INX_SERIAL.printf("[FontManager] Loaded font ID %d: %s %dpt (SD streaming, %s, on-demand glyphs)\n", fontId,
+  INX_SERIAL.printf("[FontManager] Loaded font ID %d: %s %dpt (SD/PSRAM font, %s, on-demand glyphs)\n", fontId,
                 entry->family.c_str(), entry->size, enableGlyphBitmapCache ? "cached" : "stream-only");
 
   return true;
 }
 
 bool FontManager::ensureReaderLayoutFonts(int bodyFontId, GfxRenderer& renderer) {
-  const int maxFontId = getMaxFontId(bodyFontId);
   const int headerFontId = getNextFont(bodyFontId);
-  int requiredIds[3] = {bodyFontId, maxFontId, headerFontId};
+  // Drop caps select their proportional size when the parser encounters one.
+  // Do not preload the family's largest size here; for outline fonts that is
+  // commonly the generated 45pt variant and wastes PSRAM on ordinary chapters.
+  int requiredIds[2] = {bodyFontId, headerFontId};
   int requiredCount = 0;
 
-  for (int i = 0; i < 3; ++i) {
+  for (int i = 0; i < 2; ++i) {
     bool seen = false;
     for (int j = 0; j < requiredCount; ++j) {
       if (requiredIds[j] == requiredIds[i]) {
@@ -571,10 +634,6 @@ bool FontManager::ensureReaderLayoutFonts(int bodyFontId, GfxRenderer& renderer)
     }
   }
 
-  if (needsSdLoad && g_loadedFontCount > 0) {
-    unloadAllSDFonts();
-  }
-
   for (int i = 0; i < requiredCount; ++i) {
     const int fontId = requiredIds[i];
     if (fontId >= SD_FONT_START_ID) {
@@ -593,9 +652,6 @@ bool FontManager::ensureReaderLayoutFonts(int bodyFontId, GfxRenderer& renderer)
  * @brief Ensures a font is ready for use, loading it if necessary
  */
 bool FontManager::ensureFontReady(int fontId, GfxRenderer& renderer) {
-  if (fontId >= CHAREINK_10_FONT_ID && fontId <= CHAREINK_18_FONT_ID) {
-    return true;
-  }
   if (fontId >= MONTSERRAT_8_FONT_ID && fontId <= MONTSERRAT_18_FONT_ID) {
     return true;
   }
@@ -612,6 +668,50 @@ bool FontManager::ensureFontReady(int fontId, GfxRenderer& renderer) {
 
   INX_SERIAL.printf("[FontManager] Font ID %d not found!\n", fontId);
   return false;
+}
+
+int FontManager::findLanguageFontForCodepoint(const uint32_t codepoint, const int preferredPt,
+                                              const EpdFontFamily::Style style, GfxRenderer& renderer,
+                                              const char* preferredLanguageCode) {
+  if (codepoint < 0x80 || codepoint == 0) return 0;
+  if (!g_scannedForFonts) {
+    (void)scanSDFonts("/fonts", false);
+  }
+
+  std::vector<SDFontEntry*> candidates;
+  for (auto& entry : g_sdFonts) {
+    if (entry.isLanguage && !entry.regularPath.empty()) candidates.push_back(&entry);
+  }
+  const std::string preferredFamily = preferredLanguageCode && preferredLanguageCode[0] != '\0'
+                                          ? "lang/" + std::string(preferredLanguageCode)
+                                          : std::string();
+  std::sort(candidates.begin(), candidates.end(), [preferredPt, &preferredFamily](const SDFontEntry* a,
+                                                                                    const SDFontEntry* b) {
+    const bool aPreferred = !preferredFamily.empty() && a->family == preferredFamily;
+    const bool bPreferred = !preferredFamily.empty() && b->family == preferredFamily;
+    if (aPreferred != bPreferred) return aPreferred;
+    const int aDistance = std::abs(a->size - preferredPt);
+    const int bDistance = std::abs(b->size - preferredPt);
+    if (aDistance != bDistance) return aDistance < bDistance;
+    return a->family < b->family;
+  });
+
+  for (SDFontEntry* entry : candidates) {
+    if (!entry->isLoaded && !loadFontFromSD(entry->id, renderer, true)) continue;
+    const EpdFontFamily* family = renderer.findFontFamily(entry->id);
+    if (!family) continue;
+    const EpdFontData* data = family->getData(style);
+    if (!data) continue;
+
+    EpdGlyph glyph{};
+    ExternalFont* stream = renderer.findStreamingFont(data);
+    const bool found = stream ? stream->getGlyphMetadata(codepoint, glyph) : family->getGlyph(codepoint, style) != nullptr;
+    if (found) {
+      updateFontLRU(entry->id);
+      return entry->id;
+    }
+  }
+  return 0;
 }
 
 /**
@@ -711,21 +811,6 @@ const FontManager::FontInfo* FontManager::getFontInfo(int fontId) {
     case MONTSERRAT_18_FONT_ID:
       info = {"Montserrat 18", "Montserrat", fontId, 18, true};
       return &info;
-    case CHAREINK_10_FONT_ID:
-      info = {"ChareInk 10", "ChareInk", fontId, 10, true};
-      return &info;
-    case CHAREINK_12_FONT_ID:
-      info = {"ChareInk 12", "ChareInk", fontId, 12, true};
-      return &info;
-    case CHAREINK_14_FONT_ID:
-      info = {"ChareInk 14", "ChareInk", fontId, 14, true};
-      return &info;
-    case CHAREINK_16_FONT_ID:
-      info = {"ChareInk 16", "ChareInk", fontId, 16, true};
-      return &info;
-    case CHAREINK_18_FONT_ID:
-      info = {"ChareInk 18", "ChareInk", fontId, 18, true};
-      return &info;
     default:
       for (const auto& entry : g_sdFonts) {
         if (entry.id == fontId) {
@@ -754,14 +839,10 @@ std::vector<FontManager::FontInfo> FontManager::getAllAvailableFonts() {
   fonts.push_back({"Montserrat 16", "Montserrat", MONTSERRAT_16_FONT_ID, 16, true});
   fonts.push_back({"Montserrat 18", "Montserrat", MONTSERRAT_18_FONT_ID, 18, true});
 
-  fonts.push_back({"ChareInk 10", "ChareInk", CHAREINK_10_FONT_ID, 10, true});
-  fonts.push_back({"ChareInk 12", "ChareInk", CHAREINK_12_FONT_ID, 12, true});
-  fonts.push_back({"ChareInk 14", "ChareInk", CHAREINK_14_FONT_ID, 14, true});
-  fonts.push_back({"ChareInk 16", "ChareInk", CHAREINK_16_FONT_ID, 16, true});
-  fonts.push_back({"ChareInk 18", "ChareInk", CHAREINK_18_FONT_ID, 18, true});
-
   for (const auto& entry : g_sdFonts) {
-    fonts.push_back({entry.family + " " + std::to_string(entry.size), entry.family, entry.id, entry.size, false});
+    if (!entry.isLanguage) {
+      fonts.push_back({entry.family + " " + std::to_string(entry.size), entry.family, entry.id, entry.size, false});
+    }
   }
 
   return fonts;
@@ -771,7 +852,7 @@ std::vector<FontManager::FontInfo> FontManager::getAllAvailableFonts() {
  * @brief Gets all fonts belonging to a specific family
  */
 std::vector<FontManager::FontInfo> FontManager::getFontsByFamily(const std::string& family) {
-  if (!g_scannedForFonts && family != "Montserrat" && family != "ChareInk") {
+  if (!g_scannedForFonts && family != "Montserrat") {
     (void)scanSDFonts("/fonts", false);
   }
 
@@ -786,16 +867,8 @@ std::vector<FontManager::FontInfo> FontManager::getFontsByFamily(const std::stri
     result.push_back({"Montserrat 18", "Montserrat", MONTSERRAT_18_FONT_ID, 18, true});
   }
 
-  if (family == "ChareInk") {
-    result.push_back({"ChareInk 10", "ChareInk", CHAREINK_10_FONT_ID, 10, true});
-    result.push_back({"ChareInk 12", "ChareInk", CHAREINK_12_FONT_ID, 12, true});
-    result.push_back({"ChareInk 14", "ChareInk", CHAREINK_14_FONT_ID, 14, true});
-    result.push_back({"ChareInk 16", "ChareInk", CHAREINK_16_FONT_ID, 16, true});
-    result.push_back({"ChareInk 18", "ChareInk", CHAREINK_18_FONT_ID, 18, true});
-  }
-
   for (const auto& entry : g_sdFonts) {
-    if (entry.family == family) {
+    if (!entry.isLanguage && entry.family == family) {
       result.push_back({entry.family + " " + std::to_string(entry.size), entry.family, entry.id, entry.size, false});
     }
   }
@@ -814,10 +887,8 @@ std::vector<std::string> FontManager::getAllFamilies() {
 
   std::vector<std::string> families;
   families.push_back("Montserrat");
-  families.push_back("ChareInk");
-
   for (const auto& entry : g_sdFonts) {
-    if (std::find(families.begin(), families.end(), entry.family) == families.end()) {
+    if (!entry.isLanguage && std::find(families.begin(), families.end(), entry.family) == families.end()) {
       families.push_back(entry.family);
     }
   }
@@ -829,9 +900,6 @@ std::vector<std::string> FontManager::getAllFamilies() {
  */
 bool FontManager::isFontLoaded(int fontId) {
   if (fontId >= MONTSERRAT_8_FONT_ID && fontId <= MONTSERRAT_18_FONT_ID) {
-    return true;
-  }
-  if (fontId >= CHAREINK_10_FONT_ID && fontId <= CHAREINK_18_FONT_ID) {
     return true;
   }
 
@@ -848,7 +916,7 @@ bool FontManager::isFontLoaded(int fontId) {
  */
 void FontManager::printFontStats() {
   INX_SERIAL.println("=== Font Manager Stats ===");
-  INX_SERIAL.printf("Built-in fonts: Montserrat system + ChareInk reader (embedded)\n");
+  INX_SERIAL.printf("Built-in fonts: Montserrat\n");
   INX_SERIAL.printf("SD fonts discovered: %d\n", (int)g_sdFonts.size());
 
   int loadedCount = 0;
@@ -861,7 +929,8 @@ void FontManager::printFontStats() {
 
   INX_SERIAL.println("\nSD Font Families:");
   for (const auto& entry : g_sdFonts) {
-    INX_SERIAL.printf("  %s: %dpt %s\n", entry.family.c_str(), entry.size, entry.isLoaded ? "(loaded)" : "");
+    INX_SERIAL.printf("  %s%s: %dpt %s\n", entry.isLanguage ? "[language] " : "", entry.family.c_str(), entry.size,
+                      entry.isLoaded ? "(loaded)" : "");
   }
   INX_SERIAL.println("========================");
 }
@@ -888,38 +957,18 @@ int FontManager::getFontId(const std::string& family, int size) {
         return MONTSERRAT_12_FONT_ID;
     }
   }
-  if (family == "ChareInk") {
-    switch (size) {
-      case 10:
-        return CHAREINK_10_FONT_ID;
-      case 12:
-        return CHAREINK_12_FONT_ID;
-      case 14:
-        return CHAREINK_14_FONT_ID;
-      case 16:
-        return CHAREINK_16_FONT_ID;
-      case 18:
-        return CHAREINK_18_FONT_ID;
-      default:
-        return CHAREINK_14_FONT_ID;
-    }
-  }
-
   for (const auto& entry : g_sdFonts) {
-    if (entry.family == family && entry.size == size) {
+    if (!entry.isLanguage && entry.family == family && entry.size == size) {
       return entry.id;
     }
   }
 
-  return CHAREINK_14_FONT_ID;
+  return MONTSERRAT_14_FONT_ID;
 }
 
 int FontManager::getMaxFontId(int currentFontId) {
   if (currentFontId >= MONTSERRAT_8_FONT_ID && currentFontId <= MONTSERRAT_18_FONT_ID) {
     return MONTSERRAT_18_FONT_ID;
-  }
-  if (currentFontId >= CHAREINK_10_FONT_ID && currentFontId <= CHAREINK_18_FONT_ID) {
-    return CHAREINK_18_FONT_ID;
   }
   for (const auto& entry : g_sdFonts) {
     if (entry.id == currentFontId) {
@@ -950,7 +999,7 @@ uint32_t FontManager::readerFontFamilyOptionCount() {
   if (!g_scannedForFonts) {
     (void)scanSDFonts("/fonts", false);
   }
-  return 2u + static_cast<uint32_t>(g_sdFamiliesSorted.size());
+  return 1u + static_cast<uint32_t>(g_sdFamiliesSorted.size());
 }
 
 std::vector<std::string> FontManager::readerFontFamilyEnumLabels() {
@@ -958,32 +1007,28 @@ std::vector<std::string> FontManager::readerFontFamilyEnumLabels() {
     (void)scanSDFonts("/fonts", false);
   }
   std::vector<std::string> out;
-  out.push_back("ChareInk");
   out.push_back("Montserrat");
   out.insert(out.end(), g_sdFamiliesSorted.begin(), g_sdFamiliesSorted.end());
   return out;
 }
 
 std::string FontManager::readerFontFamilyLabel(uint8_t slot) {
-  if (!g_scannedForFonts && slot >= 2u) {
+  if (!g_scannedForFonts && slot >= 1u) {
     (void)scanSDFonts("/fonts", false);
   }
   if (slot == 0) {
-    return "ChareInk";
-  }
-  if (slot == 1) {
     return "Montserrat";
   }
-  const size_t idx = static_cast<size_t>(slot) - 2u;
+  const size_t idx = static_cast<size_t>(slot) - 1u;
   if (idx < g_sdFamiliesSorted.size()) {
     return g_sdFamiliesSorted[idx];
   }
-  return "ChareInk";
+  return "Montserrat";
 }
 
 void FontManager::clampReaderFontFamilySlot(uint8_t& slot) {
   if (!g_scannedForFonts) {
-    if (static_cast<uint32_t>(slot) < 2u) {
+    if (static_cast<uint32_t>(slot) < 1u) {
       return;
     }
     return;
@@ -994,8 +1039,49 @@ void FontManager::clampReaderFontFamilySlot(uint8_t& slot) {
   }
 }
 
+bool FontManager::isOutlineFontFamily(const std::string& family) {
+  if (!g_scannedForFonts) {
+    (void)scanSDFonts("/fonts", false);
+  }
+  for (const auto& entry : g_sdFonts) {
+    if (entry.family != family) {
+      continue;
+    }
+    if (isOutlineFontFile(entry.regularPath) || isOutlineFontFile(entry.boldPath) ||
+        isOutlineFontFile(entry.italicPath) || isOutlineFontFile(entry.boldItalicPath)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool FontManager::isOutlineFontFamilySlot(const uint8_t slot) {
+  if (slot == 0) {
+    return false;
+  }
+  return isOutlineFontFamily(readerFontFamilyLabel(slot));
+}
+
+int FontManager::pointSizeForLegacyReaderSize(const uint8_t sizeIndex) {
+  const size_t index = std::min<size_t>(sizeIndex, sizeof(kLegacyReaderPointSizes) / sizeof(kLegacyReaderPointSizes[0]) - 1);
+  return kLegacyReaderPointSizes[index];
+}
+
+uint8_t FontManager::legacyReaderSizeForPointSize(const int pointSize) {
+  int bestIndex = 0;
+  int bestDistance = INT_MAX;
+  for (size_t i = 0; i < sizeof(kLegacyReaderPointSizes) / sizeof(kLegacyReaderPointSizes[0]); ++i) {
+    const int distance = std::abs(pointSize - kLegacyReaderPointSizes[i]);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestIndex = static_cast<int>(i);
+    }
+  }
+  return static_cast<uint8_t>(bestIndex);
+}
+
 int FontManager::getFontIdNearestPointSize(const std::string& family, int preferredPt) {
-  if (!g_scannedForFonts && family != "ChareInk" && family != "Montserrat") {
+  if (!g_scannedForFonts && family != "Montserrat") {
     (void)scanSDFonts("/fonts", false);
   }
   int smallestGeId = -1;
@@ -1021,7 +1107,7 @@ int FontManager::getFontIdNearestPointSize(const std::string& family, int prefer
     }
   }
   if (!any) {
-    return CHAREINK_14_FONT_ID;
+    return MONTSERRAT_14_FONT_ID;
   }
   if (smallestGeId >= 0) {
     return smallestGeId;
@@ -1029,5 +1115,46 @@ int FontManager::getFontIdNearestPointSize(const std::string& family, int prefer
   if (largestLtId >= 0) {
     return largestLtId;
   }
-  return CHAREINK_14_FONT_ID;
+  return MONTSERRAT_14_FONT_ID;
+}
+
+int FontManager::getFontIdAtOrBelowPointSize(const std::string& family, const int preferredPt) {
+  if (family == "Montserrat") {
+    static constexpr int kSizes[] = {8, 10, 12, 14, 16, 18};
+    static constexpr int kIds[] = {MONTSERRAT_8_FONT_ID, MONTSERRAT_10_FONT_ID, MONTSERRAT_12_FONT_ID,
+                                    MONTSERRAT_14_FONT_ID, MONTSERRAT_16_FONT_ID, MONTSERRAT_18_FONT_ID};
+    int best = 0;
+    for (size_t i = 0; i < sizeof(kSizes) / sizeof(kSizes[0]); ++i) {
+      if (kSizes[i] <= preferredPt && kSizes[i] >= kSizes[best]) {
+        best = static_cast<int>(i);
+      }
+    }
+    return kIds[best];
+  }
+
+  if (!g_scannedForFonts) {
+    (void)scanSDFonts("/fonts", false);
+  }
+
+  int bestId = -1;
+  int bestSize = -1;
+  for (const auto& entry : g_sdFonts) {
+    if (entry.family == family && entry.size <= preferredPt && entry.size > bestSize) {
+      bestSize = entry.size;
+      bestId = entry.id;
+    }
+  }
+  return bestId >= 0 ? bestId : getFontIdNearestPointSize(family, preferredPt);
+}
+
+int FontManager::getDropCapFontId(const int bodyFontId, const uint8_t lineCount) {
+  const FontInfo* bodyInfo = getFontInfo(bodyFontId);
+  if (!bodyInfo || bodyInfo->isBuiltin) {
+    return getMaxFontId(bodyFontId);
+  }
+
+  const int lines = std::max(1, static_cast<int>(lineCount));
+  const int targetPt = std::clamp(bodyInfo->size * lines, static_cast<int>(OUTLINE_FONT_MIN_POINT_SIZE),
+                                  static_cast<int>(OUTLINE_FONT_MAX_POINT_SIZE));
+  return getFontIdNearestPointSize(bodyInfo->family, targetPt);
 }

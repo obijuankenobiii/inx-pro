@@ -58,9 +58,8 @@ const char* statusBarItemName(const StatusBarItem item) {
 }
 
 constexpr int tabSize = 40;
-constexpr int tabVerticalPadding = FREEINK_DEVICE_X4PRO ? 20 : 14;
-constexpr int tabPadding = tabVerticalPadding;
-constexpr int tabHeight = tabSize + tabPadding * 2;
+constexpr int inBookTabVerticalPadding = 20;
+constexpr int embeddedTabVerticalPadding = 14;
 constexpr int selectorRows = 5;
 constexpr int selectorRowHeight = LIST_ITEM_HEIGHT;
 constexpr int standaloneRows = 5;
@@ -97,7 +96,13 @@ void freeSelectorFrame(uint8_t* frame) {
 #endif
 }
 
-int drawerListTop() { return tabHeight + (FREEINK_DEVICE_X4PRO ? 5 : 1); }
+int tabVerticalPadding(const bool embedded) {
+  return embedded ? embeddedTabVerticalPadding : inBookTabVerticalPadding;
+}
+
+int drawerTabHeight(const bool embedded) { return tabSize + tabVerticalPadding(embedded) * 2; }
+
+int drawerListTop(const bool embedded) { return drawerTabHeight(embedded) + (FREEINK_DEVICE_X4PRO ? 5 : 1); }
 constexpr int kDrawerListBottomPadding = 12;
 
 struct SelectorBounds {
@@ -182,6 +187,35 @@ void drawJustificationSegments(const GfxRenderer& renderer, int left, int right,
   }
 }
 
+const char* fontSizeLabel(const BookSettings& settings) {
+  static char label[16];
+  if (FontManager::isOutlineFontFamilySlot(settings.fontFamily)) {
+    int pointSize = settings.fontSize;
+    if (pointSize < FontManager::OUTLINE_FONT_MIN_POINT_SIZE ||
+        pointSize > FontManager::OUTLINE_FONT_MAX_POINT_SIZE) {
+      pointSize = FontManager::pointSizeForLegacyReaderSize(settings.fontSize);
+    }
+    std::snprintf(label, sizeof(label), "%d pt", pointSize);
+    return label;
+  }
+
+  static constexpr const char* legacySizes[] = {"Extra Small", "Small", "Medium", "Large", "X Large"};
+  const int index = settings.fontSize < SystemSetting::FONT_SIZE_COUNT ? settings.fontSize : SystemSetting::SMALL;
+  return legacySizes[index];
+}
+
+void setFontFamily(BookSettings& settings, const uint8_t family) {
+  const bool wasOutline = FontManager::isOutlineFontFamilySlot(settings.fontFamily);
+  const bool isOutline = FontManager::isOutlineFontFamilySlot(family);
+  settings.fontFamily = family;
+
+  if (isOutline && !wasOutline) {
+    settings.fontSize = static_cast<uint8_t>(FontManager::pointSizeForLegacyReaderSize(settings.fontSize));
+  } else if (!isOutline && wasOutline) {
+    settings.fontSize = FontManager::legacyReaderSizeForPointSize(settings.fontSize);
+  }
+}
+
 /** List selection: portrait uses Up/Down only so Left/Right stay for value edits (matches pre-drawer UX). */
 bool readSettingsListPrev(const MappedInputManager& in, const GfxRenderer& r) {
   if (isLandscapeReader(r)) {
@@ -250,20 +284,20 @@ void SettingsDrawer::setEmbeddedRegion(int x, int y, int w, int h) {
   drawerY = y;
   drawerWidth = w;
   drawerHeight = h;
-  itemsPerPage = std::max(1, (drawerHeight - drawerListTop() - kDrawerListBottomPadding) / itemHeight);
+  itemsPerPage = std::max(1, (drawerHeight - drawerListTop(embedded_) - kDrawerListBottomPadding) / itemHeight);
   setupMenu();
 }
 
 int SettingsDrawer::snapEmbeddedHeight(int maxHeight) const {
-  const int usable = maxHeight - drawerListTop() - kDrawerListBottomPadding;
+  const int usable = maxHeight - drawerListTop(embedded_) - kDrawerListBottomPadding;
   const int rows = std::min(5, std::max(1, usable / LIST_ITEM_HEIGHT));
-  return drawerListTop() + rows * LIST_ITEM_HEIGHT + kDrawerListBottomPadding;
+  return drawerListTop(embedded_) + rows * LIST_ITEM_HEIGHT + kDrawerListBottomPadding;
 }
 
 void SettingsDrawer::syncLayoutFromRenderer() {
   itemHeight = LIST_ITEM_HEIGHT;
   if (embedded_) {
-    itemsPerPage = std::max(1, (drawerHeight - drawerListTop() - kDrawerListBottomPadding) / itemHeight);
+    itemsPerPage = std::max(1, (drawerHeight - drawerListTop(embedded_) - kDrawerListBottomPadding) / itemHeight);
     return;
   }
   const int sw = renderer.getScreenWidth();
@@ -272,9 +306,9 @@ void SettingsDrawer::syncLayoutFromRenderer() {
   drawerWidth = sw;
   drawerY = 0;
 
-  const int maxRows = std::max(1, (sh - drawerListTop()) / itemHeight);
+  const int maxRows = std::max(1, (sh - drawerListTop(embedded_)) / itemHeight);
   itemsPerPage = std::min(standaloneRows, maxRows);
-  drawerHeight = drawerListTop() + itemsPerPage * itemHeight + 1;
+  drawerHeight = drawerListTop(embedded_) + itemsPerPage * itemHeight + 1;
 }
 
 /**
@@ -305,7 +339,7 @@ void SettingsDrawer::setupMenu() {
       if (newVal >= n) {
         newVal = 0;
       }
-      s.fontFamily = static_cast<uint8_t>(newVal);
+      setFontFamily(s, static_cast<uint8_t>(newVal));
       FontManager::clampReaderFontFamilySlot(s.fontFamily);
       s.markCustomSettings();
     };
@@ -315,18 +349,23 @@ void SettingsDrawer::setupMenu() {
     fontEntry.item = MenuItem::FontSize;
     fontEntry.group = GroupType::FONT;
     fontEntry.name = "Size";
-    fontEntry.getValueText = [](const BookSettings& s) -> const char* {
-      static const char* sizes[] = {"Extra Small", "Small", "Medium", "Large", "X Large"};
-      int index = s.fontSize;
-      if (index > 4) index = 1;
-      return sizes[index];
-    };
+    fontEntry.getValueText = [](const BookSettings& s) -> const char* { return fontSizeLabel(s); };
     fontEntry.change = [](BookSettings& s, int delta) {
-      int newVal = s.fontSize + delta;
-      if (newVal >= 0 && newVal <= 4) {
-        s.fontSize = newVal;
-        s.markCustomSettings();
+      if (FontManager::isOutlineFontFamilySlot(s.fontFamily)) {
+        int pointSize = s.fontSize;
+        if (pointSize < FontManager::OUTLINE_FONT_MIN_POINT_SIZE ||
+            pointSize > FontManager::OUTLINE_FONT_MAX_POINT_SIZE) {
+          pointSize = FontManager::pointSizeForLegacyReaderSize(s.fontSize);
+        }
+        pointSize = std::max<int>(FontManager::OUTLINE_FONT_MIN_POINT_SIZE,
+                                  std::min<int>(FontManager::OUTLINE_FONT_MAX_POINT_SIZE, pointSize + delta));
+        s.fontSize = static_cast<uint8_t>(pointSize);
+      } else {
+        const int newVal = static_cast<int>(s.fontSize) + delta;
+        if (newVal < 0 || newVal >= SystemSetting::FONT_SIZE_COUNT) return;
+        s.fontSize = static_cast<uint8_t>(newVal);
       }
+      s.markCustomSettings();
     };
     menuItems.push_back(fontEntry);
 
@@ -488,6 +527,24 @@ void SettingsDrawer::setupMenu() {
       }
     };
     menuItems.push_back(orientationEntry);
+
+    MenuEntry pageAutoTurnEntry;
+    pageAutoTurnEntry.item = MenuItem::PageAutoTurn;
+    pageAutoTurnEntry.group = GroupType::CONTROLS;
+    pageAutoTurnEntry.name = "Page Auto Turn";
+    pageAutoTurnEntry.getValueText = [](const BookSettings& s) -> const char* {
+      static char buf[12];
+      if (s.pageAutoTurnSeconds == 0) return "Off";
+      snprintf(buf, sizeof(buf), "%u sec", static_cast<unsigned>(s.pageAutoTurnSeconds));
+      return buf;
+    };
+    pageAutoTurnEntry.change = [](BookSettings& s, const int delta) {
+      const int current = s.pageAutoTurnSeconds / 10;
+      const int next = std::max(0, std::min(18, current + delta));
+      s.pageAutoTurnSeconds = static_cast<uint8_t>(next * 10);
+      s.markCustomSettings();
+    };
+    menuItems.push_back(pageAutoTurnEntry);
 
     MenuEntry bionicEntry;
     bionicEntry.item = MenuItem::BionicReading;
@@ -722,6 +779,8 @@ void SettingsDrawer::drawTabs() {
   const int y = drawerY + 1;
   const int width = std::max(1, drawerWidth / count);
   const int iconOffset = embedded_ ? 0 : (FREEINK_DEVICE_X4PRO ? 4 : 0);
+  const int tabPadding = tabVerticalPadding(embedded_);
+  const int tabHeight = drawerTabHeight(embedded_);
   for (int i = 0; i < count; ++i) {
     const int x = drawerX + i * width;
     const int w = i == count - 1 ? drawerX + drawerWidth - x : width;
@@ -946,7 +1005,7 @@ void SettingsDrawer::drawMenuItemRow(int visibleRow, int menuIndex) {
     return;
   }
 
-  const int startY = drawerY + drawerListTop();
+  const int startY = drawerY + drawerListTop(embedded_);
   const int itemY = startY + (visibleRow * itemHeight);
   const auto& entry = menuItems[static_cast<size_t>(menuIndex)];
   const bool isSelected = false;
@@ -1040,8 +1099,12 @@ void SettingsDrawer::drawMenuItemRow(int visibleRow, int menuIndex) {
 bool SettingsDrawer::isDropdownItem(const MenuItem item) const {
   switch (item) {
     case MenuItem::FontFamily:
+      return true;
+    case MenuItem::FontSize:
+      return FontManager::isOutlineFontFamilySlot(settings.fontFamily);
     case MenuItem::PresetPicker:
     case MenuItem::ReadingOrientation:
+    case MenuItem::PageAutoTurn:
     case MenuItem::ReadingGuideLines:
     case MenuItem::StatusBarLeft:
     case MenuItem::StatusBarMiddle:
@@ -1071,6 +1134,12 @@ void SettingsDrawer::openSelector(const int menuIndex) {
   if (item == MenuItem::FontFamily) {
     selectorOptions_ = FontManager::readerFontFamilyEnumLabels();
     current = settings.fontFamily;
+  } else if (item == MenuItem::FontSize) {
+    for (int pointSize = FontManager::OUTLINE_FONT_MIN_POINT_SIZE;
+         pointSize <= FontManager::OUTLINE_FONT_MAX_POINT_SIZE; ++pointSize) {
+      selectorOptions_.emplace_back(std::to_string(pointSize) + " pt");
+    }
+    current = static_cast<int>(settings.fontSize) - FontManager::OUTLINE_FONT_MIN_POINT_SIZE;
   } else if (item == MenuItem::PresetPicker) {
     const int count = READER_PRESETS.count();
     selectorOptions_.reserve(static_cast<size_t>(count));
@@ -1081,6 +1150,12 @@ void SettingsDrawer::openSelector(const int menuIndex) {
   } else if (item == MenuItem::ReadingOrientation) {
     selectorOptions_ = {"Portrait", "Landscape CW", "Inverted", "Landscape CCW"};
     current = settings.orientation;
+  } else if (item == MenuItem::PageAutoTurn) {
+    selectorOptions_.push_back("Off");
+    for (int seconds = 10; seconds <= 180; seconds += 10) {
+      selectorOptions_.push_back(std::to_string(seconds) + " sec");
+    }
+    current = settings.pageAutoTurnSeconds / 10;
   } else if (item == MenuItem::ReadingGuideLines) {
     selectorOptions_ = {"Off", "Grid", "Notebook"};
     current = settings.readingGuideLinesEnabled;
@@ -1110,7 +1185,7 @@ void SettingsDrawer::openSelector(const int menuIndex) {
   selectorGroup_ = selectedGroup_;
   const int requestedRows = std::min(selectorRows, static_cast<int>(selectorOptions_.size()));
   const int selectedRow = selectorMenuIndex_ - scrollOffset;
-  const int fieldY = drawerY + drawerListTop() + selectedRow * itemHeight;
+  const int fieldY = drawerY + drawerListTop(embedded_) + selectedRow * itemHeight;
   const SelectorBounds box =
       selectorBounds(drawerX, drawerWidth, fieldY, itemHeight, renderer.getScreenHeight(), requestedRows,
                      selectorOpensUpward());
@@ -1169,8 +1244,12 @@ void SettingsDrawer::commitSelectorSelection() {
 
   const MenuItem item = menuItems[static_cast<size_t>(selectorMenuIndex_)].item;
   if (item == MenuItem::FontFamily) {
-    settings.fontFamily = static_cast<uint8_t>(selectorSelected_);
+    setFontFamily(settings, static_cast<uint8_t>(selectorSelected_));
     FontManager::clampReaderFontFamilySlot(settings.fontFamily);
+    settings.markCustomSettings();
+    settingsUpdated = true;
+  } else if (item == MenuItem::FontSize) {
+    settings.fontSize = static_cast<uint8_t>(FontManager::OUTLINE_FONT_MIN_POINT_SIZE + selectorSelected_);
     settings.markCustomSettings();
     settingsUpdated = true;
   } else if (item == MenuItem::PresetPicker) {
@@ -1179,6 +1258,9 @@ void SettingsDrawer::commitSelectorSelection() {
     setupMenu();
   } else if (item == MenuItem::ReadingOrientation) {
     settings.orientation = static_cast<uint8_t>(selectorSelected_);
+    settings.markCustomSettings();
+  } else if (item == MenuItem::PageAutoTurn) {
+    settings.pageAutoTurnSeconds = static_cast<uint8_t>(selectorSelected_ * 10);
     settings.markCustomSettings();
   } else if (item == MenuItem::ReadingGuideLines) {
     settings.readingGuideLinesEnabled = static_cast<uint8_t>(selectorSelected_);
@@ -1212,7 +1294,7 @@ void SettingsDrawer::drawSelectorPopup() {
 
   const int requestedRows = std::min(selectorRows, static_cast<int>(selectorOptions_.size()));
   const int selectedRow = selectorMenuIndex_ - scrollOffset;
-  const int fieldY = drawerY + drawerListTop() + selectedRow * itemHeight;
+  const int fieldY = drawerY + drawerListTop(embedded_) + selectedRow * itemHeight;
   const SelectorBounds box =
       selectorBounds(drawerX, drawerWidth, fieldY, itemHeight, renderer.getScreenHeight(), requestedRows,
                      selectorOpensUpward());
@@ -1266,7 +1348,7 @@ bool SettingsDrawer::handleSelectorInput(MappedInputManager& input) {
   const int screenH = renderer.getScreenHeight();
   const int requestedRows = std::min(selectorRows, static_cast<int>(selectorOptions_.size()));
   const int selectedRow = selectorMenuIndex_ - scrollOffset;
-  const int fieldY = drawerY + drawerListTop() + selectedRow * itemHeight;
+  const int fieldY = drawerY + drawerListTop(embedded_) + selectedRow * itemHeight;
   const SelectorBounds box =
       selectorBounds(drawerX, drawerWidth, fieldY, itemHeight, screenH, requestedRows, selectorOpensUpward());
 
@@ -1299,7 +1381,7 @@ bool SettingsDrawer::handleSelectorInput(MappedInputManager& input) {
       }
     }
 
-    const int listTop = drawerY + drawerListTop();
+    const int listTop = drawerY + drawerListTop(embedded_);
     if (tapX >= drawerX && tapX < drawerX + drawerWidth && tapY >= drawerY && tapY < listTop) {
       static constexpr GroupType tabs[] = {
           GroupType::FONT,
@@ -1350,7 +1432,7 @@ void SettingsDrawer::drawScrollIndicator() {
   int totalItems = static_cast<int>(menuItems.size());
   if (totalItems <= itemsPerPage) return;
 
-  int startY = drawerY + drawerListTop();
+  int startY = drawerY + drawerListTop(embedded_);
   int listHeight = itemsPerPage * itemHeight;
   int thumbH = (itemsPerPage * listHeight) / totalItems;
   int thumbY = startY + (scrollOffset * listHeight) / totalItems;
@@ -1359,7 +1441,7 @@ void SettingsDrawer::drawScrollIndicator() {
 }
 
 void SettingsDrawer::clearScrollIndicatorArea() {
-  const int startY = drawerY + drawerListTop();
+  const int startY = drawerY + drawerListTop(embedded_);
   const int listHeight = itemsPerPage * itemHeight;
   renderer.rectangle.fill(drawerX + drawerWidth - 5, startY, 4, listHeight, false);
 }
@@ -1464,7 +1546,7 @@ void SettingsDrawer::handleInput(MappedInputManager& input) {
         return;
       }
 
-      const int listStartY = drawerY + drawerListTop();
+      const int listStartY = drawerY + drawerListTop(embedded_);
       if (tapY >= drawerY && tapY < listStartY) {
         static constexpr GroupType tabs[] = {
             GroupType::FONT,

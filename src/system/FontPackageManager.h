@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-/** Lists and installs compiled SD-font packages hosted in the inx-font repository. */
+/** Lists and installs TTF/OTF font packages hosted in the inx-store repository. */
 class FontPackageManager {
  public:
   enum class Category : uint8_t {
@@ -16,7 +16,6 @@ class FontPackageManager {
 
   struct Package {
     std::string name;
-    std::string variant;
     std::string url;
     std::string installFamily;
     size_t size = 0;
@@ -25,7 +24,8 @@ class FontPackageManager {
 
   static bool fetchAvailable(std::vector<Package>& packages, std::string& error);
   using ProgressCallback = std::function<void(size_t downloaded, size_t total)>;
-  static bool install(const Package& package, std::string& error, ProgressCallback progress = nullptr);
+  static bool install(const Package& package, std::string& error, ProgressCallback progress = nullptr,
+                      bool rescanFonts = true);
   static bool remove(const Package& package, std::string& error);
   static bool isInstalled(const Package& package);
 

@@ -5,24 +5,23 @@
 
 #include "Home.h"
 
-#include "HomeSubPage.h"
-
 #include <GfxRenderer.h>
 #include <SDCardManager.h>
+#include <esp_task_wdt.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 #include <algorithm>
 #include <functional>
 #include <string>
 #include <vector>
 
-#include <esp_task_wdt.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
-
+#include "HomeSubPage.h"
 #include "components/global/Button.h"
 #include "components/global/PopUp.h"
 #include "components/global/Sidebar.h"
 #include "images/Hamburger.h"
+#include "images/Store.h"
 #include "state/BookState.h"
 #include "state/RecentBooks.h"
 #include "system/Fonts.h"
@@ -32,12 +31,26 @@ extern void openReaderFromCallback(const std::string& path, std::function<void()
 extern void onGoToHome();
 extern void onGoToLibrary(const std::string& path);
 extern void openHomeSubPage(HomeSubPage::Section section);
+extern void openHomeDescription(const std::string& bookPath, const std::string& cachePath);
 extern void onGoToStatistics();
 extern void onGoToHeatmapReport(HomeTheme::HeatmapView view);
+extern void onGoToStore();
 
 namespace {
 
 constexpr unsigned long longPressMs = 500;
+constexpr int kStoreIconSize = 40;
+constexpr int kStoreBottomMargin = 20;
+
+int storeIconY(const GfxRenderer& renderer) { return renderer.getScreenHeight() - kStoreBottomMargin - kStoreIconSize; }
+
+bool storeIconHit(const GfxRenderer& renderer, const int x, const int y) {
+  const int iconY = storeIconY(renderer);
+  constexpr int rowSideMargin = 16;
+  constexpr int rowVerticalPadding = 10;
+  return x >= rowSideMargin && x < renderer.getScreenWidth() / 2 + rowSideMargin && y >= iconY - rowVerticalPadding &&
+         y < iconY + kStoreIconSize + rowVerticalPadding;
+}
 
 std::string cachePath(const RecentBook& book) {
   if (!book.cachePath.empty()) return book.cachePath;
@@ -70,7 +83,7 @@ bool removeTree(const std::string& path, int& removed) {
   return SdMan.removeDir(path.c_str());
 }
 
-}
+}  // namespace
 
 Home::Home(GfxRenderer& renderer, MappedInputManager& mappedInput)
     : Page("Home", renderer, mappedInput), widgetLayout(renderer), shortcutList(renderer) {}
@@ -103,8 +116,7 @@ void Home::title() const {
   renderer.bitmap.icon(Hamburger, navigation::Menu::leftMargin, navigation::Menu::topPadding,
                        navigation::Menu::iconSize, navigation::Menu::iconSize);
   const int font = MONTSERRAT_16_FONT_ID;
-  const int textY = navigation::Menu::topPadding +
-                    (navigation::Menu::iconSize - renderer.text.getLineHeight(font)) / 2;
+  const int textY = navigation::Menu::topPadding + (navigation::Menu::iconSize - renderer.text.getLineHeight(font)) / 2;
   renderer.text.render(font, navigation::Menu::leftMargin + navigation::Menu::iconSize + 12, textY, "Home", true,
                        EpdFontFamily::BOLD);
 }
@@ -184,8 +196,7 @@ bool Home::handleSwipe() {
 
   const int swipeX = static_cast<int>(swipeNx * renderer.getScreenWidth());
   const int swipeY = static_cast<int>(swipeNy * renderer.getScreenHeight());
-  const HomeWidgetLayout::SwipeTarget target =
-      widgetLayout.horizontalSwipeTarget(HomeTheme::active(), swipeX, swipeY);
+  const HomeWidgetLayout::SwipeTarget target = widgetLayout.horizontalSwipeTarget(HomeTheme::active(), swipeX, swipeY);
   if (target == HomeWidgetLayout::SwipeTarget::Carousel) {
     advanceCarousel(swipeLeft ? 1 : -1);
     return true;
@@ -202,7 +213,7 @@ bool Home::handleSwipe() {
 }
 
 void Home::advanceCarousel(const int delta) {
-  const int bookCount = RECENT_BOOKS.getCount();
+  const int bookCount = widgetLayout.carouselBookCount(HomeTheme::active(), RECENT_BOOKS.getCount());
   if (bookCount <= 0) {
     carouselIndex = 0;
     return;
@@ -258,6 +269,10 @@ bool Home::handleTap() {
     if (!path.empty()) openReaderFromCallback(path, [] { onGoToHome(); });
     return true;
   }
+  if (favoriteHit.type == HomeWidgetLayout::HitType::Library) {
+    onGoToLibrary(widgetLayout.libraryFolder(HomeTheme::active(), favoriteHit.index));
+    return true;
+  }
   if (bookCount > 0) {
     const HomeWidgetLayout::HitResult hit =
         widgetLayout.hitTest(HomeTheme::active(), carouselIndex, favoriteIndex, bookCount, tapX, tapY);
@@ -302,6 +317,10 @@ bool Home::handleTap() {
     onGoToLibrary("/");
     return true;
   }
+  if (hit.type == HomeWidgetLayout::HitType::Library) {
+    onGoToLibrary(widgetLayout.libraryFolder(HomeTheme::active(), hit.index));
+    return true;
+  }
   return false;
 }
 
@@ -320,9 +339,15 @@ bool Home::handleShortcutDrawerInput() {
   const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
   const int drawerWidth = Sidebar::width(renderer);
   const int listTop = Sidebar::listTop();
+  if (tapX >= 0 && tapX < drawerWidth && storeIconHit(renderer, tapX, tapY)) {
+    shortcutDrawerOpen = false;
+    updateRequired = true;
+    onGoToStore();
+    return true;
+  }
   if (tapX >= 0 && tapX < drawerWidth && tapY >= listTop) {
-    const int item = shortcutList.hitTest(tapX, tapY, 0, listTop, drawerWidth,
-                                          renderer.getScreenHeight() - listTop, Sidebar::rowHeight);
+    const int item = shortcutList.hitTest(tapX, tapY, 0, listTop, drawerWidth, renderer.getScreenHeight() - listTop,
+                                          Sidebar::rowHeight);
     if (item >= 0) {
       shortcutDrawerOpen = false;
       updateRequired = true;
@@ -343,6 +368,11 @@ void Home::drawShortcutDrawer() const {
   const int listTop = Sidebar::listTop();
   Sidebar::renderFrame(renderer, "Shortcuts");
   shortcutList.render(0, listTop, drawerWidth, renderer.getScreenHeight() - listTop, Sidebar::rowHeight);
+  const int storeY = storeIconY(renderer);
+  renderer.line.render(20, storeY - 14, drawerWidth - 20, storeY - 14, true, LineRender::Style::Dotted);
+  const int storeLabelY = storeY + (kStoreIconSize - renderer.text.getLineHeight(systemFontId())) / 2;
+  renderer.bitmap.icon(Store, 24, storeY, kStoreIconSize, kStoreIconSize);
+  renderer.text.render(systemFontId(), 80, storeLabelY, "Store", true);
 }
 
 bool Home::handleShortcut(const int item) {
@@ -368,10 +398,12 @@ bool Home::handleShortcut(const int item) {
 }
 
 void Home::popup() const {
-  const std::vector<std::string> items = heatmapPopupOpen
-                                             ? std::vector<std::string>{"View Report"}
-                                             : (favoritePopupOpen ? std::vector<std::string>{"Remove favorite"}
-                                                                   : std::vector<std::string>{"Remove Recent", "Delete cache"});
+  const std::vector<std::string> items =
+      heatmapPopupOpen
+          ? std::vector<std::string>{"View Report"}
+          : (favoritePopupOpen
+                 ? std::vector<std::string>{"Remove favorite"}
+                 : std::vector<std::string>{"View description", "Mark as completed", "Remove Recent", "Delete cache"});
   const PopUpBounds box = PopUp::bounds(renderer, static_cast<int>(items.size()));
   PopUp::background(renderer, box);
   PopUp::title(renderer, box, heatmapPopupOpen ? "Heatmap" : (favoritePopupOpen ? "Favorite" : "Book"));
@@ -395,7 +427,7 @@ bool Home::popupInput() {
   float tapY = 0.0f;
   if (!mappedInput.wasTouchTapInScreen(renderer, tapX, tapY)) return false;
 
-  const PopUpBounds box = PopUp::bounds(renderer, heatmapPopupOpen || favoritePopupOpen ? 1 : 2);
+  const PopUpBounds box = PopUp::bounds(renderer, heatmapPopupOpen || favoritePopupOpen ? 1 : 4);
   const int x = static_cast<int>(tapX * renderer.getScreenWidth());
   const int y = static_cast<int>(tapY * renderer.getScreenHeight());
   if (x < box.x || x >= box.x + box.width || y < box.y || y >= box.y + box.height) {
@@ -424,11 +456,34 @@ bool Home::popupInput() {
       updateRequired = true;
     }
   } else if (item == 0) {
-    removeRecent();
+    const std::vector<RecentBook>& books = RECENT_BOOKS.getBooks();
+    if (popupBook >= 0 && popupBook < static_cast<int>(books.size())) {
+      const RecentBook& book = books[static_cast<size_t>(popupBook)];
+      const std::string bookPath = book.path;
+      const std::string bookCachePath = cachePath(book);
+      popupBook = -1;
+      updateRequired = true;
+      openHomeDescription(bookPath, bookCachePath);
+    }
   } else if (item == 1) {
+    markCompleted();
+  } else if (item == 2) {
+    removeRecent();
+  } else if (item == 3) {
     deleteCache();
   }
   return true;
+}
+
+void Home::markCompleted() {
+  const std::vector<RecentBook>& books = RECENT_BOOKS.getBooks();
+  if (popupBook >= 0 && popupBook < static_cast<int>(books.size())) {
+    const RecentBook& book = books[static_cast<size_t>(popupBook)];
+    BOOK_STATE.setFinished(book.path, true, book.title);
+    RECENT_BOOKS.updateProgress(book.path, 1.0f);
+  }
+  popupBook = -1;
+  updateRequired = true;
 }
 
 void Home::removeRecent() {
@@ -437,7 +492,9 @@ void Home::removeRecent() {
     RECENT_BOOKS.removeBook(books[static_cast<size_t>(popupBook)].path);
   }
   popupBook = -1;
-  if (carouselIndex >= RECENT_BOOKS.getCount()) carouselIndex = 0;
+  if (carouselIndex >= widgetLayout.carouselBookCount(HomeTheme::active(), RECENT_BOOKS.getCount())) {
+    carouselIndex = 0;
+  }
   updateRequired = true;
 }
 

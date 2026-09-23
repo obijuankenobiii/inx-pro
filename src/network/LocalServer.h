@@ -61,34 +61,44 @@ class LocalServer {
   void onWebSocketEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t length);
   static void wsEventCallback(uint8_t num, WStype_t type, uint8_t* payload, size_t length);
 
-  void scanFiles(const char* path, const std::function<void(FileInfo)>& callback) const;
+  void scanFiles(const char* path, const std::function<void(FileInfo)>& callback, bool includeHidden = false) const;
   String formatFileSize(size_t bytes) const;
   bool isEpubFile(const String& filename) const;
 
   void handleRoot() const;
+  void handlePluginsPage() const;
   void handleFontManagerPage() const;
-  void handleTagsPage() const;
+  void handleLanguageManagerPage() const;
   void handleInxFontPackJs() const;
   void handleJsZipMinJs() const;
   void handleQrCreatorLogoJs() const;
   void handleEpubPageJs() const;
   void handleFilesPageJs() const;
+  void handlePluginPageJs() const;
+  void handlePluginAsset() const;
   void handleNotFound() const;
   void handleStatus() const;
+  void handleRecentBooksData() const;
+  void handleRecentBookDelete() const;
+  void handleDashboardStats() const;
   void handleDeviceIdentityGet() const;
   void handleDeviceIdentityPost() const;
   void handleDeviceIdentityPhoto() const;
   void handleDeviceIdentityCardImage() const;
   void handleFileList() const;
   void handleEpubPage() const;
-  void handleExportPage() const;
+  void handlePluginPage() const;
   void handleFileListData() const;
-  void handleExportNotesData() const;
+  void handleLibraryIndexData() const;
+  void handleLibraryIndexRefresh() const;
+  void handleLibraryIndexStatus() const;
+  void handlePluginApi() const;
   void handleDownload() const;
   void handleUpload() const;
   void handleUploadPost() const;
   void handleCreateFolder() const;
   void handleDelete() const;
+  void handleMove() const;
   void handleRename() const;
   void collectEpubRenames(const std::string& oldDirPath, const std::string& newDirPath,
                           std::vector<std::pair<std::string, std::string>>& out) const;
@@ -97,6 +107,10 @@ class LocalServer {
   void handleSettingsPage() const;
   void handleSettingsGet() const;
   void handleSettingsUpdate() const;
+  void handleLanguageGet() const;
+  void handleLanguagePackageGet() const;
+  void handleLanguageUpdate() const;
+  void handleLanguageDelete() const;
 
   void handleWifiGet() const;
   void handleWifiPost() const;
@@ -112,8 +126,4 @@ class LocalServer {
   void handleOpdsDelete() const;
 
   void handleFontsRescan() const;
-  void handleLibraryIndexRefresh() const;
-  void handleLibraryIndexStatus() const;
-  void handleBookTagsGet() const;
-  void handleBookTagsPost() const;
 };

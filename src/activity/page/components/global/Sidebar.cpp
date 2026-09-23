@@ -19,6 +19,12 @@ int Sidebar::width(const GfxRenderer& renderer) {
 
 int Sidebar::listTop() { return navigation::Menu::height + 34; }
 
+int Sidebar::visibleRows(const GfxRenderer& renderer) {
+  const int contentTop = listTop() + kTopPadding;
+  const int contentBottom = renderer.getScreenHeight() - kInnerPadding;
+  return std::max(1, (contentBottom - contentTop + kRowGap) / (rowHeight + kRowGap));
+}
+
 void Sidebar::renderFrame(const GfxRenderer& renderer, const char* title) {
   const int drawerWidth = width(renderer);
   renderer.rectangle.fill(0, 0, drawerWidth, renderer.getScreenHeight(), false);
@@ -28,17 +34,30 @@ void Sidebar::renderFrame(const GfxRenderer& renderer, const char* title) {
                        navigation::Menu::height + 14, true);
 }
 
-void Sidebar::renderTextList(const GfxRenderer& renderer, const char* const* labels, const size_t count) {
+void Sidebar::renderTextList(const GfxRenderer& renderer, const char* const* labels, const size_t count,
+                             int scrollOffset) {
   const int font = systemFontId();
   const int lineHeight = renderer.text.getLineHeight(font);
   const int x = kInnerPadding + 16;
-  for (size_t i = 0; i < count; ++i) {
-    const int y = listTop() + kTopPadding + static_cast<int>(i) * (rowHeight + kRowGap);
-    renderer.text.render(font, x, y + (rowHeight - lineHeight) / 2, labels[i] ? labels[i] : "", true);
+  const int rows = visibleRows(renderer);
+  scrollOffset = std::max(0, std::min(scrollOffset, std::max(0, static_cast<int>(count) - rows)));
+  for (int row = 0; row < rows && scrollOffset + row < static_cast<int>(count); ++row) {
+    const int y = listTop() + kTopPadding + row * (rowHeight + kRowGap);
+    const char* label = labels[scrollOffset + row];
+    renderer.text.render(font, x, y + (rowHeight - lineHeight) / 2, label ? label : "", true);
+  }
+  if (static_cast<int>(count) > rows) {
+    const int top = listTop() + kTopPadding;
+    const int height = rows * (rowHeight + kRowGap) - kRowGap;
+    const int thumbHeight = std::max(12, height * rows / static_cast<int>(count));
+    const int maxScroll = static_cast<int>(count) - rows;
+    const int thumbY = top + (height - thumbHeight) * scrollOffset / maxScroll;
+    renderer.rectangle.fill(width(renderer) - 4, thumbY, 2, thumbHeight, true);
   }
 }
 
-int Sidebar::hitTest(const GfxRenderer& renderer, const int tapX, const int tapY, const size_t count) {
+int Sidebar::hitTest(const GfxRenderer& renderer, const int tapX, const int tapY, const size_t count,
+                     const int scrollOffset) {
   const int drawerWidth = width(renderer);
   const int contentTop = listTop() + kTopPadding;
   const int contentBottom = renderer.getScreenHeight() - kInnerPadding;
@@ -47,7 +66,8 @@ int Sidebar::hitTest(const GfxRenderer& renderer, const int tapX, const int tapY
     return -1;
   }
   const int index = (tapY - contentTop) / (rowHeight + kRowGap);
-  if (index < 0 || static_cast<size_t>(index) >= count) return -1;
+  if (index < 0 || index >= visibleRows(renderer) ||
+      static_cast<size_t>(scrollOffset + index) >= count) return -1;
   const int rowY = contentTop + index * (rowHeight + kRowGap);
-  return tapY < rowY + rowHeight ? index : -1;
+  return tapY < rowY + rowHeight ? scrollOffset + index : -1;
 }

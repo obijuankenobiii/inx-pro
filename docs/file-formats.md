@@ -1,5 +1,23 @@
 # File Formats
 
+## Downloadable language packages
+
+Language packages are ZIP archives published by the `inx-store` repository. A
+package contains translation metadata and may include compiled font fallback
+files:
+
+```text
+lang/<langcode>/translate.yml
+lang/<langcode>/hyphenation.bin   # optional compiled Liang pattern trie
+fonts/lang/<langcode>/<font>.bin
+```
+
+The device extracts these entries to separate SD-card locations:
+`/system/lang/<langcode>/translate.yml` and `/fonts/lang/<langcode>/`. A
+translation-only package can update an existing language without replacing its
+fonts. The firmware requires one non-empty YAML file and limits the downloaded
+archive to 5 MB and extracted data to 16 MB.
+
 ## `book.bin`
 
 ### Version 3

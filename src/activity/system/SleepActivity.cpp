@@ -14,6 +14,7 @@
 #include <HalDisplay.h>
 #include <HalGPIO.h>
 #include <ImageRender.h>
+#include <PngRender.h>
 #include <SDCardManager.h>
 #include <Txt.h>
 #include <Xtc.h>
@@ -40,12 +41,13 @@
 #include "util/StringUtils.h"
 
 namespace {
-bool isSleepImagePathJpeg(const std::string& path) {
-  return StringUtils::checkFileExtension(path, ".jpg") || StringUtils::checkFileExtension(path, ".jpeg");
+bool isSleepImagePathRaster(const std::string& path) {
+  return StringUtils::checkFileExtension(path, ".jpg") || StringUtils::checkFileExtension(path, ".jpeg") ||
+         StringUtils::checkFileExtension(path, ".png");
 }
 bool isSupportedSleepImageFile(const std::string& filename) {
   return StringUtils::checkFileExtension(filename, ".bmp") || StringUtils::checkFileExtension(filename, ".jpg") ||
-         StringUtils::checkFileExtension(filename, ".jpeg");
+         StringUtils::checkFileExtension(filename, ".jpeg") || StringUtils::checkFileExtension(filename, ".png");
 }
 
 bool sleepTwoBitEnabled() {
@@ -73,7 +75,9 @@ ImageRender::Options sleepImageOptions(const bool allowQuality = true) {
 
 void runSleepImageTwoBitPasses(GfxRenderer& renderer, const std::string& imagePath,
                                const ImageRender::Options& baseOptions, const bool allowQuality = true) {
-  if (!sleepTwoBitEnabled()) {
+  // displayGrayscale() intentionally clears the screen for PNG's one-bit pass. Do not
+  // run that pass for a transparent overlay or it would erase the content beneath it.
+  if (!sleepTwoBitEnabled() || baseOptions.preserveTransparency) {
     return;
   }
 
@@ -86,6 +90,58 @@ void runSleepImageTwoBitPasses(GfxRenderer& renderer, const std::string& imagePa
 
   ImageRender::create(renderer, imagePath)
       .displayGrayscale(0, 0, renderer.getScreenWidth(), renderer.getScreenHeight(), options, quality);
+}
+
+// Transparent PNG sleep overlays use the dedicated CrossPoint sequence. The
+// shared ImageRender grayscale path is intentionally not used here: the panel
+// must retain the B/W screen as its base while the PNG is uploaded a second
+// time into the two grayscale planes.
+bool renderTransparentPngSleepScreen(GfxRenderer& renderer, const std::string& imagePath) {
+  const int screenWidth = renderer.getScreenWidth();
+  const int screenHeight = renderer.getScreenHeight();
+  const bool cropToFill = SETTINGS.sleepScreenCoverMode == SystemSetting::SLEEP_SCREEN_COVER_MODE::FIT;
+  PngRender png(renderer);
+
+  renderer.syncWriteBufferFromActive();
+  // Seed the transparent overlay in the normal B/W framebuffer using the
+  // image's two-bit quantizer.  Do not use ImageRenderMode::OneBit here:
+  // transparent sleep images must enter the same grayscale pipeline as the
+  // later LSB/MSB passes.
+  renderer.setRenderMode(GfxRenderer::BW);
+  if (!png.fromPath(imagePath, 0, 0, screenWidth, screenHeight, cropToFill, ImageRenderMode::TwoBit, 0.5f,
+                   nullptr, true)) {
+    return false;
+  }
+
+  if (!sleepTwoBitEnabled()) {
+    renderer.displayBuffer(HalDisplay::HALF_REFRESH);
+    return true;
+  }
+
+  renderer.displayGrayscaleBase(HalDisplay::HALF_REFRESH);
+
+  renderer.clearScreen(0x00);
+  renderer.setRenderMode(GfxRenderer::GRAYSCALE_LSB);
+  if (!png.fromPath(imagePath, 0, 0, screenWidth, screenHeight, cropToFill, ImageRenderMode::TwoBit, 0.5f,
+                    nullptr, true)) {
+    renderer.setRenderMode(GfxRenderer::BW);
+    return true;
+  }
+  renderer.copyGrayscaleLsbBuffers();
+
+  renderer.clearScreen(0x00);
+  renderer.setRenderMode(GfxRenderer::GRAYSCALE_MSB);
+  if (!png.fromPath(imagePath, 0, 0, screenWidth, screenHeight, cropToFill, ImageRenderMode::TwoBit, 0.5f,
+                    nullptr, true)) {
+    renderer.setRenderMode(GfxRenderer::BW);
+    return true;
+  }
+  renderer.copyGrayscaleMsbBuffers();
+
+  renderer.displayGrayBuffer(false);
+  renderer.setRenderMode(GfxRenderer::BW);
+  renderer.cleanupGrayscaleWithFrameBuffer();
+  return true;
 }
 
 void recordSleepImageUsed() {
@@ -102,6 +158,7 @@ std::string pathForFixedSleepBmp() {
   if (strcmp(SETTINGS.sleepCustomBmp, "/sleep.bmp") == 0) return SdMan.exists("/sleep.bmp") ? "/sleep.bmp" : "";
   if (strcmp(SETTINGS.sleepCustomBmp, "/sleep.jpg") == 0) return SdMan.exists("/sleep.jpg") ? "/sleep.jpg" : "";
   if (strcmp(SETTINGS.sleepCustomBmp, "/sleep.jpeg") == 0) return SdMan.exists("/sleep.jpeg") ? "/sleep.jpeg" : "";
+  if (strcmp(SETTINGS.sleepCustomBmp, "/sleep.png") == 0) return SdMan.exists("/sleep.png") ? "/sleep.png" : "";
   const std::string path = std::string("/sleep/") + SETTINGS.sleepCustomBmp;
   if (SdMan.exists(path.c_str())) {
     return path;
@@ -234,6 +291,9 @@ std::string pickSleepBmpPath() {
   if (SdMan.exists("/sleep.jpeg")) {
     return "/sleep.jpeg";
   }
+  if (SdMan.exists("/sleep.png")) {
+    return "/sleep.png";
+  }
   return "";
 }
 
@@ -342,7 +402,7 @@ void SleepActivity::renderCustomSleepScreen() const {
       recordSleepImageUsed();
     }
 
-    if (isSleepImagePathJpeg(imagePath)) {
+    if (isSleepImagePathRaster(imagePath)) {
       renderer.clearScreen();
       ImageRender::Options options = sleepImageOptions();
       if (ImageRender::create(renderer, imagePath)
@@ -384,10 +444,17 @@ void SleepActivity::renderTransparentSleepScreen() const {
     if (randomSleepImageEnabled()) {
       recordSleepImageUsed();
     }
-    const bool removeBackground = sleepImageQualityEnabled();
-    if (isSleepImagePathJpeg(imagePath)) {
+    const bool preserveTransparency = StringUtils::checkFileExtension(imagePath, ".png");
+    if (preserveTransparency) {
+      if (renderTransparentPngSleepScreen(renderer, imagePath)) {
+        return;
+      }
+    }
+    const bool removeBackground = sleepImageQualityEnabled() && !preserveTransparency;
+    if (isSleepImagePathRaster(imagePath)) {
       ImageRender::Options options = sleepImageOptions(/*allowQuality=*/false);
       options.useDisplayCache = removeBackground;
+      options.preserveTransparency = preserveTransparency;
       if (removeBackground) {
         renderer.clearScreen();
       }
@@ -428,7 +495,7 @@ void SleepActivity::renderCoverSleepScreen() const {
 
   const std::string coverPath = resolveLastReadCoverPathForSleep(APP_STATE.lastRead);
 
-  if (!coverPath.empty() && isSleepImagePathJpeg(coverPath)) {
+  if (!coverPath.empty() && isSleepImagePathRaster(coverPath)) {
     renderer.clearScreen();
     ImageRender::Options options = sleepImageOptions();
     if (ImageRender::create(renderer, coverPath)
@@ -534,37 +601,30 @@ void SleepActivity::renderBitmapSleepScreen(const Bitmap& bitmap, const bool pre
   const auto pageHeight = renderer.getScreenHeight();
   float cropX = 0, cropY = 0;
 
-  INX_SERIAL.printf("[SLP] bitmap %d x %d, screen %d x %d\n", bitmap.getWidth(), bitmap.getHeight(), pageWidth, pageHeight);
   if (bitmap.getWidth() > pageWidth || bitmap.getHeight() > pageHeight) {
     float ratio = static_cast<float>(bitmap.getWidth()) / static_cast<float>(bitmap.getHeight());
     const float screenRatio = static_cast<float>(pageWidth) / static_cast<float>(pageHeight);
 
-    INX_SERIAL.printf("[SLP] bitmap ratio: %f, screen ratio: %f\n", ratio, screenRatio);
     if (ratio > screenRatio) {
       if (SETTINGS.sleepScreenCoverMode == SystemSetting::SLEEP_SCREEN_COVER_MODE::CROP) {
         cropX = 1.0f - (screenRatio / ratio);
-        INX_SERIAL.printf("[SLP] Cropping bitmap x: %f\n", cropX);
         ratio = (1.0f - cropX) * static_cast<float>(bitmap.getWidth()) / static_cast<float>(bitmap.getHeight());
       }
       x = 0;
       y = static_cast<int>(std::round((static_cast<float>(pageHeight) - static_cast<float>(pageWidth) / ratio) / 2));
-      INX_SERIAL.printf("[SLP] Centering with ratio %f to y=%d\n", ratio, y);
     } else {
       if (SETTINGS.sleepScreenCoverMode == SystemSetting::SLEEP_SCREEN_COVER_MODE::CROP) {
         cropY = 1.0f - (ratio / screenRatio);
-        INX_SERIAL.printf("[SLP] Cropping bitmap y: %f\n", cropY);
         ratio = static_cast<float>(bitmap.getWidth()) / ((1.0f - cropY) * static_cast<float>(bitmap.getHeight()));
       }
       x = static_cast<int>(std::round((static_cast<float>(pageWidth) - static_cast<float>(pageHeight) * ratio) / 2));
       y = 0;
-      INX_SERIAL.printf("[SLP] Centering with ratio %f to x=%d\n", ratio, x);
     }
   } else {
     x = (pageWidth - bitmap.getWidth()) / 2;
     y = (pageHeight - bitmap.getHeight()) / 2;
   }
 
-  INX_SERIAL.printf("[SLP] drawing to %d x %d\n", x, y);
   renderer.clearScreen();
 
   const bool coverFill = SETTINGS.sleepScreenCoverMode == SystemSetting::SLEEP_SCREEN_COVER_MODE::FIT;

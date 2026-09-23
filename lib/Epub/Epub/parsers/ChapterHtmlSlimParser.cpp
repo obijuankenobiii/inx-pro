@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstring>
 #include <exception>
 #include <vector>
@@ -37,7 +38,9 @@ const char* HEADER_TAGS[] = {"h1", "h2", "h3", "h4", "h5", "h6"};
 constexpr int NUM_HEADER_TAGS = sizeof(HEADER_TAGS) / sizeof(HEADER_TAGS[0]);
 
 constexpr size_t MIN_SIZE_FOR_POPUP = 30 * 1024;
-constexpr size_t STREAMING_TEXTBLOCK_WORD_LIMIT = 64;
+// Keep enough words together to amortize ParsedText's list-to-line extraction.
+// The block is still bounded and makePages() preserves the normal page breaks.
+constexpr size_t STREAMING_TEXTBLOCK_WORD_LIMIT = 256;
 constexpr size_t MAX_TABLE_ROWS = 512;
 constexpr size_t MAX_TABLE_CELL_BYTES = 16 * 1024;
 constexpr size_t MAX_TABLE_TEXT_BYTES = 256 * 1024;
@@ -72,14 +75,14 @@ class ExpatStreamSink final : public Print {
 
   size_t write(const uint8_t* data, const size_t size) override {
     if (!ok_ || !data || size == 0) return size == 0 ? 0 : 0;
-    if (!parser_.feedIncremental(data, size)) return 0;
+    if (!parser_.feedParse(data, size)) return 0;
     bytes_ += size;
     return size;
   }
 
   size_t write(const uint8_t value) override { return write(&value, 1); }
 
-  bool finish() { return ok_ && parser_.finishIncremental(); }
+  bool finish() { return ok_ && parser_.finishParse(); }
   size_t bytes() const { return bytes_; }
 
  private:
@@ -611,6 +614,7 @@ void ChapterHtmlSlimParser::resetStructuralStateForParsePass() {
   currentTextBlock.reset();
   currentPage.reset();
   currentPageNextY = 0;
+  dropCapPageStartMarginPx_ = 0;
   currentTextBlockContentX = 0;
   currentTextBlockContentWidth = std::max(1, static_cast<int>(viewportWidth));
   cssAlignmentStack.clear();
@@ -663,7 +667,7 @@ void ChapterHtmlSlimParser::resetStructuralStateForParsePass() {
 }
 
 bool ChapterHtmlSlimParser::parseHtmlThroughExpat(const bool callProgressPopup) {
-  if (!incrementalParseActive_) {
+  if (!parseActive_) {
     INX_SERIAL.printf("[%lu] [SCT] parseHtmlThroughExpat called without active parser chapter=%s\n", millis(),
                       internalPath.c_str());
     return false;
@@ -674,7 +678,7 @@ bool ChapterHtmlSlimParser::parseHtmlThroughExpat(const bool callProgressPopup) 
   if (!epub.getItemSize(chapterHref, &fileSize)) {
     INX_SERIAL.printf("[%lu] [SCT] Failed to get chapter ZIP entry size path=%s internal=%s\n", millis(), filepath.c_str(),
                   internalPath.c_str());
-    cancelIncremental();
+    cancelParse();
     return false;
   }
   if (callProgressPopup && popupFn && fileSize >= MIN_SIZE_FOR_POPUP) {
@@ -688,10 +692,10 @@ bool ChapterHtmlSlimParser::parseHtmlThroughExpat(const bool callProgressPopup) 
     INX_SERIAL.printf(
         "[%lu] [SCT] parseHtmlThroughExpat failed pass=layout xml=%d line=%lu col=%lu byte=%ld size=%lu "
         "chapter=%s internal=%s\n",
-        millis(), static_cast<int>(incrementalXmlError_), static_cast<unsigned long>(incrementalXmlLine_),
-        static_cast<unsigned long>(incrementalXmlColumn_), static_cast<long>(incrementalXmlByte_),
+        millis(), static_cast<int>(parseXmlError_), static_cast<unsigned long>(parseXmlLine_),
+        static_cast<unsigned long>(parseXmlColumn_), static_cast<long>(parseXmlByte_),
         static_cast<unsigned long>(fileSize), filepath.c_str(), internalPath.c_str());
-    cancelIncremental();
+    cancelParse();
   }
   return parseOk;
 }
@@ -708,7 +712,6 @@ void ChapterHtmlSlimParser::loadCssRules() {
   } else {
     cssParser_.clear();
   }
-
   cssLoaded = true;
 }
 
@@ -765,7 +768,7 @@ void ChapterHtmlSlimParser::processImageElement(const char** atts) {
 
   bool widthIsPercentage = false;
   bool heightIsPercentage = false;
-  const bool followCssParagraphLayout = (paragraphAlignment == EPUB_PARAGRAPH_ALIGNMENT_FOLLOW_CSS);
+  const bool applyCssTextLayout = shouldApplyCssTextLayout("img");
 
   const int availableImgWidth =
       std::max(1, static_cast<int>(viewportWidth) - std::max(0, currentCssInsetLeftPx) - std::max(0, currentCssInsetRightPx));
@@ -790,7 +793,7 @@ void ChapterHtmlSlimParser::processImageElement(const char** atts) {
     }
 
     if (imgWidth == 0) {
-      int cssWidth = css().getWidth(classAttr, idAttr, styleAttr, availableImgWidth, viewportHeight);
+      int cssWidth = css().getWidth(classAttr, idAttr, styleAttr, availableImgWidth, viewportHeight, "img");
 
       if (cssWidth == 0 && !widthIsPercentage) {
         imgWidth = cssWidth;
@@ -800,7 +803,7 @@ void ChapterHtmlSlimParser::processImageElement(const char** atts) {
     }
 
     if (imgHeight == 0) {
-      int cssHeight = css().getHeight(classAttr, idAttr, styleAttr, viewportWidth, viewportHeight);
+      int cssHeight = css().getHeight(classAttr, idAttr, styleAttr, viewportWidth, viewportHeight, "img");
       if (cssHeight == 0 && !heightIsPercentage) {
         imgHeight = cssHeight;
       } else if (cssHeight > 0) {
@@ -815,52 +818,70 @@ void ChapterHtmlSlimParser::processImageElement(const char** atts) {
   EPUB_PERF_LOG("[%lu] [CHAPTER-IMG] source=%s resolved=%s cache=%s explicit=%dx%d\n", millis(), src.c_str(),
                 fullInternalPath.c_str(), cacheImgPath.c_str(), explicitWidth, explicitHeight);
 
-  const int cssMaxW = css().getMaxWidth(classAttr, idAttr, styleAttr, availableImgWidth, viewportHeight);
-  const int cssMinW = css().getMinWidth(classAttr, idAttr, styleAttr, availableImgWidth, viewportHeight);
-  const int cssMaxH = css().getMaxHeight(classAttr, idAttr, styleAttr, viewportWidth, viewportHeight);
-  const int cssMinH = css().getMinHeight(classAttr, idAttr, styleAttr, viewportWidth, viewportHeight);
+  const int cssMaxW = css().getMaxWidth(classAttr, idAttr, styleAttr, availableImgWidth, viewportHeight, "img");
+  const int cssMinW = css().getMinWidth(classAttr, idAttr, styleAttr, availableImgWidth, viewportHeight, "img");
+  const int cssMaxH = css().getMaxHeight(classAttr, idAttr, styleAttr, viewportWidth, viewportHeight, "img");
+  const int cssMinH = css().getMinHeight(classAttr, idAttr, styleAttr, viewportWidth, viewportHeight, "img");
 
   int actualW = 0, actualH = 0;
   const uint8_t format = imageFormat(cacheImgPath);
   bool imageAvailable = imgWidth > 0 && imgHeight > 0;
-  if (!imageAvailable && epub.getImageMetadata(cacheImgPath, &actualW, &actualH, format) && actualW > 0 && actualH > 0) {
-    imageAvailable = true;
-  } else if (!imageAvailable) {
-    {
-      EpubImagePrefetch::IoLock ioLock;
-      if (SdMan.exists(cacheImgPath.c_str())) {
-        imageAvailable = getImageDimensions(cacheImgPath, &actualW, &actualH);
+  const bool shouldProbeHighQualityGeometry = imgWidth > 100 && imgHeight > 100 &&
+                                              !StringUtils::checkFileExtension(cacheImgPath, ".png");
+  bool needsHighQualityGeometry = shouldProbeHighQualityGeometry;
+  // Intrinsic dimensions complete one-sided CSS sizes. For large raster images,
+  // they also let PageImage use the height the high quality renderer actually fits.
+  bool hasIntrinsicDimensions = false;
+  if (!imageAvailable || needsHighQualityGeometry) {
+    hasIntrinsicDimensions =
+        epub.getImageMetadata(cacheImgPath, &actualW, &actualH, format) && actualW > 0 && actualH > 0;
+    if (!hasIntrinsicDimensions) {
+      actualW = 0;
+      actualH = 0;
+      {
+        EpubImagePrefetch::IoLock ioLock;
+        if (SdMan.exists(cacheImgPath.c_str())) {
+          hasIntrinsicDimensions = getImageDimensions(cacheImgPath, &actualW, &actualH);
+        }
       }
-    }
-    if (!imageAvailable && epub.probeImageDimensions(fullInternalPath, &actualW, &actualH)) {
-      epub.setImageMetadata(cacheImgPath, actualW, actualH, format, true);
-      imageAvailable = true;
+      if (!hasIntrinsicDimensions && epub.probeImageDimensions(fullInternalPath, &actualW, &actualH)) {
+        epub.setImageMetadata(cacheImgPath, actualW, actualH, format, true);
+        hasIntrinsicDimensions = true;
+      }
     }
   }
 
-  if (imageAvailable && actualW > 0 && actualH > 0) {
+  auto completeImageDimensions = [&]() {
+    if (actualW <= 0 || actualH <= 0) return;
     if (imgWidth == 0 && cssMaxW > 0) {
       imgWidth = std::min(actualW, cssMaxW);
-      imgHeight = (actualH * imgWidth) / std::max(1, actualW);
     }
     if (imgHeight == 0 && cssMaxH > 0) {
       imgHeight = std::min(actualH, cssMaxH);
-      imgWidth = (actualW * imgHeight) / std::max(1, actualH);
     }
 
     if (imgWidth > 0 && imgHeight == 0) {
-      imgHeight = (actualH * imgWidth) / std::max(1, actualW);
+      imgHeight = std::max(1, (actualH * imgWidth) / std::max(1, actualW));
     } else if (imgHeight > 0 && imgWidth == 0) {
-      imgWidth = (actualW * imgHeight) / std::max(1, actualH);
+      imgWidth = std::max(1, (actualW * imgHeight) / std::max(1, actualH));
     } else if (imgWidth == 0 && imgHeight == 0) {
       imgWidth = actualW;
       imgHeight = actualH;
     }
-    imageAvailable = true;
-  } else if (!imageAvailable && ensureImageCached(fullInternalPath, cacheImgPath, &actualW, &actualH)) {
-    if (imgWidth == 0) imgWidth = actualW;
-    if (imgHeight == 0) imgHeight = actualH;
-    imageAvailable = true;
+  };
+
+  completeImageDimensions();
+  imageAvailable = imgWidth > 0 && imgHeight > 0;
+  if (!imageAvailable && ensureImageCached(fullInternalPath, cacheImgPath, &actualW, &actualH)) {
+    hasIntrinsicDimensions = actualW > 0 && actualH > 0;
+    completeImageDimensions();
+    imageAvailable = imgWidth > 0 && imgHeight > 0;
+  }
+  needsHighQualityGeometry = imgWidth > 100 && imgHeight > 100 &&
+                             !StringUtils::checkFileExtension(cacheImgPath, ".png");
+  if (imageAvailable && needsHighQualityGeometry && !hasIntrinsicDimensions &&
+      ensureImageCached(fullInternalPath, cacheImgPath, &actualW, &actualH)) {
+    hasIntrinsicDimensions = actualW > 0 && actualH > 0;
   }
 
   if (imageAvailable) {
@@ -892,6 +913,18 @@ void ChapterHtmlSlimParser::processImageElement(const char** atts) {
       imgHeight = viewportHeight;
     }
 
+    // ImageRender fits raster content inside its target bounds while preserving
+    // the source aspect ratio. Keep large image bounds in sync with that fitted
+    // size so high quality rendering does not leave a taller box above and below.
+    if (needsHighQualityGeometry && hasIntrinsicDimensions && imgWidth > 0 && imgHeight > 0) {
+      const float fitScale = std::min(static_cast<float>(imgWidth) / actualW,
+                                      static_cast<float>(imgHeight) / actualH);
+      const int fittedWidth = std::max(1, static_cast<int>(std::lround(actualW * fitScale)));
+      const int fittedHeight = std::max(1, static_cast<int>(std::lround(actualH * fitScale)));
+      imgWidth = fittedWidth;
+      imgHeight = fittedHeight;
+    }
+
     if (imgWidth < 1) imgWidth = 1;
     if (imgHeight < 1) imgHeight = 1;
 
@@ -920,14 +953,14 @@ void ChapterHtmlSlimParser::processImageElement(const char** atts) {
         currentTextBlock->addImage(cacheImgPath, static_cast<uint16_t>(dispW), static_cast<uint16_t>(dispH));
       }
     } else {
-      if (followCssParagraphLayout && css().hasParagraphSpacingSpecified("img", classAttr, idAttr, styleAttr)) {
+      if (applyCssTextLayout && css().hasParagraphSpacingSpecified("img", classAttr, idAttr, styleAttr)) {
         if (currentPageNextY > 0) {
           applyVerticalSpacing(
               css().getParagraphSpacingTopPx("img", classAttr, idAttr, styleAttr, viewportWidth, viewportHeight));
         }
       }
       addImageToPage(cacheImgPath, fullInternalPath, imgWidth, imgHeight);
-      if (followCssParagraphLayout && css().hasParagraphSpacingSpecified("img", classAttr, idAttr, styleAttr)) {
+      if (applyCssTextLayout && css().hasParagraphSpacingSpecified("img", classAttr, idAttr, styleAttr)) {
         const int defaultGap = renderer.text.getLineHeight(fontId) / 2;
         const int cssBottom =
             css().getParagraphSpacingBottomPx("img", classAttr, idAttr, styleAttr, viewportWidth, viewportHeight);
@@ -964,8 +997,8 @@ void ChapterHtmlSlimParser::processBackgroundImageElement(const std::string& tag
     return;
   }
 
-  const int cssWidth = css().getWidth(classAttr, idAttr, styleAttr, viewportWidth, viewportHeight);
-  const int cssHeight = css().getHeight(classAttr, idAttr, styleAttr, viewportWidth, viewportHeight);
+  const int cssWidth = css().getWidth(classAttr, idAttr, styleAttr, viewportWidth, viewportHeight, tagLower);
+  const int cssHeight = css().getHeight(classAttr, idAttr, styleAttr, viewportWidth, viewportHeight, tagLower);
   if (cssWidth > 0 && cssHeight > 0) {
     imageWidth = cssWidth;
     imageHeight = cssHeight;
@@ -1023,7 +1056,15 @@ void ChapterHtmlSlimParser::flushPartWordBuffer() {
     if (!currentPage) currentPage.reset(new Page());
 
     const std::string dropCapText = uppercaseSingleLetterDropCap(partWordBuffer, partWordBufferIndex);
-    const bool inlineFirstLine = dropCapLineCount <= 1;
+    const bool inlineFirstLine = dropCapLineCount <= 1 ||
+                                 (dropCapLineHeightEm > 0.0f && dropCapLineHeightEm < 1.0f);
+    if (currentPageNextY == 0 && dropCapPageStartMarginPx_ > 0) {
+      const int minimumContent = std::max(
+          1, renderer.text.getLineHeight(fontId) * (inlineFirstLine ? 1 : dropCapLineCount));
+      const int margin = std::min(dropCapPageStartMarginPx_, std::max(0, viewportHeight - minimumContent));
+      currentPageNextY = static_cast<int16_t>(currentPageNextY + margin);
+    }
+    dropCapPageStartMarginPx_ = 0;
     const bool cssBoldActive = !cssFontStyleStack.empty() && cssFontStyleStack.back().bold;
     const bool cssItalicActive = !cssFontStyleStack.empty() && cssFontStyleStack.back().italic;
     const bool dropCapBold = boldUntilDepth < depth || cssBoldActive;
@@ -1032,10 +1073,43 @@ void ChapterHtmlSlimParser::flushPartWordBuffer() {
         dropCapBold && dropCapItalic
             ? EpdFontFamily::BOLD_ITALIC
             : (dropCapItalic ? EpdFontFamily::ITALIC : EpdFontFamily::BOLD);
-    currentPage->elements.emplace_back(
-        new PageDropCap(dropCapText, 0, currentPageNextY, maxFontId, inlineFirstLine, dropCapStyle));
+    int dropCapFontId = FontManager::getDropCapFontId(fontId, dropCapLineCount);
+    const FontManager::FontInfo* bodyInfo = FontManager::getFontInfo(fontId);
+    if (dropCapFontSizeEm > 0.0f && bodyInfo && !bodyInfo->isBuiltin) {
+      const int targetPt = std::clamp(
+          static_cast<int>(bodyInfo->size * dropCapFontSizeEm + 0.5f),
+          static_cast<int>(FontManager::OUTLINE_FONT_MIN_POINT_SIZE),
+          static_cast<int>(FontManager::OUTLINE_FONT_MAX_POINT_SIZE));
+      dropCapFontId = FontManager::getFontIdNearestPointSize(bodyInfo->family, targetPt);
+    }
+    if (!FontManager::ensureFontReady(dropCapFontId, renderer)) {
+      dropCapFontId = maxFontId;
+    }
+    const FontManager::FontInfo* dropCapInfo = FontManager::getFontInfo(dropCapFontId);
 
-    int dropCapWidth = renderer.text.getWidth(maxFontId, dropCapText.c_str(), dropCapStyle) + 3;
+    // Inline/one-line drop caps share the first line's baseline. A tall glyph
+    // can therefore extend above a chapter page whose content starts at y=0.
+    // Reserve that missing ascent in the page flow before placing both the
+    // drop cap and its first line, keeping their baseline alignment intact.
+    if (inlineFirstLine) {
+      const uint8_t* dropCapBytes = reinterpret_cast<const uint8_t*>(dropCapText.c_str());
+      const uint32_t dropCapCodepoint = utf8NextCodepoint(&dropCapBytes);
+      const int glyphTop = currentPageNextY + renderer.text.getFontAscenderSize(fontId) -
+                           renderer.text.getFontAscenderSize(dropCapFontId) +
+                           renderer.text.getGlyphTopInset(dropCapFontId, dropCapCodepoint, dropCapStyle);
+      if (glyphTop < 0) {
+        currentPageNextY = static_cast<int16_t>(std::min<int>(INT16_MAX, currentPageNextY - glyphTop));
+      }
+    }
+
+    INX_SERIAL.printf("[%lu] [INCR-FONT] dropcap body=%d lines=%u cssEm=%.2f -> font=%d size=%d\n", millis(), fontId,
+                      static_cast<unsigned>(dropCapLineCount), static_cast<double>(dropCapFontSizeEm), dropCapFontId,
+                      dropCapInfo ? dropCapInfo->size : 0);
+    currentPage->elements.emplace_back(
+        new PageDropCap(dropCapText, 0, currentPageNextY, dropCapFontId, inlineFirstLine, dropCapStyle,
+                        dropCapTextTone));
+
+    int dropCapWidth = renderer.text.getWidth(dropCapFontId, dropCapText.c_str(), dropCapStyle) + 3;
 
     if (currentTextBlock) {
       currentTextBlock->setLeftIndent(dropCapWidth, inlineFirstLine ? 1 : dropCapLineCount);
@@ -1045,6 +1119,9 @@ void ChapterHtmlSlimParser::flushPartWordBuffer() {
     inDropCap = false;
     dropCapConsumeWholeContainer = false;
     dropCapLineCount = 3;
+    dropCapFontSizeEm = 0.0f;
+    dropCapLineHeightEm = 0.0f;
+    dropCapTextTone = 1;
     return;
   }
 
@@ -1416,6 +1493,7 @@ void ChapterHtmlSlimParser::applyDropCapHint(const XML_Char* name, const std::st
   const bool pseudoHint = css().hasFirstLetterDropCapHint(tagLower, classAttr, idAttr, styleAttr);
   const bool scaledFirstInlineDropCap =
       strcmp(name, "span") == 0 && currentTextBlock && currentTextBlock->isEmpty() &&
+      !css().isDisplayBlock(tagLower, classAttr, idAttr, styleAttr) &&
       css().getFontSizeEm(tagLower, classAttr, idAttr, styleAttr) >= 1.5f;
   if (!attrHint && !pseudoHint && !scaledFirstInlineDropCap) {
     return;
@@ -1424,6 +1502,15 @@ void ChapterHtmlSlimParser::applyDropCapHint(const XML_Char* name, const std::st
   inDropCap = true;
   dropCapDepth = depth;
   dropCapConsumeWholeContainer = (strcmp(name, "span") == 0);
+  dropCapFontSizeEm = css().getFirstLetterFontSizeEm(tagLower, classAttr, idAttr, styleAttr);
+  dropCapLineHeightEm = css().getFirstLetterLineHeightEm(tagLower, classAttr, idAttr, styleAttr);
+  dropCapTextTone = css().getFirstLetterTextTone(tagLower, classAttr, idAttr, styleAttr);
+  if (dropCapFontSizeEm <= 0.0f && strcmp(name, "span") == 0) {
+    const float spanFontSizeEm = css().getFontSizeEm(tagLower, classAttr, idAttr, styleAttr);
+    if (spanFontSizeEm != 1.0f) {
+      dropCapFontSizeEm = spanFontSizeEm;
+    }
+  }
   dropCapLineCount = attrHint
                          ? detectDropCapLineCount(classAttr, idAttr, styleAttr)
                          : (pseudoHint ? css().getFirstLetterDropCapLineCount(tagLower, classAttr, idAttr, styleAttr)
@@ -1527,9 +1614,6 @@ TextBlock::Style ChapterHtmlSlimParser::resolveBlockStyle(const XML_Char* elemen
                                                           const bool elementHasExplicitTextAlign,
                                                           const TextBlock::Style elementCssStyle,
                                                           const TextBlock::Style inheritedCssStyle) const {
-  // Explicit alignment in the EPUB remains authoritative for that block,
-  // including legacy classes such as "center-text", regardless of the
-  // reader's global paragraph alignment preference.
   if (elementHasExplicitTextAlign) {
     return elementCssStyle;
   }
@@ -1537,6 +1621,10 @@ TextBlock::Style ChapterHtmlSlimParser::resolveBlockStyle(const XML_Char* elemen
     return inheritedCssStyle;
   }
   return static_cast<TextBlock::Style>(paragraphAlignment);
+}
+
+bool ChapterHtmlSlimParser::shouldApplyCssTextLayout(const std::string& tagLower) const {
+  return paragraphAlignment == EPUB_PARAGRAPH_ALIGNMENT_FOLLOW_CSS || tagLower != "p";
 }
 
 void ChapterHtmlSlimParser::captureCurrentTextBlockBox() {
@@ -1614,6 +1702,68 @@ int ChapterHtmlSlimParser::activeBlockContentWidth() const {
       1, static_cast<int>(viewportWidth) - std::max(0, currentCssInsetLeftPx) - std::max(0, currentCssInsetRightPx));
 }
 
+int ChapterHtmlSlimParser::blockFontIdForEm(const float em) const {
+  if (em <= 0.0f || std::fabs(em - 1.0f) < 0.01f) {
+    return -1;
+  }
+
+  const int baseFontId = activeBlockFontId();
+  const FontManager::FontInfo* baseInfo = FontManager::getFontInfo(baseFontId);
+  if (baseInfo && !baseInfo->isBuiltin) {
+    // The reader-selected font is the baseline. CSS only scales that
+    // baseline when the book explicitly requests a different size. Do not
+    // cap generic blocks at a heading size: a styled <p> may legitimately be
+    // larger than h1.
+    const int targetPt = std::max(1, static_cast<int>(baseInfo->size * em + 0.5f));
+    if (em < 1.0f) {
+      // Choosing at-or-below is important when the family has discrete sizes;
+      // nearest-size lookup can promote a small CSS paragraph back to body size.
+      return FontManager::getFontIdAtOrBelowPointSize(baseInfo->family, targetPt);
+    }
+    return FontManager::getFontIdNearestPointSize(baseInfo->family, targetPt);
+  }
+
+  // Bitmap/built-in fonts do not have arbitrary point sizes available.
+  if (em >= 1.5f) return headingFontIdForSteps(5);
+  if (em >= 1.2f) return headerFontId;
+  return -1;
+}
+
+int ChapterHtmlSlimParser::headingFontIdForSteps(const int steps) const {
+  int headingFontId = fontId;
+  for (int i = 0; i < steps; ++i) {
+    const int nextFontId = FontManager::getNextFont(headingFontId);
+    if (nextFontId == headingFontId) break;
+    headingFontId = nextFontId;
+  }
+  return headingFontId;
+}
+
+int ChapterHtmlSlimParser::headingFontIdForTag(const std::string& tagLower, const std::string& classAttr,
+                                               const std::string& idAttr, const std::string& styleAttr) const {
+  if (tagLower.size() != 2 || tagLower[0] != 'h' || tagLower[1] < '1' || tagLower[1] > '6') {
+    return headerFontId;
+  }
+
+  const int level = tagLower[1] - '1';
+  static constexpr int kHeadingSteps[] = {5, 4, 3, 2, 1, 0};
+  const int maxHeadingFontId = headingFontIdForSteps(5);
+  if (!css().hasFontSizeSpecified(tagLower, classAttr, idAttr, styleAttr)) {
+    return headingFontIdForSteps(kHeadingSteps[level]);
+  }
+
+  const FontManager::FontInfo* bodyInfo = FontManager::getFontInfo(fontId);
+  const FontManager::FontInfo* maxHeadingInfo = FontManager::getFontInfo(maxHeadingFontId);
+  if (!bodyInfo || !maxHeadingInfo || bodyInfo->isBuiltin) {
+    return css().getFontSizeEm(tagLower, classAttr, idAttr, styleAttr) >= 1.5f ? maxHeadingFontId : headerFontId;
+  }
+
+  const int targetPt = std::min(
+      maxHeadingInfo->size,
+      std::max(1, static_cast<int>(bodyInfo->size * css().getFontSizeEm(tagLower, classAttr, idAttr, styleAttr) + 0.5f)));
+  return FontManager::getFontIdNearestPointSize(bodyInfo->family, targetPt);
+}
+
 void ChapterHtmlSlimParser::beginCssBlockBox(const std::string& tagLower, const std::string& classAttr,
                                              const std::string& idAttr, const std::string& styleAttr) {
   if (!blockClosingStack.empty() && blockClosingStack.back().depth != depth) {
@@ -1622,13 +1772,32 @@ void ChapterHtmlSlimParser::beginCssBlockBox(const std::string& tagLower, const 
   if (!cssBorderBoxStack.empty() && cssBorderBoxStack.back().depth != depth) {
     cssBorderBoxStack.back().stale = true;
   }
-  const int marginTop = css().getMarginTopPx(tagLower, classAttr, idAttr, styleAttr, viewportWidth, viewportHeight);
-  const int paddingTop = css().getPaddingTopPx(tagLower, classAttr, idAttr, styleAttr, viewportWidth, viewportHeight);
-  const int marginLeft = css().getMarginLeftPx(tagLower, classAttr, idAttr, styleAttr, viewportWidth, viewportHeight);
-  const int marginRight = css().getMarginRightPx(tagLower, classAttr, idAttr, styleAttr, viewportWidth, viewportHeight);
-  const int paddingLeft = css().getPaddingLeftPx(tagLower, classAttr, idAttr, styleAttr, viewportWidth, viewportHeight);
-  const int paddingRight =
-      css().getPaddingRightPx(tagLower, classAttr, idAttr, styleAttr, viewportWidth, viewportHeight);
+  const bool applyCssTextLayout = shouldApplyCssTextLayout(tagLower);
+  const int marginTop = applyCssTextLayout
+                            ? css().getMarginTopPx(tagLower, classAttr, idAttr, styleAttr, viewportWidth, viewportHeight)
+                            : 0;
+  if (tagLower == "p") {
+    dropCapPageStartMarginPx_ = currentPageNextY == 0 ? marginTop : 0;
+  } else if (currentPageNextY == 0 && marginTop > 0 &&
+             (hasDropCapHint(classAttr, idAttr, styleAttr) ||
+              css().hasFirstLetterDropCapHint(tagLower, classAttr, idAttr, styleAttr))) {
+    dropCapPageStartMarginPx_ = marginTop;
+  }
+  const int paddingTop = applyCssTextLayout
+                             ? css().getPaddingTopPx(tagLower, classAttr, idAttr, styleAttr, viewportWidth, viewportHeight)
+                             : 0;
+  const int marginLeft = applyCssTextLayout
+                             ? css().getMarginLeftPx(tagLower, classAttr, idAttr, styleAttr, viewportWidth, viewportHeight)
+                             : 0;
+  const int marginRight = applyCssTextLayout
+                              ? css().getMarginRightPx(tagLower, classAttr, idAttr, styleAttr, viewportWidth, viewportHeight)
+                              : 0;
+  const int paddingLeft = applyCssTextLayout
+                              ? css().getPaddingLeftPx(tagLower, classAttr, idAttr, styleAttr, viewportWidth, viewportHeight)
+                              : 0;
+  const int paddingRight = applyCssTextLayout
+                               ? css().getPaddingRightPx(tagLower, classAttr, idAttr, styleAttr, viewportWidth, viewportHeight)
+                               : 0;
   const int borderTop = css().getBorderTopPx(tagLower, classAttr, idAttr, styleAttr, viewportWidth, viewportHeight);
   const int borderRight = css().getBorderRightPx(tagLower, classAttr, idAttr, styleAttr, viewportWidth, viewportHeight);
   const int borderBottom =
@@ -1636,8 +1805,17 @@ void ChapterHtmlSlimParser::beginCssBlockBox(const std::string& tagLower, const 
   const int borderLeft = css().getBorderLeftPx(tagLower, classAttr, idAttr, styleAttr, viewportWidth, viewportHeight);
   int horizontalLeft = marginLeft + borderLeft + paddingLeft;
   int horizontalRight = marginRight + borderRight + paddingRight;
+  if (tagLower == "p" && !applyCssTextLayout) {
+    // In fixed reader paragraph modes, the paragraph should use the reader's
+    // content margins. Clear horizontal insets inherited from book wrappers
+    // for the duration of this paragraph; its inset scope restores them when
+    // the closing tag is handled.
+    horizontalLeft = -currentCssInsetLeftPx;
+    horizontalRight = -currentCssInsetRightPx;
+  }
   const bool horizontalSpacingSpecified = css().hasHorizontalSpacingSpecified(tagLower, classAttr, idAttr, styleAttr);
-  if (horizontalLeft == 0 && horizontalRight == 0 && !classAttr.empty() && !horizontalSpacingSpecified) {
+  if (applyCssTextLayout && horizontalLeft == 0 && horizontalRight == 0 && !classAttr.empty() &&
+      !horizontalSpacingSpecified) {
     const CssHorizontalInsetScope* sameClassAncestor = nullptr;
     for (auto it = cssHorizontalInsetStack.rbegin(); it != cssHorizontalInsetStack.rend(); ++it) {
       if ((it->left > 0 || it->right > 0) && classAttrsShareToken(classAttr, it->classAttr)) {
@@ -1672,7 +1850,9 @@ void ChapterHtmlSlimParser::beginCssBlockBox(const std::string& tagLower, const 
       }
     }
   }
-  const int minHeight = css().getMinHeight(classAttr, idAttr, styleAttr, viewportWidth, viewportHeight);
+  const int minHeight = applyCssTextLayout
+                            ? css().getMinHeight(classAttr, idAttr, styleAttr, viewportWidth, viewportHeight, tagLower)
+                            : 0;
   CssHorizontalInsetScope insetScope;
   insetScope.depth = depth;
   insetScope.left = horizontalLeft;
@@ -1684,10 +1864,14 @@ void ChapterHtmlSlimParser::beginCssBlockBox(const std::string& tagLower, const 
   if (currentTextBlock && currentTextBlock->isEmpty()) {
     captureCurrentTextBlockBox();
   }
-  currentBlockMarginBottomPx =
-      css().getMarginBottomPx(tagLower, classAttr, idAttr, styleAttr, viewportWidth, viewportHeight);
-  currentBlockPaddingBottomPx =
-      css().getPaddingBottomPx(tagLower, classAttr, idAttr, styleAttr, viewportWidth, viewportHeight);
+  currentBlockMarginBottomPx = applyCssTextLayout
+                                   ? css().getMarginBottomPx(tagLower, classAttr, idAttr, styleAttr, viewportWidth,
+                                                             viewportHeight)
+                                   : 0;
+  currentBlockPaddingBottomPx = applyCssTextLayout
+                                    ? css().getPaddingBottomPx(tagLower, classAttr, idAttr, styleAttr, viewportWidth,
+                                                               viewportHeight)
+                                    : 0;
   currentBlockBorderTopPx = borderTop;
   currentBlockBorderBottomPx = borderBottom;
   currentBlockBorderLeftPx = borderLeft;
@@ -1862,11 +2046,16 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
   std::string styleAttr;
   std::string tagLower;
   extractSelectorAttributes(name, atts, tagLower, classAttr, idAttr, styleAttr);
+  const bool applyCssTextLayout = self->shouldApplyCssTextLayout(tagLower);
+  // Font-size is independent from paragraph alignment. Even when the user
+  // chooses a fixed alignment, an explicit CSS font-size still scales from
+  // the user's selected reader font.
+  const bool hasCssFontSize = self->css().hasFontSizeSpecified(tagLower, classAttr, idAttr, styleAttr);
   const bool isHeaderTag = matches(name, HEADER_TAGS, NUM_HEADER_TAGS);
   const bool isBlockTag = matches(name, BLOCK_TAGS, NUM_BLOCK_TAGS);
   const bool hasSelectorAttrs = !classAttr.empty() || !idAttr.empty() || !styleAttr.empty();
   const bool isCustomDisplayBlock =
-      hasSelectorAttrs && !isBlockTag && !isHeaderTag &&
+      applyCssTextLayout && hasSelectorAttrs && !isBlockTag && !isHeaderTag &&
       (self->css().isDisplayBlock(tagLower, classAttr, idAttr, styleAttr) ||
        self->css().getBorderTopPx(tagLower, classAttr, idAttr, styleAttr, self->viewportWidth, self->viewportHeight) >
            0 ||
@@ -1878,11 +2067,12 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
            0);
   const bool isBlockLikeElement = isHeaderTag || isBlockTag || isCustomDisplayBlock;
   const int inlineFloatOffset =
-      (!isBlockLikeElement && self->css().isFloatLeft(tagLower, classAttr, idAttr, styleAttr))
+      (applyCssTextLayout && !isBlockLikeElement && self->css().isFloatLeft(tagLower, classAttr, idAttr, styleAttr))
           ? self->css().getMarginLeftPx(tagLower, classAttr, idAttr, styleAttr, self->viewportWidth, self->viewportHeight)
           : 0;
   if (isBlockLikeElement) {
-    elementHasExplicitTextAlign = self->css().hasTextAlignSpecified(tagLower, classAttr, idAttr, styleAttr);
+    elementHasExplicitTextAlign =
+        applyCssTextLayout && self->css().hasTextAlignSpecified(tagLower, classAttr, idAttr, styleAttr);
   }
   if (elementHasExplicitTextAlign) {
     elementCssStyle = self->resolveTextAlignFromAttributes(name, atts, inheritedCssStyle);
@@ -1890,7 +2080,7 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
   // Keep the EPUB's conventional center-text class explicit at the HTML
   // boundary as well as in CssParser. This covers cached/minimal stylesheets
   // where the class rule itself is not present in the parsed CSS rule set.
-  if (isBlockLikeElement && hasExactClassToken(classAttr, "center-text")) {
+  if (applyCssTextLayout && isBlockLikeElement && hasExactClassToken(classAttr, "center-text")) {
     elementHasExplicitTextAlign = true;
     elementCssStyle = TextBlock::CENTER_ALIGN;
   }
@@ -1899,7 +2089,7 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
   }
 
   const bool inheritedSmallCaps = !self->smallCapsStack.empty() && self->smallCapsStack.back();
-  const float inlineFontSizeEm = self->css().getFontSizeEm(tagLower, classAttr, idAttr, styleAttr);
+  const float inlineFontSizeEm = applyCssTextLayout ? self->css().getFontSizeEm(tagLower, classAttr, idAttr, styleAttr) : 1.0f;
   const bool scaledSmallCapsHint = strcmp(name, "span") == 0 && inlineFontSizeEm >= 0.6f && inlineFontSizeEm < 0.95f;
   const bool resolvedSmallCaps =
       inheritedSmallCaps || hasExplicitSmallCapsHint(name, classAttr, idAttr, styleAttr) || scaledSmallCapsHint;
@@ -1955,7 +2145,11 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
     self->beginCssBlockBox(tagLower, classAttr, idAttr, styleAttr);
     self->pushBlockClosingScopeIfNeeded();
     self->currentBlockFontId =
-        self->blockFontIdForEm(self->css().getFontSizeEm(tagLower, classAttr, idAttr, styleAttr));
+        hasCssFontSize ? self->blockFontIdForEm(self->css().getFontSizeEm(tagLower, classAttr, idAttr, styleAttr)) : -1;
+    if (self->currentBlockFontId >= 0 &&
+        !FontManager::ensureFontReady(self->currentBlockFontId, self->renderer)) {
+      self->currentBlockFontId = -1;
+    }
     TextBlock::Style blockStyle =
         self->resolveBlockStyle(name, atts, elementHasExplicitTextAlign, elementCssStyle, inheritedCssStyle);
     if (self->inHeader) {
@@ -2002,6 +2196,10 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
       self->makePages();
     }
     self->inHeader = true;
+    self->currentBlockFontId = self->headingFontIdForTag(tagLower, classAttr, idAttr, styleAttr);
+    if (!FontManager::ensureFontReady(self->currentBlockFontId, self->renderer)) {
+      self->currentBlockFontId = self->headerFontId;
+    }
     self->beginCssBlockBox(tagLower, classAttr, idAttr, styleAttr);
     self->pushBlockClosingScopeIfNeeded();
     TextBlock::Style headerStyle = TextBlock::CENTER_ALIGN;
@@ -2031,11 +2229,17 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
       self->startNewTextBlock(blockStyle);
       self->beginCssBlockBox(tagLower, classAttr, idAttr, styleAttr);
       self->pushBlockClosingScopeIfNeeded();
-      self->currentBlockFontId =
-          self->blockFontIdForEm(self->css().getFontSizeEm(tagLower, classAttr, idAttr, styleAttr));
+      self->currentBlockFontId = hasCssFontSize
+                                     ? self->blockFontIdForEm(
+                                           self->css().getFontSizeEm(tagLower, classAttr, idAttr, styleAttr))
+                                     : -1;
+      if (self->currentBlockFontId >= 0 &&
+          !FontManager::ensureFontReady(self->currentBlockFontId, self->renderer)) {
+        self->currentBlockFontId = -1;
+      }
       if (self->currentTextBlock && !self->listNoIndentDepths_.empty()) {
         self->currentTextBlock->setCssTextIndentFromCascade(0);
-      } else if (self->currentTextBlock && (followCssParagraphLayout || self->respectCssParagraphIndent) &&
+      } else if (self->currentTextBlock && applyCssTextLayout &&
                  self->css().hasTextIndentSpecified(tagLower, classAttr, idAttr, styleAttr)) {
         const int px = self->css().getTextIndentPx(tagLower, classAttr, idAttr, styleAttr, self->viewportWidth,
                                                    self->viewportHeight);
@@ -2071,7 +2275,7 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
     self->skipUntilDepth = self->depth;
   }
 
-  if (self->paragraphAlignment == EPUB_PARAGRAPH_ALIGNMENT_FOLLOW_CSS) {
+  if (followCssParagraphLayout || tagLower != "p") {
     const TextBlock::Style pushedCssStyle = elementHasExplicitTextAlign ? elementCssStyle : inheritedCssStyle;
     self->cssAlignmentStack.push_back(pushedCssStyle);
     self->cssAlignmentExplicitStack.push_back(
@@ -2345,7 +2549,8 @@ void XMLCALL ChapterHtmlSlimParser::endElement(void* userData, const XML_Char* n
     self->inlineXOffsetStack.pop_back();
   }
 
-  if (self->paragraphAlignment == EPUB_PARAGRAPH_ALIGNMENT_FOLLOW_CSS && !self->cssAlignmentDepths.empty() &&
+  if ((self->paragraphAlignment == EPUB_PARAGRAPH_ALIGNMENT_FOLLOW_CSS || strcmp(name, "p") != 0) &&
+      !self->cssAlignmentDepths.empty() &&
       self->cssAlignmentDepths.back() == self->depth) {
     self->cssAlignmentStack.pop_back();
     self->cssAlignmentExplicitStack.pop_back();
@@ -2385,6 +2590,12 @@ void XMLCALL ChapterHtmlSlimParser::endElement(void* userData, const XML_Char* n
     self->dropCapDepth = INT_MAX;
     self->dropCapConsumeWholeContainer = false;
     self->dropCapLineCount = 3;
+    self->dropCapFontSizeEm = 0.0f;
+    self->dropCapLineHeightEm = 0.0f;
+    self->dropCapTextTone = 1;
+  }
+  if (strcmp(name, "p") == 0) {
+    self->dropCapPageStartMarginPx_ = 0;
   }
 }
 
@@ -2541,10 +2752,15 @@ void ChapterHtmlSlimParser::addHorizontalRule(const std::string& tagLower, const
     makePages();
   }
 
-  const int spacingTop =
-      css().getParagraphSpacingTopPx(tagLower, classAttr, idAttr, styleAttr, viewportWidth, viewportHeight);
-  const int spacingBottom =
-      css().getParagraphSpacingBottomPx(tagLower, classAttr, idAttr, styleAttr, viewportWidth, viewportHeight);
+  const bool applyCssTextLayout = shouldApplyCssTextLayout(tagLower);
+  const int spacingTop = applyCssTextLayout
+                             ? css().getParagraphSpacingTopPx(tagLower, classAttr, idAttr, styleAttr, viewportWidth,
+                                                              viewportHeight)
+                             : 0;
+  const int spacingBottom = applyCssTextLayout
+                                ? css().getParagraphSpacingBottomPx(tagLower, classAttr, idAttr, styleAttr, viewportWidth,
+                                                                    viewportHeight)
+                                : 0;
   const int defaultHrGap = (renderer.text.getLineHeight(fontId) / 2) + 5;
   auto applyHrTopSpacing = [&]() {
     if (spacingTop > 0 && currentPageNextY > 0) {
@@ -2559,8 +2775,8 @@ void ChapterHtmlSlimParser::addHorizontalRule(const std::string& tagLower, const
     int imgW = 0;
     int imgH = 0;
     if (ensureImageCached(bgInternalPath, cacheImgPath, &imgW, &imgH) && imgW > 0 && imgH > 0) {
-      const int cssWidth = css().getWidth(classAttr, idAttr, styleAttr, viewportWidth, viewportHeight);
-      const int cssHeight = css().getHeight(classAttr, idAttr, styleAttr, viewportWidth, viewportHeight);
+      const int cssWidth = css().getWidth(classAttr, idAttr, styleAttr, viewportWidth, viewportHeight, tagLower);
+      const int cssHeight = css().getHeight(classAttr, idAttr, styleAttr, viewportWidth, viewportHeight, tagLower);
       if (cssWidth > 0 && cssHeight > 0) {
         imgW = cssWidth;
         imgH = cssHeight;
@@ -2590,7 +2806,7 @@ void ChapterHtmlSlimParser::addHorizontalRule(const std::string& tagLower, const
     const int borderBottom =
         css().getBorderBottomPx(tagLower, classAttr, idAttr, styleAttr, viewportWidth, viewportHeight);
     if (borderTop > 0 || borderBottom > 0) {
-      const int cssHeight = css().getHeight(classAttr, idAttr, styleAttr, viewportWidth, viewportHeight);
+      const int cssHeight = css().getHeight(classAttr, idAttr, styleAttr, viewportWidth, viewportHeight, tagLower);
       applyHrTopSpacing();
       if (borderTop > 0) {
         addCssBorderLine(borderTop, borderStyleCodeFromKeyword(
@@ -2883,9 +3099,6 @@ void ChapterHtmlSlimParser::addImageToPage(const std::string& cachePath, const s
  * @return true if parsing was successful, false otherwise
  */
 bool ChapterHtmlSlimParser::prepareParse(const bool skipImageProcessing) {
-  incrementalParseStartedAt_ = millis();
-  EPUB_PERF_LOG("[%lu] [CHAPTER-IMG] parse start chapter=%s internal=%s skipImageProcessing=%d\n", millis(),
-                filepath.c_str(), internalPath.c_str(), skipImageProcessing ? 1 : 0);
   skipImages = skipImageProcessing;
   imageExtractCountForYield_ = 0;
   cssUsageFilter_ = CssParser::UsageFilter();
@@ -2893,6 +3106,9 @@ bool ChapterHtmlSlimParser::prepareParse(const bool skipImageProcessing) {
   dropCapDepth = INT_MAX;
   dropCapConsumeWholeContainer = false;
   dropCapLineCount = 3;
+  dropCapFontSizeEm = 0.0f;
+  dropCapLineHeightEm = 0.0f;
+  dropCapTextTone = 1;
   nextWordJoinsPrevious = false;
   cssLoaded = false;
   currentBlockBottomSpacingPx = 0;
@@ -2954,21 +3170,21 @@ bool ChapterHtmlSlimParser::prepareParse(const bool skipImageProcessing) {
   return true;
 }
 
-ChapterHtmlSlimParser::~ChapterHtmlSlimParser() { cancelIncremental(); }
+ChapterHtmlSlimParser::~ChapterHtmlSlimParser() { cancelParse(); }
 
-void ChapterHtmlSlimParser::recordIncrementalXmlError() {
-  incrementalParseFailed_ = true;
+void ChapterHtmlSlimParser::recordParseXmlError() {
+  parseFailed_ = true;
   if (!xmlParser_) {
     return;
   }
-  incrementalXmlError_ = XML_GetErrorCode(xmlParser_);
-  incrementalXmlLine_ = XML_GetCurrentLineNumber(xmlParser_);
-  incrementalXmlColumn_ = XML_GetCurrentColumnNumber(xmlParser_);
-  incrementalXmlByte_ = XML_GetCurrentByteIndex(xmlParser_);
+  parseXmlError_ = XML_GetErrorCode(xmlParser_);
+  parseXmlLine_ = XML_GetCurrentLineNumber(xmlParser_);
+  parseXmlColumn_ = XML_GetCurrentColumnNumber(xmlParser_);
+  parseXmlByte_ = XML_GetCurrentByteIndex(xmlParser_);
 }
 
-bool ChapterHtmlSlimParser::beginIncremental(const bool skipImageProcessing) {
-  cancelIncremental();
+bool ChapterHtmlSlimParser::beginParse(const bool skipImageProcessing) {
+  cancelParse();
   if (!prepareParse(skipImageProcessing)) {
     return false;
   }
@@ -2988,40 +3204,42 @@ bool ChapterHtmlSlimParser::beginIncremental(const bool skipImageProcessing) {
   XML_SetElementHandler(xmlParser_, startElement, endElement);
   XML_SetCharacterDataHandler(xmlParser_, characterData);
   XML_SetDefaultHandlerExpand(xmlParser_, defaultHandlerExpand);
-  incrementalParseActive_ = true;
-  incrementalParseFailed_ = false;
-  incrementalXmlError_ = XML_ERROR_NONE;
-  incrementalXmlLine_ = 0;
-  incrementalXmlColumn_ = 0;
-  incrementalXmlByte_ = 0;
+  parseActive_ = true;
+  parseFailed_ = false;
+  parseXmlError_ = XML_ERROR_NONE;
+  parseXmlLine_ = 0;
+  parseXmlColumn_ = 0;
+  parseXmlByte_ = 0;
   return true;
 }
 
-bool ChapterHtmlSlimParser::feedIncremental(const uint8_t* data, const size_t size) {
-  if (!incrementalParseActive_ || incrementalParseFailed_ || !xmlParser_ || !data || size == 0 ||
+bool ChapterHtmlSlimParser::feedParse(const uint8_t* data, const size_t size) {
+  if (!parseActive_ || parseFailed_ || !xmlParser_ || !data || size == 0 ||
       size > static_cast<size_t>(INT_MAX)) {
     return false;
   }
-  if (XML_Parse(xmlParser_, reinterpret_cast<const char*>(data), static_cast<int>(size), XML_FALSE) != XML_STATUS_OK) {
-    recordIncrementalXmlError();
+  const XML_Status status = XML_Parse(xmlParser_, reinterpret_cast<const char*>(data), static_cast<int>(size), XML_FALSE);
+  if (status != XML_STATUS_OK) {
+    recordParseXmlError();
     return false;
   }
   return true;
 }
 
-bool ChapterHtmlSlimParser::finishIncremental() {
-  if (!incrementalParseActive_ || incrementalParseFailed_ || !xmlParser_) {
+bool ChapterHtmlSlimParser::finishParse() {
+  if (!parseActive_ || parseFailed_ || !xmlParser_) {
     return false;
   }
-  if (XML_Parse(xmlParser_, nullptr, 0, XML_TRUE) != XML_STATUS_OK) {
-    recordIncrementalXmlError();
-    cancelIncremental();
+  const XML_Status finalStatus = XML_Parse(xmlParser_, nullptr, 0, XML_TRUE);
+  if (finalStatus != XML_STATUS_OK) {
+    recordParseXmlError();
+    cancelParse();
     return false;
   }
 
   XML_ParserFree(xmlParser_);
   xmlParser_ = nullptr;
-  incrementalParseActive_ = false;
+  parseActive_ = false;
 
   flushPartWordBuffer();
   if (currentTextBlock && !currentTextBlock->isEmpty()) {
@@ -3030,22 +3248,19 @@ bool ChapterHtmlSlimParser::finishIncremental() {
   if (currentPage && !currentPage->elements.empty()) {
     completeCurrentPage();
   }
-
-  EPUB_PERF_LOG("[%lu] [PERF] chapter layout spine=%s elapsed=%lums\n", millis(), internalPath.c_str(),
-                static_cast<unsigned long>(millis() - incrementalParseStartedAt_));
   return true;
 }
 
-void ChapterHtmlSlimParser::cancelIncremental() {
+void ChapterHtmlSlimParser::cancelParse() {
   if (xmlParser_) {
     XML_ParserFree(xmlParser_);
     xmlParser_ = nullptr;
   }
-  incrementalParseActive_ = false;
+  parseActive_ = false;
 }
 
 bool ChapterHtmlSlimParser::parseAndBuildPages(const bool skipImageProcessing) {
-  if (!beginIncremental(skipImageProcessing)) {
+  if (!beginParse(skipImageProcessing)) {
     return false;
   }
   if (!parseHtmlThroughExpat(true)) {

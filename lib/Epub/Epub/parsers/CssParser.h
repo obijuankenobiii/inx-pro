@@ -7,8 +7,10 @@
 
 #include <SdFat.h>
 
+#include <array>
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -49,17 +51,17 @@ class CssParser {
   bool loadBinary(FsFile& file);
 
   int getWidth(const std::string& className, const std::string& id, const std::string& styleAttr, int viewportWidth,
-               int viewportHeight) const;
+               int viewportHeight, const std::string& elementTagLower = "") const;
   int getHeight(const std::string& className, const std::string& id, const std::string& styleAttr, int viewportWidth,
-                int viewportHeight) const;
+                int viewportHeight, const std::string& elementTagLower = "") const;
   int getMaxWidth(const std::string& className, const std::string& id, const std::string& styleAttr, int viewportWidth,
-                  int viewportHeight) const;
+                  int viewportHeight, const std::string& elementTagLower = "") const;
   int getMinWidth(const std::string& className, const std::string& id, const std::string& styleAttr, int viewportWidth,
-                  int viewportHeight) const;
+                  int viewportHeight, const std::string& elementTagLower = "") const;
   int getMaxHeight(const std::string& className, const std::string& id, const std::string& styleAttr, int viewportWidth,
-                   int viewportHeight) const;
+                   int viewportHeight, const std::string& elementTagLower = "") const;
   int getMinHeight(const std::string& className, const std::string& id, const std::string& styleAttr, int viewportWidth,
-                   int viewportHeight) const;
+                   int viewportHeight, const std::string& elementTagLower = "") const;
 
   /**
    * Parse a single CSS length (e.g. HTML width="50%" or style value).
@@ -90,11 +92,23 @@ class CssParser {
   /** Resolved inherited CSS font emphasis for the current element. */
   bool resolveFontBold(const std::string& elementTagLower, const std::string& className, const std::string& id,
                        const std::string& styleAttr, bool inheritedBold) const;
+  /** True when font-size is explicitly present inline or in a matching stylesheet rule. */
+  bool hasFontSizeSpecified(const std::string& elementTagLower, const std::string& className,
+                            const std::string& id, const std::string& styleAttr) const;
   bool resolveFontItalic(const std::string& elementTagLower, const std::string& className, const std::string& id,
                          const std::string& styleAttr, bool inheritedItalic) const;
   bool resolveSmallCaps(const std::string& elementTagLower, const std::string& className, const std::string& id,
                         const std::string& styleAttr, bool inheritedSmallCaps) const;
   bool hasFirstLetterDropCapHint(const std::string& elementTagLower, const std::string& className,
+                                 const std::string& id, const std::string& styleAttr) const;
+  /** Resolved font-size multiplier for a matching ::first-letter rule, or 0 when none is specified. */
+  float getFirstLetterFontSizeEm(const std::string& elementTagLower, const std::string& className,
+                                 const std::string& id, const std::string& styleAttr) const;
+  /** Resolved unitless line-height multiplier for ::first-letter, or 0 when none is specified. */
+  float getFirstLetterLineHeightEm(const std::string& elementTagLower, const std::string& className,
+                                   const std::string& id, const std::string& styleAttr) const;
+  /** Resolved first-letter CSS color as reader tone: 0 white, 1 black, 2 gray. */
+  uint8_t getFirstLetterTextTone(const std::string& elementTagLower, const std::string& className,
                                  const std::string& id, const std::string& styleAttr) const;
   uint8_t getFirstLetterDropCapLineCount(const std::string& elementTagLower, const std::string& className,
                                          const std::string& id, const std::string& styleAttr) const;
@@ -202,6 +216,15 @@ class CssParser {
   mutable std::vector<MatchedRule> mcMatched_;
   mutable bool mcValid_ = false;
 
+  /** Cache all winning declarations while the current element's matched rules are active. */
+  struct WinningRuleCacheTable {
+    std::array<const CssRule*, 256> winners{};
+    std::array<int8_t, 256> priorities{};
+    std::array<bool, 256> present{};
+    bool valid = false;
+  };
+  // Keep the large per-element tables off ChapterHtmlSlimParser's task stack.
+  mutable std::unique_ptr<WinningRuleCacheTable[]> winningRuleCache_;
   struct SelectorIndexEntry {
     std::string key;
     std::vector<uint16_t> rules;
@@ -239,7 +262,8 @@ class CssParser {
                           PercentRefersTo percentAxis) const;
   void parseInlineStyle(const std::string& styleAttr, std::map<std::string, std::string>& out) const;
   int getInlineOrSheetLength(const std::string& propName, const std::string& className, const std::string& id,
-                             const std::string& styleAttr, int viewportWidth, int viewportHeight) const;
+                             const std::string& styleAttr, int viewportWidth, int viewportHeight,
+                             const std::string& elementTagLower) const;
   int getSpacingEdgePx(const std::string& propName, const std::string& shorthandName, const std::string& className,
                        const std::string& id, const std::string& styleAttr, int viewportWidth, int viewportHeight,
                        const std::string& elementTagLower = "") const;

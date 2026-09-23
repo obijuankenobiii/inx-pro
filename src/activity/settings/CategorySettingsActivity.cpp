@@ -21,14 +21,14 @@
 #include <string>
 
 #include "CalibreSettingsActivity.h"
-#include "AuthorGeneratorActivity.h"
 #include "ClearCacheActivity.h"
 #include "ClockStylePickerActivity.h"
+#include "LanguageManagerActivity.h"
 #include "TimeSyncActivity.h"
 #include "activity/page/components/global/PopUp.h"
 #include "ReaderFontSettingsDraw.h"
 #include "SleepImagePickerActivity.h"
-#include "ThumbnailGeneratorActivity.h"
+#include "MetadataGeneratorActivity.h"
 #include "ThemePickerActivity.h"
 #include "images/Close.h"
 #include "images/LibraryFilterLeft.h"
@@ -449,14 +449,6 @@ void CategorySettingsActivity::setupMenu() {
                     return settingPtr->enumValues[i].c_str();
                   }
                 }
-                if (settingPtr->valuePtr == &SystemSetting::recentLibraryMode &&
-                    (current == SystemSetting::RECENT_LIST_DEPRECATED || current == SystemSetting::RECENT_SIMPLE)) {
-                  for (size_t i = 0; i < settingPtr->enumOptionValues.size(); ++i) {
-                    if (settingPtr->enumOptionValues[i] == SystemSetting::RECENT_FLOW) {
-                      return settingPtr->enumValues[i].c_str();
-                    }
-                  }
-                }
                 return "Unknown";
               }
               if (current >= 0 && current < (int)settingPtr->enumValues.size()) {
@@ -473,15 +465,6 @@ void CategorySettingsActivity::setupMenu() {
                   if (settingPtr->enumOptionValues[i] == current) {
                     currentIndex = static_cast<int>(i);
                     break;
-                  }
-                }
-                if (settingPtr->valuePtr == &SystemSetting::recentLibraryMode &&
-                    (current == SystemSetting::RECENT_LIST_DEPRECATED || current == SystemSetting::RECENT_SIMPLE)) {
-                  for (size_t i = 0; i < settingPtr->enumOptionValues.size(); ++i) {
-                    if (settingPtr->enumOptionValues[i] == SystemSetting::RECENT_FLOW) {
-                      currentIndex = static_cast<int>(i);
-                      break;
-                    }
                   }
                 }
                 int newIndex = currentIndex + delta;
@@ -527,17 +510,9 @@ void CategorySettingsActivity::setupMenu() {
               }
               return;
             }
-            if (strcmp(settingPtr->name, "Generate thumbnails") == 0) {
+            if (strcmp(settingPtr->name, "Generate Metadata") == 0) {
               exitActivity();
-              enterNewActivity(new ThumbnailGeneratorActivity(renderer, mappedInput, [this] {
-                exitActivity();
-                updateRequired = true;
-              }));
-              return;
-            }
-            if (strcmp(settingPtr->name, "Generate Authors") == 0) {
-              exitActivity();
-              enterNewActivity(new AuthorGeneratorActivity(renderer, mappedInput, [this] {
+              enterNewActivity(new MetadataGeneratorActivity(renderer, mappedInput, [this] {
                 exitActivity();
                 updateRequired = true;
               }));
@@ -554,6 +529,14 @@ void CategorySettingsActivity::setupMenu() {
             if (strcmp(settingPtr->name, "Choose sleep image") == 0) {
               exitActivity();
               enterNewActivity(new SleepImagePickerActivity(renderer, mappedInput, [this] {
+                exitActivity();
+                updateRequired = true;
+              }));
+              return;
+            }
+            if (strcmp(settingPtr->name, "Language") == 0) {
+              exitActivity();
+              enterNewActivity(new LanguageManagerActivity(renderer, mappedInput, [this] {
                 exitActivity();
                 updateRequired = true;
               }));
@@ -620,14 +603,6 @@ int CategorySettingsActivity::selectedOptionIndex(const MenuEntry& entry) const 
     for (size_t i = 0; i < setting->enumOptionValues.size(); ++i) {
       if (setting->enumOptionValues[i] == current) {
         return static_cast<int>(i);
-      }
-    }
-    if (entry.valuePtr == &SystemSetting::recentLibraryMode &&
-        (current == SystemSetting::RECENT_LIST_DEPRECATED || current == SystemSetting::RECENT_SIMPLE)) {
-      for (size_t i = 0; i < setting->enumOptionValues.size(); ++i) {
-        if (setting->enumOptionValues[i] == SystemSetting::RECENT_FLOW) {
-          return static_cast<int>(i);
-        }
       }
     }
     return 0;

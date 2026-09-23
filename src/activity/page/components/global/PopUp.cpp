@@ -36,6 +36,7 @@ void PopUp::title(GfxRenderer& renderer, const PopUpBounds& box, const std::stri
 
 void PopUp::list(GfxRenderer& renderer, const PopUpBounds& box, const std::vector<std::string>& values,
                  const int selected, const int scroll) {
+  constexpr int dividerInset = 20;
   const int font = systemFontId();
   const int maxScroll = std::max(0, static_cast<int>(values.size()) - box.rows);
   const int start = std::max(0, std::min(scroll, maxScroll));
@@ -51,8 +52,8 @@ void PopUp::list(GfxRenderer& renderer, const PopUpBounds& box, const std::vecto
     renderer.text.render(font, box.x + 20, textY, shown.c_str(), !active,
                          active ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR);
     if (i + 1 < box.rows && index + 1 < static_cast<int>(values.size())) {
-      renderer.line.render(box.x, y + box.row, box.x + box.width, y + box.row, !active,
-                           LineRender::Style::Dotted);
+      renderer.line.render(box.x + dividerInset, y + box.row, box.x + box.width - dividerInset, y + box.row,
+                           !active, LineRender::Style::Dotted);
     }
   }
   if (static_cast<int>(values.size()) > box.rows) {
@@ -67,6 +68,9 @@ void PopUp::list(GfxRenderer& renderer, const PopUpBounds& box, const std::vecto
 }
 
 void PopUp::border(GfxRenderer& renderer, const PopUpBounds& box) {
-  renderer.line.render(box.x, box.y + box.header, box.x + box.width, box.y + box.header, true);
+  constexpr int dividerInset = 20;
+  const int dividerY = box.y + box.header;
+  renderer.line.render(box.x + dividerInset, dividerY, box.x + box.width - dividerInset, dividerY, true,
+                       LineRender::Style::Dotted);
   renderer.rectangle.render(box.x, box.y, box.width, box.height, true);
 }

@@ -7,6 +7,9 @@
 
 #include "GfxRenderer.h"
 #include "BitmapUtil.h"
+#include "RtlText.h"
+#include "system/FontManager.h"
+#include "system/LanguageManager.h"
 
 namespace {
 
@@ -122,9 +125,42 @@ bool read1BitRowPixel(const uint8_t* row, const int width, const int x) {
   return ((row[x / 8] >> (7 - (x % 8))) & 1u) != 0;
 }
 
+// TTF glyph bitmaps are packed as one continuous pixel stream, so a row can
+// begin partway through a byte when the glyph width is not divisible by four.
+uint8_t read2BitRowPixel(const uint8_t* row, const size_t rowPixelOffset, const int x) {
+  const size_t packedPixel = rowPixelOffset + static_cast<size_t>(x);
+  const uint8_t byte = row[packedPixel / 4u];
+  return static_cast<uint8_t>((byte >> ((3u - (packedPixel % 4u)) * 2u)) & 0x3u);
+}
+
 const EpdFontFamily* findFontFamily(const GfxRenderer& gfx, const int fontId) { return gfx.findFontFamily(fontId); }
 
 ExternalFont* findStreamingFont(const GfxRenderer& gfx, const EpdFontData* data) { return gfx.findStreamingFont(data); }
+
+bool hasGlyph(const GfxRenderer& gfx, const EpdFontFamily& family, const uint32_t cp,
+              const EpdFontFamily::Style style) {
+  const EpdFontData* data = family.getData(style);
+  if (!data) return false;
+  if (ExternalFont* stream = findStreamingFont(gfx, data)) {
+    EpdGlyph glyph{};
+    return stream->getGlyphMetadata(cp, glyph);
+  }
+  return family.getGlyph(cp, style) != nullptr;
+}
+
+int resolveFontForCodepoint(GfxRenderer& gfx, const int fontId, const uint32_t cp,
+                            const EpdFontFamily::Style style) {
+  const EpdFontFamily* primary = findFontFamily(gfx, fontId);
+  if (!primary || hasGlyph(gfx, *primary, cp, style) || cp < 0x80 || cp == 0) return fontId;
+
+  int preferredPt = 14;
+  if (const FontManager::FontInfo* info = FontManager::getFontInfo(fontId)) {
+    preferredPt = info->size;
+  }
+  const int fallbackId = FontManager::findLanguageFontForCodepoint(cp, preferredPt, style, gfx,
+                                                                    LanguageManager::bookLanguageCode());
+  return fallbackId != 0 ? fallbackId : fontId;
+}
 
 bool embeddedGlyphBitmapIsValid(const EpdFontData* fontData, const EpdGlyph* glyph) {
   if (!fontData || !fontData->bitmap || !glyph || fontData->bitmapSize == 0) {
@@ -140,18 +176,92 @@ bool embeddedGlyphBitmapIsValid(const EpdFontData* fontData, const EpdGlyph* gly
 }
 
 int TextRender::getWidth(const int fontId, const char* text, const EpdFontFamily::Style style) const {
-  if (findFontFamily(gfx, fontId) == nullptr) {
+  text = LanguageManager::translateText(text);
+  return getUntranslatedWidth(fontId, text, style);
+}
+
+int TextRender::getUntranslatedWidth(const int fontId, const char* text, const EpdFontFamily::Style style) const {
+  std::string visualText;
+  text = RtlText::prepareForRender(text, visualText);
+  const EpdFontFamily* primary = findFontFamily(gfx, fontId);
+  if (primary == nullptr) {
     INX_SERIAL.printf("[%lu] [GFX] Font %d not found\n", millis(), fontId);
     return 0;
   }
-  const auto& family = (*findFontFamily(gfx, fontId));
-  if (findStreamingFont(gfx, family.getData(style)) != nullptr) {
-    return getStreamingTextWidth(family, text, style);
+  if (!text || *text == '\0') return 0;
+
+  // Streaming TTF fonts already expose cached glyph metadata. Measure the
+  // common no-fallback case in one pass; the old path first scanned every
+  // codepoint for fallback glyphs and then scanned the same text again for
+  // its width, doubling the hot-path work during EPUB pagination.
+  if (ExternalFont* stream = findStreamingFont(gfx, primary->getData(style))) {
+    int streamingWidth = 0;
+    bool needsFallback = false;
+    const uint8_t* streamPtr = reinterpret_cast<const uint8_t*>(text);
+    while (const uint32_t cp = utf8NextCodepoint(&streamPtr)) {
+      EpdGlyph glyph{};
+      if (stream->getGlyphMetadata(cp, glyph)) {
+        streamingWidth += glyph.advanceX;
+        continue;
+      }
+
+      const int resolved = resolveFontForCodepoint(gfx, fontId, cp, style);
+      if (resolved != fontId) {
+        needsFallback = true;
+        break;
+      }
+      if (stream->getGlyphMetadata(REPLACEMENT_GLYPH, glyph)) {
+        streamingWidth += glyph.advanceX;
+      }
+    }
+    if (!needsFallback) {
+      return streamingWidth;
+    }
   }
-  int w = 0;
-  int h = 0;
-  family.getTextDimensions(text, &w, &h, style);
-  return w;
+
+  // Keep the original family measurement for the common path. Besides being
+  // cheaper for embedded fonts, this preserves their existing bearing rules.
+  bool hasFallbackGlyph = false;
+  const uint8_t* scan = reinterpret_cast<const uint8_t*>(text);
+  while (const uint32_t cp = utf8NextCodepoint(&scan)) {
+    if (!hasGlyph(gfx, *primary, cp, style)) {
+      const int resolved = resolveFontForCodepoint(gfx, fontId, cp, style);
+      if (resolved != fontId) {
+        hasFallbackGlyph = true;
+        break;
+      }
+    }
+  }
+  if (!hasFallbackGlyph) {
+    const auto& family = *primary;
+    if (findStreamingFont(gfx, family.getData(style)) != nullptr) {
+      return getStreamingTextWidth(family, text, style);
+    }
+    int w = 0;
+    int h = 0;
+    family.getTextDimensions(text, &w, &h, style);
+    return w;
+  }
+
+  int totalWidth = 0;
+  const uint8_t* ptr = reinterpret_cast<const uint8_t*>(text);
+  while (const uint32_t cp = utf8NextCodepoint(&ptr)) {
+    const int resolvedId = resolveFontForCodepoint(gfx, fontId, cp, style);
+    const EpdFontFamily* family = findFontFamily(gfx, resolvedId);
+    if (!family) continue;
+    EpdGlyph glyphStorage{};
+    const EpdGlyph* glyph = nullptr;
+    const EpdFontData* data = family->getData(style);
+    if (ExternalFont* stream = findStreamingFont(gfx, data)) {
+      if (stream->getGlyphMetadata(cp, glyphStorage)) glyph = &glyphStorage;
+      else if (stream->getGlyphMetadata(REPLACEMENT_GLYPH, glyphStorage)) glyph = &glyphStorage;
+    } else {
+      glyph = family->getGlyph(cp, style);
+      if (!glyph) glyph = family->getGlyph(REPLACEMENT_GLYPH, style);
+    }
+    if (glyph) totalWidth += glyph->advanceX;
+  }
+  return totalWidth;
 }
 
 int TextRender::getHeight(const int fontId) const { return getLineHeight(fontId); }
@@ -165,10 +275,11 @@ int TextRender::getFontAscenderSize(const int fontId) const {
 }
 
 int TextRender::getGlyphTopInset(const int fontId, const uint32_t cp, const EpdFontFamily::Style style) const {
-  if (findFontFamily(gfx, fontId) == nullptr) {
+  const int resolvedId = resolveFontForCodepoint(gfx, fontId, cp, style);
+  if (findFontFamily(gfx, resolvedId) == nullptr) {
     return 0;
   }
-  const auto& family = (*findFontFamily(gfx, fontId));
+  const auto& family = (*findFontFamily(gfx, resolvedId));
   const EpdFontData* data = family.getData(style);
   if (!data) {
     return 0;
@@ -190,10 +301,11 @@ int TextRender::getGlyphTopInset(const int fontId, const uint32_t cp, const EpdF
 }
 
 int TextRender::getGlyphBottomInset(const int fontId, const uint32_t cp, const EpdFontFamily::Style style) const {
-  if (findFontFamily(gfx, fontId) == nullptr) {
+  const int resolvedId = resolveFontForCodepoint(gfx, fontId, cp, style);
+  if (findFontFamily(gfx, resolvedId) == nullptr) {
     return 0;
   }
-  const auto& family = (*findFontFamily(gfx, fontId));
+  const auto& family = (*findFontFamily(gfx, resolvedId));
   const EpdFontData* data = family.getData(style);
   if (!data) {
     return 0;
@@ -274,32 +386,33 @@ bool TextRender::supportsAntiAliasing(const int fontId) const {
 }
 
 int TextRender::getSmallCapsWidth(const int fontId, const char* text, const EpdFontFamily::Style style) const {
+  text = LanguageManager::translateText(text);
+  std::string visualText;
+  text = RtlText::prepareForRender(text, visualText);
   if (!text || *text == '\0' || findFontFamily(gfx, fontId) == nullptr) {
     return 0;
   }
 
-  const auto& family = (*findFontFamily(gfx, fontId));
-  const EpdFontData* fontData = family.getData(style);
-  if (!fontData) {
-    return 0;
-  }
-
-  ExternalFont* streamIt = findStreamingFont(gfx, fontData);
   const std::string upper = toUpperUtf8(text);
   const char* ptr = upper.c_str();
   int totalWidth = 0;
   while (const uint32_t cp = utf8NextCodepoint(reinterpret_cast<const uint8_t**>(&ptr))) {
-    EpdGlyph glyphStorage;
+    const int resolvedId = resolveFontForCodepoint(gfx, fontId, cp, style);
+    const EpdFontFamily* family = findFontFamily(gfx, resolvedId);
+    if (!family) continue;
+    const EpdFontData* fontData = family->getData(style);
+    if (!fontData) continue;
+    ExternalFont* streamIt = findStreamingFont(gfx, fontData);
+    EpdGlyph glyphStorage{};
     const EpdGlyph* glyph = nullptr;
     if (streamIt) {
-      if (!streamIt->getGlyphMetadata(cp, glyphStorage)) {
-        streamIt->getGlyphMetadata(REPLACEMENT_GLYPH, glyphStorage);
+      if (streamIt->getGlyphMetadata(cp, glyphStorage) || streamIt->getGlyphMetadata(REPLACEMENT_GLYPH, glyphStorage)) {
+        glyph = &glyphStorage;
       }
-      glyph = &glyphStorage;
     } else {
-      glyph = family.getGlyph(cp, style);
+      glyph = family->getGlyph(cp, style);
       if (!glyph) {
-        glyph = family.getGlyph(REPLACEMENT_GLYPH, style);
+        glyph = family->getGlyph(REPLACEMENT_GLYPH, style);
       }
     }
     if (!glyph) {
@@ -312,31 +425,32 @@ int TextRender::getSmallCapsWidth(const int fontId, const char* text, const EpdF
 
 int TextRender::getScaledWidth(const int fontId, const char* text, const uint8_t scalePct,
                                const EpdFontFamily::Style style) const {
+  text = LanguageManager::translateText(text);
+  std::string visualText;
+  text = RtlText::prepareForRender(text, visualText);
   if (!text || *text == '\0' || findFontFamily(gfx, fontId) == nullptr) {
     return 0;
   }
 
-  const auto& family = (*findFontFamily(gfx, fontId));
-  const EpdFontData* fontData = family.getData(style);
-  if (!fontData) {
-    return 0;
-  }
-
-  ExternalFont* streamIt = findStreamingFont(gfx, fontData);
   const uint8_t* ptr = reinterpret_cast<const uint8_t*>(text);
   int totalWidth = 0;
   while (const uint32_t cp = utf8NextCodepoint(&ptr)) {
-    EpdGlyph glyphStorage;
+    const int resolvedId = resolveFontForCodepoint(gfx, fontId, cp, style);
+    const EpdFontFamily* family = findFontFamily(gfx, resolvedId);
+    if (!family) continue;
+    const EpdFontData* fontData = family->getData(style);
+    if (!fontData) continue;
+    ExternalFont* streamIt = findStreamingFont(gfx, fontData);
+    EpdGlyph glyphStorage{};
     const EpdGlyph* glyph = nullptr;
     if (streamIt) {
-      if (!streamIt->getGlyphMetadata(cp, glyphStorage)) {
-        streamIt->getGlyphMetadata(REPLACEMENT_GLYPH, glyphStorage);
+      if (streamIt->getGlyphMetadata(cp, glyphStorage) || streamIt->getGlyphMetadata(REPLACEMENT_GLYPH, glyphStorage)) {
+        glyph = &glyphStorage;
       }
-      glyph = &glyphStorage;
     } else {
-      glyph = family.getGlyph(cp, style);
+      glyph = family->getGlyph(cp, style);
       if (!glyph) {
-        glyph = family.getGlyph(REPLACEMENT_GLYPH, style);
+        glyph = family->getGlyph(REPLACEMENT_GLYPH, style);
       }
     }
     if (!glyph) {
@@ -351,14 +465,15 @@ std::string TextRender::truncate(const int fontId, const char* text, const int m
                                  const EpdFontFamily::Style style) const {
   if (!text || maxWidth <= 0) return "";
 
+  text = LanguageManager::translateText(text);
   std::string item = text;
   const char* ellipsis = "...";
-  int textWidth = getWidth(fontId, item.c_str(), style);
+  int textWidth = getUntranslatedWidth(fontId, item.c_str(), style);
   if (textWidth <= maxWidth) {
     return item;
   }
 
-  while (!item.empty() && getWidth(fontId, (item + ellipsis).c_str(), style) >= maxWidth) {
+  while (!item.empty() && getUntranslatedWidth(fontId, (item + ellipsis).c_str(), style) >= maxWidth) {
     utf8RemoveLastChar(item);
   }
 
@@ -367,35 +482,33 @@ std::string TextRender::truncate(const int fontId, const char* text, const int m
 
 void TextRender::rotated90CW(const int fontId, const int x, const int y, const char* text, const bool black,
                              const EpdFontFamily::Style style) const {
+  text = LanguageManager::translateText(text);
+  std::string visualText;
+  text = RtlText::prepareForRender(text, visualText);
   if (text == nullptr || *text == '\0' || findFontFamily(gfx, fontId) == nullptr) {
     return;
   }
-  const auto font = (*findFontFamily(gfx, fontId));
-  if (!font.hasPrintableChars(text, style)) {
-    return;
-  }
-
-  const EpdFontData* fontData = font.getData(style);
-  if (!fontData) {
-    return;
-  }
-  ExternalFont* it = findStreamingFont(gfx, fontData);
   int yPos = y;
 
   uint32_t cp;
   while ((cp = utf8NextCodepoint(reinterpret_cast<const uint8_t**>(&text)))) {
-    EpdGlyph glyphStorage;
+    const int resolvedId = resolveFontForCodepoint(gfx, fontId, cp, style);
+    const EpdFontFamily* resolvedFont = findFontFamily(gfx, resolvedId);
+    if (!resolvedFont) continue;
+    const EpdFontData* fontData = resolvedFont->getData(style);
+    if (!fontData) continue;
+    ExternalFont* it = findStreamingFont(gfx, fontData);
+    EpdGlyph glyphStorage{};
     const EpdGlyph* glyph = nullptr;
 
     if (it) {
-      if (!it->getGlyphMetadata(cp, glyphStorage)) {
-        it->getGlyphMetadata(REPLACEMENT_GLYPH, glyphStorage);
+      if (it->getGlyphMetadata(cp, glyphStorage) || it->getGlyphMetadata(REPLACEMENT_GLYPH, glyphStorage)) {
+        glyph = &glyphStorage;
       }
-      glyph = &glyphStorage;
     } else {
-      glyph = font.getGlyph(cp, style);
+      glyph = resolvedFont->getGlyph(cp, style);
       if (!glyph) {
-        glyph = font.getGlyph(REPLACEMENT_GLYPH, style);
+        glyph = resolvedFont->getGlyph(REPLACEMENT_GLYPH, style);
       }
     }
 
@@ -447,6 +560,14 @@ void TextRender::rotated90CW(const int fontId, const int x, const int y, const c
 
 void TextRender::render(const int fontId, const int x, const int y, const char* text, const bool black,
                         const EpdFontFamily::Style style) const {
+  text = LanguageManager::translateText(text);
+  renderUntranslated(fontId, x, y, text, black, style);
+}
+
+void TextRender::renderUntranslated(const int fontId, const int x, const int y, const char* text, const bool black,
+                                    const EpdFontFamily::Style style) const {
+  std::string visualText;
+  text = RtlText::prepareForRender(text, visualText);
   const int yPos = y + getFontAscenderSize(fontId);
   int xpos = x;
 
@@ -458,20 +579,20 @@ void TextRender::render(const int fontId, const int x, const int y, const char* 
     INX_SERIAL.printf("[%lu] [GFX] Font %d not found\n", millis(), fontId);
     return;
   }
-  const auto font = (*findFontFamily(gfx, fontId));
-  if (!font.hasPrintableChars(text, style)) {
-    return;
-  }
-
   uint32_t cp;
   int yCursor = yPos;
   while ((cp = utf8NextCodepoint(reinterpret_cast<const uint8_t**>(&text)))) {
-    renderChar(font, cp, &xpos, &yCursor, black, style, false);
+    const int resolvedId = resolveFontForCodepoint(gfx, fontId, cp, style);
+    const EpdFontFamily* resolvedFont = findFontFamily(gfx, resolvedId);
+    if (resolvedFont) renderChar(*resolvedFont, cp, &xpos, &yCursor, black, style, false);
   }
 }
 
 void TextRender::renderGray(const int fontId, const int x, const int y, const char* text, const bool black,
                             const EpdFontFamily::Style style) const {
+  text = LanguageManager::translateText(text);
+  std::string visualText;
+  text = RtlText::prepareForRender(text, visualText);
   const int yPos = y + getFontAscenderSize(fontId);
   int xpos = x;
 
@@ -482,20 +603,20 @@ void TextRender::renderGray(const int fontId, const int x, const int y, const ch
     INX_SERIAL.printf("[%lu] [GFX] Font %d not found\n", millis(), fontId);
     return;
   }
-  const auto font = (*findFontFamily(gfx, fontId));
-  if (!font.hasPrintableChars(text, style)) {
-    return;
-  }
-
   uint32_t cp;
   int yCursor = yPos;
   while ((cp = utf8NextCodepoint(reinterpret_cast<const uint8_t**>(&text)))) {
-    renderChar(font, cp, &xpos, &yCursor, black, style, true);
+    const int resolvedId = resolveFontForCodepoint(gfx, fontId, cp, style);
+    const EpdFontFamily* resolvedFont = findFontFamily(gfx, resolvedId);
+    if (resolvedFont) renderChar(*resolvedFont, cp, &xpos, &yCursor, black, style, true);
   }
 }
 
 int TextRender::renderScaled(const int fontId, const int x, const int y, const char* text, const uint8_t scalePct,
                              const bool black, const EpdFontFamily::Style style) const {
+  text = LanguageManager::translateText(text);
+  std::string visualText;
+  text = RtlText::prepareForRender(text, visualText);
   if (text == nullptr || *text == '\0') {
     return x;
   }
@@ -504,20 +625,22 @@ int TextRender::renderScaled(const int fontId, const int x, const int y, const c
     return x;
   }
 
-  const auto font = (*findFontFamily(gfx, fontId));
   const int yPos = y + getFontAscenderSize(fontId);
   int xpos = x;
   int yCursor = yPos;
 
   uint32_t cp;
   while ((cp = utf8NextCodepoint(reinterpret_cast<const uint8_t**>(&text)))) {
-    renderScaledChar(font, cp, &xpos, &yCursor, black, style, scalePct);
+    const int resolvedId = resolveFontForCodepoint(gfx, fontId, cp, style);
+    const EpdFontFamily* resolvedFont = findFontFamily(gfx, resolvedId);
+    if (resolvedFont) renderScaledChar(*resolvedFont, cp, &xpos, &yCursor, black, style, scalePct);
   }
   return xpos;
 }
 
 int TextRender::renderSmallCaps(const int fontId, const int x, const int y, const char* text, const bool black,
                                 const EpdFontFamily::Style style) const {
+  text = LanguageManager::translateText(text);
   if (text == nullptr || *text == '\0') {
     return x;
   }
@@ -526,16 +649,18 @@ int TextRender::renderSmallCaps(const int fontId, const int x, const int y, cons
     return x;
   }
 
-  const auto font = (*findFontFamily(gfx, fontId));
   const std::string upper = toUpperUtf8(text);
-  const char* ptr = upper.c_str();
+  std::string visualText;
+  const char* ptr = RtlText::prepareForRender(upper.c_str(), visualText);
   const int yPos = y + getFontAscenderSize(fontId);
   int xpos = x;
   int yCursor = yPos;
 
   uint32_t cp;
   while ((cp = utf8NextCodepoint(reinterpret_cast<const uint8_t**>(&ptr)))) {
-    renderScaledChar(font, cp, &xpos, &yCursor, black, style, kSmallCapsScalePct);
+    const int resolvedId = resolveFontForCodepoint(gfx, fontId, cp, style);
+    const EpdFontFamily* resolvedFont = findFontFamily(gfx, resolvedId);
+    if (resolvedFont) renderScaledChar(*resolvedFont, cp, &xpos, &yCursor, black, style, kSmallCapsScalePct);
   }
   return xpos;
 }
@@ -548,7 +673,7 @@ void TextRender::centered(const int fontId, const int y, const char* text, const
 
 void TextRender::renderChar(const EpdFontFamily& fontFamily, const uint32_t cp, int* x, const int* y,
                             const bool pixelState, const EpdFontFamily::Style style, const bool gray) const {
-  EpdGlyph glyphStorage;
+  EpdGlyph glyphStorage{};
   const EpdGlyph* glyph = nullptr;
   const EpdFontData* fontData = fontFamily.getData(style);
   if (!fontData) {
@@ -556,10 +681,9 @@ void TextRender::renderChar(const EpdFontFamily& fontFamily, const uint32_t cp, 
   }
   ExternalFont* it = findStreamingFont(gfx, fontData);
   if (it) {
-    if (!it->getGlyphMetadata(cp, glyphStorage)) {
-      it->getGlyphMetadata(REPLACEMENT_GLYPH, glyphStorage);
+    if (it->getGlyphMetadata(cp, glyphStorage) || it->getGlyphMetadata(REPLACEMENT_GLYPH, glyphStorage)) {
+      glyph = &glyphStorage;
     }
-    glyph = &glyphStorage;
   } else {
     glyph = fontFamily.getGlyph(cp, style);
   }
@@ -614,8 +738,12 @@ void TextRender::renderChar(const EpdFontFamily& fontFamily, const uint32_t cp, 
       }
       uint8_t rowBuf[kMaxRowBytes];
       for (int glyphY = 0; glyphY < height; glyphY++) {
-        const uint32_t rowOff = glyph->dataOffset + static_cast<uint32_t>(glyphY) * static_cast<uint32_t>(rowBytes);
-        if (!it->getGlyphBitmap(rowOff, rowBytes, rowBuf)) {
+        const size_t rowPixelOffset = is2Bit ? (static_cast<size_t>(glyphY) * width) % 4u : 0u;
+        const size_t rowStartByte = is2Bit ? (static_cast<size_t>(glyphY) * width) / 4u
+                                           : static_cast<size_t>(glyphY) * rowBytes;
+        const size_t packedRowBytes = is2Bit ? (rowPixelOffset + width + 3u) / 4u : rowBytes;
+        const uint32_t rowOff = glyph->dataOffset + static_cast<uint32_t>(rowStartByte);
+        if (!it->getGlyphBitmap(rowOff, packedRowBytes, rowBuf)) {
           *x += glyph->advanceX;
           return;
         }
@@ -623,11 +751,13 @@ void TextRender::renderChar(const EpdFontFamily& fontFamily, const uint32_t cp, 
         for (int glyphX = 0; glyphX < width; glyphX++) {
           const int screenX = *x + left + glyphX;
           if (is2Bit) {
-            const uint8_t byte = rowBuf[glyphX / 4];
-            const uint8_t bitIndex = (3 - (glyphX % 4)) * 2;
-            const uint8_t bmpVal = 3 - ((byte >> bitIndex) & 0x3);
+            const uint8_t bmpVal = 3 - read2BitRowPixel(rowBuf, rowPixelOffset, glyphX);
 
-            if (!pixelState && bmpVal < 3) {
+            if (gray && gfx.renderMode == GfxRenderer::BW && bmpVal < 3) {
+              if (((screenX + screenY) & 1) == 0) {
+                gfx.drawPixel(screenX, screenY, pixelState);
+              }
+            } else if (!pixelState && bmpVal < 3) {
               renderSolidTextPixel(gfx, screenX, screenY, false);
             } else if (gfx.renderMode == GfxRenderer::BW && bmpVal < 3) {
               gfx.drawPixel(screenX, screenY, pixelState);
@@ -659,7 +789,11 @@ void TextRender::renderChar(const EpdFontFamily& fontFamily, const uint32_t cp, 
           const uint8_t bitIndex = (3 - (pixelPosition % 4)) * 2;
           const uint8_t bmpVal = 3 - ((byte >> bitIndex) & 0x3);
 
-          if (!pixelState && bmpVal < 3) {
+          if (gray && gfx.renderMode == GfxRenderer::BW && bmpVal < 3) {
+            if (((screenX + screenY) & 1) == 0) {
+              gfx.drawPixel(screenX, screenY, pixelState);
+            }
+          } else if (!pixelState && bmpVal < 3) {
             renderSolidTextPixel(gfx, screenX, screenY, false);
           } else if (gfx.renderMode == GfxRenderer::BW && bmpVal < 3) {
             gfx.drawPixel(screenX, screenY, pixelState);
@@ -682,7 +816,7 @@ void TextRender::renderChar(const EpdFontFamily& fontFamily, const uint32_t cp, 
 void TextRender::renderScaledChar(const EpdFontFamily& fontFamily, const uint32_t cp, int* x, const int* y,
                                   const bool pixelState, const EpdFontFamily::Style style,
                                   const uint8_t scalePct) const {
-  EpdGlyph glyphStorage;
+  EpdGlyph glyphStorage{};
   const EpdGlyph* glyph = nullptr;
   const EpdFontData* fontData = fontFamily.getData(style);
   if (!fontData) {
@@ -690,10 +824,9 @@ void TextRender::renderScaledChar(const EpdFontFamily& fontFamily, const uint32_
   }
   ExternalFont* it = findStreamingFont(gfx, fontData);
   if (it) {
-    if (!it->getGlyphMetadata(cp, glyphStorage)) {
-      it->getGlyphMetadata(REPLACEMENT_GLYPH, glyphStorage);
+    if (it->getGlyphMetadata(cp, glyphStorage) || it->getGlyphMetadata(REPLACEMENT_GLYPH, glyphStorage)) {
+      glyph = &glyphStorage;
     }
-    glyph = &glyphStorage;
   } else {
     glyph = fontFamily.getGlyph(cp, style);
   }
@@ -737,8 +870,12 @@ void TextRender::renderScaledChar(const EpdFontFamily& fontFamily, const uint32_
       uint8_t rowBuf[kMaxRowBytes];
       for (int outY = 0; outY < scaledH; ++outY) {
         const int srcY = std::min<int>(height - 1, (outY * static_cast<int>(height)) / scaledH);
-        const uint32_t rowOff = glyph->dataOffset + static_cast<uint32_t>(srcY) * static_cast<uint32_t>(rowBytes);
-        if (!it->getGlyphBitmap(rowOff, rowBytes, rowBuf)) {
+        const size_t rowPixelOffset = is2Bit ? (static_cast<size_t>(srcY) * width) % 4u : 0u;
+        const size_t rowStartByte = is2Bit ? (static_cast<size_t>(srcY) * width) / 4u
+                                           : static_cast<size_t>(srcY) * rowBytes;
+        const size_t packedRowBytes = is2Bit ? (rowPixelOffset + width + 3u) / 4u : rowBytes;
+        const uint32_t rowOff = glyph->dataOffset + static_cast<uint32_t>(rowStartByte);
+        if (!it->getGlyphBitmap(rowOff, packedRowBytes, rowBuf)) {
           *x += scaledAdvanceX;
           return;
         }
@@ -752,7 +889,7 @@ void TextRender::renderScaledChar(const EpdFontFamily& fontFamily, const uint32_
           if (is2Bit) {
             uint8_t rawMax = 0;
             for (int sx = sx0; sx < sx1; ++sx) {
-              const uint8_t raw = (rowBuf[sx / 4] >> ((3 - (sx % 4)) * 2)) & 0x3;
+              const uint8_t raw = read2BitRowPixel(rowBuf, rowPixelOffset, sx);
               if (raw > rawMax) rawMax = raw;
             }
             const uint8_t bmpVal = 3 - rawMax;

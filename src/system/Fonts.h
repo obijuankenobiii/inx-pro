@@ -26,26 +26,6 @@
 #include "font/montserrat_18_italic.h"
 #include "font/montserrat_18_regular.h"
 #include "font/montserrat_8_regular.h"
-#include "font/chareink_10_bold.h"
-#include "font/chareink_10_bolditalic.h"
-#include "font/chareink_10_italic.h"
-#include "font/chareink_10_regular.h"
-#include "font/chareink_12_bold.h"
-#include "font/chareink_12_bolditalic.h"
-#include "font/chareink_12_italic.h"
-#include "font/chareink_12_regular.h"
-#include "font/chareink_14_bold.h"
-#include "font/chareink_14_bolditalic.h"
-#include "font/chareink_14_italic.h"
-#include "font/chareink_14_regular.h"
-#include "font/chareink_16_bold.h"
-#include "font/chareink_16_bolditalic.h"
-#include "font/chareink_16_italic.h"
-#include "font/chareink_16_regular.h"
-#include "font/chareink_18_bold.h"
-#include "font/chareink_18_bolditalic.h"
-#include "font/chareink_18_italic.h"
-#include "font/chareink_18_regular.h"
 #include "font/montserrat_clock_70_bold.h"
 #include "font/montserrat_clock_70_regular.h"
 
@@ -57,12 +37,6 @@
 #define MONTSERRAT_14_FONT_ID (2504)
 #define MONTSERRAT_16_FONT_ID (2505)
 #define MONTSERRAT_18_FONT_ID (2506)
-
-#define CHAREINK_10_FONT_ID (3501)
-#define CHAREINK_12_FONT_ID (3502)
-#define CHAREINK_14_FONT_ID (3503)
-#define CHAREINK_16_FONT_ID (3504)
-#define CHAREINK_18_FONT_ID (3505)
 
 #define MONTSERRAT_CLOCK_70_FONT_ID (4001)
 

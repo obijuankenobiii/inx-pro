@@ -173,12 +173,21 @@ class EpubActivity final : public ActivityWithSubactivity {
   bool handleWordTouch();
   bool handleWordSelection();
   bool openWordSelection(int x, int y);
-  void startVoiceNoteForSelection(const std::string& selectedText, uint16_t wordLo, uint16_t wordHi);
+  void startVoiceNoteForSelection(const std::string& selectedText, uint16_t wordLo, uint16_t wordHi,
+                                  bool attachToHighlight = false);
+  void restoreWordSelectionAfterNote();
   void startVoiceNoteForPage();
   void closeWordSelection();
   void renderWordSelection();
+  void drawWordSelectionRange();
+  void drawWordSelectionHandles();
+  void drawWordSelectionActionBar(const PageWordHit& word);
+  bool wordSelectionActionBarBounds(const PageWordHit& word, int& x, int& y, int& width, int& height,
+                                    std::vector<int>* itemWidths = nullptr) const;
+  int wordSelectionHandleAt(int x, int y) const;
+  bool wordSelectionIsMultiple() const;
   int wordAt(int x, int y) const;
-  /** Base word-action list ("Look up"/"Highlight"/"Add note") plus "View footnote" appended when the
+  /** Base word-action list ("Look up"/"Add note") plus "View footnote" appended when the
    * currently selected word (touchWords_[selectedWord_]) is a footnote/link marker. */
   std::vector<std::string> currentWordActions() const;
 
@@ -214,13 +223,6 @@ class EpubActivity final : public ActivityWithSubactivity {
    */
   void renderContents(Page* page, int orientedMarginTop, int orientedMarginRight,
                       int orientedMarginBottom, int orientedMarginLeft);
-
-  /**
-   * Fast, minimal render of a page pulled straight out of an in-progress chapter build
-   * (Section::loadIncrementalPage()), shown while the rest of that chapter keeps building in the
-   * background. Deliberately skips annotations/AA/grayscale passes - it's a preview, superseded within a
-   * tick or two by the normal renderContents() once the chapter finishes and `section` is set.
-   */
 
   /**
    * Renders the status bar with configurable sections.
@@ -262,7 +264,7 @@ class EpubActivity final : public ActivityWithSubactivity {
   void drawLoadingScreen();
 
   /** Close drawers (if open), then show a centered popup message. */
-  void readerPopup(const char* message);
+  void readerPopup(const char* message, uint32_t autoDismissMs = 0);
 
   /** After a failed chapter load: popup, revert once to last good chapter, then clear cache and exit if still broken.
    */
@@ -286,6 +288,11 @@ class EpubActivity final : public ActivityWithSubactivity {
   bool wordSelectionOpen_ = false;
   bool wordActionsOpen_ = false;
   int selectedWord_ = -1;
+  int wordSelectionAnchor_ = -1;
+  int wordSelectionFocus_ = -1;
+  bool wordSelectionHandleDragActive_ = false;
+  bool wordSelectionDraggingStart_ = false;
+  bool wordSelectionDraggingOnWord_ = false;
   std::vector<PageWordHit> touchWords_;
   bool pageNotePopupOpen_ = false;
   bool pageNoteTranscriptionPending_ = false;
@@ -296,6 +303,13 @@ class EpubActivity final : public ActivityWithSubactivity {
   bool pageNoteVoiceCompletionPending_ = false;
   bool pageNoteVoiceSuccess_ = false;
   std::string pageNoteVoicePath_;
+  uint32_t readerPopupExpiresAt_ = 0;
+  bool bookFinished_ = false;
+  bool readerSuggestionAvailable_ = false;
+  std::string readerSuggestionPath_;
+  std::string readerSuggestionTitle_;
+  std::string readerSuggestionGroup_;
+  std::string readerSuggestionLabel_;
   OrientationPickerUi orientationPicker_;
   PresetPickerUi presetPicker_;
   QuickActionsMenuUi quickActionsUi_;
@@ -369,4 +383,7 @@ class EpubActivity final : public ActivityWithSubactivity {
   void fastPath();
   bool slowPath();
   void displayBookStats();
+  void loadReaderSuggestion();
+  void renderReaderSuggestion();
+  bool handleFinishedBookInput();
 };

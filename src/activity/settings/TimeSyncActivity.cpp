@@ -29,6 +29,7 @@
 #include "images/Shift.h"
 #include "state/SystemSetting.h"
 #include "system/Fonts.h"
+#include "system/LanguageManager.h"
 #include "system/MappedInputManager.h"
 #include "system/TimeZoneAutoDetect.h"
 #include "system/UiLayout.h"
@@ -647,11 +648,12 @@ void TimeSyncActivity::performSync() {
   rtcDateTime.second = dt.second;
   rtcDateTime.weekday = dt.weekday;
   if (gpio.writeDateTime(rtcDateTime)) {
-    std::snprintf(buffer, sizeof(buffer), "%02u:%02u saved to RTC", dt.hour, dt.minute);
+    std::snprintf(buffer, sizeof(buffer), LanguageManager::translateText("%02u:%02u saved to RTC"), dt.hour,
+                  dt.minute);
   } else
 #endif
   {
-    std::snprintf(buffer, sizeof(buffer), "%02u:%02u synced", dt.hour, dt.minute);
+    std::snprintf(buffer, sizeof(buffer), LanguageManager::translateText("%02u:%02u synced"), dt.hour, dt.minute);
   }
   message = buffer;
   state = State::DONE;

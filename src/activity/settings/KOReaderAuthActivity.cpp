@@ -7,6 +7,7 @@
 
 #include <GfxRenderer.h>
 #include <WiFi.h>
+#include <esp_heap_caps.h>
 
 #include "activity/page/SubPage.h"
 #include "KOReaderCredentialStore.h"
@@ -14,6 +15,11 @@
 #include "activity/network/WifiSelectionActivity.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
+
+namespace {
+constexpr uint32_t kDisplayTaskStack = 8192;
+constexpr uint32_t kAuthTaskStack = 8192;
+}
 
 void KOReaderAuthActivity::taskTrampoline(void* param) {
   auto* self = static_cast<KOReaderAuthActivity*>(param);
@@ -62,7 +68,8 @@ void KOReaderAuthActivity::onEnter() {
 
   renderingMutex = xSemaphoreCreateMutex();
 
-  xTaskCreate(&KOReaderAuthActivity::taskTrampoline, "KOAuthTask", 4096, this, 1, &displayTaskHandle);
+  xTaskCreateWithCaps(&KOReaderAuthActivity::taskTrampoline, "KOAuthTask", kDisplayTaskStack, this, 1,
+                      &displayTaskHandle, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 
   WiFi.mode(WIFI_STA);
 
@@ -71,13 +78,13 @@ void KOReaderAuthActivity::onEnter() {
     statusMessage = mode == Mode::SIGN_UP ? "Creating account..." : "Authenticating...";
     updateRequired = true;
 
-    xTaskCreate(
+    xTaskCreateWithCaps(
         [](void* param) {
           auto* self = static_cast<KOReaderAuthActivity*>(param);
           self->performAuthentication();
-          vTaskDelete(nullptr);
+          vTaskDeleteWithCaps(nullptr);
         },
-        "AuthTask", 4096, this, 1, nullptr);
+        "AuthTask", kAuthTaskStack, this, 1, nullptr, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     return;
   }
 
@@ -95,7 +102,7 @@ void KOReaderAuthActivity::onExit() {
 
   xSemaphoreTake(renderingMutex, portMAX_DELAY);
   if (displayTaskHandle) {
-    vTaskDelete(displayTaskHandle);
+    vTaskDeleteWithCaps(displayTaskHandle);
     displayTaskHandle = nullptr;
   }
   vSemaphoreDelete(renderingMutex);

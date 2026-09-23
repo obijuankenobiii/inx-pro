@@ -37,6 +37,7 @@ class Home final : public Page {
   void preloadCarousel();
   void popup() const;
   bool popupInput();
+  void markCompleted();
   void removeRecent();
   void deleteCache();
   ButtonBounds libraryButton() const;

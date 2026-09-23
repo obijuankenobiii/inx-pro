@@ -247,17 +247,22 @@ int ScreenComponents::drawTabBar(const GfxRenderer& renderer, const int y, const
   int currentX = leftMargin;
 
   for (const auto& tab : tabs) {
-    const int textWidth = renderer.text.getWidth(systemFontId(), tab.label,
-                                                 tab.selected ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR);
+    const EpdFontFamily::Style style = tab.selected ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR;
+    const int baseWidth = std::max(renderer.text.getUntranslatedWidth(systemFontId(), tab.label),
+                                   renderer.text.getUntranslatedWidth(systemFontId(), tab.label,
+                                                                      EpdFontFamily::BOLD));
+    const std::string shown = renderer.text.truncate(systemFontId(), tab.label, baseWidth, style);
+    const int textWidth = renderer.text.getUntranslatedWidth(systemFontId(), shown.c_str(), style);
 
-    renderer.text.render(systemFontId(), currentX, y, tab.label, true,
-                         tab.selected ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR);
+    renderer.text.renderUntranslated(systemFontId(), currentX + (baseWidth - textWidth) / 2, y, shown.c_str(), true,
+                                     style);
 
     if (tab.selected) {
-      renderer.rectangle.fill(currentX, y + lineHeight + underlineGap, textWidth, underlineHeight);
+      renderer.rectangle.fill(currentX + (baseWidth - textWidth) / 2, y + lineHeight + underlineGap, textWidth,
+                              underlineHeight);
     }
 
-    currentX += textWidth + tabPadding;
+    currentX += baseWidth + tabPadding;
   }
 
   return tabBarHeight;
