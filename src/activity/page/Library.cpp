@@ -363,9 +363,9 @@ void Library::onEnter() {
   metadataIndexAvailable_ = false;
   sidebarScrollOffset_ = 0;
   allBooksMode = false;
-  // Defer the expensive first library load so the top-level library shell can
-  // draw immediately. Folder and nested group pages should open synchronously.
-  loading = path == "/";
+  // Defer the expensive first root load only for thumbnail mode so its shell
+  // can draw immediately. List/grid and folder pages should open synchronously.
+  loading = path == "/" && view == View::Thumb;
   items.clear();
   books.clear();
   resetViews();
@@ -893,7 +893,7 @@ void Library::loop() {
 }
 
 void Library::content() {
-  if (loading) {
+  if (loading && view == View::Thumb) {
     renderer.text.centered(systemFontId(), renderer.getScreenHeight() / 2, "Loading library...");
     return;
   }
