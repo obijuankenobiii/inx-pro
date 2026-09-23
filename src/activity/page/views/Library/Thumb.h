@@ -66,7 +66,7 @@ class Thumb final {
   static constexpr int margin = 20;
   static constexpr int sideMargin = 20;
   static constexpr int gap = 20;
-  static constexpr int rowGap = 20;
+  static constexpr int rowGap = 10;
 
   GfxRenderer& renderer;
   MappedInputManager& mappedInput;

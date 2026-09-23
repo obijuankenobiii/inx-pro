@@ -272,28 +272,18 @@ void drawFolderStack(GfxRenderer& renderer, const std::string& firstPath, const 
   cover(renderer, firstPath, frontX, frontY, frontWidth, frontHeight, rounded, true, cropToFill);
 }
 
-// Keep the cover close to its label so labeled tiles use the available cell
-// height instead of leaving a large band of unused space.
-constexpr int kFolderLabelGap = 4;
+// Keep a small gap between the cover and the title at the bottom of a tile.
+constexpr int kFolderLabelGap = 10;
 
 void folderLabel(GfxRenderer& renderer, const std::string& value, const int labelX, const int labelWidthAvailable,
-                 const int y, const int height, const int bottomOffset = 10) {
+                 const int y, const int height, const int bottomOffset = 5) {
   const int font = systemFontId();
-  constexpr int horizontalPadding = 8;
-  constexpr int verticalPadding = 4;
-  constexpr int tagMargin = 10;
   const int lineHeight = renderer.text.getLineHeight(font);
-  const int tagWidth = std::max(8, labelWidthAvailable - tagMargin * 2);
-  const int maxTextWidth = std::max(8, tagWidth - horizontalPadding * 2);
-  const std::string label = renderer.text.truncate(font, value.c_str(), maxTextWidth);
-  const int tagHeight = lineHeight + verticalPadding * 2;
-  const int tagX = labelX + tagMargin;
-  const int tagY = y + height - tagHeight - tagMargin;
-  renderer.rectangle.fill(tagX, tagY, tagWidth, tagHeight,
-                          static_cast<int>(GfxRenderer::FillTone::Paper), true);
-  renderer.rectangle.render(tagX, tagY, tagWidth, tagHeight, true, true);
-  renderer.text.render(font, tagX + (tagWidth - renderer.text.getWidth(font, label.c_str())) / 2,
-                       tagY + verticalPadding, label.c_str(), true);
+  constexpr int horizontalMargin = 10;
+  const int textX = labelX + horizontalMargin;
+  const int textWidth = std::max(8, labelWidthAvailable - horizontalMargin * 2);
+  const std::string label = renderer.text.truncate(font, value.c_str(), textWidth);
+  renderer.text.render(font, textX, y + height - lineHeight - bottomOffset, label.c_str(), true);
 }
 
 void placeholder(const GfxRenderer& renderer, const int x, const int y, const int width, const int height,
@@ -334,8 +324,10 @@ void drawFolderPlaceholder(GfxRenderer& renderer, const LibraryIndex::Book& item
                            const std::string& titleOverride = {}) {
   const bool hideTitle = SETTINGS.hideThumbnailTitles != 0;
   constexpr int padding = 3;
+  const int lineHeight = hideTitle ? 0 : renderer.text.getLineHeight(systemFontId());
+  const int titleHeight = hideTitle ? 0 : lineHeight + kFolderLabelGap;
   const int imageY = y + padding;
-  const int imageHeight = std::max(8, height - padding * 2 + 3);
+  const int imageHeight = std::max(8, height - titleHeight - padding * 2);
   const int emptyWidth = std::max(8, width - padding * 2);
   const int emptyX = x + (width - emptyWidth) / 2;
   const std::string title = titleOverride.empty() ? bookTitle(item) : titleOverride;
@@ -368,7 +360,7 @@ std::vector<std::string> Thumb::coversForFolder(const LibraryIndex::Book& folder
 }
 
 void Thumb::getThumbnailSize(GfxRenderer& renderer, int& width, int& height) {
-  const int gridMargin = margin - 5;
+  constexpr int gridMargin = 0;
   const int availableWidth = renderer.getScreenWidth() - sideMargin * 2;
   const int availableHeight = renderer.getScreenHeight() - navigation::Menu::height -
                               navigation::Menu::bottomHeight - gridMargin * 2;
@@ -561,12 +553,12 @@ int Thumb::pageCount() const {
   return std::max(1, (static_cast<int>(items.size()) + perPage - 1) / perPage);
 }
 
-int Thumb::top() const { return navigation::Menu::height; }
+int Thumb::top() const { return navigation::Menu::height + 10; }
 
 void Thumb::calculate() {
-  // Labeled tiles need a little more vertical room for the cover and title.
-  // Keep the no-label layout unchanged and reclaim space only from the outer margin.
-  const int gridMargin = margin - 5;
+  // Keep the label gap and cover area inside the tile while using the outer
+  // margin to give each thumbnail a little more height.
+  constexpr int gridMargin = 0;
   const int availableWidth = renderer.getScreenWidth() - sideMargin * 2;
   const int availableHeight = renderer.getScreenHeight() - top() - navigation::Menu::bottomHeight - gridMargin * 2;
   const int width = std::max(40, (availableWidth - gap * (childColumns - 1)) / childColumns);
@@ -600,8 +592,10 @@ void Thumb::drawItem(const LibraryIndex::Book& item, const int x, const int y, c
     const bool hideTitle = SETTINGS.hideThumbnailTitles != 0;
     constexpr bool evenThumbnails = true;
     constexpr int padding = 3;
+    const int lineHeight = hideTitle ? 0 : renderer.text.getLineHeight(systemFontId());
+    const int titleHeight = hideTitle ? 0 : lineHeight + kFolderLabelGap;
     const int imageY = y + padding;
-    const int imageHeight = std::max(8, height - padding * 2 + 3);
+    const int imageHeight = std::max(8, height - titleHeight - padding * 2);
     if (thumbnail && thumbnail->loaded && !thumbnail->first.empty()) {
       const int frontHeight = imageHeight;
       constexpr int layerStep = 9;
@@ -612,7 +606,7 @@ void Thumb::drawItem(const LibraryIndex::Book& item, const int x, const int y, c
       const int stackX = x + std::max(stackInset, (width - stackWidth) / 2);
       const int frontX = stackX + layerStep * 2;
       drawFolderStack(renderer, thumbnail->first, thumbnail->second, thumbnail->third, frontX, imageY, frontWidth,
-                      frontHeight, rounded, true);
+                      frontHeight, rounded, hideTitle);
       if (!hideTitle) {
         folderLabel(renderer, bookTitle(item), frontX, frontWidth, y, height, evenThumbnails ? 5 : 10);
       }
@@ -633,7 +627,7 @@ void Thumb::drawItem(const LibraryIndex::Book& item, const int x, const int y, c
       const int stackX = x + std::max(stackInset, (width - stackWidth) / 2);
       const int frontX = stackX + layerStep * 2;
       drawFolderStack(renderer, thumbnail->image, thumbnail->second, thumbnail->third, frontX, imageY, frontWidth,
-                      imageHeight, rounded, true);
+                      imageHeight, rounded, hideTitle);
       if (!hideTitle) {
         folderLabel(renderer, singleBookTitle.empty() ? bookTitle(item) : singleBookTitle, frontX, frontWidth, y,
                     height, evenThumbnails ? 5 : 10);
@@ -652,20 +646,29 @@ void Thumb::drawItem(const LibraryIndex::Book& item, const int x, const int y, c
 
   if (thumbnail && thumbnail->loaded) {
     constexpr int padding = 3;
-    const int font = systemFontId();
     const bool hideTitle = SETTINGS.hideThumbnailTitles != 0;
+    const int lineHeight = hideTitle ? 0 : renderer.text.getLineHeight(systemFontId());
+    const int titleHeight = hideTitle ? 0 : lineHeight + kFolderLabelGap;
     const int imageAreaY = y + padding;
     const int imageAreaWidth = std::max(8, width - padding * 2);
-    const int imageAreaHeight = std::max(8, height - padding * 2 + 3);
+    const int imageAreaHeight = std::max(8, height - titleHeight - padding * 2);
     int imageX = x + padding;
     int imageY = imageAreaY;
     int imageWidth = imageAreaWidth;
     int imageHeight = imageAreaHeight;
     const bool hasSize = thumbnail->imageWidth > 0 && thumbnail->imageHeight > 0;
+    if (!hideTitle && hasSize) {
+      const float scale = std::min(static_cast<float>(imageAreaWidth) / thumbnail->imageWidth,
+                                   static_cast<float>(imageAreaHeight) / thumbnail->imageHeight);
+      imageWidth = std::max(1, static_cast<int>(std::lround(thumbnail->imageWidth * scale)));
+      imageHeight = std::max(1, static_cast<int>(std::lround(thumbnail->imageHeight * scale)));
+      imageX += (imageAreaWidth - imageWidth) / 2;
+      imageY += (imageAreaHeight - imageHeight) / 2;
+    }
     renderer.rectangle.fill(x + padding, imageAreaY, imageAreaWidth, imageAreaHeight, false, rounded);
     if (cover(renderer, thumbnail->image, imageX, imageY, imageWidth, imageHeight, rounded,
-              hasSize, true)) {
-      if (!hideTitle) folderLabel(renderer, bookTitle(item), imageX, imageWidth, y, height);
+              hasSize, hideTitle)) {
+      if (!hideTitle) folderLabel(renderer, bookTitle(item), x + padding, imageAreaWidth, y, height);
       drawFavoriteBadge(renderer, imageX, imageY, imageWidth, favorite);
       drawItemBadge(renderer, imageX, imageY, imageWidth, item.badge);
       return;
@@ -673,13 +676,15 @@ void Thumb::drawItem(const LibraryIndex::Book& item, const int x, const int y, c
   }
   constexpr int padding = 3;
   const bool hideTitle = SETTINGS.hideThumbnailTitles != 0;
+  const int lineHeight = hideTitle ? 0 : renderer.text.getLineHeight(systemFontId());
+  const int titleHeight = hideTitle ? 0 : lineHeight + kFolderLabelGap;
   const int imageAreaY = y + padding;
-  const int imageAreaHeight = std::max(8, height - padding * 2 + 3);
+  const int imageAreaHeight = std::max(8, height - titleHeight - padding * 2);
   const int placeholderWidth = std::max(8, width - padding * 2);
   const int placeholderX = x + (width - placeholderWidth) / 2;
   placeholder(renderer, placeholderX, imageAreaY, placeholderWidth, imageAreaHeight,
               hideTitle ? bookTitle(item) : "");
-  if (!hideTitle) folderLabel(renderer, bookTitle(item), placeholderX, placeholderWidth, y, height);
+  if (!hideTitle) folderLabel(renderer, bookTitle(item), x + padding, std::max(8, width - padding * 2), y, height);
   drawFavoriteBadge(renderer, placeholderX, imageAreaY, placeholderWidth, favorite);
   drawItemBadge(renderer, placeholderX, imageAreaY, placeholderWidth, item.badge);
 }
