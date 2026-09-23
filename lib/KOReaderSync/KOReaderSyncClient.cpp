@@ -8,6 +8,7 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <HardwareSerial.h>
+#include <Utf8.h>
 
 #include <ctime>
 
@@ -28,6 +29,15 @@ constexpr char DEVICE_NAME[] = "CrossPoint";
 constexpr char DEVICE_ID[] = "crosspoint-reader";
 constexpr int HTTP_BUF_SIZE = 2048;
 constexpr uint32_t MIN_HEAP_FOR_TLS = 55000;
+constexpr size_t METADATA_FIELD_MAX_BYTES = 512;
+
+void addMetadataField(JsonObject& metadata, const char* key, std::string value) {
+  if (value.empty()) {
+    return;
+  }
+  utf8TruncateBytes(value, METADATA_FIELD_MAX_BYTES);
+  metadata[key] = value;
+}
 
 #ifndef SIMULATOR
 
@@ -248,6 +258,13 @@ KOReaderSyncClient::Error KOReaderSyncClient::updateProgress(const KOReaderProgr
   doc["percentage"] = progress.percentage;
   doc["device"] = DEVICE_NAME;
   doc["device_id"] = DEVICE_ID;
+
+  if (!progress.title.empty() || !progress.authors.empty() || !progress.filename.empty()) {
+    JsonObject metadata = doc["metadata"].to<JsonObject>();
+    addMetadataField(metadata, "filename", progress.filename);
+    addMetadataField(metadata, "title", progress.title);
+    addMetadataField(metadata, "authors", progress.authors);
+  }
 
   std::string body;
   serializeJson(doc, body);

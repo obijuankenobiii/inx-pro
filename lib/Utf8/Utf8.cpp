@@ -50,3 +50,12 @@ void utf8TruncateChars(std::string& str, const size_t numChars) {
     utf8RemoveLastChar(str);
   }
 }
+
+void utf8TruncateBytes(std::string& str, const size_t maxBytes) {
+  if (str.size() <= maxBytes) return;
+  size_t pos = maxBytes;
+  while (pos > 0 && (static_cast<unsigned char>(str[pos]) & 0xC0) == 0x80) {
+    --pos;
+  }
+  str.resize(pos);
+}

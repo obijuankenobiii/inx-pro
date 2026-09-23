@@ -251,6 +251,10 @@ void KOReaderSyncActivity::performUpload() {
   progress.document = documentHash;
   progress.progress = localProgress.xpath;
   progress.percentage = localProgress.percentage;
+  progress.title = epub->getTitle();
+  progress.authors = epub->getAuthor();
+  const size_t slash = epubPath.rfind('/');
+  progress.filename = (slash == std::string::npos) ? epubPath : epubPath.substr(slash + 1);
 
   const auto result = KOReaderSyncClient::updateProgress(progress);
 

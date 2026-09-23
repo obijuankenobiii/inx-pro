@@ -14,3 +14,5 @@ uint32_t utf8NextCodepoint(const unsigned char** string);
 size_t utf8RemoveLastChar(std::string& str);
 
 void utf8TruncateChars(std::string& str, size_t numChars);
+
+void utf8TruncateBytes(std::string& str, size_t maxBytes);

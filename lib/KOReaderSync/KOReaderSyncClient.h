@@ -17,6 +17,9 @@ struct KOReaderProgress {
   std::string device;
   std::string deviceId;
   int64_t timestamp;
+  std::string title;
+  std::string authors;
+  std::string filename;
 };
 
 /**
