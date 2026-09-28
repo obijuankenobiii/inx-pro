@@ -7,6 +7,7 @@
 
 #include <GfxRenderer.h>
 #include <WiFi.h>
+#include <esp_heap_caps.h>
 #include <esp_sntp.h>
 
 #include <algorithm>
@@ -25,6 +26,11 @@
 #include "system/TimeZoneAutoDetect.h"
 
 namespace {
+
+// KOReader's display task renders SD-backed fonts.  A 4096-byte task stack is
+// not enough for the TextRender -> ExternalFont -> SDMMC call chain, which can
+// trip the stack canary as soon as the sync screen draws its header.
+constexpr uint32_t kDisplayTaskStack = 8192;
 
 ButtonBounds startButtonBounds(const GfxRenderer& renderer, const int font) {
   const int width = Button::width(renderer, "Start Sync", font);
@@ -280,7 +286,8 @@ void KOReaderSyncActivity::onEnter() {
 
   renderingMutex = xSemaphoreCreateMutex();
 
-  xTaskCreate(&KOReaderSyncActivity::taskTrampoline, "KOSyncTask", 4096, this, 1, &displayTaskHandle);
+  xTaskCreateWithCaps(&KOReaderSyncActivity::taskTrampoline, "KOSyncTask", kDisplayTaskStack, this, 1,
+                      &displayTaskHandle, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 
   if (!KOREADER_STORE.hasCredentials()) {
     state = NO_CREDENTIALS;
@@ -334,7 +341,7 @@ void KOReaderSyncActivity::onExit() {
 
   xSemaphoreTake(renderingMutex, portMAX_DELAY);
   if (displayTaskHandle) {
-    vTaskDelete(displayTaskHandle);
+    vTaskDeleteWithCaps(displayTaskHandle);
     displayTaskHandle = nullptr;
   }
   vSemaphoreDelete(renderingMutex);

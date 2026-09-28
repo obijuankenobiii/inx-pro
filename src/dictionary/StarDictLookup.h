@@ -45,6 +45,9 @@ class StarDictLookup {
    *  set to whether the on-disk definition was larger than the cap. */
   bool lookup(const std::string& queryWord, std::string& outDefinition, bool* outTruncated = nullptr);
 
+  /** Removes surrounding punctuation without treating UTF-8 bytes as individual characters. */
+  static std::string cleanQueryWord(const std::string& queryWord);
+
  private:
   struct Checkpoint {
     Checkpoint(uint32_t offset, std::string w) : idxOffset(offset), entryText(std::move(w)) {}

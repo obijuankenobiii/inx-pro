@@ -73,6 +73,14 @@ ImageRender::Options sleepImageOptions(const bool allowQuality = true) {
   return options;
 }
 
+void prepareSleepImageBuffer(GfxRenderer& renderer) {
+  // The display driver uses separate active and write buffers. Seed the write
+  // buffer from what is actually visible before clearing it, otherwise a
+  // sleep image/cache refresh can diff against the previous page's buffer.
+  renderer.syncWriteBufferFromActive();
+  renderer.clearScreen(0xFF);
+}
+
 void runSleepImageTwoBitPasses(GfxRenderer& renderer, const std::string& imagePath,
                                const ImageRender::Options& baseOptions, const bool allowQuality = true) {
   // displayGrayscale() intentionally clears the screen for PNG's one-bit pass. Do not
@@ -354,10 +362,11 @@ void SleepActivity::onEnter() {
   const bool renderDateTime =
       SETTINGS.sleepScreen == SystemSetting::SLEEP_SCREEN_MODE::DATETIME && dateTimeSleepScreenAvailable();
 
-  if (SETTINGS.sleepScreen != SystemSetting::SLEEP_SCREEN_MODE::TRANSPARENT && !renderDateTime &&
-      SETTINGS.sleepScreen != SystemSetting::SLEEP_SCREEN_MODE::WIDGET) {
-    renderer.clearScreen(0Xff);
-    renderer.displayBuffer(HalDisplay::HALF_REFRESH);
+  const bool renderSleepImage = SETTINGS.sleepScreen == SystemSetting::SLEEP_SCREEN_MODE::CUSTOM ||
+                                SETTINGS.sleepScreen == SystemSetting::SLEEP_SCREEN_MODE::COVER;
+  if (renderSleepImage && !renderDateTime) {
+    prepareSleepImageBuffer(renderer);
+    renderer.displayBuffer(HalDisplay::FULL_REFRESH);
   }
 
   switch (SETTINGS.sleepScreen) {
@@ -403,7 +412,7 @@ void SleepActivity::renderCustomSleepScreen() const {
     }
 
     if (isSleepImagePathRaster(imagePath)) {
-      renderer.clearScreen();
+      prepareSleepImageBuffer(renderer);
       ImageRender::Options options = sleepImageOptions();
       if (ImageRender::create(renderer, imagePath)
               .render(0, 0, renderer.getScreenWidth(), renderer.getScreenHeight(), options)) {
@@ -496,7 +505,7 @@ void SleepActivity::renderCoverSleepScreen() const {
   const std::string coverPath = resolveLastReadCoverPathForSleep(APP_STATE.lastRead);
 
   if (!coverPath.empty() && isSleepImagePathRaster(coverPath)) {
-    renderer.clearScreen();
+    prepareSleepImageBuffer(renderer);
     ImageRender::Options options = sleepImageOptions();
     if (ImageRender::create(renderer, coverPath)
             .render(0, 0, renderer.getScreenWidth(), renderer.getScreenHeight(), options)) {

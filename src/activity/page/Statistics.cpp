@@ -12,6 +12,7 @@
 #include <SDCardManager.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <functional>
@@ -23,9 +24,17 @@
 #include <esp_task_wdt.h>
 
 #include "state/RecentBooks.h"
+#include "state/ReadingGoal.h"
 #include "state/SystemSetting.h"
 #include "activity/page/components/global/Button.h"
-#include "images/LibraryFilterRight.h"
+#include "components/widget/BaseCarousel.h"
+#include "components/global/Sidebar.h"
+#include "images/Close.h"
+#include "images/Hamburger.h"
+#include "images/Calendar.h"
+#include "images/DeviceDisplay.h"
+#include "images/Refresh.h"
+#include "images/StatsPie.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
 #include "system/ScreenComponents.h"
@@ -33,7 +42,7 @@
 extern void onGoToHome();
 
 Statistics::Statistics(GfxRenderer& renderer, MappedInputManager& mappedInput, std::function<void()> close)
-    : SubPage("Reading Stats", renderer, mappedInput, std::move(close)), viewIndex(0) {}
+    : SubPage("Statistics", renderer, mappedInput, std::move(close)), viewIndex(0) {}
 
 namespace {
 
@@ -44,17 +53,50 @@ constexpr int FONT_SERIF_LG = MONTSERRAT_18_FONT_ID;
 constexpr int FONT_SERIF_SM = MONTSERRAT_12_FONT_ID;
 constexpr float kPi = 3.14159265f;
 
-ButtonBounds refreshButton(const GfxRenderer& renderer) {
-  const int font = systemFontId();
-  const int width = Button::width(renderer, "Refresh", font);
-  return {(renderer.getScreenWidth() - width) / 2, renderer.getScreenHeight() - 20 - Button::height, width,
-          Button::height};
+constexpr int kCalendarGap = 5;
+
+constexpr int kStatsContentTop = navigation::Menu::height + 20;
+constexpr int kCalendarContentTop = navigation::Menu::height + 10;
+constexpr int kWeeklyChartTop = navigation::Menu::height + 12;
+
+int mondayBasedWeekday(const int64_t day) {
+  const int value = static_cast<int>((day + 3) % 7);
+  return value < 0 ? value + 7 : value;
+}
+
+uint32_t readingTimeForDate(const std::vector<ReadingHistoryEntry>& history, const uint32_t dateKey) {
+  for (const ReadingHistoryEntry& entry : history) {
+    if (entry.dateKey == dateKey) return entry.readingTimeMs;
+  }
+  return 0;
+}
+
+std::string formatReadingDuration(const uint32_t readingTimeMs) {
+  const uint32_t totalMinutes = (readingTimeMs + 30000UL) / 60000UL;
+  const uint32_t hours = totalMinutes / 60U;
+  const uint32_t minutes = totalMinutes % 60U;
+  char text[24];
+  if (hours > 0 && minutes > 0) {
+    std::snprintf(text, sizeof(text), "%uh %um", static_cast<unsigned>(hours), static_cast<unsigned>(minutes));
+  } else if (hours > 0) {
+    std::snprintf(text, sizeof(text), "%uh", static_cast<unsigned>(hours));
+  } else {
+    std::snprintf(text, sizeof(text), "%um", static_cast<unsigned>(minutes));
+  }
+  return text;
 }
 
 ButtonBounds nextButton(const GfxRenderer& renderer) {
-  const ButtonBounds refresh = refreshButton(renderer);
-  return {renderer.getScreenWidth() - 80, refresh.y, 60, Button::height};
+  return {renderer.getScreenWidth() - 80, renderer.getScreenHeight() - 20 - Button::height, 60, Button::height};
 }
+
+struct StatisticsAction {
+  const uint8_t* icon;
+  const char* label;
+};
+
+constexpr StatisticsAction kStatisticsActions[] = {
+    {Calendar, "Calendar"}, {StatsPie, "Stats"}, {DeviceDisplay, "Display"}, {Refresh, "Refresh"}};
 
 static std::string epubCachePathForBookPath(const std::string& bookPath) {
   return "/.metadata/epub/" + std::to_string(std::hash<std::string>{}(bookPath));
@@ -69,7 +111,7 @@ static bool statsFileExistsForCachePath(const std::string& cachePath) {
 }
 
 /** Global “All items” donut row (must match measureAllItemsBodyHeight). */
-constexpr int kGlobalAllItemsDonutR = 68;
+constexpr int kGlobalAllItemsDonutR = 78;
 constexpr int kGlobalAllItemsDonutThick = 10;
 constexpr int kGlobalAllItemsDonutPadT = 14;
 constexpr int kGlobalAllItemsDonutPadB = 14;
@@ -252,12 +294,6 @@ void drawFullDonutGauge(const GfxRenderer& renderer, int cx, int cy, int rOut, i
   renderer.text.render(FONT_SERIF_MD, cx - tw / 2, cy - lhMd / 2, centerPct);
 }
 
-void drawVertRule(const GfxRenderer& renderer, int x, int y, int h) {
-  if (h > 0) {
-    renderer.line.render(x, y, x, y + h, true, LineRender::Style::Dotted);
-  }
-}
-
 /** Shared geometry for the global “all items” donut + metrics block (must stay in sync across draw paths). */
 struct GlobalAllItemsGeom {
   int lhSans;
@@ -284,14 +320,15 @@ static GlobalAllItemsGeom computeGlobalAllItemsGeom(const GfxRenderer& renderer)
 
 /** Donut row with its caption centered together in the inner band. */
 static void drawGlobalAllItemsGaugeRow(const GfxRenderer& renderer, int innerLeft, int innerRight, int y,
-                                       float finishedRatio01, const GlobalAllItemsGeom& g) {
+                                       float finishedRatio01, const GlobalAllItemsGeom& g,
+                                       const bool alignLeft = false) {
   const int innerW = innerRight - innerLeft;
   const char* line1 = "of your books";
   const char* line2 = "are finished.";
   const int font = systemFontId();
   const int textW = std::max(renderer.text.getWidth(font, line1), renderer.text.getWidth(font, line2));
   const int groupW = kGlobalAllItemsDonutR * 2 + kGlobalAllItemsDonutTextGap + textW;
-  const int groupX = innerLeft + std::max(0, (innerW - groupW) / 2);
+  const int groupX = alignLeft ? innerLeft : innerLeft + std::max(0, (innerW - groupW) / 2);
   const int cx = groupX + kGlobalAllItemsDonutR;
   const int cy = y + kGlobalAllItemsDonutPadT + kGlobalAllItemsDonutR;
   const int xText = cx + kGlobalAllItemsDonutR + kGlobalAllItemsDonutTextGap;
@@ -319,9 +356,7 @@ static int drawGlobalAllItemsSecondBand(const GfxRenderer& renderer, int innerLe
    * which stole the gap under the gauge). */
   const int capPref = std::min(yRulePreferred, yMaxRule);
   int yRule = std::min(yMaxRule, std::max(yRuleMin, capPref));
-  renderer.line.render(innerLeft, yRule, innerRight, yRule, true, LineRender::Style::Dotted);
   const int midX = innerLeft + innerW / 2;
-  drawVertRule(renderer, midX, yRule, g.kMetricsH);
 
   char buf[32];
   snprintf(buf, sizeof(buf), "%u", booksFinished);
@@ -374,12 +409,6 @@ int drawFourColumnStatsNx2(const GfxRenderer& renderer, int innerLeft, int y, in
   constexpr int kCellPadTop = 0;
   const int wLeft = std::max(20, midX - innerLeft - kEdgePad - kMidGutter);
   const int wRight = std::max(20, (innerLeft + innerW) - midX - kEdgePad - kMidGutter);
-  drawVertRule(renderer, midX, y, blockH);
-  for (int r = 1; r < numRows; ++r) {
-    renderer.line.render(innerLeft, yBound[static_cast<size_t>(r)], innerLeft + innerW, yBound[static_cast<size_t>(r)],
-                         true, LineRender::Style::Dotted);
-  }
-
   const int lhVal = renderer.text.getLineHeight(FONT_SERIF_LG);
   const int lhLab = renderer.text.getLineHeight(FONT_SANS_SM);
   constexpr int kValLabGap = 4;
@@ -421,12 +450,16 @@ int drawFourColumnStats2x2(const GfxRenderer& renderer, int innerLeft, int y, in
                            const char* v3, const char* l3, int cellH, int row0LiftPx) {
   const char* vals[] = {v0, v1, v2, v3};
   const char* labs[] = {l0, l1, l2, l3};
-  return drawFourColumnStatsNx2(renderer, innerLeft, y, innerW, vals, labs, 2, cellH, row0LiftPx, 0);
+  // Preserve the original left-aligned 2x2 layout while giving the two rows
+  // the requested 20 px vertical separation.
+  constexpr int kVerticalGap = 20;
+  return drawFourColumnStatsNx2(renderer, innerLeft, y, innerW, vals, labs, 2, cellH, row0LiftPx, kVerticalGap);
 }
 
 }
 
 void Statistics::loadStats() {
+  bookIndexPending_ = false;
   ScreenComponents::LoadingProgressLayout layout =
       ScreenComponents::LoadingProgress::show(renderer, "Loading statistics...", 12);
   allBooksStats = getAllBooksStats();
@@ -440,6 +473,38 @@ void Statistics::loadStats() {
   viewIndex = 0;
   ScreenComponents::LoadingProgress::setProgress(renderer, layout, 100);
   saveGlobalStats(globalStats);
+  refreshWeeklyChartData();
+}
+
+void Statistics::refreshWeeklyChartData() {
+  weeklyReadingTimeMs_.fill(0);
+  weeklyTotalReadingTimeMs_ = 0;
+  weeklyGoalTimeMs_ = 0;
+  weeklyChartWeekStartDay_ = 0;
+
+  uint32_t today = 0;
+  const std::vector<ReadingHistoryEntry>& history = getReadingHistory();
+  if (currentRtcDateKey(today)) {
+    weeklyChartWeekStartDay_ = readingDateToDay(today);
+    weeklyChartWeekStartDay_ -= mondayBasedWeekday(weeklyChartWeekStartDay_);
+  } else if (!history.empty()) {
+    weeklyChartWeekStartDay_ = readingDateToDay(history.back().dateKey);
+    weeklyChartWeekStartDay_ -= mondayBasedWeekday(weeklyChartWeekStartDay_);
+  } else {
+    return;
+  }
+
+  for (size_t index = 0; index < weeklyReadingTimeMs_.size(); ++index) {
+    const uint32_t dateKey = readingDayToDate(weeklyChartWeekStartDay_ + static_cast<int64_t>(index));
+    const uint32_t readingMs = readingTimeForDate(history, dateKey);
+    weeklyReadingTimeMs_[index] = readingMs;
+    weeklyTotalReadingTimeMs_ += readingMs;
+  }
+
+  const ReadingGoal::Status goal = ReadingGoal::status();
+  if (goal.goalMinutes > 0) {
+    weeklyGoalTimeMs_ = static_cast<uint32_t>(goal.goalMinutes) * 7UL * 60UL * 1000UL;
+  }
 }
 
 void Statistics::hydrateFromStorage() {
@@ -448,7 +513,22 @@ void Statistics::hydrateFromStorage() {
   }
   allBooksStats.clear();
   loadedBookStatsFlags_.clear();
+  // The recent list is small and gives the first screen enough book data to
+  // render immediately. The complete cache directory scan is deferred until
+  // after that first frame is displayed.
+  indexBookStatsPaths(false);
+  bookIndexPending_ = true;
+}
+
+void Statistics::finishDeferredBookIndex() {
+  if (!bookIndexPending_) {
+    return;
+  }
+  bookIndexPending_ = false;
+  allBooksStats.clear();
+  loadedBookStatsFlags_.clear();
   indexBookStatsPaths(true);
+  updateRequired = true;
 }
 
 void Statistics::indexBookStatsPaths(const bool includeMetadata) {
@@ -723,7 +803,19 @@ void Statistics::onEnter() {
 
   hydrateFromStorage();
   viewIndex = 0;
+  statsTab_ = 0;
+  controlDrawerOpen_ = false;
 
+  uint32_t calendarDate = 0;
+  currentRtcDateKey(calendarDate);
+  if (calendarDate == 0) {
+    const std::vector<ReadingHistoryEntry>& history = getReadingHistory();
+    if (!history.empty()) calendarDate = history.back().dateKey;
+  }
+  calendarWeekStartDay_ = calendarDate != 0
+                              ? readingDateToDay(calendarDate) - mondayBasedWeekday(readingDateToDay(calendarDate))
+                              : 0;
+  refreshWeeklyChartData();
   SETTINGS.runHalfRefreshOnLoadIfEnabled(renderer, SystemSetting::RefreshOnLoadPage::Statistics);
 }
 
@@ -732,6 +824,109 @@ void Statistics::onExit() {
 
   std::vector<BookReadingStats>().swap(allBooksStats);
   std::vector<uint8_t>().swap(loadedBookStatsFlags_);
+  bookIndexPending_ = false;
+}
+
+void Statistics::menu() {
+  if (statsTab_ == 1) {
+    SubPage::header(renderer, "Week");
+    return;
+  }
+  title();
+  renderer.bitmap.icon(Close, renderer.getScreenWidth() - 60, navigation::Menu::topPadding, 40, 40);
+  if (controlDrawerOpen_) drawControlDrawer();
+}
+
+void Statistics::title() const {
+  renderer.bitmap.icon(Hamburger, navigation::Menu::leftMargin, navigation::Menu::topPadding,
+                       navigation::Menu::iconSize, navigation::Menu::iconSize);
+  const int font = MONTSERRAT_16_FONT_ID;
+  const int textY = navigation::Menu::topPadding +
+                    (navigation::Menu::iconSize - renderer.text.getLineHeight(font)) / 2;
+  renderer.text.render(font, navigation::Menu::leftMargin + navigation::Menu::iconSize + 12, textY,
+                       "Statistics", true, EpdFontFamily::BOLD);
+}
+
+void Statistics::drawControlDrawer() const {
+  constexpr int itemCount = static_cast<int>(sizeof(kStatisticsActions) / sizeof(kStatisticsActions[0]));
+  constexpr int topPadding = 24;
+  constexpr int rowGap = 8;
+  constexpr int iconSize = 40;
+  const int listTop = Sidebar::listTop();
+  const int rowHeight = Sidebar::rowHeight;
+  const int font = systemFontId();
+  const int lineHeight = renderer.text.getLineHeight(font);
+
+  Sidebar::renderFrame(renderer, "Statistics");
+  for (int index = 0; index < itemCount; ++index) {
+    const int rowY = listTop + topPadding + index * (rowHeight + rowGap);
+    const int iconX = 24;
+    const int iconY = rowY + (rowHeight - iconSize) / 2;
+    renderer.bitmap.icon(kStatisticsActions[index].icon, iconX, iconY, iconSize, iconSize);
+    renderer.text.render(font, iconX + iconSize + 16, rowY + (rowHeight - lineHeight) / 2,
+                         kStatisticsActions[index].label, true);
+  }
+}
+
+bool Statistics::handleHamburgerTap() {
+  if (statsTab_ != 0 || controlDrawerOpen_ || !mappedInput.hasTouch()) return false;
+  float tapNx = 0.0f;
+  float tapNy = 0.0f;
+  if (!mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy)) return false;
+  const int tapX = static_cast<int>(tapNx * renderer.getScreenWidth());
+  const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
+  const int hamburgerX = navigation::Menu::leftMargin - 10;
+  const int hamburgerY = navigation::Menu::topPadding - 10;
+  const int hamburgerSize = navigation::Menu::iconSize;
+  if (tapX < hamburgerX || tapX >= hamburgerX + hamburgerSize || tapY < hamburgerY ||
+      tapY >= hamburgerY + hamburgerSize) {
+    mappedInput.restoreTouchTapInScreen(renderer, tapNx, tapNy);
+    return false;
+  }
+  controlDrawerOpen_ = true;
+  updateRequired = true;
+  renderPage();
+  return true;
+}
+
+bool Statistics::handleControlDrawerInput() {
+  if (!controlDrawerOpen_) return false;
+  if (mappedInput.wasPressed(MappedInputManager::Button::Back) ||
+      (mappedInput.hasTouch() && mappedInput.wasTouchSwipeRight())) {
+    controlDrawerOpen_ = false;
+    updateRequired = true;
+    renderPage();
+    return true;
+  }
+  if (!mappedInput.hasTouch()) return true;
+
+  float tapNx = 0.0f;
+  float tapNy = 0.0f;
+  if (!mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy)) return true;
+  const int tapX = static_cast<int>(tapNx * renderer.getScreenWidth());
+  const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
+  const int drawerWidth = Sidebar::width(renderer);
+  if (tapX >= drawerWidth) {
+    controlDrawerOpen_ = false;
+    updateRequired = true;
+    renderPage();
+    return true;
+  }
+
+  constexpr int itemCount = static_cast<int>(sizeof(kStatisticsActions) / sizeof(kStatisticsActions[0]));
+  const int item = Sidebar::hitTest(renderer, tapX, tapY, itemCount, 0);
+  if (item < 0) return true;
+
+  controlDrawerOpen_ = false;
+  if (item == 0) {
+    statsTab_ = 1;
+    viewIndex = 0;
+  } else if (item == 3) {
+    loadStats();
+  }
+  updateRequired = true;
+  renderPage();
+  return true;
 }
 
 int Statistics::renderRecent(int y, int innerLeft, int innerRight, int innerW, int Margin) const {
@@ -781,10 +976,92 @@ int Statistics::renderRecent(int y, int innerLeft, int innerRight, int innerW, i
   return yCoverTop + thumbHeightPx + Margin;
 }
 
+int Statistics::renderCalendar(const int y, const int innerLeft, const int innerW, const int contentBottom) const {
+  if (calendarWeekStartDay_ <= 0 || innerW <= 0 || contentBottom <= y) return 0;
+
+  const int smallFont = FONT_SANS_SM;
+  const int smallLine = renderer.text.getLineHeight(smallFont);
+  const int gridTop = y;
+  const int gridBottom = contentBottom;
+  if (gridBottom <= gridTop) return 0;
+  const int cellWidth = innerW;
+  const int cellHeight = std::max(1, (gridBottom - gridTop - kCalendarGap * 6) / 7);
+
+  constexpr const char* weekdays[] = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
+  std::array<std::vector<std::string>, 7> dayBooks;
+  std::array<uint32_t, 7> dayTimes{};
+  const std::vector<ReadingHistoryEntry>& history = getReadingHistory();
+  const std::vector<ReadingHistoryBookEntry>& bookHistory = getReadingHistoryBooks();
+
+  for (int column = 0; column < 7; ++column) {
+    const uint32_t dateKey = readingDayToDate(calendarWeekStartDay_ + column);
+    dayTimes[static_cast<size_t>(column)] = readingTimeForDate(history, dateKey);
+    for (const ReadingHistoryBookEntry& entry : bookHistory) {
+      if (entry.dateKey != dateKey || entry.bookPath.empty()) continue;
+      auto& books = dayBooks[static_cast<size_t>(column)];
+      if (std::find(books.begin(), books.end(), entry.bookPath) == books.end()) {
+        books.push_back(entry.bookPath);
+      }
+    }
+  }
+
+  // Leave enough room for the weekday and two-digit date without truncating
+  // labels such as "Wed 24" before the thumbnails begin.
+  constexpr int kDayLabelWidth = 90;
+  constexpr int kDailyTotalWidth = 78;
+  const int totalFont = FONT_SERIF_SM;
+  const int totalLine = renderer.text.getLineHeight(totalFont);
+  for (int day = 0; day < 7; ++day) {
+    const int cellY = gridTop + day * (cellHeight + kCalendarGap);
+    renderer.rectangle.fill(innerLeft, cellY, cellWidth, cellHeight,
+                            static_cast<int>(GfxRenderer::FillTone::Paper), false);
+
+    char dayLabel[24];
+    const uint32_t dateKey = readingDayToDate(calendarWeekStartDay_ + day);
+    snprintf(dayLabel, sizeof(dayLabel), "%s %02lu", weekdays[day],
+             static_cast<unsigned long>(dateKey % 100UL));
+    const int dayLabelY = cellY + (cellHeight - smallLine) / 2;
+    renderer.text.render(smallFont, innerLeft + 4, dayLabelY, dayLabel, true, EpdFontFamily::BOLD);
+
+    const auto& books = dayBooks[static_cast<size_t>(day)];
+    const uint32_t readingTime = dayTimes[static_cast<size_t>(day)];
+    const int thumbX = innerLeft + kDayLabelWidth;
+    const int thumbWidthArea = std::max(1, cellWidth - kDayLabelWidth - kDailyTotalWidth - 8);
+    const int thumbHeight = cellHeight;
+    const int thumbWidth = std::min(66, std::max(48, (thumbHeight * 4) / 5));
+    const int thumbGap = 10;
+    const int maxThumbs = std::max(1, (thumbWidthArea + thumbGap) / (thumbWidth + thumbGap));
+    const int thumbsToDraw = std::min(static_cast<int>(books.size()), maxThumbs);
+    const int thumbTop = cellY;
+    for (int index = 0; index < thumbsToDraw; ++index) {
+      const int x = thumbX + index * (thumbWidth + thumbGap);
+      renderCover(books[static_cast<size_t>(index)], x, thumbTop, thumbWidth, thumbHeight, "", "");
+    }
+
+    char totalLabel[16];
+    const double hours = static_cast<double>(readingTime) / 3600000.0;
+    if (std::fabs(hours - std::round(hours)) < 0.05) {
+      std::snprintf(totalLabel, sizeof(totalLabel), "%.0fh", hours);
+    } else {
+      std::snprintf(totalLabel, sizeof(totalLabel), "%.1fh", hours);
+    }
+    const int totalWidth = renderer.text.getWidth(totalFont, totalLabel, EpdFontFamily::BOLD);
+    const int totalX = innerLeft + cellWidth - totalWidth - 4;
+    const int totalY = cellY + (cellHeight - totalLine) / 2;
+    renderer.text.render(totalFont, totalX, totalY, totalLabel, true, EpdFontFamily::BOLD);
+
+    if (day < 6) {
+      const int dividerY = cellY + cellHeight + (kCalendarGap / 2);
+      renderer.line.render(innerLeft + 4, dividerY, innerLeft + cellWidth - 4, dividerY, true,
+                           LineRender::Style::Dotted);
+    }
+  }
+
+  return 0;
+}
+
 int Statistics::renderFirstGrid(int y, int innerLeft, int innerW, int Margin) const {
   constexpr int kStatsRowH = 58;
-  const int hFirstGrid = kStatsRowH * 2;
-
   char v0[20], v1[20], v2[20], v3[20];
   const float totalHrs = static_cast<float>(globalStats.totalReadingTimeMs) / 3600000.f;
   snprintf(v0, sizeof(v0), "%.1f", totalHrs);
@@ -798,9 +1075,9 @@ int Statistics::renderFirstGrid(int y, int innerLeft, int innerW, int Margin) co
   const float pgPerMin = readMin > 0.01f ? static_cast<float>(globalStats.totalPagesRead) / readMin : 0.f;
   snprintf(v3, sizeof(v3), "%.1f", pgPerMin);
 
-  drawFourColumnStats2x2(renderer, innerLeft, y, innerW, v0, "Total hours", v1, "Avg. min/session", v2, "Pages read",
-                         v3, "Pages per min", kStatsRowH, 0);
-  return y + hFirstGrid + Margin;
+  drawFourColumnStats2x2(renderer, innerLeft, y, innerW, v0, "Total hours", v1, "Avg. min/session", v2,
+                         "Pages read", v3, "Pages per min", kStatsRowH, 0);
+  return y + kStatsRowH * 2 + 20 + Margin;
 }
 
 int Statistics::renderGuage(int y, int innerLeft, int innerRight, int Margin) const {
@@ -918,11 +1195,199 @@ void Statistics::renderSingleBookView(int bookIdx, int contentTop, int contentBo
   renderer.text.centered(FONT_SANS_SM, contentBottom - 5, footer);
 }
 
+void Statistics::renderWeeklyChart(const int chartTop, const int chartBottom) const {
+  const int screenWidth = renderer.getScreenWidth();
+  if (screenWidth <= 0 || chartBottom <= chartTop + 160) return;
+
+  constexpr const char* kWeekdays[] = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
+  const int left = 24;
+  const int right = screenWidth - 24;
+  const int headerFont = MONTSERRAT_10_FONT_ID;
+  const int valueFont = MONTSERRAT_18_FONT_ID;
+  const int smallFont = MONTSERRAT_10_FONT_ID;
+  const int headerLine = renderer.text.getLineHeight(headerFont);
+  const int valueLine = renderer.text.getLineHeight(valueFont);
+  const int smallLine = renderer.text.getLineHeight(smallFont);
+  constexpr int kChartBottomPadding = 20;
+  const int chartContentBottom = chartBottom - kChartBottomPadding;
+  if (chartContentBottom <= chartTop + 160) return;
+
+  renderer.text.renderGray(headerFont, left, chartTop, "This week", true, EpdFontFamily::REGULAR);
+  const std::string goalText = "Goal · " + formatReadingDuration(weeklyGoalTimeMs_);
+  const int goalWidth = renderer.text.getWidth(headerFont, goalText.c_str(), EpdFontFamily::REGULAR);
+  renderer.text.renderGray(headerFont, right - goalWidth, chartTop, goalText.c_str(), true,
+                           EpdFontFamily::REGULAR);
+
+  const std::string totalText = formatReadingDuration(weeklyTotalReadingTimeMs_);
+  const int totalY = chartTop + headerLine + 18;
+  renderer.text.render(valueFont, left, totalY, totalText.c_str(), true, EpdFontFamily::BOLD);
+
+  int percent = 0;
+  if (weeklyGoalTimeMs_ > 0) {
+    percent = static_cast<int>((static_cast<uint64_t>(weeklyTotalReadingTimeMs_) * 100ULL +
+                                weeklyGoalTimeMs_ / 2ULL) /
+                               weeklyGoalTimeMs_);
+    percent = std::min(100, std::max(0, percent));
+  }
+  char percentText[12];
+  std::snprintf(percentText, sizeof(percentText), "%d%%", percent);
+  const int percentWidth = renderer.text.getWidth(valueFont, percentText, EpdFontFamily::BOLD);
+  renderer.text.render(valueFont, right - percentWidth, totalY, percentText, true, EpdFontFamily::BOLD);
+
+  const int plotTop = totalY + valueLine + 22;
+  constexpr int kWeekdayToAverageGap = 52;
+  const int plotBottom = chartContentBottom - smallLine - kWeekdayToAverageGap;
+  const int plotHeight = plotBottom - plotTop;
+  if (plotHeight <= 20) return;
+
+  uint32_t maximum = weeklyGoalTimeMs_ > 0 ? weeklyGoalTimeMs_ / 7U : 0;
+  int peakIndex = 0;
+  for (size_t i = 0; i < weeklyReadingTimeMs_.size(); ++i) {
+    if (weeklyReadingTimeMs_[i] > maximum) maximum = weeklyReadingTimeMs_[i];
+    if (weeklyReadingTimeMs_[i] > weeklyReadingTimeMs_[static_cast<size_t>(peakIndex)]) {
+      peakIndex = static_cast<int>(i);
+    }
+  }
+  if (maximum == 0) maximum = 1;
+
+  const int gridLeft = left + 8;
+  const int gridRight = right - 8;
+  const int gridWidth = std::max(1, gridRight - gridLeft);
+  constexpr int barGap = 10;
+  const int barWidth = std::max(8, (gridWidth - barGap * 6) / 7);
+
+  for (int level = 0; level <= 4; ++level) {
+    const int y = plotBottom - (plotHeight * level) / 4;
+    renderer.line.render(gridLeft, y, gridRight, y, true, LineRender::Style::Dotted);
+  }
+
+  for (size_t i = 0; i < weeklyReadingTimeMs_.size(); ++i) {
+    const int x = gridLeft + static_cast<int>(i) * (barWidth + barGap);
+    const uint32_t value = weeklyReadingTimeMs_[i];
+    const int barHeight = value == 0 ? 0 : std::max(4, static_cast<int>((static_cast<uint64_t>(value) * plotHeight) /
+                                                                          maximum));
+    if (barHeight > 0) {
+      const int tone = static_cast<int>(static_cast<int>(i) == peakIndex ? GfxRenderer::FillTone::Ink
+                                                                            : GfxRenderer::FillTone::Gray);
+      renderer.rectangle.fill(x, plotBottom - barHeight, barWidth, barHeight, tone, true);
+    }
+    const int labelWidth = renderer.text.getWidth(smallFont, kWeekdays[i]);
+    renderer.text.render(smallFont, x + (barWidth - labelWidth) / 2, plotBottom + 12, kWeekdays[i], true,
+                         static_cast<int>(i) == peakIndex ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR);
+  }
+
+  const uint32_t averageMinutes = (weeklyTotalReadingTimeMs_ + 210000UL) / (7UL * 60000UL);
+  char averageText[32];
+  std::snprintf(averageText, sizeof(averageText), "Avg · %um/day", static_cast<unsigned>(averageMinutes));
+  renderer.text.render(smallFont, left, chartContentBottom - smallLine, averageText, true);
+
+  char peakText[32];
+  std::snprintf(peakText, sizeof(peakText), "Peak · %s", kWeekdays[peakIndex]);
+  const int peakWidth = renderer.text.getWidth(smallFont, peakText);
+  renderer.text.render(smallFont, right - peakWidth, chartContentBottom - smallLine, peakText, true);
+}
+
+void Statistics::renderRadialChart(const int chartTop, const int chartBottom, const int chartLeft,
+                                   const int chartRight) const {
+  if (chartBottom <= chartTop || chartRight <= chartLeft) return;
+  const GlobalAllItemsGeom geometry = computeGlobalAllItemsGeom(renderer);
+  const int rowHeight = chartBottom - chartTop;
+  const int rowY = chartTop + (rowHeight - geometry.rowH) / 2;
+  float ratio = 0.0f;
+  if (globalStats.totalBooksStarted > 0) {
+    ratio = std::min(1.0f, static_cast<float>(globalStats.totalBooksFinished) /
+                              static_cast<float>(globalStats.totalBooksStarted));
+  }
+  drawGlobalAllItemsGaugeRow(renderer, chartLeft, chartRight, rowY, ratio, geometry, true);
+}
+
 void Statistics::content() {
-  const int screenH = renderer.getScreenHeight();
-  const ButtonBounds button = refreshButton(renderer);
-  const int contentBottom = button.y - 20;
-  constexpr int contentTopSingle = 80;
+  const ButtonBounds next = nextButton(renderer);
+  const int contentBottom = next.y - 20;
+  const int contentTopSingle = kStatsContentTop;
+
+  if (statsTab_ == 0) {
+    // The statistics implementation remains available for the Calendar view
+    // and future actions, but the main Statistics page is currently a simple
+    // list menu. Keep the old drawing path below without executing it.
+    const int sectionTop = kWeeklyChartTop;
+    const int sectionBottom = renderer.getScreenHeight();
+    const int sectionHeight = std::max(0, sectionBottom - sectionTop);
+    constexpr int kPanelGap = 12;
+    const int usableHeight = std::max(0, sectionHeight - kPanelGap);
+    const int weeklyHeight = (usableHeight * 65) / 100;
+    const int split = sectionTop + weeklyHeight;
+    const int radialTop = split + kPanelGap;
+    const int radialHeight = std::max(0, sectionBottom - split);
+    constexpr int kContentInset = 20;
+    const int grayLeft = 0;
+    const int grayWidth = renderer.getScreenWidth();
+    if (radialHeight > 0 && grayWidth > 0) {
+      // Match the carousel background: a sparse gray dither rather than a full-tone fill.
+      for (int py = (split + 1) & ~1; py < sectionBottom; py += 2) {
+        for (int px = (grayLeft + 1) & ~1; px < grayLeft + grayWidth; px += 2) {
+          renderer.drawPixel(px, py, true);
+        }
+      }
+      renderer.line.render(grayLeft, split, grayLeft + grayWidth, split, true);
+    }
+    renderWeeklyChart(sectionTop, split);
+    constexpr int kRightCardGap = 16;
+    char readingValue[16];
+    std::snprintf(readingValue, sizeof(readingValue), "%u",
+                  static_cast<unsigned>(globalStats.totalBooksStarted));
+    const int valueFont = FONT_SERIF_LG;
+    const int labelFont = FONT_SANS_SM;
+    const int valueWidth = renderer.text.getWidth(valueFont, readingValue);
+    const int labelWidth = renderer.text.getWidth(labelFont, "Reading");
+    // The gray panel begins at the split line; keep both the radial row and card centered in that full panel.
+    const int radialRegionTop = split;
+    const int radialRegionHeight = std::max(0, sectionBottom - radialRegionTop);
+    constexpr int kSquareGap = 12;
+    const int minimumSquareSize = std::max(valueWidth, labelWidth) + 40;
+    const int availableSquareHeight = std::max(1, radialRegionHeight - 16);
+    const int squareSize = std::max(minimumSquareSize,
+                                    std::max(1, (availableSquareHeight - kSquareGap) / 2));
+    const int cardX = kContentInset;
+    const int cardTop = radialRegionTop + std::max(0, (radialRegionHeight - (squareSize * 2 + kSquareGap)) / 2);
+    const int secondCardTop = cardTop + squareSize + kSquareGap;
+    const int radialLeft = cardX + squareSize + kRightCardGap;
+    const int radialRight = renderer.getScreenWidth() - kContentInset;
+    if (squareSize > 0 && radialRight > radialLeft) {
+      renderRadialChart(radialRegionTop, sectionBottom, radialLeft, radialRight);
+
+      const bool rounded = SETTINGS.bitmapRoundedCorners != 0;
+      BaseCarousel::renderShadow(renderer, cardX + 6, cardTop + 6, squareSize, squareSize,
+                                  HomeTheme::CarouselShadowStyle::Gray);
+      renderer.rectangle.fill(cardX, cardTop, squareSize, squareSize, false, rounded,
+                              SETTINGS.bitmapRoundedCorners == 2);
+      renderer.rectangle.render(cardX, cardTop, squareSize, squareSize, true, rounded,
+                                SETTINGS.bitmapRoundedCorners == 2);
+      BaseCarousel::renderShadow(renderer, cardX + 6, secondCardTop + 6, squareSize, squareSize,
+                                  HomeTheme::CarouselShadowStyle::Gray);
+      renderer.rectangle.fill(cardX, secondCardTop, squareSize, squareSize, false, rounded,
+                              SETTINGS.bitmapRoundedCorners == 2);
+      renderer.rectangle.render(cardX, secondCardTop, squareSize, squareSize, true, rounded,
+                                SETTINGS.bitmapRoundedCorners == 2);
+
+      const int valueLine = renderer.text.getLineHeight(valueFont);
+      const int labelLine = renderer.text.getLineHeight(labelFont);
+      const int groupHeight = valueLine + 4 + labelLine;
+      const int valueY = cardTop + (squareSize - groupHeight) / 2;
+      const int centerX = cardX + squareSize / 2;
+      renderer.text.render(valueFont, centerX - valueWidth / 2, valueY, readingValue);
+      renderer.text.render(labelFont, centerX - labelWidth / 2, valueY + valueLine + 4, "Reading");
+    }
+    return;
+  }
+
+  if (statsTab_ == 1) {
+    constexpr int kWeekSideMargin = 20;
+    const int innerLeft = kWeekSideMargin;
+    const int innerW = renderer.getScreenWidth() - (kWeekSideMargin * 2);
+    renderCalendar(kCalendarContentTop, innerLeft, innerW, renderer.getScreenHeight() - 12);
+    return;
+  }
 
   const int totalViews = 1 + static_cast<int>(allBooksStats.size());
   int v = viewIndex;
@@ -940,7 +1405,6 @@ void Statistics::content() {
     const int innerW = innerRight - innerLeft;
 
     int GAP = contentTopSingle;
-    GAP = renderRecent(GAP, innerLeft, innerRight, innerW, Margin);
     GAP = renderFirstGrid(GAP, innerLeft, innerW, Margin);
     GAP = renderGuage(GAP, innerLeft, innerRight, Margin);
     renderSecondGrid(GAP, innerLeft, innerRight, contentBottom);
@@ -949,22 +1413,46 @@ void Statistics::content() {
     renderSingleBookView(v - 1, contentTopSingle, contentBottom);
   }
 
-  if (!allBooksStats.empty()) {
-    constexpr int iconSize = 30;
-    const ButtonBounds next = nextButton(renderer);
-    const int x = next.x + next.width - iconSize;
-    const int y = next.y + (next.height - iconSize) / 2;
-    renderer.bitmap.icon(LibraryFilterRight, x, y, iconSize, iconSize);
-  }
-  Button::render(renderer, button, "Refresh", true, systemFontId());
 }
 
 void Statistics::loop() {
+  if (statsTab_ == 1 && mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+    statsTab_ = 0;
+    viewIndex = 0;
+    updateRequired = true;
+    renderPage();
+    return;
+  }
+  if (handleControlDrawerInput()) return;
   if (closeInput()) return;
+
+  if (handleHamburgerTap()) return;
+
+  // Let the cached global view reach the display before scanning every
+  // metadata cache directory. This keeps entering Statistics responsive while
+  // preserving the full per-book list for navigation.
+  if (!updateRequired && bookIndexPending_) {
+    finishDeferredBookIndex();
+    return;
+  }
 
   const int totalViews = 1 + static_cast<int>(allBooksStats.size());
 
-  if (totalViews > 1 && mappedInput.hasTouch() && mappedInput.wasTouchSwipeRight()) {
+  if (statsTab_ == 1 && mappedInput.hasTouch() && mappedInput.wasTouchSwipeLeft()) {
+    calendarWeekStartDay_ += 7;
+    updateRequired = true;
+    renderPage();
+    return;
+  }
+
+  if (statsTab_ == 1 && mappedInput.hasTouch() && mappedInput.wasTouchSwipeRight()) {
+    calendarWeekStartDay_ -= 7;
+    updateRequired = true;
+    renderPage();
+    return;
+  }
+
+  if (statsTab_ == 0 && totalViews > 1 && mappedInput.hasTouch() && mappedInput.wasTouchSwipeRight()) {
     viewIndex = (viewIndex + 1) % totalViews;
     updateRequired = true;
     return;
@@ -974,20 +1462,6 @@ void Statistics::loop() {
     float tapX = 0.0f;
     float tapY = 0.0f;
     if (mappedInput.wasTouchTapInScreen(renderer, tapX, tapY)) {
-      const ButtonBounds button = refreshButton(renderer);
-      const int x = static_cast<int>(tapX * renderer.getScreenWidth());
-      const int y = static_cast<int>(tapY * renderer.getScreenHeight());
-      const ButtonBounds next = nextButton(renderer);
-      if (totalViews > 1 && x >= next.x && x < next.x + next.width && y >= next.y && y < next.y + next.height) {
-        viewIndex = (viewIndex + 1) % totalViews;
-        updateRequired = true;
-        return;
-      }
-      if (x >= button.x && x < button.x + button.width && y >= button.y && y < button.y + button.height) {
-        loadStats();
-        updateRequired = true;
-        return;
-      }
       renderPage();
       return;
     }
@@ -996,6 +1470,11 @@ void Statistics::loop() {
   if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
     loadStats();
     updateRequired = true;
+    return;
+  }
+
+  if (statsTab_ != 0) {
+    renderPage();
     return;
   }
 
