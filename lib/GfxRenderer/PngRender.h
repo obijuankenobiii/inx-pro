@@ -24,10 +24,12 @@ class PngRender {
 
   bool render(FsFile& pngFile, int x, int y, int targetWidth, int targetHeight, bool cropToFill = false,
               ImageRenderMode mode = ImageRenderMode::OneBit, float cropAnchorX = 0.5f,
-              JpegLevelCapture* capture = nullptr, bool preserveTransparency = false) const;
+              JpegLevelCapture* capture = nullptr, bool preserveTransparency = false,
+              float cropAnchorY = 0.5f) const;
   bool fromPath(const std::string& path, int x, int y, int targetWidth, int targetHeight, bool cropToFill = false,
                 ImageRenderMode mode = ImageRenderMode::OneBit, float cropAnchorX = 0.5f,
-                JpegLevelCapture* capture = nullptr, bool preserveTransparency = false) const;
+                JpegLevelCapture* capture = nullptr, bool preserveTransparency = false,
+                float cropAnchorY = 0.5f) const;
 
   static bool getDimensions(FsFile& pngFile, int* outW, int* outH);
   static bool getDimensions(const std::string& path, int* outW, int* outH);

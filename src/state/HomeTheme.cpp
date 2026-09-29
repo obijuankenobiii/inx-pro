@@ -12,7 +12,7 @@ namespace HomeTheme {
 namespace {
 
 constexpr char kThemeFile[] = "/.system/home_themes.bin";
-constexpr uint8_t kVersion = 22;
+constexpr uint8_t kVersion = 24;
 constexpr uint8_t kDescriptionOptionsVersion = 17;
 constexpr uint8_t kRecentOptionsVersion = 18;
 constexpr uint8_t kCarouselProgressVersion = 19;
@@ -113,6 +113,16 @@ void makeDefault() {
 }
 
 bool repairEmptyHomeTheme() {
+  bool repaired = false;
+  for (int index = 0; index < themeCount; ++index) {
+    if (themes[index].layout != Layout::OneByOne || themes[index].widgets[0] != Widget::RecentGrid ||
+        themes[index].widgets[1] != Widget::Empty) {
+      continue;
+    }
+    themes[index].widgets[1] = Widget::Flow;
+    repaired = true;
+  }
+  if (repaired) return true;
   if (themeCount <= 0 || themes[0].layout != Layout::OneByTwo ||
       themes[0].widgets[0] != Widget::Empty || themes[0].widgets[1] != Widget::Empty) {
     return false;
@@ -144,10 +154,10 @@ void ensureLoaded() {
   if (!loaded) load();
 }
 
-bool validLayout(const uint8_t value) { return value <= static_cast<uint8_t>(Layout::TwoByTwo); }
+bool validLayout(const uint8_t value) { return value <= static_cast<uint8_t>(Layout::OneByOne); }
 
 bool validWidget(const uint8_t value) {
-  return value <= static_cast<uint8_t>(Widget::Description);
+  return value <= static_cast<uint8_t>(Widget::Flow);
 }
 
 bool validBorder(const uint8_t value) {
@@ -266,7 +276,7 @@ void load() {
        version != kLegacyMultiLibraryFoldersVersion && version != kLegacySingleLibraryFoldersVersion && version != 16 &&
        version != 17 && version != 18 && version != kCarouselProgressVersion &&
        version != kVersionBeforeRecentRatingOptions &&
-       version != kLegacyFavoriteIconOptionVersion &&
+       version != kLegacyFavoriteIconOptionVersion && version != 23 &&
        version != kVersion) || storedCount == 0 ||
       storedCount > kMaxThemes) {
     file.close();
@@ -279,11 +289,15 @@ void load() {
     uint8_t layout = 0;
     serialization::readString(file, name);
     serialization::readPod(file, layout);
-    if ((!validLayout(layout) && layout != 3) || name.empty()) return false;
+    // Layout value 3 is now the real 1 x 1 layout. Older files could contain
+    // that value from an abandoned experimental build; keeping it here lets
+    // the current editor repair and save those themes instead of silently
+    // converting them back to 1 x 2 on every load.
+    if (!validLayout(layout) || name.empty()) return false;
 
     theme = {};
     setName(theme, name);
-    theme.layout = layout == 3 ? Layout::OneByTwo : static_cast<Layout>(layout);
+    theme.layout = static_cast<Layout>(layout);
     for (Widget& widget : theme.widgets) {
       uint8_t value = 0;
       serialization::readPod(file, value);
@@ -846,6 +860,8 @@ const char* layoutLabel(const Layout layout) {
       return "1 x 2";
     case Layout::TwoByTwo:
       return "2 x 2";
+    case Layout::OneByOne:
+      return "1 x 1";
     default:
       return "Unknown";
   }
@@ -881,6 +897,10 @@ const char* widgetLabel(const Widget widget) {
       return "Library";
     case Widget::Description:
       return "Book Details";
+    case Widget::RecentGrid:
+      return "Recent 3 x 2 Grid";
+    case Widget::Flow:
+      return "Title & Description Flow";
     default:
       return "Unknown";
   }
@@ -939,7 +959,7 @@ const char* heatmapViewLabel(const HeatmapView view) {
 }
 
 int slotCount(const Layout layout) {
-  return layout == Layout::TwoByTwo ? 4 : layout == Layout::OneByTwo ? 2 : 0;
+  return layout == Layout::TwoByTwo || layout == Layout::OneByOne ? 4 : layout == Layout::OneByTwo ? 2 : 0;
 }
 
 }

@@ -9,6 +9,8 @@
 #include "activity/page/components/widget/Carousel.h"
 #include "activity/page/components/widget/Clock.h"
 #include "activity/page/components/widget/Recent.h"
+#include "activity/page/components/widget/RecentGrid.h"
+#include "activity/page/components/widget/Flow.h"
 #include "activity/page/components/widget/Shortcut.h"
 #include "activity/page/components/widget/ShortcutList.h"
 #include "activity/page/components/widget/Temperature.h"
@@ -27,7 +29,8 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
       : ActivityWithSubactivity("ThemePicker", renderer, mappedInput), carousel_(renderer), shortcut_(renderer),
         shortcutList_(renderer), clock_(renderer), calendar_(renderer), recent_(renderer), temperature_(renderer),
         humidity_(renderer), todaysReading_(renderer),
-        favorites_(renderer), heatmap_(renderer), library_(renderer), description_(renderer),
+        favorites_(renderer), heatmap_(renderer), library_(renderer), description_(renderer), recentGrid_(renderer),
+        flow_(renderer),
         onBack_(std::move(onBack)), openSleepTheme_(openSleepTheme) {}
 
   void onEnter() override;
@@ -77,6 +80,8 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
   Clock clock_;
   Calendar calendar_;
   Recent recent_;
+  RecentGrid recentGrid_;
+  Flow flow_;
   Temperature temperature_;
   Humidity humidity_;
   TodaysReading todaysReading_;
@@ -99,6 +104,8 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
   void renderBorder(HomeTheme::Border border, int x, int y, int width, int height);
   void handleTouch(int x, int y);
   void editTheme();
+  void promoteSelectedOneByOneWidget();
+  void saveEditorState();
   void saveEditorAndClose();
   void openWidgetPopup(int slot);
   void renderWidgetPopup();
@@ -112,4 +119,5 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
   void moveWidgetPopupSelection(int delta);
   void pageWidgetPopup(int delta);
   void close();
+  void switchLayout(HomeTheme::Layout layout);
 };

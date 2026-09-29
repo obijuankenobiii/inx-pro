@@ -18,6 +18,7 @@ struct ImageDisplayCacheOptions {
   ImageRenderMode mode = ImageRenderMode::OneBit;
   uint8_t renderPlane = 0;
   uint8_t cropAnchor = 128;
+  uint8_t cropAnchorY = 128;
   BitmapRender::RoundedOutside roundedOutside = BitmapRender::RoundedOutside::None;
   bool quality = false;
 };

@@ -34,6 +34,7 @@ class Home final : public Page {
   bool handleShortcut(int item);
   void drawShortcutDrawer() const;
   void advanceCarousel(int delta);
+  void advanceFlow(int delta);
   void preloadCarousel();
   void popup() const;
   bool popupInput();
@@ -45,6 +46,9 @@ class Home final : public Page {
   ShortcutList shortcutList;
   int carouselIndex = 0;
   int favoriteIndex = 0;
+  int widgetPageIndex = 0;
+  int recentGridPageIndex = 0;
+  int flowIndex = 0;
   bool carouselThumbnailsPreloaded = false;
   int popupBook = -1;
   bool favoritePopupOpen = false;

@@ -8,6 +8,7 @@ enum class Layout : uint8_t {
   Classic = 0,
   OneByTwo = 1,
   TwoByTwo = 2,
+  OneByOne = 3,
 };
 
 enum class Widget : uint8_t {
@@ -25,6 +26,8 @@ enum class Widget : uint8_t {
   Heatmap = 11,
   Library = 12,
   Description = 13,
+  RecentGrid = 14,
+  Flow = 15,
 };
 
 enum class HeatmapView : uint8_t {

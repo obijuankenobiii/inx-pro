@@ -325,11 +325,12 @@ For a complete browser-based installation, use the target's `firmware.factory.bi
 
 For an OTA update from an already-running Inx Pro installation, use the target's `firmware.bin` release asset instead.
 
-Tagged GitHub releases publish two device-specific images:
+Tagged GitHub releases publish application images for both devices and a separate merged Sticky image:
 
 ```text
-sticky.bin  <- Sticky firmware.factory.bin (complete factory/browser-flasher image)
-x4pro.bin   <- X4 Pro firmware.bin (application/OTA image)
+sticky.bin         <- Sticky firmware.bin (application/OTA/SD-card image)
+sticky-merged.bin  <- Sticky firmware.factory.bin (complete factory/browser-flasher image)
+x4pro.bin          <- X4 Pro firmware.bin (application/OTA image)
 ```
 
 To return the Sticky to official firmware, use the recovery or boot-partition instructions in Seeed's [reTerminal Sticky documentation](https://www.seeedstudio.com/sticky/docs/).

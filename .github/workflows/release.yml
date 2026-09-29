@@ -33,8 +33,14 @@ jobs:
         run: |
           pio run -e sticky
           mkdir -p "${GITHUB_WORKSPACE}/release"
+          # OTA writes this asset directly into an app OTA partition.  The
+          # merged factory image also contains the bootloader, partition table,
+          # and boot_app0 at offsets before the app, so it is only suitable for
+          # a full-flash uploader and fails OTA image validation at install end.
+          test -s "${GITHUB_WORKSPACE}/.pio/build/sticky/firmware.bin"
           test -s "${GITHUB_WORKSPACE}/.pio/build/sticky/firmware.factory.bin"
-          cp "${GITHUB_WORKSPACE}/.pio/build/sticky/firmware.factory.bin" "${GITHUB_WORKSPACE}/release/sticky.bin"
+          cp "${GITHUB_WORKSPACE}/.pio/build/sticky/firmware.bin" "${GITHUB_WORKSPACE}/release/sticky.bin"
+          cp "${GITHUB_WORKSPACE}/.pio/build/sticky/firmware.factory.bin" "${GITHUB_WORKSPACE}/release/sticky-merged.bin"
 
       - name: Build X4 Pro
         run: |
@@ -45,6 +51,7 @@ jobs:
       - name: Prepare release images
         run: |
           test -s "${GITHUB_WORKSPACE}/release/sticky.bin"
+          test -s "${GITHUB_WORKSPACE}/release/sticky-merged.bin"
           test -s "${GITHUB_WORKSPACE}/release/x4pro.bin"
 
       - name: Upload build artifacts
@@ -53,6 +60,7 @@ jobs:
           name: Inx-${{ github.ref_name }}
           path: |
             release/sticky.bin
+            release/sticky-merged.bin
             release/x4pro.bin
 
       - name: Create GitHub release
@@ -61,4 +69,5 @@ jobs:
           generate_release_notes: true
           files: |
             release/sticky.bin
+            release/sticky-merged.bin
             release/x4pro.bin

@@ -360,6 +360,9 @@ uint32_t cacheHash(const std::string& sourcePath, const int width, const int hei
   if (options.cropAnchor != 128) {
     hash = fnv1aAdd(hash, options.cropAnchor);
   }
+  if (options.cropAnchorY != 128) {
+    hash = fnv1aAdd(hash, options.cropAnchorY);
+  }
   hash = fnv1aAdd(hash, static_cast<uint8_t>(options.mode));
   hash = fnv1aAdd(hash, options.renderPlane);
   hash = fnv1aAdd(hash, static_cast<uint8_t>(options.roundedOutside));
@@ -383,6 +386,9 @@ uint32_t cacheHashCombined(const std::string& sourcePath, const int width, const
   hash = fnv1aAdd(hash, options.cropToFill ? 1 : 0);
   if (options.cropAnchor != 128) {
     hash = fnv1aAdd(hash, options.cropAnchor);
+  }
+  if (options.cropAnchorY != 128) {
+    hash = fnv1aAdd(hash, options.cropAnchorY);
   }
   hash = fnv1aAdd(hash, static_cast<uint8_t>(options.roundedOutside));
   hash = fnv1aAdd(hash, options.quality ? 1 : 0);

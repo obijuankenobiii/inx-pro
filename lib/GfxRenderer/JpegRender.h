@@ -34,10 +34,10 @@ class JpegRender {
 
   bool render(FsFile& jpegFile, int x, int y, int targetWidth, int targetHeight, bool cropToFill = false,
               ImageRenderMode mode = ImageRenderMode::OneBit, bool quality = false,
-              JpegLevelCapture* capture = nullptr, float cropAnchorX = 0.5f) const;
+              JpegLevelCapture* capture = nullptr, float cropAnchorX = 0.5f, float cropAnchorY = 0.5f) const;
   bool fromPath(const std::string& path, int x, int y, int targetWidth, int targetHeight, bool cropToFill = false,
                 ImageRenderMode mode = ImageRenderMode::OneBit, bool quality = false,
-                JpegLevelCapture* capture = nullptr, float cropAnchorX = 0.5f) const;
+                JpegLevelCapture* capture = nullptr, float cropAnchorX = 0.5f, float cropAnchorY = 0.5f) const;
 
   void replayCapture(const JpegLevelCapture& capture, ImageRenderMode mode) const;
 

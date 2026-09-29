@@ -819,7 +819,7 @@ bool decodeAndRender(FsFile& pngFile, RenderContext& renderCtx, int outW, int ou
 
 bool PngRender::render(FsFile& pngFile, int x, int y, int targetWidth, int targetHeight, bool cropToFill,
                        const ImageRenderMode mode, const float cropAnchorX, JpegLevelCapture* capture,
-                       const bool preserveTransparency) const {
+                       const bool preserveTransparency, const float cropAnchorY) const {
   if (!pngFile || targetWidth <= 0 || targetHeight <= 0) return false;
 
   int sourceW = 0;
@@ -838,9 +838,10 @@ bool PngRender::render(FsFile& pngFile, int x, int y, int targetWidth, int targe
     const float scale = std::max(sx, sy);
     srcW = std::max(1, static_cast<int>(targetWidth / scale));
     srcH = std::max(1, static_cast<int>(targetHeight / scale));
-    const float anchor = std::max(0.0f, std::min(1.0f, cropAnchorX));
-    srcX = std::max(0, static_cast<int>((sourceW - srcW) * anchor));
-    srcY = std::max(0, (sourceH - srcH) / 2);
+    const float anchorX = std::max(0.0f, std::min(1.0f, cropAnchorX));
+    const float anchorY = std::max(0.0f, std::min(1.0f, cropAnchorY));
+    srcX = std::max(0, static_cast<int>((sourceW - srcW) * anchorX));
+    srcY = std::max(0, static_cast<int>((sourceH - srcH) * anchorY));
   } else {
     const float sx = static_cast<float>(targetWidth) / static_cast<float>(sourceW);
     const float sy = static_cast<float>(targetHeight) / static_cast<float>(sourceH);
@@ -900,11 +901,11 @@ bool PngRender::render(FsFile& pngFile, int x, int y, int targetWidth, int targe
 
 bool PngRender::fromPath(const std::string& path, int x, int y, int targetWidth, int targetHeight, bool cropToFill,
                          const ImageRenderMode mode, const float cropAnchorX, JpegLevelCapture* capture,
-                         const bool preserveTransparency) const {
+                         const bool preserveTransparency, const float cropAnchorY) const {
   FsFile file;
   if (!SdMan.openFileForRead("PNG", path, file)) return false;
   const bool ok = render(file, x, y, targetWidth, targetHeight, cropToFill, mode, cropAnchorX, capture,
-                         preserveTransparency);
+                         preserveTransparency, cropAnchorY);
   file.close();
   return ok;
 }

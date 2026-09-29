@@ -28,6 +28,7 @@ class ImageRender {
     /** Keep fully transparent PNG pixels untouched when drawing over an existing framebuffer. */
     bool preserveTransparency = false;
     float cropAnchorX = 0.5f;
+    float cropAnchorY = 0.5f;
   };
 
   static ImageRender create(GfxRenderer& renderer, const std::string& path);

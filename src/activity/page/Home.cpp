@@ -93,6 +93,9 @@ void Home::onEnter() {
   renderer.syncWriteBufferFromActive();
   carouselIndex = 0;
   favoriteIndex = 0;
+  widgetPageIndex = 0;
+  recentGridPageIndex = 0;
+  flowIndex = 0;
   widgetLayout.invalidateFavorites();
   carouselThumbnailsPreloaded = false;
   popupBook = -1;
@@ -145,7 +148,7 @@ void Home::loop() {
 }
 
 void Home::content() {
-  widgetLayout.render(HomeTheme::active(), carouselIndex, favoriteIndex);
+  widgetLayout.render(HomeTheme::active(), carouselIndex, favoriteIndex, widgetPageIndex, recentGridPageIndex, flowIndex);
   if (popupBook >= 0 || favoritePopupOpen || heatmapPopupOpen) popup();
 }
 
@@ -180,11 +183,25 @@ bool Home::handlePopup() {
 }
 
 bool Home::handleSwipe() {
-  if (mappedInput.wasTouchSwipeUp() || mappedInput.wasTouchSwipeDown()) return false;
+  const bool swipeUp = mappedInput.wasTouchSwipeUp();
+  const bool swipeDown = !swipeUp && mappedInput.wasTouchSwipeDown();
+  if (swipeUp || swipeDown) {
+    const int pageCount = widgetLayout.recentGridPageCount(HomeTheme::active(), widgetPageIndex,
+                                                          RECENT_BOOKS.getCount());
+    if (pageCount > 1) {
+      recentGridPageIndex = (recentGridPageIndex + pageCount + (swipeUp ? 1 : -1)) % pageCount;
+      updateRequired = true;
+      renderPage();
+      return true;
+    }
+    return false;
+  }
   float swipeNx = 0.0f;
   float swipeNy = 0.0f;
-  const bool swipeLeft = mappedInput.wasTouchSwipeLeftInScreen(renderer, swipeNx, swipeNy);
-  const bool swipeRight = !swipeLeft && mappedInput.wasTouchSwipeRightInScreen(renderer, swipeNx, swipeNy);
+  const bool swipeLeftInScreen = mappedInput.wasTouchSwipeLeftInScreen(renderer, swipeNx, swipeNy);
+  const bool swipeRightInScreen = !swipeLeftInScreen && mappedInput.wasTouchSwipeRightInScreen(renderer, swipeNx, swipeNy);
+  const bool swipeLeft = swipeLeftInScreen || mappedInput.wasTouchSwipeLeft();
+  const bool swipeRight = !swipeLeft && (swipeRightInScreen || mappedInput.wasTouchSwipeRight());
   if (!swipeLeft && !swipeRight) return false;
 
   if (swipeRight && static_cast<int>(swipeNy * renderer.getScreenHeight()) < navigation::Menu::height) {
@@ -194,9 +211,15 @@ bool Home::handleSwipe() {
     return true;
   }
 
-  const int swipeX = static_cast<int>(swipeNx * renderer.getScreenWidth());
-  const int swipeY = static_cast<int>(swipeNy * renderer.getScreenHeight());
-  const HomeWidgetLayout::SwipeTarget target = widgetLayout.horizontalSwipeTarget(HomeTheme::active(), swipeX, swipeY);
+  const int swipeX = (swipeLeftInScreen || swipeRightInScreen)
+                         ? static_cast<int>(swipeNx * renderer.getScreenWidth())
+                         : renderer.getScreenWidth() / 2;
+  const int swipeY = (swipeLeftInScreen || swipeRightInScreen)
+                         ? static_cast<int>(swipeNy * renderer.getScreenHeight())
+                         : navigation::Menu::height +
+                               (renderer.getScreenHeight() - navigation::Menu::height - navigation::Menu::bottomHeight) / 2;
+  const HomeWidgetLayout::SwipeTarget target =
+      widgetLayout.horizontalSwipeTarget(HomeTheme::active(), widgetPageIndex, swipeX, swipeY);
   if (target == HomeWidgetLayout::SwipeTarget::Carousel) {
     advanceCarousel(swipeLeft ? 1 : -1);
     return true;
@@ -209,6 +232,20 @@ bool Home::handleSwipe() {
     renderPage();
     return true;
   }
+  if (target == HomeWidgetLayout::SwipeTarget::Flow) {
+    advanceFlow(swipeLeft ? 1 : -1);
+    return true;
+  }
+  if (target == HomeWidgetLayout::SwipeTarget::WidgetPage) {
+    const int count = widgetLayout.oneByOnePageCount(HomeTheme::active());
+    if (count > 1) {
+      widgetPageIndex = (widgetPageIndex + count + (swipeLeft ? 1 : -1)) % count;
+      recentGridPageIndex = 0;
+      updateRequired = true;
+      renderPage();
+    }
+    return true;
+  }
   return false;
 }
 
@@ -219,6 +256,17 @@ void Home::advanceCarousel(const int delta) {
     return;
   }
   carouselIndex = (carouselIndex + bookCount + delta) % bookCount;
+  updateRequired = true;
+  renderPage();
+}
+
+void Home::advanceFlow(const int delta) {
+  const int bookCount = RECENT_BOOKS.getCount();
+  if (bookCount <= 0) {
+    flowIndex = 0;
+    return;
+  }
+  flowIndex = (flowIndex + bookCount + delta) % bookCount;
   updateRequired = true;
   renderPage();
 }
@@ -248,7 +296,8 @@ bool Home::handleTap() {
   }
   const int bookCount = RECENT_BOOKS.getCount();
   const HomeWidgetLayout::HitResult favoriteHit =
-      widgetLayout.hitTest(HomeTheme::active(), carouselIndex, favoriteIndex, bookCount, tapX, tapY);
+      widgetLayout.hitTest(HomeTheme::active(), carouselIndex, favoriteIndex, bookCount, widgetPageIndex,
+                           recentGridPageIndex, flowIndex, tapX, tapY);
   if (favoriteHit.type == HomeWidgetLayout::HitType::Heatmap) {
     if (mappedInput.lastTouchHeldMs() >= longPressMs) {
       heatmapPopupOpen = true;
@@ -275,9 +324,30 @@ bool Home::handleTap() {
   }
   if (bookCount > 0) {
     const HomeWidgetLayout::HitResult hit =
-        widgetLayout.hitTest(HomeTheme::active(), carouselIndex, favoriteIndex, bookCount, tapX, tapY);
+        widgetLayout.hitTest(HomeTheme::active(), carouselIndex, favoriteIndex, bookCount, widgetPageIndex,
+                             recentGridPageIndex, flowIndex, tapX, tapY);
     if (hit.type == HomeWidgetLayout::HitType::Shortcut) return handleShortcut(hit.index);
     if (hit.type == HomeWidgetLayout::HitType::Recent) {
+      if (mappedInput.lastTouchHeldMs() >= longPressMs) {
+        popupBook = hit.index;
+        updateRequired = true;
+        return true;
+      }
+      openReaderFromCallback(RECENT_BOOKS.getBooks()[static_cast<size_t>(hit.index)].path, [] { onGoToHome(); });
+      return true;
+    }
+    if (hit.type == HomeWidgetLayout::HitType::RecentGrid) {
+      if (hit.index < 0 || hit.index >= bookCount) return true;
+      if (mappedInput.lastTouchHeldMs() >= longPressMs) {
+        popupBook = hit.index;
+        updateRequired = true;
+        return true;
+      }
+      openReaderFromCallback(RECENT_BOOKS.getBooks()[static_cast<size_t>(hit.index)].path, [] { onGoToHome(); });
+      return true;
+    }
+    if (hit.type == HomeWidgetLayout::HitType::Flow) {
+      if (hit.index < 0 || hit.index >= bookCount) return true;
       if (mappedInput.lastTouchHeldMs() >= longPressMs) {
         popupBook = hit.index;
         updateRequired = true;
@@ -307,9 +377,14 @@ bool Home::handleTap() {
     return true;
   }
   const HomeWidgetLayout::HitResult hit =
-      widgetLayout.hitTest(HomeTheme::active(), carouselIndex, favoriteIndex, bookCount, tapX, tapY);
+      widgetLayout.hitTest(HomeTheme::active(), carouselIndex, favoriteIndex, bookCount, widgetPageIndex,
+                           recentGridPageIndex, flowIndex, tapX, tapY);
   if (hit.type == HomeWidgetLayout::HitType::Shortcut) return handleShortcut(hit.index);
   if (hit.type == HomeWidgetLayout::HitType::Recent) {
+    openReaderFromCallback(RECENT_BOOKS.getBooks()[static_cast<size_t>(hit.index)].path, [] { onGoToHome(); });
+    return true;
+  }
+  if (hit.type == HomeWidgetLayout::HitType::RecentGrid && hit.index >= 0 && hit.index < bookCount) {
     openReaderFromCallback(RECENT_BOOKS.getBooks()[static_cast<size_t>(hit.index)].path, [] { onGoToHome(); });
     return true;
   }
@@ -495,6 +570,7 @@ void Home::removeRecent() {
   if (carouselIndex >= widgetLayout.carouselBookCount(HomeTheme::active(), RECENT_BOOKS.getCount())) {
     carouselIndex = 0;
   }
+  if (flowIndex >= RECENT_BOOKS.getCount()) flowIndex = 0;
   updateRequired = true;
 }
 

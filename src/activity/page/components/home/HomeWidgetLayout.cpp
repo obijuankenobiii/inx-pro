@@ -10,6 +10,8 @@ HomeWidgetLayout::HomeWidgetLayout(GfxRenderer& renderer)
       clock_(renderer),
       calendar_(renderer),
       recent_(renderer),
+      recentGrid_(renderer),
+      flow_(renderer),
       shortcut_(renderer),
       shortcutList_(renderer),
       temperature_(renderer),
@@ -20,7 +22,8 @@ HomeWidgetLayout::HomeWidgetLayout(GfxRenderer& renderer)
       library_(renderer),
       description_(renderer) {}
 
-void HomeWidgetLayout::render(const HomeTheme::Theme& theme, const int carouselIndex, const int favoriteIndex) const {
+void HomeWidgetLayout::render(const HomeTheme::Theme& theme, const int carouselIndex, const int favoriteIndex,
+                              const int widgetPageIndex, const int recentGridPageIndex, const int flowIndex) const {
   switch (theme.layout) {
     case HomeTheme::Layout::Classic:
       renderClassic(carouselIndex);
@@ -28,6 +31,9 @@ void HomeWidgetLayout::render(const HomeTheme::Theme& theme, const int carouselI
     case HomeTheme::Layout::OneByTwo:
     case HomeTheme::Layout::TwoByTwo:
       renderGrid(theme, carouselIndex, favoriteIndex);
+      return;
+    case HomeTheme::Layout::OneByOne:
+      renderOneByOne(theme, carouselIndex, favoriteIndex, widgetPageIndex, recentGridPageIndex, flowIndex);
       return;
   }
 }
@@ -73,7 +79,11 @@ int HomeWidgetLayout::carouselBookCount(const HomeTheme::Theme& theme, const int
 
 void HomeWidgetLayout::renderSleep(const HomeTheme::Theme& theme) const {
   if (theme.layout == HomeTheme::Layout::Classic) return;
-  renderGrid(theme, 0, 0, true);
+  if (theme.layout == HomeTheme::Layout::OneByOne) {
+    renderOneByOne(theme, 0, 0, 0, 0, 0);
+  } else {
+    renderGrid(theme, 0, 0, true);
+  }
 }
 
 HomeWidgetLayout::Grid HomeWidgetLayout::grid(const HomeTheme::Layout layout, const bool sleep,
@@ -160,67 +170,111 @@ void HomeWidgetLayout::renderGrid(const HomeTheme::Theme& theme, const int carou
   }
   for (int slot = 0; slot < HomeTheme::slotCount(theme.layout); ++slot) {
     const Bounds bounds = slotBounds(layout, slot);
-    switch (theme.widgets[slot]) {
-      case HomeTheme::Widget::Carousel:
-        carousel_.render(carouselIndex, bounds.x, bounds.y, bounds.width, bounds.height, theme.backgrounds[slot] != 0,
-                         theme.carouselStyles[slot], theme.carouselLabels[slot] != 0, theme.carouselLabelColors[slot],
-                         theme.carouselShadowStyles[slot], theme.carouselProgress[slot] != 0, hideFirst);
-        break;
-      case HomeTheme::Widget::Shortcuts:
-        shortcut_.render(bounds.x, bounds.y, bounds.width, bounds.height);
-        break;
-      case HomeTheme::Widget::ListShortcuts:
-        shortcutList_.render(bounds.x, bounds.y, bounds.width, bounds.height);
-        break;
-      case HomeTheme::Widget::Clock:
-        clock_.render(bounds.x, bounds.y, bounds.width, bounds.height);
-        break;
-      case HomeTheme::Widget::Calendar:
-        calendar_.render(bounds.x, bounds.y, bounds.width, bounds.height);
-        break;
-      case HomeTheme::Widget::Recent:
-        recent_.render(bounds.x, bounds.y, bounds.width, bounds.height, theme.backgrounds[slot] != 0,
-                       theme.carouselStyles[slot], theme.carouselLabels[slot] != 0, theme.carouselLabelColors[slot],
-                       theme.carouselShadowStyles[slot], theme.recentTitles[slot] != 0, theme.recentAuthors[slot] != 0,
-                       theme.recentProgress[slot] != 0, theme.recentRatings[slot] != 0);
-        break;
-#if FREEINK_DEVICE_STICKY
-      case HomeTheme::Widget::Temperature:
-        temperature_.render(bounds.x, bounds.y, bounds.width, bounds.height);
-        break;
-      case HomeTheme::Widget::Humidity:
-        humidity_.render(bounds.x, bounds.y, bounds.width, bounds.height);
-        break;
-#endif
-      case HomeTheme::Widget::TodaysReading:
-        todaysReading_.render(bounds.x, bounds.y, bounds.width, bounds.height);
-        break;
-      case HomeTheme::Widget::Favorites:
-        favorites_.render(favoriteIndex, bounds.x, bounds.y, bounds.width, bounds.height, theme.backgrounds[slot] != 0,
-                          theme.carouselStyles[slot], theme.carouselLabels[slot] != 0, theme.carouselLabelColors[slot],
-                          theme.carouselShadowStyles[slot]);
-        break;
-      case HomeTheme::Widget::Heatmap:
-        heatmap_.render(bounds.x, bounds.y, bounds.width, bounds.height, theme.heatmapViews[slot],
-                        theme.carouselLabels[slot] != 0, theme.carouselLabelColors[slot]);
-        break;
-      case HomeTheme::Widget::Library:
-        library_.render(bounds.x, bounds.y, bounds.width, bounds.height, theme.libraryFolders[slot],
-                        theme.backgrounds[slot] != 0, theme.carouselLabels[slot] != 0);
-        break;
-      case HomeTheme::Widget::Description:
-        description_.render(descriptionRecentIndex, bounds.x, bounds.y, bounds.width, bounds.height,
-                            theme.backgrounds[slot] != 0, theme.carouselLabels[slot] != 0,
-                            theme.carouselLabelColors[slot], theme.carouselShadowStyles[slot],
-                            theme.descriptionTitles[slot] != 0, theme.descriptionAuthors[slot] != 0,
-                            theme.descriptionProgress[slot] != 0, theme.descriptionRatings[slot] != 0);
-        break;
-      case HomeTheme::Widget::Empty:
-      default:
-        break;
-    }
+    renderSlot(theme, slot, bounds, carouselIndex, favoriteIndex, descriptionRecentIndex, hideFirst, 0, 0);
   }
   renderBorder(theme.borders[0], layout);
+}
+
+void HomeWidgetLayout::renderOneByOne(const HomeTheme::Theme& theme, const int carouselIndex,
+                                      const int favoriteIndex, const int widgetPageIndex,
+                                      const int recentGridPageIndex, const int flowIndex) const {
+  const int slot = oneByOnePageCount(theme) == 0 ? 0 : [&] {
+    int page = std::max(0, widgetPageIndex);
+    for (int i = 0; i < HomeTheme::slotCount(theme.layout); ++i) {
+      if (theme.widgets[i] == HomeTheme::Widget::Empty) continue;
+      if (page-- == 0) return i;
+    }
+    for (int i = 0; i < HomeTheme::slotCount(theme.layout); ++i) {
+      if (theme.widgets[i] != HomeTheme::Widget::Empty) return i;
+    }
+    return 0;
+  }();
+  const Bounds bounds{0, navigation::Menu::height, renderer_.getScreenWidth(),
+                      renderer_.getScreenHeight() - navigation::Menu::height - navigation::Menu::bottomHeight};
+  const bool hideFirst = hideFirstCarouselBook(theme);
+  int descriptionRecentIndex = hideFirst ? carouselIndex + 1 : carouselIndex;
+  for (int i = 0; i < HomeTheme::slotCount(theme.layout); ++i) {
+    if (theme.widgets[i] == HomeTheme::Widget::Recent) {
+      descriptionRecentIndex = 0;
+      break;
+    }
+  }
+  renderSlot(theme, slot, bounds, carouselIndex, favoriteIndex, descriptionRecentIndex, hideFirst,
+             recentGridPageIndex, flowIndex);
+  const Grid borderLayout{1, 1, bounds.x, bounds.y, bounds.width, bounds.height, 0, 1, 0, 0};
+  renderBorder(theme.borders[slot], borderLayout);
+}
+
+int HomeWidgetLayout::oneByOnePageCount(const HomeTheme::Theme& theme) const {
+  int count = 0;
+  for (int slot = 0; slot < HomeTheme::slotCount(theme.layout); ++slot) {
+    if (theme.widgets[slot] != HomeTheme::Widget::Empty) ++count;
+  }
+  return count;
+}
+
+int HomeWidgetLayout::recentGridPageCount(const HomeTheme::Theme& theme, const int widgetPageIndex,
+                                          const int bookCount) const {
+  if (theme.layout != HomeTheme::Layout::OneByOne || bookCount <= 0) return 0;
+  int page = std::max(0, widgetPageIndex);
+  for (int slot = 0; slot < HomeTheme::slotCount(theme.layout); ++slot) {
+    if (theme.widgets[slot] == HomeTheme::Widget::Empty) continue;
+    if (page-- == 0) return theme.widgets[slot] == HomeTheme::Widget::RecentGrid ? (bookCount + 5) / 6 : 0;
+  }
+  return 0;
+}
+
+void HomeWidgetLayout::renderSlot(const HomeTheme::Theme& theme, const int slot, const Bounds& bounds,
+                                  const int carouselIndex, const int favoriteIndex, const int descriptionRecentIndex,
+                                  const bool hideFirst, const int recentGridPageIndex, const int flowIndex) const {
+  switch (theme.widgets[slot]) {
+    case HomeTheme::Widget::Carousel:
+      carousel_.render(carouselIndex, bounds.x, bounds.y, bounds.width, bounds.height, theme.backgrounds[slot] != 0,
+                       theme.carouselStyles[slot], theme.carouselLabels[slot] != 0, theme.carouselLabelColors[slot],
+                       theme.carouselShadowStyles[slot], theme.carouselProgress[slot] != 0, hideFirst);
+      break;
+    case HomeTheme::Widget::Shortcuts: shortcut_.render(bounds.x, bounds.y, bounds.width, bounds.height); break;
+    case HomeTheme::Widget::ListShortcuts: shortcutList_.render(bounds.x, bounds.y, bounds.width, bounds.height); break;
+    case HomeTheme::Widget::Clock: clock_.render(bounds.x, bounds.y, bounds.width, bounds.height); break;
+    case HomeTheme::Widget::Calendar: calendar_.render(bounds.x, bounds.y, bounds.width, bounds.height); break;
+    case HomeTheme::Widget::Recent:
+      recent_.render(bounds.x, bounds.y, bounds.width, bounds.height, theme.backgrounds[slot] != 0,
+                     theme.carouselStyles[slot], theme.carouselLabels[slot] != 0, theme.carouselLabelColors[slot],
+                     theme.carouselShadowStyles[slot], theme.recentTitles[slot] != 0, theme.recentAuthors[slot] != 0,
+                     theme.recentProgress[slot] != 0, theme.recentRatings[slot] != 0);
+      break;
+    case HomeTheme::Widget::RecentGrid:
+      recentGrid_.render(bounds.x, bounds.y, bounds.width, bounds.height, recentGridPageIndex);
+      break;
+    case HomeTheme::Widget::Flow: flow_.render(bounds.x, bounds.y, bounds.width, bounds.height, flowIndex); break;
+#if FREEINK_DEVICE_STICKY
+    case HomeTheme::Widget::Temperature: temperature_.render(bounds.x, bounds.y, bounds.width, bounds.height); break;
+    case HomeTheme::Widget::Humidity: humidity_.render(bounds.x, bounds.y, bounds.width, bounds.height); break;
+#endif
+    case HomeTheme::Widget::TodaysReading: todaysReading_.render(bounds.x, bounds.y, bounds.width, bounds.height); break;
+    case HomeTheme::Widget::Favorites:
+      favorites_.render(favoriteIndex, bounds.x, bounds.y, bounds.width, bounds.height, theme.backgrounds[slot] != 0,
+                        theme.carouselStyles[slot], theme.carouselLabels[slot] != 0, theme.carouselLabelColors[slot],
+                        theme.carouselShadowStyles[slot]);
+      break;
+    case HomeTheme::Widget::Heatmap:
+      heatmap_.render(bounds.x, bounds.y, bounds.width, bounds.height, theme.heatmapViews[slot],
+                      theme.carouselLabels[slot] != 0, theme.carouselLabelColors[slot]);
+      break;
+    case HomeTheme::Widget::Library:
+      library_.render(bounds.x, bounds.y, bounds.width, bounds.height, theme.libraryFolders[slot],
+                      theme.backgrounds[slot] != 0, theme.carouselLabels[slot] != 0);
+      break;
+    case HomeTheme::Widget::Description:
+      description_.render(descriptionRecentIndex, bounds.x, bounds.y, bounds.width, bounds.height,
+                          theme.backgrounds[slot] != 0, theme.carouselLabels[slot] != 0,
+                          theme.carouselLabelColors[slot], theme.carouselShadowStyles[slot],
+                          theme.descriptionTitles[slot] != 0, theme.descriptionAuthors[slot] != 0,
+                          theme.descriptionProgress[slot] != 0, theme.descriptionRatings[slot] != 0);
+      break;
+    case HomeTheme::Widget::Empty:
+    default: break;
+  }
 }
 
 void HomeWidgetLayout::renderBorder(const HomeTheme::Border border, const Grid& layout) const {
@@ -264,6 +318,15 @@ void HomeWidgetLayout::renderBorder(const HomeTheme::Border border, const Grid& 
 int HomeWidgetLayout::findWidget(const HomeTheme::Theme& theme, const HomeTheme::Widget widget, const int x,
                                  const int y) const {
   if (theme.layout == HomeTheme::Layout::Classic) return -1;
+  if (theme.layout == HomeTheme::Layout::OneByOne) {
+    for (int slot = 0; slot < HomeTheme::slotCount(theme.layout); ++slot) {
+      if (theme.widgets[slot] == HomeTheme::Widget::Empty || theme.widgets[slot] != widget) continue;
+      const int areaY = navigation::Menu::height;
+      const int areaH = renderer_.getScreenHeight() - areaY - navigation::Menu::bottomHeight;
+      if (x >= 0 && x < renderer_.getScreenWidth() && y >= areaY && y < areaY + areaH) return slot;
+    }
+    return -1;
+  }
   const Grid layout = grid(theme.layout);
   for (int slot = 0; slot < HomeTheme::slotCount(theme.layout); ++slot) {
     if (theme.widgets[slot] != widget) continue;
@@ -276,6 +339,7 @@ int HomeWidgetLayout::findWidget(const HomeTheme::Theme& theme, const HomeTheme:
 int HomeWidgetLayout::carouselAt(const HomeTheme::Theme& theme, const int carouselIndex, const int count, const int x,
                                  const int y) const {
   const bool hideFirst = hideFirstCarouselBook(theme);
+  if (theme.layout == HomeTheme::Layout::OneByOne) return -1;
   if (theme.layout == HomeTheme::Layout::Classic) {
     return carousel_.hitTest(carouselIndex, count, x, y, 0, navigation::Menu::height, renderer_.getScreenWidth(),
                              Carousel::kHeight, HomeTheme::CarouselStyle::Centered, true);
@@ -299,8 +363,9 @@ bool HomeWidgetLayout::hideFirstCarouselBook(const HomeTheme::Theme& theme) cons
 }
 
 HomeWidgetLayout::HitResult HomeWidgetLayout::hitTest(const HomeTheme::Theme& theme, const int carouselIndex,
-                                                      const int favoriteIndex, const int bookCount, const int x,
-                                                      const int y) const {
+                                                      const int favoriteIndex, const int bookCount,
+                                                      const int widgetPageIndex, const int recentGridPageIndex,
+                                                      const int flowIndex, const int x, const int y) const {
   const int carousel = carouselAt(theme, carouselIndex, bookCount, x, y);
   if (carousel >= 0) return {HitType::Carousel, carousel};
 
@@ -309,6 +374,24 @@ HomeWidgetLayout::HitResult HomeWidgetLayout::hitTest(const HomeTheme::Theme& th
 
   const int recent = recentAt(theme, x, y);
   if (recent >= 0) return {HitType::Recent, recent};
+
+  const int recentGrid = recentGridAt(theme, widgetPageIndex, recentGridPageIndex, x, y);
+  if (recentGrid >= 0) return {HitType::RecentGrid, recentGrid};
+
+  if (theme.layout == HomeTheme::Layout::OneByOne) {
+    int page = std::max(0, widgetPageIndex);
+    for (int slot = 0; slot < HomeTheme::slotCount(theme.layout); ++slot) {
+      if (theme.widgets[slot] == HomeTheme::Widget::Empty) continue;
+      if (page-- != 0) continue;
+      if (theme.widgets[slot] != HomeTheme::Widget::Flow) break;
+      const int areaY = navigation::Menu::height;
+      const int areaH = renderer_.getScreenHeight() - areaY - navigation::Menu::bottomHeight;
+      if (flow_.hitTest(x, y, 0, areaY, renderer_.getScreenWidth(), areaH)) {
+        return {HitType::Flow, flowIndex};
+      }
+      break;
+    }
+  }
 
   const int todaysReading = todaysReadingAt(theme, x, y);
   if (todaysReading >= 0) return {HitType::TodaysReading, todaysReading};
@@ -324,13 +407,29 @@ HomeWidgetLayout::HitResult HomeWidgetLayout::hitTest(const HomeTheme::Theme& th
   return {HitType::None, -1};
 }
 
-HomeWidgetLayout::SwipeTarget HomeWidgetLayout::horizontalSwipeTarget(const HomeTheme::Theme& theme, const int x,
+HomeWidgetLayout::SwipeTarget HomeWidgetLayout::horizontalSwipeTarget(const HomeTheme::Theme& theme,
+                                                                      const int widgetPageIndex, const int x,
                                                                       const int y) const {
   if (theme.layout == HomeTheme::Layout::Classic) {
     return x >= 0 && x < renderer_.getScreenWidth() && y >= navigation::Menu::height &&
                    y < navigation::Menu::height + Carousel::kHeight
                ? SwipeTarget::Carousel
                : SwipeTarget::None;
+  }
+
+  if (theme.layout == HomeTheme::Layout::OneByOne) {
+    const int areaY = navigation::Menu::height;
+    const int areaH = renderer_.getScreenHeight() - areaY - navigation::Menu::bottomHeight;
+    if (x < 0 || x >= renderer_.getScreenWidth() || y < areaY || y >= areaY + areaH) return SwipeTarget::None;
+    int page = std::max(0, widgetPageIndex);
+    for (int slot = 0; slot < HomeTheme::slotCount(theme.layout); ++slot) {
+      if (theme.widgets[slot] == HomeTheme::Widget::Empty) continue;
+      if (page-- != 0) continue;
+      if (theme.widgets[slot] == HomeTheme::Widget::Flow) return SwipeTarget::Flow;
+      if (theme.widgets[slot] == HomeTheme::Widget::RecentGrid) return SwipeTarget::None;
+      return SwipeTarget::WidgetPage;
+    }
+    return SwipeTarget::None;
   }
 
   const Grid layout = grid(theme.layout);
@@ -348,7 +447,7 @@ int HomeWidgetLayout::favoriteCount() const { return favorites_.count(); }
 const std::string& HomeWidgetLayout::favoritePath(const int index) const { return favorites_.pathAt(index); }
 
 int HomeWidgetLayout::recentAt(const HomeTheme::Theme& theme, const int x, const int y) const {
-  if (theme.layout == HomeTheme::Layout::Classic) return -1;
+  if (theme.layout == HomeTheme::Layout::Classic || theme.layout == HomeTheme::Layout::OneByOne) return -1;
   const Grid layout = grid(theme.layout);
   for (int slot = 0; slot < HomeTheme::slotCount(theme.layout); ++slot) {
     if (theme.widgets[slot] != HomeTheme::Widget::Recent) continue;
@@ -359,9 +458,27 @@ int HomeWidgetLayout::recentAt(const HomeTheme::Theme& theme, const int x, const
   return -1;
 }
 
+int HomeWidgetLayout::recentGridAt(const HomeTheme::Theme& theme, const int widgetPageIndex,
+                                   const int recentGridPageIndex, const int x, const int y) const {
+  if (theme.layout != HomeTheme::Layout::OneByOne) return -1;
+  int page = std::max(0, widgetPageIndex);
+  int activeSlot = -1;
+  for (int slot = 0; slot < HomeTheme::slotCount(theme.layout); ++slot) {
+    if (theme.widgets[slot] == HomeTheme::Widget::Empty) continue;
+    if (page-- == 0) {
+      activeSlot = slot;
+      break;
+    }
+  }
+  if (activeSlot < 0 || theme.widgets[activeSlot] != HomeTheme::Widget::RecentGrid) return -1;
+  const int areaY = navigation::Menu::height;
+  const int areaH = renderer_.getScreenHeight() - areaY - navigation::Menu::bottomHeight;
+  return recentGrid_.hitTest(0, areaY, renderer_.getScreenWidth(), areaH, recentGridPageIndex, x, y);
+}
+
 int HomeWidgetLayout::favoritesAt(const HomeTheme::Theme& theme, const int carouselIndex, const int x,
                                   const int y) const {
-  if (theme.layout == HomeTheme::Layout::Classic) return -1;
+  if (theme.layout == HomeTheme::Layout::Classic || theme.layout == HomeTheme::Layout::OneByOne) return -1;
   const Grid layout = grid(theme.layout);
   for (int slot = 0; slot < HomeTheme::slotCount(theme.layout); ++slot) {
     if (theme.widgets[slot] != HomeTheme::Widget::Favorites) continue;
@@ -375,7 +492,7 @@ int HomeWidgetLayout::favoritesAt(const HomeTheme::Theme& theme, const int carou
 }
 
 int HomeWidgetLayout::todaysReadingAt(const HomeTheme::Theme& theme, const int x, const int y) const {
-  if (theme.layout == HomeTheme::Layout::Classic) return -1;
+  if (theme.layout == HomeTheme::Layout::Classic || theme.layout == HomeTheme::Layout::OneByOne) return -1;
   const Grid layout = grid(theme.layout);
   for (int slot = 0; slot < HomeTheme::slotCount(theme.layout); ++slot) {
     if (theme.widgets[slot] != HomeTheme::Widget::TodaysReading) continue;
@@ -386,7 +503,7 @@ int HomeWidgetLayout::todaysReadingAt(const HomeTheme::Theme& theme, const int x
 }
 
 int HomeWidgetLayout::heatmapAt(const HomeTheme::Theme& theme, const int x, const int y) const {
-  if (theme.layout == HomeTheme::Layout::Classic) return -1;
+  if (theme.layout == HomeTheme::Layout::Classic || theme.layout == HomeTheme::Layout::OneByOne) return -1;
   const Grid layout = grid(theme.layout);
   for (int slot = 0; slot < HomeTheme::slotCount(theme.layout); ++slot) {
     if (theme.widgets[slot] != HomeTheme::Widget::Heatmap) continue;
@@ -397,7 +514,7 @@ int HomeWidgetLayout::heatmapAt(const HomeTheme::Theme& theme, const int x, cons
 }
 
 int HomeWidgetLayout::libraryAt(const HomeTheme::Theme& theme, const int x, const int y) const {
-  if (theme.layout == HomeTheme::Layout::Classic) return -1;
+  if (theme.layout == HomeTheme::Layout::Classic || theme.layout == HomeTheme::Layout::OneByOne) return -1;
   const Grid layout = grid(theme.layout);
   for (int slot = 0; slot < HomeTheme::slotCount(theme.layout); ++slot) {
     if (theme.widgets[slot] != HomeTheme::Widget::Library) continue;
@@ -419,6 +536,7 @@ int HomeWidgetLayout::shortcutAt(const HomeTheme::Theme& theme, const int x, con
                              renderer_.getScreenHeight() - navigation::Menu::height - Carousel::kHeight -
                                  navigation::Menu::bottomHeight - 40);
   }
+  if (theme.layout == HomeTheme::Layout::OneByOne) return -1;
   const int slot = findWidget(theme, HomeTheme::Widget::Shortcuts, x, y);
   if (slot >= 0) {
     const Bounds bounds = slotBounds(grid(theme.layout), slot);

@@ -660,7 +660,7 @@ int stbiEof(void* user) {
 
 bool renderProgressiveJpegFull(FsFile& file, GfxRenderer& renderer, int x, int y, int targetWidth, int targetHeight,
                                bool cropToFill, ImageRenderMode mode, bool quality, JpegLevelCapture* capture,
-                               const float cropAnchorX = 0.5f) {
+                               const float cropAnchorX = 0.5f, const float cropAnchorY = 0.5f) {
   ProgressiveDecodeJob job;
   job.file = &file;
   job.waiter = xTaskGetCurrentTaskHandle();
@@ -693,9 +693,10 @@ bool renderProgressiveJpegFull(FsFile& file, GfxRenderer& renderer, int x, int y
     const float scale = std::max(sx, sy);
     cropWidth = std::max(1, static_cast<int>(targetWidth / scale));
     cropHeight = std::max(1, static_cast<int>(targetHeight / scale));
-    const float anchor = std::max(0.0f, std::min(1.0f, cropAnchorX));
-    cropX = std::max(0, static_cast<int>((sourceWidth - cropWidth) * anchor));
-    cropY = std::max(0, (sourceHeight - cropHeight) / 2);
+    const float anchorX = std::max(0.0f, std::min(1.0f, cropAnchorX));
+    const float anchorY = std::max(0.0f, std::min(1.0f, cropAnchorY));
+    cropX = std::max(0, static_cast<int>((sourceWidth - cropWidth) * anchorX));
+    cropY = std::max(0, static_cast<int>((sourceHeight - cropHeight) * anchorY));
     outputWidth = targetWidth;
     outputHeight = targetHeight;
   } else {
@@ -844,7 +845,7 @@ bool renderProgressiveJpegFull(FsFile& file, GfxRenderer& renderer, int x, int y
 bool renderProgressiveJpegDc(FsFile& file, GfxRenderer* renderer, int x, int y, int targetWidth, int targetHeight,
                              bool cropToFill, ImageRenderMode mode, bool quality, JpegLevelCapture* capture,
                              ProgressiveRowCallback rowCallback = nullptr, void* rowCallbackContext = nullptr,
-                             const float cropAnchorX = 0.5f) {
+                             const float cropAnchorX = 0.5f, const float cropAnchorY = 0.5f) {
   file.seek(0);
   ProgressiveJpeg jpeg{file};
   auto readBytes = [&](uint8_t* destination, const uint32_t count) {
@@ -1007,9 +1008,10 @@ bool renderProgressiveJpegDc(FsFile& file, GfxRenderer* renderer, int x, int y, 
     const float scale = std::max(sx, sy);
     cropSourceWidth = std::max(1, static_cast<int>(targetWidth / scale));
     cropSourceHeight = std::max(1, static_cast<int>(targetHeight / scale));
-    const float anchor = std::max(0.0f, std::min(1.0f, cropAnchorX));
-    cropSourceX = std::max(0, static_cast<int>((static_cast<int>(width) - cropSourceWidth) * anchor));
-    cropSourceY = std::max(0, (static_cast<int>(height) - cropSourceHeight) / 2);
+    const float anchorX = std::max(0.0f, std::min(1.0f, cropAnchorX));
+    const float anchorY = std::max(0.0f, std::min(1.0f, cropAnchorY));
+    cropSourceX = std::max(0, static_cast<int>((static_cast<int>(width) - cropSourceWidth) * anchorX));
+    cropSourceY = std::max(0, static_cast<int>((static_cast<int>(height) - cropSourceHeight) * anchorY));
     outWidth = targetWidth;
     outHeight = targetHeight;
   } else {
@@ -1236,18 +1238,18 @@ bool JpegRender::writeProgressiveThumbnailJpeg(FsFile& jpegFile, Print& jpegOut,
 
 bool JpegRender::render(FsFile& jpegFile, int x, int y, int targetWidth, int targetHeight, bool cropToFill,
                         const ImageRenderMode mode, const bool quality, JpegLevelCapture* capture,
-                        const float cropAnchorX) const {
+                        const float cropAnchorX, const float cropAnchorY) const {
   const uint32_t tRenderStart = millis();
   if (!jpegFile || targetWidth <= 0 || targetHeight <= 0) {
     return false;
   }
   if (isUnsupportedJpeg(jpegFile)) {
     const bool usedFull = renderProgressiveJpegFull(jpegFile, renderer_, x, y, targetWidth, targetHeight, cropToFill,
-                                                    mode, quality, capture, cropAnchorX);
+                                                    mode, quality, capture, cropAnchorX, cropAnchorY);
     bool ok = usedFull;
     if (!ok) {
       ok = renderProgressiveJpegDc(jpegFile, &renderer_, x, y, targetWidth, targetHeight, cropToFill, mode, quality,
-                                   capture, nullptr, nullptr, cropAnchorX);
+                                   capture, nullptr, nullptr, cropAnchorX, cropAnchorY);
     }
     EPUB_PERF_LOG("[%lu] [IMG-TIMING] progressive JPEG render=%lums ok=%d full=%d\n", millis(),
                   static_cast<unsigned long>(millis() - tRenderStart), ok ? 1 : 0, usedFull ? 1 : 0);
@@ -1284,9 +1286,10 @@ bool JpegRender::render(FsFile& jpegFile, int x, int y, int targetWidth, int tar
       const float scale = std::max(sx, sy);
       cropSrcWidth = std::max(1, static_cast<int>(targetWidth / scale));
       cropSrcHeight = std::max(1, static_cast<int>(targetHeight / scale));
-      const float anchor = std::max(0.0f, std::min(1.0f, cropAnchorX));
-      srcOffsetX = std::max(0, static_cast<int>((imageInfo.m_width - cropSrcWidth) * anchor));
-      srcOffsetY = std::max(0, (imageInfo.m_height - cropSrcHeight) / 2);
+      const float anchorX = std::max(0.0f, std::min(1.0f, cropAnchorX));
+      const float anchorY = std::max(0.0f, std::min(1.0f, cropAnchorY));
+      srcOffsetX = std::max(0, static_cast<int>((imageInfo.m_width - cropSrcWidth) * anchorX));
+      srcOffsetY = std::max(0, static_cast<int>((imageInfo.m_height - cropSrcHeight) * anchorY));
       outWidth = targetWidth;
       outHeight = targetHeight;
     } else {
@@ -1560,7 +1563,7 @@ bool JpegRender::render(FsFile& jpegFile, int x, int y, int targetWidth, int tar
   picoJpegGuard.release();
   jpegFile.seek(0);
   const bool fallbackOk = renderProgressiveJpegFull(jpegFile, renderer_, x, y, targetWidth, targetHeight, cropToFill,
-                                                    mode, quality, capture, cropAnchorX);
+                                                    mode, quality, capture, cropAnchorX, cropAnchorY);
   EPUB_PERF_LOG("[%lu] [IMG-TIMING] JPEG fallback render=%lums ok=%d\n", millis(),
                 static_cast<unsigned long>(millis() - tRenderStart), fallbackOk ? 1 : 0);
   return fallbackOk;
@@ -1568,14 +1571,15 @@ bool JpegRender::render(FsFile& jpegFile, int x, int y, int targetWidth, int tar
 
 bool JpegRender::fromPath(const std::string& path, int x, int y, int targetWidth, int targetHeight, bool cropToFill,
                           const ImageRenderMode mode, const bool quality, JpegLevelCapture* capture,
-                          const float cropAnchorX) const {
+                          const float cropAnchorX, const float cropAnchorY) const {
   const uint32_t tOpenStart = millis();
   FsFile file;
   if (!SdMan.openFileForRead("JRG", path, file)) {
     return false;
   }
   const uint32_t tOpenEnd = millis();
-  const bool ok = render(file, x, y, targetWidth, targetHeight, cropToFill, mode, quality, capture, cropAnchorX);
+  const bool ok = render(file, x, y, targetWidth, targetHeight, cropToFill, mode, quality, capture, cropAnchorX,
+                         cropAnchorY);
   file.close();
   EPUB_PERF_LOG("[%lu] [IMG-TIMING] fromPath %s: open=%lums render=%lums\n", millis(), path.c_str(),
                 static_cast<unsigned long>(tOpenEnd - tOpenStart), static_cast<unsigned long>(millis() - tOpenEnd));
@@ -1624,9 +1628,9 @@ bool JpegRender::getDimensions(const std::string& path, int* outW, int* outH) {
 namespace StbImageDecode {
 
 bool render(FsFile& file, GfxRenderer& renderer, int x, int y, int targetWidth, int targetHeight, bool cropToFill,
-            ImageRenderMode mode, bool quality, JpegLevelCapture* capture, float cropAnchorX) {
+            ImageRenderMode mode, bool quality, JpegLevelCapture* capture, float cropAnchorX, float cropAnchorY) {
   return renderProgressiveJpegFull(file, renderer, x, y, targetWidth, targetHeight, cropToFill, mode, quality,
-                                   capture, cropAnchorX);
+                                   capture, cropAnchorX, cropAnchorY);
 }
 
 bool getDimensions(FsFile& file, int* outW, int* outH) {
