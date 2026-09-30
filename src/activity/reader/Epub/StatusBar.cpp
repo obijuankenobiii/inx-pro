@@ -68,7 +68,7 @@ int StatusBar::reservedBottomMargin(const GfxRenderer& renderer, const BookSetti
 
   const bool hasMiddleProgressBar = settings.statusBarMiddle.item == StatusBarItem::PROGRESS_BAR ||
                                     settings.statusBarMiddle.item == StatusBarItem::PROGRESS_BAR_WITH_PERCENT;
-  const int mainBarTopGap = settings.screenMargin <= kMainBarExtraPaddingMaxScreenMargin
+  const int mainBarTopGap = settings.marginTop <= kMainBarExtraPaddingMaxScreenMargin
                                 ? (fullBarHeight > 0 ? kMainBarCombinedTopGap : kMainBarTopGap)
                                 : 0;
   const int mainBarHeight = renderer.text.getLineHeight(MONTSERRAT_8_FONT_ID) + kMainBarMargin + mainBarTopGap;

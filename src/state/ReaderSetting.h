@@ -73,7 +73,10 @@ class ReaderSetting {
    *  speed-reading aid), 2 = Notebook (horizontal ruled lines like notebook paper). */
   uint8_t readingGuideLinesEnabled = 0;
 
-  uint8_t screenMargin = 0;  ///< Screen margin in pixels
+  uint8_t marginTop = 0;     ///< Top screen margin in pixels
+  uint8_t marginLeft = 0;    ///< Left screen margin in pixels
+  uint8_t marginRight = 0;   ///< Right screen margin in pixels
+  uint8_t marginBottom = 0;  ///< Bottom screen margin in pixels
 
   /**
    * @brief Page auto-turn interval in seconds

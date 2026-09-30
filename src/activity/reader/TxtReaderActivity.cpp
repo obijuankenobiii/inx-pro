@@ -28,7 +28,7 @@ constexpr int emptyLinesPerTextLine = 2;
 constexpr size_t CHUNK_SIZE = 8 * 1024;
 
 constexpr uint32_t CACHE_MAGIC = 0x54585449;
-constexpr uint8_t CACHE_VERSION = 2;
+constexpr uint8_t CACHE_VERSION = 3;
 }
 
 void TxtReaderActivity::taskTrampoline(void* param) {
@@ -190,21 +190,24 @@ void TxtReaderActivity::initializeReader() {
 
   cachedFontId = READER_SETTINGS.getReaderFontId();
   FontManager::ensureFontReady(cachedFontId, renderer);
-  cachedScreenMargin = READER_SETTINGS.screenMargin;
+  cachedMarginTop = READER_SETTINGS.marginTop;
+  cachedMarginLeft = READER_SETTINGS.marginLeft;
+  cachedMarginRight = READER_SETTINGS.marginRight;
+  cachedMarginBottom = READER_SETTINGS.marginBottom;
   cachedParagraphAlignment = READER_SETTINGS.paragraphAlignment;
 
   int orientedMarginTop, orientedMarginRight, orientedMarginBottom, orientedMarginLeft;
   renderer.getOrientedViewableTRBL(&orientedMarginTop, &orientedMarginRight, &orientedMarginBottom,
                                    &orientedMarginLeft);
-  orientedMarginTop += cachedScreenMargin;
-  orientedMarginLeft += cachedScreenMargin;
-  orientedMarginRight += cachedScreenMargin;
-  orientedMarginBottom += cachedScreenMargin;
+  orientedMarginTop += cachedMarginTop;
+  orientedMarginLeft += cachedMarginLeft;
+  orientedMarginRight += cachedMarginRight;
+  orientedMarginBottom += cachedMarginBottom;
 
   if (READER_SETTINGS.statusBar != SystemSetting::STATUS_BAR_MODE::NONE) {
     const bool showProgressBar = READER_SETTINGS.statusBar == SystemSetting::STATUS_BAR_MODE::FULL_WITH_PROGRESS_BAR ||
                                  READER_SETTINGS.statusBar == SystemSetting::STATUS_BAR_MODE::ONLY_PROGRESS_BAR;
-    orientedMarginBottom += statusBarMargin - cachedScreenMargin +
+    orientedMarginBottom += statusBarMargin + cachedMarginBottom +
                             (showProgressBar ? (ScreenComponents::BOOK_PROGRESS_BAR_HEIGHT + progressBarMarginTop) : 0);
   }
 
@@ -419,10 +422,10 @@ void TxtReaderActivity::renderPage() {
   int orientedMarginTop, orientedMarginRight, orientedMarginBottom, orientedMarginLeft;
   renderer.getOrientedViewableTRBL(&orientedMarginTop, &orientedMarginRight, &orientedMarginBottom,
                                    &orientedMarginLeft);
-  orientedMarginTop += cachedScreenMargin;
-  orientedMarginLeft += cachedScreenMargin;
-  orientedMarginRight += cachedScreenMargin;
-  orientedMarginBottom += statusBarMargin;
+  orientedMarginTop += cachedMarginTop;
+  orientedMarginLeft += cachedMarginLeft;
+  orientedMarginRight += cachedMarginRight;
+  orientedMarginBottom += statusBarMargin + cachedMarginBottom;
 
   const int lineHeight = renderer.text.getLineHeight(cachedFontId);
   const int emptyLineHeight = lineHeight / emptyLinesPerTextLine;
@@ -641,10 +644,34 @@ bool TxtReaderActivity::loadPageIndexCache() {
     return false;
   }
 
-  int32_t margin;
-  serialization::readPod(f, margin);
-  if (margin != cachedScreenMargin) {
-    INX_SERIAL.printf("[%lu] [TRS] Cache screen margin mismatch, rebuilding\n", millis());
+  int32_t marginTop;
+  serialization::readPod(f, marginTop);
+  if (marginTop != cachedMarginTop) {
+    INX_SERIAL.printf("[%lu] [TRS] Cache top margin mismatch, rebuilding\n", millis());
+    f.close();
+    return false;
+  }
+
+  int32_t marginLeft;
+  serialization::readPod(f, marginLeft);
+  if (marginLeft != cachedMarginLeft) {
+    INX_SERIAL.printf("[%lu] [TRS] Cache left margin mismatch, rebuilding\n", millis());
+    f.close();
+    return false;
+  }
+
+  int32_t marginRight;
+  serialization::readPod(f, marginRight);
+  if (marginRight != cachedMarginRight) {
+    INX_SERIAL.printf("[%lu] [TRS] Cache right margin mismatch, rebuilding\n", millis());
+    f.close();
+    return false;
+  }
+
+  int32_t marginBottom;
+  serialization::readPod(f, marginBottom);
+  if (marginBottom != cachedMarginBottom) {
+    INX_SERIAL.printf("[%lu] [TRS] Cache bottom margin mismatch, rebuilding\n", millis());
     f.close();
     return false;
   }
@@ -688,7 +715,10 @@ void TxtReaderActivity::savePageIndexCache() const {
   serialization::writePod(f, static_cast<int32_t>(viewportWidth));
   serialization::writePod(f, static_cast<int32_t>(linesPerPage));
   serialization::writePod(f, static_cast<int32_t>(cachedFontId));
-  serialization::writePod(f, static_cast<int32_t>(cachedScreenMargin));
+  serialization::writePod(f, static_cast<int32_t>(cachedMarginTop));
+  serialization::writePod(f, static_cast<int32_t>(cachedMarginLeft));
+  serialization::writePod(f, static_cast<int32_t>(cachedMarginRight));
+  serialization::writePod(f, static_cast<int32_t>(cachedMarginBottom));
   serialization::writePod(f, cachedParagraphAlignment);
   serialization::writePod(f, static_cast<uint32_t>(pageOffsets.size()));
 

@@ -64,7 +64,10 @@ class PdfReaderActivity final : public ActivityWithSubactivity {
 
   int cachedFontId = 0;
   int cachedHeaderFontId = 0;
-  int cachedScreenMargin = 0;
+  int cachedMarginTop = 0;
+  int cachedMarginLeft = 0;
+  int cachedMarginRight = 0;
+  int cachedMarginBottom = 0;
   uint8_t cachedParagraphAlignment = SystemSetting::LEFT_ALIGN;
   uint8_t cachedExtraParagraphSpacing = 1;
   float cachedLineCompression = 1.0f;

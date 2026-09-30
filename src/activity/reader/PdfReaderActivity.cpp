@@ -343,7 +343,10 @@ void PdfReaderActivity::computeLayoutMetrics() {
   cachedHeaderFontId = READER_SETTINGS.getReaderFontIdForFamilyAndSize(READER_SETTINGS.fontFamily, headerSizeIndex);
   FontManager::ensureFontReady(cachedHeaderFontId, renderer);
 
-  cachedScreenMargin = READER_SETTINGS.screenMargin;
+  cachedMarginTop = READER_SETTINGS.marginTop;
+  cachedMarginLeft = READER_SETTINGS.marginLeft;
+  cachedMarginRight = READER_SETTINGS.marginRight;
+  cachedMarginBottom = READER_SETTINGS.marginBottom;
   cachedParagraphAlignment = READER_SETTINGS.paragraphAlignment;
   cachedExtraParagraphSpacing = READER_SETTINGS.extraParagraphSpacing;
   cachedLineCompression = READER_SETTINGS.getReaderLineCompression();
@@ -352,10 +355,10 @@ void PdfReaderActivity::computeLayoutMetrics() {
   int orientedMarginTop, orientedMarginRight, orientedMarginBottom, orientedMarginLeft;
   renderer.getOrientedViewableTRBL(&orientedMarginTop, &orientedMarginRight, &orientedMarginBottom,
                                    &orientedMarginLeft);
-  orientedMarginTop += cachedScreenMargin;
-  orientedMarginLeft += cachedScreenMargin;
-  orientedMarginRight += cachedScreenMargin;
-  orientedMarginBottom += cachedScreenMargin;
+  orientedMarginTop += cachedMarginTop;
+  orientedMarginLeft += cachedMarginLeft;
+  orientedMarginRight += cachedMarginRight;
+  orientedMarginBottom += cachedMarginBottom;
 
   viewportWidth = renderer.getScreenWidth() - orientedMarginLeft - orientedMarginRight;
   viewportHeight = renderer.getScreenHeight() - orientedMarginTop - orientedMarginBottom;
@@ -716,8 +719,8 @@ void PdfReaderActivity::renderPage() {
   int orientedMarginTop, orientedMarginRight, orientedMarginBottom, orientedMarginLeft;
   renderer.getOrientedViewableTRBL(&orientedMarginTop, &orientedMarginRight, &orientedMarginBottom,
                                    &orientedMarginLeft);
-  orientedMarginTop += cachedScreenMargin;
-  orientedMarginLeft += cachedScreenMargin;
+  orientedMarginTop += cachedMarginTop;
+  orientedMarginLeft += cachedMarginLeft;
 
   auto renderPageContent = [&]() {
     if (currentPageData) {

@@ -144,8 +144,8 @@ for root, _, files in os.walk(SRC_DIR):
                     'id=lineSpacing',
                     'id=lineHeight')
                 html_content = html_content.replace(
-                    '<div class=setting-item><div><div class=setting-label>Screen Margin</div>',
-                    '<div class=setting-item><div><div class=setting-label>Word spacing</div></div><div class=setting-control><select id=textSpace></select></div></div><div class=setting-item><div><div class=setting-label>Screen Margin</div>')
+                    '<div class=setting-item><div><div class=setting-label>Margins</div>',
+                    '<div class=setting-item><div><div class=setting-label>Word spacing</div></div><div class=setting-control><select id=textSpace></select></div></div><div class=setting-item><div><div class=setting-label>Margins</div>')
                 html_content = html_content.replace(
                     '<div class=setting-item><div><div class=setting-label>Boot Mode</div>',
                     '<div class=setting-item><div><div class=setting-label>Library sort order</div></div><div class=setting-control><select id=librarySortMode></select></div></div><div class=setting-item><div><div class=setting-label>Boot Mode</div>')

@@ -469,7 +469,7 @@ constexpr FallbackKey kFallbackKeys[] = {
     {"Word spacing", "reader_setting.word_spacing"},
     {"Extra Paragraph Spacing", "reader_setting.extra_paragraph_spacing"},
     {"Indent", "reader_setting.indent"},
-    {"Screen Margin", "reader_setting.screen_margin"},
+    {"Margins", "reader_setting.margins"},
     {"Orientation", "reader_setting.orientation"},
     {"Bionic Reading", "reader_setting.bionic_reading"},
     {"Dark mode", "reader_setting.dark_mode"},

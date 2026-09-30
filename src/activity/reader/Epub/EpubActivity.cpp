@@ -146,10 +146,10 @@ ViewportInfo EpubActivity::calculateViewport() {
   int oT, oR, oB, oL;
   renderer.getOrientedViewableTRBL(&oT, &oR, &oB, &oL);
 
-  info.totalMarginTop = oT + bookSettings.screenMargin;
-  info.totalMarginBottom = oB + StatusBar::reservedBottomMargin(renderer, bookSettings);
-  info.totalMarginLeft = oL + bookSettings.screenMargin;
-  info.totalMarginRight = oR + bookSettings.screenMargin;
+  info.totalMarginTop = oT + bookSettings.marginTop;
+  info.totalMarginBottom = oB + StatusBar::reservedBottomMargin(renderer, bookSettings) + bookSettings.marginBottom;
+  info.totalMarginLeft = oL + bookSettings.marginLeft;
+  info.totalMarginRight = oR + bookSettings.marginRight;
 
   info.fontId = bookSettings.getReaderFontId();
   const int topInset = renderer.text.getGlyphTopInset(info.fontId, 'H', EpdFontFamily::REGULAR);
