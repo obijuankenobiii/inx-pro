@@ -1,6 +1,6 @@
 #pragma once
 
-#if FREEINK_DEVICE_X4PRO
+#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4
 #include <FrontlightManager.h>
 
 #include "system/FrontlightPreferences.h"

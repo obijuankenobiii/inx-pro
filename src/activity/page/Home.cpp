@@ -107,7 +107,7 @@ void Home::onEnter() {
 
 void Home::menu() {
   Page::menu();
-#if FREEINK_DEVICE_X4PRO
+#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4
   if (!isLightDrawerOpen()) drawBattery(renderer);
 #else
   drawBattery(renderer);

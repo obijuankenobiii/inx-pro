@@ -61,7 +61,15 @@ bool x4ProBusyWaitSlice(const int8_t busyPin, const uint8_t busyLevel) {
 EInkDisplay::RefreshMode convertRefreshMode(const HalDisplay::RefreshMode mode) {
   switch (mode) {
     case HalDisplay::FULL_REFRESH:
+#if FREEINK_DEVICE_MURPHY_M4
+      // Murphy M4 uses the same SSD1677 adapter as X4 Pro, but its panel is
+      // much more sensitive to the stock FULL waveform (0xF7).  The M4's
+      // single-pass HALF waveform (0xD7) is still an absolute clean update
+      // that rewrites both planes, without the aggressive multi-flash drive.
+      return EInkDisplay::HALF_REFRESH;
+#else
       return EInkDisplay::FULL_REFRESH;
+#endif
     case HalDisplay::HALF_REFRESH:
     case HalDisplay::MANUAL_REFRESH:
       // UC8279 stays on FAST deliberately. Its driver's Half branch is a charge scrub

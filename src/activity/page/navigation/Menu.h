@@ -7,7 +7,7 @@
 
 class GfxRenderer;
 #include "system/MappedInputManager.h"
-#if FREEINK_DEVICE_X4PRO
+#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4
 #include "LightDrawer.h"
 #endif
 
@@ -18,7 +18,7 @@ class Menu {
  public:
   enum class Action { None, Opened, Closed, Refresh, Search, View, Sort, Filter, Home, Library, Settings, Stats, Sync };
 
-  static constexpr int topPadding = FREEINK_DEVICE_X4PRO ? 20 : 15;
+  static constexpr int topPadding = (FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4) ? 20 : 15;
   static constexpr int iconSize = 40;
   static constexpr int leftMargin = 20;
   static constexpr int bottomPadding = 10;
@@ -35,7 +35,7 @@ class Menu {
   virtual bool showRefresh() const { return true; }
 
   bool isOpen() const { return open; }
-#if FREEINK_DEVICE_X4PRO
+#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4
   bool isLightDrawerOpen() const { return lightDrawer.isOpen(); }
   bool isLightDrawerSliderDragging() const { return lightDrawer.isSliderDragging(); }
 #endif
@@ -72,7 +72,7 @@ class Menu {
   mutable int openingY = -1;
   mutable int selected = 0;
   mutable bool selectedVisible = false;
-#if FREEINK_DEVICE_X4PRO
+#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4
   mutable LightDrawer lightDrawer;
 #endif
 

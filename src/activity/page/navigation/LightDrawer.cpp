@@ -1,6 +1,6 @@
 #include "LightDrawer.h"
 
-#if FREEINK_DEVICE_X4PRO
+#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4
 
 #include <Arduino.h>
 #include <GfxRenderer.h>

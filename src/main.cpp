@@ -66,7 +66,7 @@ MappedInputManager input(gpio);
 GfxRenderer renderer(display);
 GfxRenderer& render = renderer;
 
-#if FREEINK_DEVICE_X4PRO
+#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4
 FrontlightManager frontlight;
 #endif
 
@@ -147,6 +147,13 @@ void switchTo(Args&&... args) {
   }
 
   ScreenComponents::resetPageHeaderBackButton();
+#if FREEINK_DEVICE_MURPHY_M4
+  // Murphy renders pages with the SDK's dual-buffer async path.  Finish the
+  // outgoing refresh before the new activity copies the displayed frame into
+  // its write buffer; otherwise a back swipe can repaint from the old frame.
+  display.finishPendingRefresh();
+  renderer.syncWriteBufferFromActive();
+#endif
   if (currentActivity) {
     currentActivity->onExit();
     delete currentActivity;
@@ -353,7 +360,8 @@ bool handleGlobalPowerRefresh() {
   }
 
   renderer.syncWriteBufferFromActive();
-  renderer.displayBuffer(FREEINK_DEVICE_X4PRO ? HalDisplay::FULL_REFRESH : HalDisplay::HALF_REFRESH);
+  renderer.displayBuffer(FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 ? HalDisplay::FULL_REFRESH
+                                                                           : HalDisplay::HALF_REFRESH);
   return true;
 }
 
@@ -366,6 +374,8 @@ void setup() {
 
 #if FREEINK_DEVICE_X4PRO
   freeink::applyXteinkDisplayController();
+#endif
+#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4
   frontlight.begin();
 #endif
 

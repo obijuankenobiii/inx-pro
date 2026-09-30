@@ -143,17 +143,15 @@ EpubActivity::EpubActivity(GfxRenderer& renderer, MappedInputManager& mappedInpu
 ViewportInfo EpubActivity::calculateViewport() {
   ViewportInfo info;
 
-  int oT, oR, oB, oL;
-  renderer.getOrientedViewableTRBL(&oT, &oR, &oB, &oL);
-
-  info.totalMarginTop = oT + bookSettings.marginTop;
-  info.totalMarginBottom = oB + StatusBar::reservedBottomMargin(renderer, bookSettings) + bookSettings.marginBottom;
-  info.totalMarginLeft = oL + bookSettings.marginLeft;
-  info.totalMarginRight = oR + bookSettings.marginRight;
+  // These are user-controlled content margins. Do not add the renderer's
+  // viewable-edge inset: all four values at zero must produce edge-to-edge
+  // book content. Only space occupied by an enabled status bar is reserved.
+  info.totalMarginTop = bookSettings.marginTop;
+  info.totalMarginBottom = bookSettings.marginBottom;
+  info.totalMarginLeft = bookSettings.marginLeft;
+  info.totalMarginRight = bookSettings.marginRight;
 
   info.fontId = bookSettings.getReaderFontId();
-  const int topInset = renderer.text.getGlyphTopInset(info.fontId, 'H', EpdFontFamily::REGULAR);
-  info.totalMarginTop = std::max(oT, info.totalMarginTop - topInset);
 
   int w = renderer.getScreenWidth() - info.totalMarginLeft - info.totalMarginRight;
   int h = renderer.getScreenHeight() - info.totalMarginTop - info.totalMarginBottom;
@@ -1584,7 +1582,7 @@ void EpubActivity::loop() {
     return;
   }
 
-#if FREEINK_DEVICE_X4PRO
+#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4
   if (!READER_SETTINGS.disableLightControl && frontlight_ui::handleEdgeSwipe(mappedInput, renderer)) {
     return;
   }

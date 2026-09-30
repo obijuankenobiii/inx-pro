@@ -1172,7 +1172,7 @@ void Page::render(GfxRenderer& renderer, const int fontId, const int headerFontI
     if (tag == TAG_PageLine) {
       const auto* line = static_cast<const PageLine*>(element.get());
       const int textX = line->xPos + xOffset;
-      const int textY = line->yPos + yOffset;
+      const int textY = line->yPos + yOffset - renderer.text.getGlyphTopInset(fontId, 'H', EpdFontFamily::REGULAR);
       line->getTextBlock().render(renderer, fontId, textX, textY, !isInvertedText(textX, textY, fontId));
     } else if (tag == TAG_PageHeader) {
       const auto* header = static_cast<const PageHeader*>(element.get());
@@ -1184,12 +1184,12 @@ void Page::render(GfxRenderer& renderer, const int fontId, const int headerFontI
         feId = FontManager::ensureFontReady(headerFontId, renderer) ? headerFontId : fontId;
       }
       const int textX = header->xPos + xOffset;
-      const int textY = header->yPos + yOffset;
+      const int textY = header->yPos + yOffset - renderer.text.getGlyphTopInset(feId, 'H', EpdFontFamily::REGULAR);
       header->getTextBlock().render(renderer, feId, textX, textY, !isInvertedText(textX, textY, feId));
     } else if (tag == TAG_PageSmallCaps) {
       const auto* smallCaps = static_cast<const PageSmallCaps*>(element.get());
       const int textX = smallCaps->xPos + xOffset;
-      const int textY = smallCaps->yPos + yOffset;
+      const int textY = smallCaps->yPos + yOffset - renderer.text.getGlyphTopInset(fontId, 'H', EpdFontFamily::REGULAR);
       smallCaps->getTextBlock().render(renderer, fontId, textX, textY, !isInvertedText(textX, textY, fontId));
     } else {
       element->render(renderer, fontId, xOffset, yOffset, imageMode);
