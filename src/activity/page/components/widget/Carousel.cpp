@@ -73,9 +73,9 @@ void renderCover(GfxRenderer& renderer, const RecentBook& book, const int x, con
     if (SETTINGS.bitmapRoundedCorners == 0) {
       options.roundedOutside = BitmapRender::RoundedOutside::None;
     } else if (SETTINGS.bitmapRoundedCorners == 2) {
-      options.roundedOutside = BitmapRender::RoundedOutside::SubtleSparseInkAlignedOutside;
+      options.roundedOutside = BitmapRender::RoundedOutside::SubtlePaperOutside;
     } else {
-      options.roundedOutside = BitmapRender::RoundedOutside::SparseInkAlignedOutside;
+      options.roundedOutside = BitmapRender::RoundedOutside::PaperOutside;
     }
     const int imageX = cropToFill ? x : backgroundX;
     const int imageY = cropToFill ? y : backgroundY;
@@ -131,9 +131,9 @@ void preloadCover(GfxRenderer& renderer, const RecentBook& book, const int x, co
   options.cropAnchorX = cropAnchorX;
   options.useDisplayCache = true;
   if (SETTINGS.bitmapRoundedCorners == 2) {
-    options.roundedOutside = BitmapRender::RoundedOutside::SubtleSparseInkAlignedOutside;
+    options.roundedOutside = BitmapRender::RoundedOutside::SubtlePaperOutside;
   } else if (SETTINGS.bitmapRoundedCorners != 0) {
-    options.roundedOutside = BitmapRender::RoundedOutside::SparseInkAlignedOutside;
+    options.roundedOutside = BitmapRender::RoundedOutside::PaperOutside;
   }
   ImageRender::create(renderer, path).preloadDisplayCache(x, y, width, height, options);
 }

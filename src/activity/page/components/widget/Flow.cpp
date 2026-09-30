@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <functional>
 #include <string>
@@ -74,10 +75,29 @@ std::string plainDescription(const std::string& raw) {
   return output;
 }
 
+int thumbnailCornerRadius(const int width, const int height, const bool subtle) {
+  const int minimum = std::min(width, height);
+  if (minimum < 5) return 1;
+  const int radius = std::max(2, minimum / 10);
+  return subtle ? std::max(1, radius / 3) : radius;
+}
+
+void maskThumbnailTopCorners(GfxRenderer& renderer, const int x, const int y, const int width, const int height,
+                             const bool subtle) {
+  if (width < 3 || height < 3) return;
+  const int radius = thumbnailCornerRadius(width, height, subtle);
+  for (int row = 0; row < radius; ++row) {
+    const int span = static_cast<int>(std::sqrt(static_cast<double>(radius * radius - (radius - row) * (radius - row))));
+    for (int px = x; px < x + radius - span; ++px) renderer.drawPixel(px, y + row, false);
+    for (int px = x + width - radius + span; px < x + width; ++px) renderer.drawPixel(px, y + row, false);
+  }
+}
+
 void drawCover(GfxRenderer& renderer, const RecentBook& book, const int x, const int y, const int width,
                const int height, const bool squareCorners = false) {
   renderer.rectangle.fill(x, y, width, height, false);
   const std::string path = thumbnailPath(book.cachePath);
+  const bool rounded = !squareCorners && SETTINGS.bitmapRoundedCorners != 0;
   if (!path.empty()) {
     ImageRender::Options options;
     // Fill the card cover from top to bottom. The 20px inset belongs to the
@@ -87,29 +107,33 @@ void drawCover(GfxRenderer& renderer, const RecentBook& book, const int x, const
     options.cropAnchorY = 0.0f;
     options.useDisplayCache = true;
     options.asyncDisplayCache = true;
-    if (squareCorners || SETTINGS.bitmapRoundedCorners == 0) {
-      options.roundedOutside = BitmapRender::RoundedOutside::None;
-    } else if (SETTINGS.bitmapRoundedCorners == 2) {
-      options.roundedOutside = BitmapRender::RoundedOutside::SubtleSparseInkAlignedOutside;
-    } else {
-      options.roundedOutside = BitmapRender::RoundedOutside::SparseInkAlignedOutside;
+    options.roundedOutside = BitmapRender::RoundedOutside::None;
+    if (ImageRender::create(renderer, path).render(x, y, width, height, options)) {
+      if (rounded) maskThumbnailTopCorners(renderer, x, y, width, height, SETTINGS.bitmapRoundedCorners == 2);
+      return;
     }
-    if (ImageRender::create(renderer, path).render(x, y, width, height, options)) return;
   }
-  renderer.rectangle.render(x, y, width, height, true, squareCorners ? false : SETTINGS.bitmapRoundedCorners != 0,
-                           squareCorners ? false : SETTINGS.bitmapRoundedCorners == 2);
+  renderer.rectangle.render(x, y, width, height, true, false, false);
+  if (rounded) maskThumbnailTopCorners(renderer, x, y, width, height, SETTINGS.bitmapRoundedCorners == 2);
 }
 
 void drawFlowCard(GfxRenderer& renderer, const RecentBook& book, const int x, const int y, const int width,
                   const int height, const bool center, const std::string& author) {
-  renderer.rectangle.fill(x, y, width, height, false);
-  renderer.rectangle.render(x, y, width, height, true, SETTINGS.bitmapRoundedCorners != 0,
-                           SETTINGS.bitmapRoundedCorners == 2);
   // The reference card is portrait-oriented: the cover spans the full card
   // width, followed by a separate white title/description section.
-  const int coverHeight = std::max(20, height * 80 / 100);
-  drawCover(renderer, book, x, y, width, coverHeight);
   const int font = center ? MONTSERRAT_16_FONT_ID : MONTSERRAT_10_FONT_ID;
+  const int authorFont = center ? MONTSERRAT_10_FONT_ID : MONTSERRAT_8_FONT_ID;
+  constexpr int detailTopPadding = 10;
+  constexpr int titleAuthorGap = 5;
+  constexpr int detailBottomMargin = 20;
+  const int detailHeight = detailTopPadding + renderer.text.getLineHeight(font) + titleAuthorGap +
+                            renderer.text.getLineHeight(authorFont) + detailBottomMargin;
+  const int cardHeight = std::max(height, detailHeight + 20);
+  const int coverHeight = std::max(20, std::min(cardHeight * 80 / 100, cardHeight - detailHeight));
+  renderer.rectangle.fill(x, y, width, cardHeight, false);
+  renderer.rectangle.render(x, y, width, cardHeight, true, SETTINGS.bitmapRoundedCorners != 0,
+                           SETTINGS.bitmapRoundedCorners == 2);
+  drawCover(renderer, book, x, y, width, coverHeight);
   constexpr int detailMargin = 20;
   const int detailWidth = std::max(1, width - detailMargin * 2);
   const int detailY = y + coverHeight;
@@ -118,12 +142,11 @@ void drawFlowCard(GfxRenderer& renderer, const RecentBook& book, const int x, co
   const int titleY = detailY + 10;
   renderer.text.render(font, x + detailMargin, titleY, title.c_str(), true, EpdFontFamily::BOLD);
   if (!author.empty()) {
-    const int authorFont = center ? MONTSERRAT_10_FONT_ID : MONTSERRAT_8_FONT_ID;
     const std::string shown = renderer.text.truncate(authorFont, author.c_str(), detailWidth);
     renderer.text.renderGray(authorFont, x + detailMargin, titleY + renderer.text.getLineHeight(font) + 5,
                              shown.c_str(), true, EpdFontFamily::REGULAR);
   }
-  renderer.rectangle.render(x, y, width, height, true, SETTINGS.bitmapRoundedCorners != 0,
+  renderer.rectangle.render(x, y, width, cardHeight, true, SETTINGS.bitmapRoundedCorners != 0,
                             SETTINGS.bitmapRoundedCorners == 2);
 }
 
@@ -200,13 +223,20 @@ void drawDescription(GfxRenderer& renderer, const std::string& description, cons
 
 void drawPreviewCard(GfxRenderer& renderer, const int x, const int y, const int width, const int height,
                      const char* title, const char* author, const bool center) {
-  renderer.rectangle.fill(x, y, width, height, false);
-  renderer.rectangle.render(x, y, width, height, true, false, false);
-  const int coverH = std::max(20, height * 80 / 100);
+  const int titleFont = center ? MONTSERRAT_16_FONT_ID : MONTSERRAT_10_FONT_ID;
+  const int authorFont = center ? MONTSERRAT_10_FONT_ID : MONTSERRAT_8_FONT_ID;
+  constexpr int detailTopPadding = 10;
+  constexpr int titleAuthorGap = 5;
+  constexpr int detailBottomMargin = 20;
+  const int detailHeight = detailTopPadding + renderer.text.getLineHeight(titleFont) + titleAuthorGap +
+                            renderer.text.getLineHeight(authorFont) + detailBottomMargin;
+  const int cardHeight = std::max(height, detailHeight + 20);
+  const int coverH = std::max(20, std::min(cardHeight * 80 / 100, cardHeight - detailHeight));
+  renderer.rectangle.fill(x, y, width, cardHeight, false);
+  renderer.rectangle.render(x, y, width, cardHeight, true, false, false);
   const int coverY = y;
   RecentBook placeholder;
   drawCover(renderer, placeholder, x, coverY, width, coverH, true);
-  const int titleFont = center ? MONTSERRAT_16_FONT_ID : MONTSERRAT_10_FONT_ID;
   constexpr int detailMargin = 20;
   const int detailY = y + coverH;
   const int detailWidth = std::max(1, width - detailMargin * 2);
@@ -214,12 +244,11 @@ void drawPreviewCard(GfxRenderer& renderer, const int x, const int y, const int 
   const int titleY = detailY + 10;
   renderer.text.render(titleFont, x + detailMargin, titleY, shownTitle.c_str(), true, EpdFontFamily::BOLD);
   if (author != nullptr && author[0] != '\0') {
-    const int authorFont = center ? MONTSERRAT_10_FONT_ID : MONTSERRAT_8_FONT_ID;
     const std::string shownAuthor = renderer.text.truncate(authorFont, author, detailWidth);
     renderer.text.renderGray(authorFont, x + detailMargin, titleY + renderer.text.getLineHeight(titleFont) + 5,
                              shownAuthor.c_str(), true, EpdFontFamily::REGULAR);
   }
-  renderer.rectangle.render(x, y, width, height, true, false, false);
+  renderer.rectangle.render(x, y, width, cardHeight, true, false, false);
 }
 
 void drawFlowArrow(GfxRenderer& renderer, const int x, const int y, const int size, const bool left) {
@@ -272,7 +301,7 @@ void Flow::render(const int x, const int y, const int width, const int height, c
   constexpr int carouselInset = 20;
   const int carouselX = x + std::min(carouselInset, width / 4);
   const int carouselWidth = std::max(1, width - (carouselX - x) * 2);
-  const int centerWidth = std::min(400, std::max(300, carouselWidth * 40 / 100));
+  const int centerWidth = std::min(400, std::max(300, carouselWidth * 40 / 100 + 10));
   const int sideWidth = std::max(240, centerWidth * 94 / 100);
   const int cardStep = std::max(140, centerWidth * 52 / 100);
   const int centerX = carouselX + (carouselWidth - centerWidth) / 2;
@@ -318,7 +347,7 @@ void Flow::preview(const int x, const int y, const int width, const int height) 
   const int sideWidth = std::max(240, centerWidth * 94 / 100);
   const int cardStep = std::max(140, centerWidth * 52 / 100);
   const int centerX = carouselX + (carouselWidth - centerWidth) / 2;
-  const int centerHeight = std::max(150, height * 74 / 100 - 50);
+  const int centerHeight = std::max(150, height * 74 / 100 - 30);
   const int centerY = std::max(y, progressRowY - carouselMetadataGap - centerHeight);
   const int sideHeight = std::max(130, height * 66 / 100 - 50);
   const int sideY = std::max(y, centerY + (centerHeight - sideHeight) / 2 + 8);
@@ -352,7 +381,7 @@ bool Flow::hitTest(const int x, const int y, const int boundsX, const int bounds
   const int carouselWidth = std::max(1, boundsWidth - (carouselX - boundsX) * 2);
   const int centerWidth = std::min(400, std::max(300, carouselWidth * 40 / 100));
   const int centerX = carouselX + (carouselWidth - centerWidth) / 2;
-  const int centerHeight = std::max(150, boundsHeight * 74 / 100 - 50);
+  const int centerHeight = std::max(150, boundsHeight * 74 / 100 - 30);
   const int centerY = std::max(boundsY, progressRowY - carouselMetadataGap - centerHeight);
   return x >= centerX && x < centerX + centerWidth && y >= centerY && y < centerY + centerHeight;
 }

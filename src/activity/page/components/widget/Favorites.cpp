@@ -44,9 +44,9 @@ void setRoundedOptions(ImageRender::Options& options) {
   if (SETTINGS.bitmapRoundedCorners == 0) {
     options.roundedOutside = BitmapRender::RoundedOutside::None;
   } else if (SETTINGS.bitmapRoundedCorners == 2) {
-    options.roundedOutside = BitmapRender::RoundedOutside::SubtleSparseInkAlignedOutside;
+      options.roundedOutside = BitmapRender::RoundedOutside::SubtlePaperOutside;
   } else {
-    options.roundedOutside = BitmapRender::RoundedOutside::SparseInkAlignedOutside;
+      options.roundedOutside = BitmapRender::RoundedOutside::PaperOutside;
   }
 }
 
