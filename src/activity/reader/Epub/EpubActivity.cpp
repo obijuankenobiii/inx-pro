@@ -147,7 +147,10 @@ ViewportInfo EpubActivity::calculateViewport() {
   // viewable-edge inset: all four values at zero must produce edge-to-edge
   // book content. Only space occupied by an enabled status bar is reserved.
   info.totalMarginTop = bookSettings.marginTop;
-  info.totalMarginBottom = bookSettings.marginBottom;
+  // Keep zero-margin pages flush to the bottom edge when no status bar is
+  // enabled, but reserve both the normal and full-width status bars when they
+  // are present so book content cannot render underneath them.
+  info.totalMarginBottom = bookSettings.marginBottom + StatusBar::reservedBottomMargin(renderer, bookSettings);
   info.totalMarginLeft = bookSettings.marginLeft;
   info.totalMarginRight = bookSettings.marginRight;
 
@@ -723,7 +726,30 @@ std::vector<std::string> EpubActivity::currentWordActions() const {
   if (!wordSelectionIsMultiple()) {
     actions.push_back("Look up");
   }
-  actions.push_back("Highlight");
+  const size_t selectedLo = static_cast<size_t>(std::min(wordSelectionAnchor_, wordSelectionFocus_));
+  const size_t selectedHi = static_cast<size_t>(std::max(wordSelectionAnchor_, wordSelectionFocus_));
+  bool selectionIsHighlighted = false;
+  for (const auto& stored : annUi_.storedRanges()) {
+    if (stored.first <= selectedHi && selectedLo <= stored.second) {
+      selectionIsHighlighted = true;
+      break;
+    }
+  }
+  if (!selectionIsHighlighted && section) {
+    for (const EpubAnnotationRecord& record : annUi_.annotations().records()) {
+      if (!EpubAnnotations::recordTouchesPage(record, currentSpineIndex, section->currentPage) ||
+          record.pageWordLo == EpubAnnotations::kWildcard || record.pageWordHi == EpubAnnotations::kWildcard) {
+        continue;
+      }
+      const size_t recordLo = record.pageWordLo;
+      const size_t recordHi = record.pageWordHi;
+      if (recordLo <= selectedHi && selectedLo <= recordHi) {
+        selectionIsHighlighted = true;
+        break;
+      }
+    }
+  }
+  actions.push_back(selectionIsHighlighted ? "Remove highlight" : "Highlight");
   actions.push_back(wordSelectionIsMultiple() ? "Add note" : "Add page note");
   std::string pluginId;
   std::string pluginLabel;
@@ -944,6 +970,7 @@ bool EpubActivity::openWordSelection(const int x, const int y) {
     return false;
   }
 
+  annUi_.ensureDiskListLoaded(*this);
   const ViewportInfo info = calculateViewport();
   const int fontId = bookSettings.getReaderFontId();
   const int headerFontId = FontManager::getNextFont(fontId);
@@ -1301,15 +1328,18 @@ bool EpubActivity::handleWordSelection() {
   const PageWordHit word = touchWords_[static_cast<size_t>(selectedWord_)];
   const std::string actionLabel = actions[static_cast<size_t>(action)];
   const bool keepSelectionForNote = actionLabel == "Add note";
-  bool highlighted = false;
+  bool highlightChanged = false;
   bool pluginActionSucceeded = false;
   std::string pluginId;
   std::string pluginLabel;
   std::string pluginFunction;
   const bool hasPluginAction = PluginManager::findReaderSelectionPlugin(pluginId, pluginLabel, pluginFunction);
   if (actionLabel == "Highlight") {
-    highlighted = annUi_.saveExternalHighlight(*this, selectedText, static_cast<size_t>(wordLo),
-                                                static_cast<size_t>(wordHi));
+    highlightChanged = annUi_.saveExternalHighlight(*this, selectedText, static_cast<size_t>(wordLo),
+                                                    static_cast<size_t>(wordHi));
+  } else if (actionLabel == "Remove highlight") {
+    highlightChanged = annUi_.removeExternalHighlight(*this, static_cast<size_t>(wordLo),
+                                                       static_cast<size_t>(wordHi));
   } else if (epub && section && hasPluginAction && actionLabel == pluginLabel) {
     std::string luaError;
     pluginActionSucceeded = PluginManager::invoke(
@@ -1346,9 +1376,9 @@ bool EpubActivity::handleWordSelection() {
     if (!dictUi_.lookupAt(*this, word.screenX + word.screenW / 2, word.screenY + word.screenH / 2)) {
       renderScreen(true);
     }
-  } else if (actionLabel == "Highlight") {
-    if (!highlighted) {
-      readerPopup("Could not save highlight");
+  } else if (actionLabel == "Highlight" || actionLabel == "Remove highlight") {
+    if (!highlightChanged) {
+      readerPopup(actionLabel == "Remove highlight" ? "Could not remove highlight" : "Could not save highlight");
     }
   } else if (actionLabel == "Add note") {
     startVoiceNoteForPage();
@@ -1414,7 +1444,7 @@ void EpubActivity::onExit() {
 
   if (clearImagePageOnExit) {
     renderer.clearScreen(0xFF);
-    renderer.displayBuffer(FREEINK_DEVICE_X4PRO ? HalDisplay::FULL_REFRESH : HalDisplay::HALF_REFRESH);
+    renderer.displayBuffer(FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 ? HalDisplay::FULL_REFRESH : HalDisplay::HALF_REFRESH);
   }
 
   FontManager::unloadAllSDFonts();
@@ -1448,6 +1478,26 @@ void EpubActivity::loop() {
   }
 
   if (handlePageNoteOverlay()) {
+    return;
+  }
+
+  // The drawer owns all input while it is visible. Keep annotation and word
+  // selection handlers below this guard so touches cannot select text through
+  // the drawer, including when a selection UI was already active.
+  if (settingsDrawerVisible && settingsDrawer) {
+    settingsDrawer->handleInput(mappedInput);
+    if (settingsDrawer->isDismissed()) {
+      saveBookSettings();
+      settingsDrawerVisible = false;
+      vTaskDelay(pdMS_TO_TICKS(100));
+      isToggleClosed = true;
+      suppressBackUntilReleased_ = true;
+      updateRequired = true;
+      lastAutoPageTurnTime = millis();
+    } else if (updateRequired) {
+      updateRequired = false;
+      renderScreen(true);
+    }
     return;
   }
 
@@ -1524,23 +1574,6 @@ void EpubActivity::loop() {
   }
 
   if (navigation_ && navigation_->handleInput(mappedInput)) {
-    return;
-  }
-
-  if (settingsDrawerVisible && settingsDrawer) {
-    settingsDrawer->handleInput(mappedInput);
-    if (settingsDrawer->isDismissed()) {
-      saveBookSettings();
-      settingsDrawerVisible = false;
-      vTaskDelay(pdMS_TO_TICKS(100));
-      isToggleClosed = true;
-      suppressBackUntilReleased_ = true;
-      updateRequired = true;
-      lastAutoPageTurnTime = millis();
-    } else if (updateRequired) {
-      updateRequired = false;
-      renderScreen(true);
-    }
     return;
   }
 
@@ -2029,7 +2062,8 @@ bool EpubActivity::presentPreparedForwardPage() {
   section->currentPage = presented.pageIndex;
   const HalDisplay::RefreshMode turnRefresh =
       lastPageHadHighQualityImage
-          ? (FREEINK_DEVICE_X4PRO ? HalDisplay::FULL_REFRESH : HalDisplay::HALF_REFRESH)
+          ? ((FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4) ? HalDisplay::FULL_REFRESH
+                                                                  : HalDisplay::HALF_REFRESH)
           : static_cast<HalDisplay::RefreshMode>(presented.refreshMode);
   renderer.displayBufferAsync(turnRefresh);
 
@@ -2416,7 +2450,7 @@ void EpubActivity::renderContents(Page* page, const int orientedMarginTop,
     if (smartRefreshThisPageAfterLargeImage || smartRefreshAfterQualityImage ||
         (periodicRefreshEnabled && pagesUntilFullRefresh <= 1)) {
       const bool afterQualityImage = smartRefreshAfterQualityImage;
-      renderer.displayBufferAsync((FREEINK_DEVICE_X4PRO && afterQualityImage)
+      renderer.displayBufferAsync(((FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4) && afterQualityImage)
                                       ? HalDisplay::FULL_REFRESH
                                       : HalDisplay::HALF_REFRESH);
       pagesUntilFullRefresh = periodicRefreshPages;

@@ -11,6 +11,7 @@
 #include "activity/page/components/widget/Recent.h"
 #include "activity/page/components/widget/RecentGrid.h"
 #include "activity/page/components/widget/Flow.h"
+#include "activity/page/components/widget/verticalbookshelf/VerticalBookshelf.h"
 #include "activity/page/components/widget/Shortcut.h"
 #include "activity/page/components/widget/ShortcutList.h"
 #include "activity/page/components/widget/Temperature.h"
@@ -82,6 +83,7 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
   Recent recent_;
   RecentGrid recentGrid_;
   Flow flow_;
+  widget::verticalbookshelf::VerticalBookshelf verticalBookshelf_;
   Temperature temperature_;
   Humidity humidity_;
   TodaysReading todaysReading_;
@@ -118,6 +120,7 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
   void renderBorderPopup();
   void moveWidgetPopupSelection(int delta);
   void pageWidgetPopup(int delta);
+  void cycleOneByOneWidget(int delta);
   void close();
   void switchLayout(HomeTheme::Layout layout);
 };

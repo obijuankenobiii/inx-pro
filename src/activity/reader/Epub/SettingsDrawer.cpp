@@ -823,7 +823,10 @@ void SettingsDrawer::drawMarginEditor() {
   const int contentHeight = std::max(1, drawerHeight - drawerListTop(embedded_));
   const int rowHeight = std::max(1, contentHeight / 5);
   const int backY = startY + rowHeight * 4;
-  const int controlsLeft = drawerX + drawerWidth * 48 / 100;
+  // The in-book editor shares the drawer with the page preview. The preset
+  // editor has no mini preview, so let its controls use the full embedded
+  // panel instead of leaving the left half empty.
+  const int controlsLeft = embedded_ ? drawerX + 20 : drawerX + drawerWidth * 48 / 100;
 
   static constexpr const char* labels[] = {"Top", "Left", "Right", "Bottom"};
   const uint8_t values[] = {settings.marginTop, settings.marginLeft, settings.marginRight, settings.marginBottom};
@@ -847,12 +850,14 @@ void SettingsDrawer::drawMarginEditor() {
   constexpr int gap = 8;
   const int valueColumnRight = drawerX + drawerWidth - 24;
   const int textWidth = renderer.text.getWidth(MONTSERRAT_10_FONT_ID, "Back", EpdFontFamily::REGULAR);
-  const int iconX = valueColumnRight - iconSize - gap - textWidth;
+  const int iconX = embedded_ ? controlsLeft : valueColumnRight - iconSize - gap - textWidth;
   const int textY = backY + (actualBackHeight - renderer.text.getLineHeight(MONTSERRAT_10_FONT_ID)) / 2;
   renderer.bitmap.icon(LibraryFilterLeft, iconX, backY + (actualBackHeight - iconSize) / 2, iconSize, iconSize);
   renderer.text.render(MONTSERRAT_10_FONT_ID, iconX + iconSize + gap, textY, "Back", true);
 
-  drawMarginPreview(drawerX, startY, std::max(1, controlsLeft - drawerX - 8), contentHeight);
+  if (!embedded_) {
+    drawMarginPreview(drawerX, startY, std::max(1, controlsLeft - drawerX - 8), contentHeight);
+  }
 }
 
 void SettingsDrawer::drawMarginPreview(const int x, const int y, const int width, const int height) {
@@ -957,12 +962,16 @@ bool SettingsDrawer::handleMarginEditorInput(MappedInputManager& input) {
       const bool insideEditor = tapX >= drawerX && tapX < drawerX + drawerWidth && tapY >= editorTop &&
                                 tapY < editorBottom;
       if (!insideEditor) {
-        // Keep the margin editor open for taps outside its content. The Back
-        // button is the explicit way to leave this page.
+        // The preset editor is embedded and has an explicit Back control. The
+        // in-book drawer is dismissed by tapping outside its content.
+        if (!embedded_) {
+          hide();
+          lastInputTime = currentTime;
+        }
         return true;
       }
 
-      const int controlsLeft = drawerX + drawerWidth * 48 / 100;
+      const int controlsLeft = embedded_ ? drawerX + 20 : drawerX + drawerWidth * 48 / 100;
       if (tapY >= backY && tapX >= controlsLeft) {
         closeMarginEditor();
         lastInputTime = currentTime;
@@ -1738,9 +1747,34 @@ void SettingsDrawer::handleInput(MappedInputManager& input) {
   }
 
   if (marginEditorOpen_) {
-    handleMarginEditorInput(input);
-    lastInputTime = currentTime;
-    return;
+    bool dispatchToDrawer = false;
+    if (input.hasTouch()) {
+      float tapNx = 0.0f;
+      float tapNy = 0.0f;
+      if (input.wasTouchTapInScreen(renderer, tapNx, tapNy)) {
+        const int tapX = static_cast<int>(tapNx * renderer.getScreenWidth());
+        const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
+        const int editorTop = drawerY + drawerListTop(embedded_);
+        const int editorBottom = drawerY + drawerHeight;
+        const bool insideEditor = tapX >= drawerX && tapX < drawerX + drawerWidth && tapY >= editorTop &&
+                                  tapY < editorBottom;
+        // Put the tap back so the normal drawer handler can close the drawer
+        // or activate a tab when it is outside the margin controls.
+        input.restoreTouchTapInScreen(renderer, tapNx, tapNy);
+        if (!insideEditor) {
+          closeMarginEditor();
+          // The tap that exits margin mode should still be handled by the
+          // drawer immediately (for example, when it lands on a tab).
+          lastInputTime = 0;
+          dispatchToDrawer = true;
+        }
+      }
+    }
+    if (!dispatchToDrawer) {
+      handleMarginEditorInput(input);
+      lastInputTime = currentTime;
+      return;
+    }
   }
 
   if (currentTime - lastInputTime < pdMS_TO_TICKS(150)) {

@@ -61,5 +61,8 @@ class HalDisplay {
 
  private:
   EInkDisplay display;
+  // The Murphy panel is parked after each normal refresh. The first update
+  // after boot/wake must therefore rewrite both controller RAM planes before
+  // differential refreshes are allowed again.
+  bool needsWakeCleanRefresh = true;
 };
-

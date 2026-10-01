@@ -14,6 +14,7 @@
 #include <string>
 
 #include "images/Star.h"
+#include "images/FlowBookIndicator.h"
 #include "MetadataRating.h"
 #include "state/RecentBooks.h"
 #include "state/SystemSetting.h"
@@ -117,6 +118,23 @@ void drawCover(GfxRenderer& renderer, const RecentBook& book, const int x, const
   if (rounded) maskThumbnailTopCorners(renderer, x, y, width, height, SETTINGS.bitmapRoundedCorners == 2);
 }
 
+constexpr int flowRatingStarSize = 24;
+constexpr int flowRatingStarGap = 3;
+
+int ratingWidth(const int stars) {
+  return stars > 0 ? stars * flowRatingStarSize + (stars - 1) * flowRatingStarGap : 0;
+}
+
+void drawCenteredRating(GfxRenderer& renderer, const int x, const int y, const int width, const int stars) {
+  const int totalWidth = ratingWidth(stars);
+  if (totalWidth <= 0) return;
+  const int starsX = x + (width - totalWidth) / 2;
+  for (int star = 0; star < stars; ++star) {
+    renderer.bitmap.icon(Star, starsX + star * (flowRatingStarSize + flowRatingStarGap), y, flowRatingStarSize,
+                         flowRatingStarSize);
+  }
+}
+
 void drawFlowCard(GfxRenderer& renderer, const RecentBook& book, const int x, const int y, const int width,
                   const int height, const bool center, const std::string& author) {
   // The reference card is portrait-oriented: the cover spans the full card
@@ -139,7 +157,7 @@ void drawFlowCard(GfxRenderer& renderer, const RecentBook& book, const int x, co
   const int detailY = y + coverHeight;
   const std::string title = renderer.text.truncate(font, titleFor(book).c_str(), detailWidth,
                                                    EpdFontFamily::BOLD);
-  const int titleY = detailY + 10;
+  const int titleY = detailY + detailTopPadding;
   renderer.text.render(font, x + detailMargin, titleY, title.c_str(), true, EpdFontFamily::BOLD);
   if (!author.empty()) {
     const std::string shown = renderer.text.truncate(authorFont, author.c_str(), detailWidth);
@@ -186,10 +204,44 @@ void drawProgressAndRating(GfxRenderer& renderer, const RecentBook& book, const 
   }
 }
 
+void drawFlowProgressTrack(GfxRenderer& renderer, const RecentBook& book, const int x, const int rowY,
+                           const int width) {
+  constexpr int margin = 20;
+  constexpr int activeTrackHeight = 8;
+  constexpr int inactiveTrackHeight = 4;
+  constexpr int indicatorSize = 32;
+  const int percentage = book.progress < 0.0f
+                             ? 0
+                             : std::max(0, std::min(100, static_cast<int>(book.progress * 100.0f + 0.5f)));
+  const int trackX = x + margin;
+  const int trackWidth = std::max(1, width - margin * 2);
+  const int trackRight = trackX + trackWidth - 1;
+  const int trackY = rowY + indicatorSize / 2;
+  const int rawMarkerX = trackX + static_cast<int>((trackWidth - 1) * (percentage / 100.0f));
+  const int minMarkerX = trackX + indicatorSize / 2;
+  const int maxMarkerX = trackRight - indicatorSize / 2;
+  const int markerX = std::max(minMarkerX, std::min(maxMarkerX, rawMarkerX));
+
+  if (markerX > trackX) {
+    renderer.rectangle.fill(trackX, trackY - activeTrackHeight / 2, markerX - trackX, activeTrackHeight,
+                            static_cast<int>(GfxRenderer::FillTone::Ink), true);
+  }
+  if (markerX < trackRight) {
+    renderer.rectangle.fill(markerX, trackY - inactiveTrackHeight / 2, trackRight - markerX + 1,
+                            inactiveTrackHeight, static_cast<int>(GfxRenderer::FillTone::Gray), true);
+  }
+
+  const int indicatorX = markerX - indicatorSize / 2;
+  const int indicatorY = rowY;
+  renderer.rectangle.fill(indicatorX, indicatorY, indicatorSize, indicatorSize,
+                          static_cast<int>(GfxRenderer::FillTone::Paper));
+  renderer.bitmap.icon(FlowBookIndicator, indicatorX, indicatorY, indicatorSize, indicatorSize);
+}
+
 void drawDescription(GfxRenderer& renderer, const std::string& description, const int x, const int y,
                      const int width, const int maxLines) {
   if (description.empty()) return;
-  constexpr int font = MONTSERRAT_8_FONT_ID;
+  constexpr int font = MONTSERRAT_10_FONT_ID;
   constexpr int margin = 20;
   const int maxWidth = std::max(1, width - margin * 2);
   const int lineHeight = renderer.text.getLineHeight(font);
@@ -216,8 +268,8 @@ void drawDescription(GfxRenderer& renderer, const std::string& description, cons
       line = renderer.text.truncate(font, description.substr(position).c_str(), maxWidth);
       position = description.size();
     }
-    renderer.text.renderGray(font, x + margin, y + lineIndex * lineHeight, line.c_str(), true,
-                             EpdFontFamily::REGULAR);
+    renderer.text.render(font, x + margin, y + lineIndex * lineHeight, line.c_str(), true,
+                         EpdFontFamily::REGULAR);
   }
 }
 
@@ -284,7 +336,8 @@ const std::string& Flow::descriptionFor(const RecentBook& book) const {
   return cachedDescription_;
 }
 
-void Flow::render(const int x, const int y, const int width, const int height, const int selectedIndex) const {
+void Flow::render(const int x, const int y, const int width, const int height, const int selectedIndex,
+                  const bool limitCardsToAvailableBooks) const {
   if (width <= 0 || height <= 0) return;
   renderer_.rectangle.fill(x, y, width, height, false);
   const auto& books = RECENT_BOOKS.getBooks();
@@ -295,17 +348,19 @@ void Flow::render(const int x, const int y, const int width, const int height, c
 
   constexpr int descriptionLines = 5;
   constexpr int carouselMetadataGap = 40;
-  const int metadataFontHeight = renderer_.text.getLineHeight(MONTSERRAT_8_FONT_ID);
+  const int metadataFontHeight = renderer_.text.getLineHeight(MONTSERRAT_10_FONT_ID);
+  const bool oneByOne = limitCardsToAvailableBooks;
+  const int progressRowHeight = oneByOne ? 32 : metadataFontHeight;
   const int descriptionY = y + height - 20 - descriptionLines * metadataFontHeight;
-  const int progressRowY = descriptionY - 8 - metadataFontHeight;
+  const int progressRowY = descriptionY - 8 - progressRowHeight;
   constexpr int carouselInset = 20;
   const int carouselX = x + std::min(carouselInset, width / 4);
   const int carouselWidth = std::max(1, width - (carouselX - x) * 2);
-  const int centerWidth = std::min(400, std::max(300, carouselWidth * 40 / 100 + 10));
+  const int centerWidth = std::min(400, std::max(300, carouselWidth * 40 / 100));
   const int sideWidth = std::max(240, centerWidth * 94 / 100);
   const int cardStep = std::max(140, centerWidth * 52 / 100);
   const int centerX = carouselX + (carouselWidth - centerWidth) / 2;
-  const int centerHeight = std::max(150, height * 74 / 100 - 50);
+  const int centerHeight = std::max(150, height * 74 / 100 - 70);
   const int centerY = std::max(y, progressRowY - carouselMetadataGap - centerHeight);
   const int sideHeight = std::max(130, height * 66 / 100 - 50);
   const int sideY = std::max(y, centerY + (centerHeight - sideHeight) / 2 + 8);
@@ -318,18 +373,29 @@ void Flow::render(const int x, const int y, const int width, const int height, c
   const RecentBook& leftBook = bookAt(centerIndex - 1);
   const RecentBook& centerBook = bookAt(centerIndex);
   const RecentBook& rightBook = bookAt(centerIndex + 1);
-  drawFlowCard(renderer_, leftBook, std::max(carouselX, centerX - cardStep), sideY, sideWidth, sideHeight, false,
-               leftBook.author.empty() ? "Unknown author" : leftBook.author);
-  drawFlowCard(renderer_, rightBook, std::min(carouselX + carouselWidth - sideWidth, centerX + cardStep), sideY,
-               sideWidth, sideHeight, false, rightBook.author.empty() ? "Unknown author" : rightBook.author);
+  if (!limitCardsToAvailableBooks || bookCount >= 2) {
+    drawFlowCard(renderer_, leftBook, std::max(carouselX, centerX - cardStep), sideY, sideWidth, sideHeight, false,
+                 leftBook.author.empty() ? "Unknown author" : leftBook.author);
+  }
+  if (!limitCardsToAvailableBooks || bookCount >= 3) {
+    drawFlowCard(renderer_, rightBook, std::min(carouselX + carouselWidth - sideWidth, centerX + cardStep), sideY,
+                 sideWidth, sideHeight, false, rightBook.author.empty() ? "Unknown author" : rightBook.author);
+  }
   drawFlowCard(renderer_, centerBook, centerX, centerY, centerWidth, centerHeight, true,
                centerBook.author.empty() ? "Unknown author" : centerBook.author);
-  drawProgressAndRating(renderer_, centerBook, x, progressRowY, width, ratingStars(centerBook));
+  if (oneByOne) {
+    drawCenteredRating(renderer_, centerX, centerY + centerHeight + 8, centerWidth, ratingStars(centerBook));
+    drawFlowProgressTrack(renderer_, centerBook, x, progressRowY, width);
+  } else {
+    drawProgressAndRating(renderer_, centerBook, x, progressRowY, width, ratingStars(centerBook));
+  }
   drawDescription(renderer_, descriptionFor(centerBook), x, descriptionY, width, descriptionLines);
-  const int arrowSize = std::min(56, std::max(36, height / 6));
-  const int arrowY = centerY + (centerHeight - arrowSize) / 2;
-  drawFlowArrow(renderer_, carouselX, arrowY, arrowSize, true);
-  drawFlowArrow(renderer_, carouselX + carouselWidth - arrowSize, arrowY, arrowSize, false);
+  if (!limitCardsToAvailableBooks || bookCount >= 2) {
+    const int arrowSize = std::min(56, std::max(36, height / 6));
+    const int arrowY = centerY + (centerHeight - arrowSize) / 2;
+    drawFlowArrow(renderer_, carouselX, arrowY, arrowSize, true);
+    drawFlowArrow(renderer_, carouselX + carouselWidth - arrowSize, arrowY, arrowSize, false);
+  }
 }
 
 void Flow::preview(const int x, const int y, const int width, const int height) const {
@@ -337,7 +403,7 @@ void Flow::preview(const int x, const int y, const int width, const int height) 
   renderer_.rectangle.fill(x, y, width, height, false);
   constexpr int descriptionLines = 5;
   constexpr int carouselMetadataGap = 40;
-  const int metadataFontHeight = renderer_.text.getLineHeight(MONTSERRAT_8_FONT_ID);
+  const int metadataFontHeight = renderer_.text.getLineHeight(MONTSERRAT_10_FONT_ID);
   const int descriptionY = y + height - 20 - descriptionLines * metadataFontHeight;
   const int progressRowY = descriptionY - 8 - metadataFontHeight;
   constexpr int carouselInset = 20;
@@ -373,7 +439,7 @@ bool Flow::hitTest(const int x, const int y, const int boundsX, const int bounds
   if (boundsWidth <= 0 || boundsHeight <= 0) return false;
   constexpr int descriptionLines = 5;
   constexpr int carouselMetadataGap = 40;
-  const int metadataFontHeight = renderer_.text.getLineHeight(MONTSERRAT_8_FONT_ID);
+  const int metadataFontHeight = renderer_.text.getLineHeight(MONTSERRAT_10_FONT_ID);
   const int descriptionY = boundsY + boundsHeight - 20 - descriptionLines * metadataFontHeight;
   const int progressRowY = descriptionY - 8 - metadataFontHeight;
   constexpr int carouselInset = 20;

@@ -23,6 +23,12 @@ class TextRender {
   /** Pixels between a glyph's top edge and the font's ascender line (ascender - glyph.top). Used to align
    *  a drop cap's cap-top with the surrounding body text, whose font has a different inset. */
   int getGlyphTopInset(int fontId, uint32_t codepoint, EpdFontFamily::Style style = EpdFontFamily::REGULAR) const;
+  /**
+   * Top inset for the highest common ascender glyphs in a font. Text blocks use
+   * this instead of assuming that the capital H is always the highest glyph;
+   * some fonts place b/h above H and clip them when the top margin is zero.
+   */
+  int getFontTopInset(int fontId, EpdFontFamily::Style style = EpdFontFamily::REGULAR) const;
   /** Pixels from a glyph's bottom edge to the font line box bottom. */
   int getGlyphBottomInset(int fontId, uint32_t codepoint, EpdFontFamily::Style style = EpdFontFamily::REGULAR) const;
   std::string truncate(int fontId, const char* text, int maxWidth,

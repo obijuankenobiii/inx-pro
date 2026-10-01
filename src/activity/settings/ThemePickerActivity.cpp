@@ -87,19 +87,26 @@ void setDefaultLibraryFolders(char (&folders)[3][128]) {
 
 int widgetOptionCount(const HomeTheme::Layout layout, const bool sleepTheme) {
   if (layout == HomeTheme::Layout::Classic) return 1;
+  if (layout == HomeTheme::Layout::OneByOne && !sleepTheme) return 3;
 #if FREEINK_DEVICE_STICKY
-  const int count = sleepTheme ? 5 : 16;
+  const int count = sleepTheme ? 5 : 17;
 #else
-  const int count = sleepTheme ? 3 : 14;
+  const int count = sleepTheme ? 3 : 15;
 #endif
-  return count - (layout == HomeTheme::Layout::OneByOne || sleepTheme ? 0 : 2);
+  return count - (layout == HomeTheme::Layout::OneByOne || sleepTheme ? 0 : 3);
 }
 
 HomeTheme::Widget widgetOptionAt(const HomeTheme::Layout layout, const bool sleepTheme, const int index) {
+  static constexpr HomeTheme::Widget oneByOneOptions[] = {
+      HomeTheme::Widget::RecentGrid,
+      HomeTheme::Widget::Flow,
+      HomeTheme::Widget::VerticalBookshelf,
+  };
   static constexpr HomeTheme::Widget homeOptions[] = {
       HomeTheme::Widget::Empty,
       HomeTheme::Widget::RecentGrid,
       HomeTheme::Widget::Flow,
+      HomeTheme::Widget::VerticalBookshelf,
       HomeTheme::Widget::Carousel,
       HomeTheme::Widget::Shortcuts,
       HomeTheme::Widget::Clock,
@@ -118,6 +125,12 @@ HomeTheme::Widget widgetOptionAt(const HomeTheme::Layout layout, const bool slee
     HomeTheme::Widget::Heatmap,
     HomeTheme::Widget::Library,
   };
+  if (layout == HomeTheme::Layout::OneByOne && !sleepTheme) {
+    if (index < 0 || index >= static_cast<int>(sizeof(oneByOneOptions) / sizeof(oneByOneOptions[0]))) {
+      return HomeTheme::Widget::Empty;
+    }
+    return oneByOneOptions[index];
+  }
   static constexpr HomeTheme::Widget sleepOptions[] = {
       HomeTheme::Widget::Empty,
       HomeTheme::Widget::Clock,
@@ -134,7 +147,8 @@ HomeTheme::Widget widgetOptionAt(const HomeTheme::Layout layout, const bool slee
   int visible = 0;
   for (int option = 0; option < optionCount; ++option) {
     if (layout != HomeTheme::Layout::OneByOne &&
-        (options[option] == HomeTheme::Widget::RecentGrid || options[option] == HomeTheme::Widget::Flow)) {
+        (options[option] == HomeTheme::Widget::RecentGrid || options[option] == HomeTheme::Widget::Flow ||
+         options[option] == HomeTheme::Widget::VerticalBookshelf)) {
       continue;
     }
     if (visible++ == index) return options[option];
@@ -486,6 +500,9 @@ void ThemePickerActivity::renderWidgetPreview(const HomeTheme::Widget widget, co
     case HomeTheme::Widget::Flow:
       flow_.preview(x, y, width, height);
       break;
+    case HomeTheme::Widget::VerticalBookshelf:
+      verticalBookshelf_.preview(renderer, x, y, width, height);
+      break;
     case HomeTheme::Widget::Shortcuts:
       shortcut_.render(x, y, width, height);
       break;
@@ -554,6 +571,21 @@ void ThemePickerActivity::renderWidgetPopup() {
   PopUp::title(renderer, box, "Choose widget");
   PopUp::list(renderer, box, values, popupSelected_, widgetPopupScroll_);
   PopUp::border(renderer, box);
+
+  // The popup's white overlay hides the editor preview. Keep the Vertical
+  // Bookshelf preview visible while that option is highlighted so it can be
+  // identified before confirming the selection.
+  if (widgetOptionAt(layout_, editingSleep_, popupSelected_) == HomeTheme::Widget::VerticalBookshelf) {
+    constexpr int margin = 20;
+    constexpr int gap = 12;
+    const int previewX = margin;
+    const int previewY = box.y + box.height + gap;
+    const int previewW = renderer.getScreenWidth() - margin * 2;
+    const int previewH = renderer.getScreenHeight() - previewY - margin;
+    if (previewW > 0 && previewH > 0) {
+      verticalBookshelf_.preview(renderer, previewX, previewY, previewW, previewH);
+    }
+  }
 }
 
 void ThemePickerActivity::renderBorderPopup() {
@@ -836,6 +868,19 @@ void ThemePickerActivity::pageWidgetPopup(const int delta) {
   }
 }
 
+void ThemePickerActivity::cycleOneByOneWidget(const int delta) {
+  if (layout_ != HomeTheme::Layout::OneByOne || editingSleep_) return;
+  const int slot = oneByOneSlotAtPage(widgets_, widgetSlot_);
+  const int options = widgetOptionCount(HomeTheme::Layout::OneByOne, false);
+  if (options <= 0) return;
+
+  int current = widgetOptionIndex(HomeTheme::Layout::OneByOne, false, widgets_[slot]);
+  current = (current + delta + options) % options;
+  widgets_[slot] = widgetOptionAt(HomeTheme::Layout::OneByOne, false, current);
+  borders_[slot] = HomeTheme::Border::None;
+  render();
+}
+
 void ThemePickerActivity::switchLayout(const HomeTheme::Layout layout) {
   if (layout == layout_) return;
   if (layout == HomeTheme::Layout::OneByOne) {
@@ -1091,17 +1136,13 @@ void ThemePickerActivity::loop() {
     const bool swipeRight = mappedInput.wasTouchSwipeRight() || mappedInput.wasTouchSwipeRightForRenderer(renderer);
     if (swipeLeft) {
       if (layout_ == HomeTheme::Layout::OneByOne) {
-        const int count = oneByOneWidgetCount(widgets_);
-        if (count > 0) widgetSlot_ = (widgetSlot_ + 1) % count;
-        render();
+        cycleOneByOneWidget(1);
         return;
       }
     }
     if (swipeRight) {
       if (layout_ == HomeTheme::Layout::OneByOne) {
-        const int count = oneByOneWidgetCount(widgets_);
-        if (count > 0) widgetSlot_ = (widgetSlot_ + count - 1) % count;
-        render();
+        cycleOneByOneWidget(-1);
         return;
       }
     }

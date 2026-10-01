@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cmath>
+
 #if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4
 #include <FrontlightManager.h>
 
@@ -23,6 +25,14 @@ extern FrontlightManager frontlight;
  */
 namespace frontlight_ui {
 
+#if FREEINK_DEVICE_MURPHY_M4
+// FrontlightManager converts its public percentage through this curve before
+// writing the 10-bit PWM. Undo that curve at the UI boundary so the drawer
+// position represents actual light output instead of applying a second dimming
+// curve on Murphy.
+constexpr float kMurphyFrontlightGamma = 1.6554f;
+#endif
+
 /** One swipe step. Fine near the bottom, coarse where a 1% change is imperceptible. */
 inline int stepBrightness(const int current, const bool up) {
   const int step = current < 10 ? 1 : (current < 30 ? 5 : 10);
@@ -37,19 +47,30 @@ inline int stepBrightness(const int current, const bool up) {
  *  left third of the track covers roughly 0-11%. */
 inline int percentFromFraction(const float fraction) {
   const float f = fraction < 0.0f ? 0.0f : (fraction > 1.0f ? 1.0f : fraction);
+#if FREEINK_DEVICE_MURPHY_M4
+  if (f <= 0.0f) return 0;
+  const int pct = static_cast<int>(100.0f * std::pow(f, 1.0f / kMurphyFrontlightGamma) + 0.5f);
+  return (pct == 0) ? 1 : pct;
+#else
   const int pct = static_cast<int>(100.0f * f * f + 0.5f);
   return (pct == 0 && f > 0.02f) ? 1 : pct;
+#endif
 }
 
 /** Inverse of percentFromFraction(), for drawing the marker. */
 inline float fractionFromPercent(const int percent) {
   const int p = percent < 0 ? 0 : (percent > 100 ? 100 : percent);
+#if FREEINK_DEVICE_MURPHY_M4
+  if (p == 0) return 0.0f;
+  return std::pow(static_cast<float>(p) / 100.0f, kMurphyFrontlightGamma);
+#else
   float f = 0.0f;
   if (p > 0) {
     f = static_cast<float>(p) / 100.0f;
     for (int i = 0; i < 12; ++i) f = 0.5f * (f + (static_cast<float>(p) / 100.0f) / f);
   }
   return f;
+#endif
 }
 
 /** Write the live brightness/temperature back to NVS. */

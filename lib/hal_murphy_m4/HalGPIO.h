@@ -5,9 +5,9 @@
  * @brief Hardware abstraction for the Murphy M4.
  *
  * Same public interface as lib/hal_sticky/HalGPIO.h so src/ compiles unchanged.
- * Delegates to freeink-sdk (git submodule) — InputManager (GPIO0/7/3 buttons +
- * GT911 touch incl. the capacitive Home key), BatteryMonitor (CW2017 gauge),
- * Rtc (BM8563, PCF8563-compatible).
+ * Delegates to freeink-sdk (git submodule) — InputManager (Murphy's FT6336U
+ * touch bus), BatteryMonitor, and the ESP32-S3 system RTC clock path used by
+ * the stock MurphyOS firmware.
  *
  * Peripherals the Murphy M4 does NOT have, and which are therefore stubbed rather
  * than wired: IMU (no tilt-to-turn), SHT40 environment sensor, PDM microphone

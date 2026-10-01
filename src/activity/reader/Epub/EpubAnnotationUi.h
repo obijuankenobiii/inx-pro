@@ -70,6 +70,7 @@ class EpubAnnotationUi {
   void saveToStorage(EpubActivity& act);
   bool saveExternalHighlight(EpubActivity& act, const std::string& selectedText, size_t wordLo, size_t wordHi,
                              const std::string& note = {}, const std::string& noteAudioPath = {});
+  bool removeExternalHighlight(EpubActivity& act, size_t wordLo, size_t wordHi);
   bool captureExternalFramebuffer(EpubActivity& act) { return wordLookup_.captureFramebuffer(act); }
   bool restoreExternalFramebuffer(EpubActivity& act) const { return wordLookup_.restoreFramebuffer(act); }
   void clearExternalFramebuffer() { wordLookup_.clearFramebufferCapture(); }

@@ -6,15 +6,132 @@
 #include <BatteryMonitor.h>
 #include <BoardConfig.h>
 #include <HalGPIO.h>
-#include <Rtc.h>
 #include <PowerManager.h>
 #include <driver/gpio.h>
+#include <esp_rtc_time.h>
 #include <esp_sleep.h>
 #include <esp_system.h>
+#include <Preferences.h>
+#include <sys/time.h>
 
 #include <cmath>
+#include <cstdint>
+#include <ctime>
+
+#include "state/SystemSetting.h"
 
 namespace {
+constexpr time_t kMinimumValidEpoch = 1704067200;  // 2024-01-01 00:00:00 UTC
+constexpr uint32_t kClockMagic = 0x4D525443;       // "MRTC"
+constexpr char kClockPreferencesNamespace[] = "murphy-clock";
+constexpr char kClockPreferencesKey[] = "wall-clock";
+
+struct PersistedClock {
+  uint32_t magic = 0;
+  uint32_t generation = 0;
+  int64_t epochUs = 0;
+  uint64_t rtcUs = 0;
+};
+
+// This is the ESP32-S3's actual RTC timer state. The wall-clock sample is
+// persisted separately because the timer measures elapsed time, not a date.
+RTC_DATA_ATTR uint32_t rtcGenerationMagic = 0;
+RTC_DATA_ATTR uint32_t rtcGeneration = 0;
+RTC_DATA_ATTR PersistedClock rtcBaseline;
+
+void initializeRtcGeneration() {
+  if (rtcGenerationMagic == kClockMagic && rtcGeneration != 0) return;
+  rtcGeneration = esp_random();
+  if (rtcGeneration == 0) rtcGeneration = 1;
+  rtcGenerationMagic = kClockMagic;
+  rtcBaseline = {};
+}
+
+bool loadPersistedClock(PersistedClock& clock) {
+  Preferences preferences;
+  if (!preferences.begin(kClockPreferencesNamespace, true)) return false;
+  const size_t length = preferences.getBytesLength(kClockPreferencesKey);
+  const bool loaded = length == sizeof(PersistedClock) &&
+                      preferences.getBytes(kClockPreferencesKey, &clock, sizeof(PersistedClock)) == sizeof(PersistedClock);
+  preferences.end();
+  return loaded && clock.magic == kClockMagic && clock.epochUs > 0;
+}
+
+bool savePersistedClock(const PersistedClock& clock) {
+  Preferences preferences;
+  if (!preferences.begin(kClockPreferencesNamespace, false)) return false;
+  const size_t written = preferences.putBytes(kClockPreferencesKey, &clock, sizeof(PersistedClock));
+  preferences.end();
+  return written == sizeof(PersistedClock);
+}
+
+bool persistCurrentClock() {
+  timeval nowTv{};
+  if (gettimeofday(&nowTv, nullptr) != 0 || nowTv.tv_sec < kMinimumValidEpoch) return false;
+
+  rtcBaseline.magic = kClockMagic;
+  rtcBaseline.generation = rtcGeneration;
+  rtcBaseline.epochUs = static_cast<int64_t>(nowTv.tv_sec) * 1000000LL + nowTv.tv_usec;
+  rtcBaseline.rtcUs = esp_rtc_get_time_us();
+  const bool saved = savePersistedClock(rtcBaseline);
+  INX_SERIAL.printf("[%lu] [MURPHY_M4][CLOCK] stock RTC baseline %s epoch=%lld\n", millis(),
+                    saved ? "saved" : "save failed", static_cast<long long>(nowTv.tv_sec));
+  return saved;
+}
+
+bool restoreClockFromRtc() {
+  if (time(nullptr) >= kMinimumValidEpoch) return true;
+
+  PersistedClock clock = rtcBaseline;
+  const bool retained = clock.magic == kClockMagic && clock.generation == rtcGeneration && clock.epochUs > 0 &&
+                        clock.rtcUs > 0;
+  if (!retained && !loadPersistedClock(clock)) {
+    INX_SERIAL.printf("[%lu] [MURPHY_M4][CLOCK] no persisted wall clock\n", millis());
+    return false;
+  }
+
+  // The persisted sample is only valid inside the same ESP32 RTC power epoch.
+  // Do not replay a date from before a full power loss; stock MurphyOS waits
+  // for NTP or a manual correction in that case.
+  if (clock.magic != kClockMagic || clock.generation != rtcGeneration || clock.epochUs <= 0 || clock.rtcUs == 0) {
+    INX_SERIAL.printf("[%lu] [MURPHY_M4][CLOCK] persisted wall clock rejected: generation baseline=%u current=%u\n",
+                      millis(), clock.generation, rtcGeneration);
+    return false;
+  }
+
+  const uint64_t rtcNowUs = esp_rtc_get_time_us();
+  int64_t recoveredEpochUs = clock.epochUs;
+  if (rtcNowUs < clock.rtcUs) {
+    INX_SERIAL.printf("[%lu] [MURPHY_M4][CLOCK] persisted wall clock rejected: rtc moved backwards\n", millis());
+    return false;
+  }
+  recoveredEpochUs += static_cast<int64_t>(rtcNowUs - clock.rtcUs);
+
+  timeval tv{};
+  tv.tv_sec = static_cast<time_t>(recoveredEpochUs / 1000000LL);
+  tv.tv_usec = static_cast<suseconds_t>(recoveredEpochUs % 1000000LL);
+  if (settimeofday(&tv, nullptr) != 0 || time(nullptr) < kMinimumValidEpoch) {
+    INX_SERIAL.printf("[%lu] [MURPHY_M4][CLOCK] stock RTC recovery failed\n", millis());
+    return false;
+  }
+
+  INX_SERIAL.printf("[%lu] [MURPHY_M4][CLOCK] stock RTC restored epoch=%lld source=retained_rtc\n", millis(),
+                    static_cast<long long>(time(nullptr)));
+  return true;
+}
+
+// Convert a Gregorian calendar date to Unix days without depending on the
+// process TZ/mktime state. The reader stores the wall clock in UTC and applies
+// the configured offset only when presenting it to the user.
+int64_t daysFromCivil(const int year, const unsigned month, const unsigned day) {
+  const int adjustedYear = year - (month <= 2 ? 1 : 0);
+  const int era = (adjustedYear >= 0 ? adjustedYear : adjustedYear - 399) / 400;
+  const unsigned yearOfEra = static_cast<unsigned>(adjustedYear - era * 400);
+  const unsigned dayOfYear = (153 * (month + (month > 2 ? -3 : 9)) + 2) / 5 + day - 1;
+  const unsigned dayOfEra = yearOfEra * 365 + yearOfEra / 4 - yearOfEra / 100 + dayOfYear;
+  return static_cast<int64_t>(era) * 146097 + static_cast<int64_t>(dayOfEra) - 719468;
+}
+
 uint8_t weekdayFromCalendarDate(const uint16_t year, const uint8_t month, const uint8_t day) {
   if (year < 1900 || month < 1 || month > 12 || day < 1 || day > 31) {
     return 0;
@@ -34,6 +151,8 @@ void HalGPIO::begin() {
   INX_SERIAL.printf("[MURPHY_M4][BOOT] reset_reason=%d\n", static_cast<int>(esp_reset_reason()));
 
   BoardConfig::holdPowerRails();
+  initializeRtcGeneration();
+  restoreClockFromRtc();
 
   // GPIO9 is the Murphy battery sense input. Set its attenuation explicitly
   // before BatteryMonitor creates its ADC channel; otherwise the first ADC
@@ -224,50 +343,53 @@ bool HalGPIO::isUsbConnected() const {
 }
 
 bool HalGPIO::readDateTime(DateTime& outDateTime) const {
-  freeink::Rtc rtc;
-  if (!rtc.begin()) {
-    return false;
+  time_t utcNow = time(nullptr);
+  if (utcNow < kMinimumValidEpoch) {
+    restoreClockFromRtc();
+    utcNow = time(nullptr);
   }
-  freeink::Rtc::DateTime dt;
-  if (!rtc.now(dt)) {
-    return false;
-  }
-  outDateTime.year = dt.year;
-  outDateTime.month = dt.month;
-  outDateTime.day = dt.day;
-  outDateTime.hour = dt.hour;
-  outDateTime.minute = dt.minute;
-  outDateTime.second = dt.second;
-  const uint8_t calendarWeekday = weekdayFromCalendarDate(dt.year, dt.month, dt.day);
-  outDateTime.weekday = calendarWeekday != 0 ? calendarWeekday : static_cast<uint8_t>(dt.weekday == 0 ? 7 : dt.weekday);
+  if (utcNow < kMinimumValidEpoch) return false;
+
+  const time_t localEpoch = utcNow + static_cast<time_t>(SETTINGS.getTimeZoneOffsetMinutes()) * 60;
+  struct tm localTime {};
+  if (gmtime_r(&localEpoch, &localTime) == nullptr) return false;
+
+  outDateTime.year = static_cast<uint16_t>(localTime.tm_year + 1900);
+  outDateTime.month = static_cast<uint8_t>(localTime.tm_mon + 1);
+  outDateTime.day = static_cast<uint8_t>(localTime.tm_mday);
+  outDateTime.hour = static_cast<uint8_t>(localTime.tm_hour);
+  outDateTime.minute = static_cast<uint8_t>(localTime.tm_min);
+  outDateTime.second = static_cast<uint8_t>(localTime.tm_sec);
+  outDateTime.weekday = static_cast<uint8_t>(localTime.tm_wday == 0 ? 7 : localTime.tm_wday);
   return true;
 }
 
 bool HalGPIO::writeDateTime(const DateTime& dateTime) const {
-  freeink::Rtc rtc;
-  if (!rtc.begin()) {
+  if (dateTime.year < 2000 || dateTime.month < 1 || dateTime.month > 12 || dateTime.day < 1 || dateTime.day > 31 ||
+      dateTime.hour > 23 || dateTime.minute > 59 || dateTime.second > 59) {
     return false;
   }
-  freeink::Rtc::DateTime dt;
-  dt.year = dateTime.year;
-  dt.month = dateTime.month;
-  dt.day = dateTime.day;
-  dt.hour = dateTime.hour;
-  dt.minute = dateTime.minute;
-  dt.second = dateTime.second;
-  dt.weekday = static_cast<uint8_t>(dateTime.weekday == 7 ? 0 : dateTime.weekday);
-  return rtc.set(dt);
+
+  const int64_t localEpoch = daysFromCivil(dateTime.year, dateTime.month, dateTime.day) * 86400LL +
+                             static_cast<int64_t>(dateTime.hour) * 3600LL +
+                             static_cast<int64_t>(dateTime.minute) * 60LL + dateTime.second;
+  const time_t utcEpoch = static_cast<time_t>(localEpoch - static_cast<int64_t>(SETTINGS.getTimeZoneOffsetMinutes()) * 60LL);
+  timeval tv{};
+  tv.tv_sec = utcEpoch;
+  tv.tv_usec = 0;
+  const bool written = settimeofday(&tv, nullptr) == 0;
+  if (written) persistCurrentClock();
+  INX_SERIAL.printf("[%lu] [MURPHY_M4][CLOCK] stock RTC %s epoch=%lld\n", millis(), written ? "set" : "write failed",
+                    static_cast<long long>(utcEpoch));
+  return written;
 }
 
 bool HalGPIO::syncRtcFromSystemTime() const {
   const time_t now = time(nullptr);
-  if (now < 1704067200) {
-    return false;
-  }
+  if (now < kMinimumValidEpoch) return false;
   struct tm localTime {};
-  if (localtime_r(&now, &localTime) == nullptr) {
-    return false;
-  }
+  if (localtime_r(&now, &localTime) == nullptr) return false;
+
   DateTime dt;
   dt.year = static_cast<uint16_t>(localTime.tm_year + 1900);
   dt.month = static_cast<uint8_t>(localTime.tm_mon + 1);
@@ -276,7 +398,7 @@ bool HalGPIO::syncRtcFromSystemTime() const {
   dt.minute = static_cast<uint8_t>(localTime.tm_min);
   dt.second = static_cast<uint8_t>(localTime.tm_sec);
   dt.weekday = static_cast<uint8_t>(localTime.tm_wday == 0 ? 7 : localTime.tm_wday);
-  return writeDateTime(dt);
+  return persistCurrentClock();
 }
 
 HalGPIO::WakeupReason HalGPIO::getWakeupReason() const {

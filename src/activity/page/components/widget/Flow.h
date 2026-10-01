@@ -9,7 +9,8 @@ class Flow final {
  public:
   explicit Flow(GfxRenderer& renderer) : renderer_(renderer) {}
 
-  void render(int x, int y, int width, int height, int selectedIndex = 0) const;
+  void render(int x, int y, int width, int height, int selectedIndex = 0,
+              bool limitCardsToAvailableBooks = false) const;
   void preview(int x, int y, int width, int height) const;
   bool hitTest(int x, int y, int boundsX, int boundsY, int boundsWidth, int boundsHeight) const;
 

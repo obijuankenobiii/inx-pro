@@ -1094,7 +1094,8 @@ void ChapterHtmlSlimParser::flushPartWordBuffer() {
     if (inlineFirstLine) {
       const uint8_t* dropCapBytes = reinterpret_cast<const uint8_t*>(dropCapText.c_str());
       const uint32_t dropCapCodepoint = utf8NextCodepoint(&dropCapBytes);
-      const int glyphTop = currentPageNextY + renderer.text.getFontAscenderSize(fontId) -
+      const int bodyTopInset = renderer.text.getFontTopInset(fontId, EpdFontFamily::REGULAR);
+      const int glyphTop = currentPageNextY - bodyTopInset + renderer.text.getFontAscenderSize(fontId) -
                            renderer.text.getFontAscenderSize(dropCapFontId) +
                            renderer.text.getGlyphTopInset(dropCapFontId, dropCapCodepoint, dropCapStyle);
       if (glyphTop < 0) {
@@ -1493,6 +1494,7 @@ void ChapterHtmlSlimParser::applyDropCapHint(const XML_Char* name, const std::st
   const bool pseudoHint = css().hasFirstLetterDropCapHint(tagLower, classAttr, idAttr, styleAttr);
   const bool scaledFirstInlineDropCap =
       strcmp(name, "span") == 0 && currentTextBlock && currentTextBlock->isEmpty() &&
+      currentTextBlock->getStyle() != TextBlock::CENTER_ALIGN &&
       !css().isDisplayBlock(tagLower, classAttr, idAttr, styleAttr) &&
       css().getFontSizeEm(tagLower, classAttr, idAttr, styleAttr) >= 1.5f;
   if (!attrHint && !pseudoHint && !scaledFirstInlineDropCap) {
@@ -1677,7 +1679,7 @@ void ChapterHtmlSlimParser::applyMinHeightPadding() {
 void ChapterHtmlSlimParser::tightenAfterTopBorder(const int borderTop, const int paddingTop) {
   if (borderTop <= 0 || paddingTop <= 0) return;
   const int activeFontId = inHeader ? headerFontId : fontId;
-  const int inset = renderer.text.getGlyphTopInset(activeFontId, 'H', EpdFontFamily::REGULAR);
+  const int inset = renderer.text.getFontTopInset(activeFontId, EpdFontFamily::REGULAR);
   const int reduce = std::min(inset, paddingTop);
   if (reduce > 0) {
     currentPageNextY = static_cast<int16_t>(std::max(0, static_cast<int>(currentPageNextY) - reduce));

@@ -9,13 +9,6 @@
 
 #include <cstdint>
 
-#ifndef MURPHY_M4_IMAGE_CONTRAST
-#define MURPHY_M4_IMAGE_CONTRAST 145
-#endif
-#ifndef MURPHY_M4_IMAGE_DARKEN
-#define MURPHY_M4_IMAGE_DARKEN 12
-#endif
-
 const uint8_t* grayscaleCodeTable() {
   static constexpr uint8_t kMurphySsd1677[4] = {
       0b11,
@@ -35,11 +28,7 @@ uint8_t mapQualityGray2Level(const uint8_t level) {
 
 const uint8_t* mediumTextCodeTable() { return grayscaleCodeTable(); }
 
-int applyDeviceToneCurve(const int gray) {
-  int g = ((gray - 128) * MURPHY_M4_IMAGE_CONTRAST) / 100 + 128;
-  g -= MURPHY_M4_IMAGE_DARKEN;
-  if (g < 0) g = 0;
-  if (g > 255) g = 255;
-  return g;
-}
-
+// Murphy's quality image path uses the same neutral tone mapping as Sticky.
+// The previous contrast boost plus darkening crushed image midtones before the
+// four-level waveform ran, making covers appear unnecessarily dark.
+int applyDeviceToneCurve(const int gray) { return gray; }

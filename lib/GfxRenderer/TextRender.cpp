@@ -300,6 +300,26 @@ int TextRender::getGlyphTopInset(const int fontId, const uint32_t cp, const EpdF
   return data->ascender - glyph->top;
 }
 
+int TextRender::getFontTopInset(const int fontId, const EpdFontFamily::Style style) const {
+  // The line box must be positioned from the glyph that reaches highest, not
+  // from one arbitrary reference glyph. Keep this list to common ascenders so
+  // punctuation/descenders cannot pull the whole line out of position.
+  constexpr uint32_t kAscenderGlyphs[] = {'H', 'A', 'b', 'd', 'f', 'h', 'k', 'l', 't'};
+  int topInset = 0;
+  bool found = false;
+  for (const uint32_t cp : kAscenderGlyphs) {
+    const int inset = getGlyphTopInset(fontId, cp, style);
+    // A zero result also means that the glyph is unavailable. Ignore it when
+    // another usable glyph exists, but retain the old H-based fallback below.
+    if (inset <= 0) continue;
+    if (!found || inset < topInset) {
+      topInset = inset;
+      found = true;
+    }
+  }
+  return found ? topInset : getGlyphTopInset(fontId, 'H', style);
+}
+
 int TextRender::getGlyphBottomInset(const int fontId, const uint32_t cp, const EpdFontFamily::Style style) const {
   const int resolvedId = resolveFontForCodepoint(gfx, fontId, cp, style);
   if (findFontFamily(gfx, resolvedId) == nullptr) {

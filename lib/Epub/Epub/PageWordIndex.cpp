@@ -47,7 +47,7 @@ void setWordGeometry(PageWordHit& hit, const GfxRenderer& renderer, const int fo
                      const std::string& text, const EpdFontFamily::Style style, const uint8_t bionicPrefix,
                      const bool smallCaps, const uint8_t verticalAlign) {
   const int lineHeight = renderer.text.getLineHeight(fontId);
-  hit.screenY = baseY;
+  hit.screenY = baseY - renderer.text.getFontTopInset(fontId, EpdFontFamily::REGULAR);
   hit.screenH = lineHeight;
   if (verticalAlign == TextBlock::SUPERSCRIPT) {
     hit.screenY -= std::max(1, lineHeight / 3);
@@ -156,7 +156,8 @@ void buildPageWordIndex(const Page& page, GfxRenderer& renderer, const int bodyF
           }
           h.screenX = dc->xPos + marginLeft;
           if (dc->isInlineFirstLine()) {
-            h.screenY = dc->yPos + marginTop + renderer.text.getFontAscenderSize(bodyFontId) -
+            const int bodyTopInset = renderer.text.getFontTopInset(bodyFontId, EpdFontFamily::REGULAR);
+            h.screenY = dc->yPos + marginTop - bodyTopInset + renderer.text.getFontAscenderSize(bodyFontId) -
                         renderer.text.getFontAscenderSize(df);
           } else {
             h.screenY = dc->yPos + marginTop + PageDropCap::VERTICAL_ADJUSTMENT;

@@ -112,6 +112,23 @@ void ScreenComponents::drawMenuClockAndBattery(const GfxRenderer& renderer, cons
   drawBattery(renderer, batteryLeft, top, showBatteryPercentage);
 }
 
+void ScreenComponents::drawWhiteOverlay(const GfxRenderer& renderer, const int startY) {
+  const int width = renderer.getScreenWidth();
+  const int height = renderer.getScreenHeight();
+  const int firstY = std::max(0, std::min(startY, height));
+  const bool whitePixel = renderer.isDarkMode() && !renderer.isImageRendering();
+
+  // The display is 1-bit, so a paper-colored checkerboard creates a white
+  // scrim over the existing framebuffer while preserving the page underneath.
+  for (int y = firstY; y < height; ++y) {
+    for (int x = 0; x < width; ++x) {
+      if ((x & 1) == (y & 1)) {
+        renderer.drawPixel(x, y, whitePixel);
+      }
+    }
+  }
+}
+
 ScreenComponents::PopupLayout ScreenComponents::drawPopup(const GfxRenderer& renderer, const char* message) {
   constexpr int margin = 15;
 

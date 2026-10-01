@@ -11,6 +11,7 @@
 #include "../widget/Recent.h"
 #include "../widget/RecentGrid.h"
 #include "../widget/Flow.h"
+#include "../widget/verticalbookshelf/VerticalBookshelf.h"
 #include "../widget/Shortcut.h"
 #include "../widget/ShortcutList.h"
 #include "../widget/Temperature.h"
@@ -96,6 +97,7 @@ class HomeWidgetLayout final {
   Recent recent_;
   RecentGrid recentGrid_;
   Flow flow_;
+  widget::verticalbookshelf::VerticalBookshelf verticalBookshelf_;
   Shortcut shortcut_;
   ShortcutList shortcutList_;
   Temperature temperature_;

@@ -30,10 +30,7 @@ void BaseCarousel::renderShadow(GfxRenderer& renderer, const int x, const int y,
 
 BaseCarousel::ContentArea BaseCarousel::contentArea(const int y, const int height, const bool showLabel) const {
   if (!showLabel) return {y, height};
-  constexpr int labelGap = 10;
-  const int labelHeight = renderer_.text.getLineHeight(systemFontId());
-  const int reserved = labelHeight + labelGap;
-  return {y + reserved, std::max(24, height - reserved)};
+  return {y, std::max(24, height)};
 }
 
 void BaseCarousel::renderLabel(const int x, const int y, const char* label,

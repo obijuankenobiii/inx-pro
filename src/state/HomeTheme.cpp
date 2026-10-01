@@ -157,7 +157,7 @@ void ensureLoaded() {
 bool validLayout(const uint8_t value) { return value <= static_cast<uint8_t>(Layout::OneByOne); }
 
 bool validWidget(const uint8_t value) {
-  return value <= static_cast<uint8_t>(Widget::Flow);
+  return value <= static_cast<uint8_t>(Widget::VerticalBookshelf);
 }
 
 bool validBorder(const uint8_t value) {
@@ -901,6 +901,8 @@ const char* widgetLabel(const Widget widget) {
       return "Recent 3 x 2 Grid";
     case Widget::Flow:
       return "Title & Description Flow";
+    case Widget::VerticalBookshelf:
+      return "Vertical Bookshelf";
     default:
       return "Unknown";
   }

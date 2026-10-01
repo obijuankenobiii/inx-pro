@@ -46,6 +46,9 @@ class ScreenComponents {
                                       bool showBatteryPercentage = true);
   static void drawBookProgressBar(const GfxRenderer& renderer, size_t bookProgress);
 
+  /** Draws a subtle white dither over existing content for modal overlays. */
+  static void drawWhiteOverlay(const GfxRenderer& renderer, int startY = 0);
+
   static PopupLayout drawPopup(const GfxRenderer& renderer, const char* message);
 
   static void fillPopupProgress(const GfxRenderer& renderer, const PopupLayout& layout, int progress);

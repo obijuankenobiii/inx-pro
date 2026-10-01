@@ -7,19 +7,21 @@
 
 #include <algorithm>
 
-#include "images/DarkMode.h"
 #include "images/LibraryFilterLeft.h"
 #include "images/LibraryFilterRight.h"
 #include "images/LightOff.h"
 #include "images/LightOn.h"
+#include "images/Moon.h"
+#include "images/Sun.h"
 #include "system/Fonts.h"
 #include "system/Frontlight.h"
 #include "system/FrontlightPreferences.h"
+#include "system/ScreenComponents.h"
 #include "state/SystemSetting.h"
 
 namespace navigation {
 namespace {
-constexpr int lightDrawerHeight = 330;
+constexpr int lightDrawerHeight = 390;
 constexpr int lightButtonSize = 40;
 constexpr int lightButtonY = 30;
 constexpr int lightButtonRightMargin = 20;
@@ -34,8 +36,11 @@ constexpr int lightKnobRadius = 15;
 constexpr int lightKnobBorder = 2;
 constexpr int lightBrightnessLabelY = 120;
 constexpr int lightBrightnessY = 176;
-constexpr int lightTemperatureLabelY = 220;
-constexpr int lightTemperatureY = 266;
+constexpr int lightTemperatureLabelY = 240;
+constexpr int lightTemperatureY = 286;
+constexpr int lightIndicatorWidth = 96;
+constexpr int lightIndicatorHeight = 6;
+constexpr int lightIndicatorBottomMargin = 18;
 
 int lightValueFromTrack(const int tapX, const bool brightness) {
   const int clamped = std::max(lightTrackX, std::min(lightTrackX + lightTrackWidth, tapX));
@@ -72,6 +77,17 @@ void drawLightTrackBody(const GfxRenderer& renderer, const int y, const int valu
 void drawLightTrack(const GfxRenderer& renderer, const int y, const int value) {
   drawLightCarets(renderer, y);
   drawLightTrackBody(renderer, y, value);
+}
+
+void drawLightDrawerIndicator(const GfxRenderer& renderer, const int width) {
+  const int x = (width - lightIndicatorWidth) / 2;
+  const int y = lightDrawerHeight - lightIndicatorBottomMargin - lightIndicatorHeight;
+  const int radius = lightIndicatorHeight / 2;
+  const int middleWidth = lightIndicatorWidth - 2 * radius;
+  renderer.rectangle.fill(x + radius, y, middleWidth, lightIndicatorHeight,
+                          static_cast<int>(GfxRenderer::FillTone::Ink), true);
+  renderer.circle.render(x + radius, y + radius, radius, true);
+  renderer.circle.render(x + lightIndicatorWidth - radius - 1, y + radius, radius, true);
 }
 
 /**
@@ -188,19 +204,18 @@ void LightDrawer::render() const {
   if (!open || !frontlight.present()) return;
 
   const int width = drawerRenderer.getScreenWidth();
-  const int screenHeight = drawerRenderer.getScreenHeight();
-
+  ScreenComponents::drawWhiteOverlay(drawerRenderer, lightDrawerHeight);
   drawerRenderer.rectangle.fill(0, 0, width, lightDrawerHeight,
                                 static_cast<int>(GfxRenderer::FillTone::Paper));
   drawerRenderer.rectangle.render(0, 0, width, lightDrawerHeight, true);
+  drawerRenderer.line.render(0, lightDrawerHeight - 2, width - 1, lightDrawerHeight - 2, true);
   drawerRenderer.text.render(MONTSERRAT_16_FONT_ID, 20, 30, "Light", true, EpdFontFamily::BOLD);
 
   const bool on = frontlight.brightness() > 0;
   const int lightButtonX = width - lightButtonRightMargin - lightButtonSize;
   const int darkModeButtonX = lightButtonX - lightButtonGap - lightButtonSize;
-  drawerRenderer.bitmap.icon(DarkMode, darkModeButtonX, lightButtonY, lightButtonSize, lightButtonSize,
-                             drawerRenderer.isDarkMode() ? BitmapRender::Orientation::Rotate180
-                                                         : BitmapRender::Orientation::None);
+  const uint8_t* modeIcon = drawerRenderer.isDarkMode() ? Sun : Moon;
+  drawerRenderer.bitmap.icon(modeIcon, darkModeButtonX, lightButtonY, lightButtonSize, lightButtonSize);
   drawerRenderer.bitmap.icon(on ? LightOn : LightOff, lightButtonX, lightButtonY, lightButtonSize,
                              lightButtonSize);
 
@@ -211,6 +226,7 @@ void LightDrawer::render() const {
   drawerRenderer.text.render(MONTSERRAT_10_FONT_ID, width - 40 - warmWidth, lightTemperatureLabelY, "Warm",
                              true);
   drawLightTrack(drawerRenderer, lightTemperatureY, frontlight.colorTemperature());
+  drawLightDrawerIndicator(drawerRenderer, width);
 }
 
 constexpr float kOpenFromTopMaxNy = 0.15f;

@@ -12,6 +12,7 @@ HomeWidgetLayout::HomeWidgetLayout(GfxRenderer& renderer)
       recent_(renderer),
       recentGrid_(renderer),
       flow_(renderer),
+      verticalBookshelf_(),
       shortcut_(renderer),
       shortcutList_(renderer),
       temperature_(renderer),
@@ -246,7 +247,13 @@ void HomeWidgetLayout::renderSlot(const HomeTheme::Theme& theme, const int slot,
     case HomeTheme::Widget::RecentGrid:
       recentGrid_.render(bounds.x, bounds.y, bounds.width, bounds.height, recentGridPageIndex);
       break;
-    case HomeTheme::Widget::Flow: flow_.render(bounds.x, bounds.y, bounds.width, bounds.height, flowIndex); break;
+    case HomeTheme::Widget::Flow:
+      flow_.render(bounds.x, bounds.y, bounds.width, bounds.height, flowIndex,
+                   theme.layout == HomeTheme::Layout::OneByOne);
+      break;
+    case HomeTheme::Widget::VerticalBookshelf:
+      verticalBookshelf_.render(renderer_, bounds.x, bounds.y, bounds.width, bounds.height, flowIndex, false);
+      break;
 #if FREEINK_DEVICE_STICKY
     case HomeTheme::Widget::Temperature: temperature_.render(bounds.x, bounds.y, bounds.width, bounds.height); break;
     case HomeTheme::Widget::Humidity: humidity_.render(bounds.x, bounds.y, bounds.width, bounds.height); break;
@@ -383,9 +390,15 @@ HomeWidgetLayout::HitResult HomeWidgetLayout::hitTest(const HomeTheme::Theme& th
     for (int slot = 0; slot < HomeTheme::slotCount(theme.layout); ++slot) {
       if (theme.widgets[slot] == HomeTheme::Widget::Empty) continue;
       if (page-- != 0) continue;
-      if (theme.widgets[slot] != HomeTheme::Widget::Flow) break;
+      if (theme.widgets[slot] != HomeTheme::Widget::Flow &&
+          theme.widgets[slot] != HomeTheme::Widget::VerticalBookshelf) break;
       const int areaY = navigation::Menu::height;
       const int areaH = renderer_.getScreenHeight() - areaY - navigation::Menu::bottomHeight;
+      if (theme.widgets[slot] == HomeTheme::Widget::VerticalBookshelf) {
+        const int bookIndex = verticalBookshelf_.hitTest(0, areaY, renderer_.getScreenWidth(), areaH, x, y);
+        if (bookIndex >= 0) return {HitType::Flow, bookIndex};
+        break;
+      }
       if (flow_.hitTest(x, y, 0, areaY, renderer_.getScreenWidth(), areaH)) {
         return {HitType::Flow, flowIndex};
       }
@@ -425,7 +438,10 @@ HomeWidgetLayout::SwipeTarget HomeWidgetLayout::horizontalSwipeTarget(const Home
     for (int slot = 0; slot < HomeTheme::slotCount(theme.layout); ++slot) {
       if (theme.widgets[slot] == HomeTheme::Widget::Empty) continue;
       if (page-- != 0) continue;
-      if (theme.widgets[slot] == HomeTheme::Widget::Flow) return SwipeTarget::Flow;
+      if (theme.widgets[slot] == HomeTheme::Widget::Flow ||
+          theme.widgets[slot] == HomeTheme::Widget::VerticalBookshelf) {
+        return SwipeTarget::Flow;
+      }
       if (theme.widgets[slot] == HomeTheme::Widget::RecentGrid) return SwipeTarget::None;
       return SwipeTarget::WidgetPage;
     }

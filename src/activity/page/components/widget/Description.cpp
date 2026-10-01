@@ -243,7 +243,6 @@ void Description::render(const int recentIndex, const int x, const int y, const 
   if (width <= 0 || height <= 0) return;
   renderBackground(x, y, width, height, background);
   const ContentArea content = contentArea(y, height, showLabel);
-  if (showLabel) renderLabel(x, y, "Book Details", labelColor);
 
   const auto& books = RECENT_BOOKS.getBooks();
   if (recentIndex < 0 || recentIndex >= static_cast<int>(books.size())) {

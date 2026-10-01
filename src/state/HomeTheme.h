@@ -28,6 +28,7 @@ enum class Widget : uint8_t {
   Description = 13,
   RecentGrid = 14,
   Flow = 15,
+  VerticalBookshelf = 16,
 };
 
 enum class HeatmapView : uint8_t {
