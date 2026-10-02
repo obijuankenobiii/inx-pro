@@ -437,9 +437,11 @@ void PageDropCap::render(GfxRenderer& renderer, const int fontId, const int xOff
     const int bodyBaseline = yPos + yOffset - bodyTopInset + renderer.text.getFontAscenderSize(fontId);
     alignY = bodyBaseline - renderer.text.getFontAscenderSize(renderDropCapFontId);
   } else {
+    // Page::render() passes body text through `y - bodyTopInset`, so the
+    // body glyph's top is already at yPos.  Do not add bodyTopInset here:
+    // doing so shifts every multiline drop cap down by that inset.
     const int dropInset = renderer.text.getGlyphTopInset(renderDropCapFontId, dropCp, style);
-    const int bodyInset = renderer.text.getFontTopInset(fontId, EpdFontFamily::REGULAR);
-    alignY += (bodyInset - dropInset) + PageDropCap::VERTICAL_ADJUSTMENT;
+    alignY += -dropInset + PageDropCap::VERTICAL_ADJUSTMENT;
   }
   if (textTone == 2) {
     renderer.text.renderGray(renderDropCapFontId, xPos + xOffset, alignY, text.c_str(), true, style);

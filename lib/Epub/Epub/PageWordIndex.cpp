@@ -160,6 +160,8 @@ void buildPageWordIndex(const Page& page, GfxRenderer& renderer, const int bodyF
             h.screenY = dc->yPos + marginTop - bodyTopInset + renderer.text.getFontAscenderSize(bodyFontId) -
                         renderer.text.getFontAscenderSize(df);
           } else {
+            // Multiline drop caps are top-aligned to the body line box in
+            // PageDropCap::render(). Keep the hit region at that same top.
             h.screenY = dc->yPos + marginTop + PageDropCap::VERTICAL_ADJUSTMENT;
           }
         h.screenW = std::max(1, renderer.text.getWidth(df, dct.c_str(), dc->getStyle()));

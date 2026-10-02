@@ -66,6 +66,7 @@ namespace {
 
 const char* HIDDEN_ITEMS[] = {"System Volume Information", ".metadata"};
 constexpr size_t HIDDEN_ITEMS_COUNT = sizeof(HIDDEN_ITEMS) / sizeof(HIDDEN_ITEMS[0]);
+constexpr size_t MAX_PLUGIN_WEB_ASSET_BYTES = 512 * 1024;
 constexpr uint16_t UDP_PORTS[] = {54982, 48123, 39001, 44044, 59678};
 constexpr uint16_t LOCAL_UDP_PORT = 8134;
 constexpr const char* DEVICE_IDENTITY_DIR = "/.system/identity";
@@ -1086,6 +1087,7 @@ void LocalServer::handlePluginPage() const {
     server->send(404, "text/plain", error.c_str());
     return;
   }
+  server->sendHeader("Cache-Control", "no-store");
   server->send(200, "text/html; charset=utf-8", addLanguageManagerNavLink(html.c_str(), server->uri().c_str()));
 }
 
@@ -1128,10 +1130,11 @@ void LocalServer::handlePluginPageJs() const {
   }
   std::string script;
   std::string error;
-  if (!PluginManager::readFile(plugin.id.c_str(), plugin.script.c_str(), script, 32 * 1024, error)) {
+  if (!PluginManager::readFile(plugin.id.c_str(), plugin.script.c_str(), script, 256 * 1024, error)) {
     server->send(404, "text/plain", error.c_str());
     return;
   }
+  server->sendHeader("Cache-Control", "no-store");
   server->send(200, "text/javascript; charset=utf-8", script.c_str());
 }
 
@@ -1156,10 +1159,15 @@ void LocalServer::handlePluginAsset() const {
   bool allowed = false;
   if (PluginManager::listWebPlugins(links)) {
     for (const PluginManager::WebLink& link : links) {
-      if (pluginId == link.id.c_str() && filename == link.icon.c_str()) {
-        allowed = true;
-        break;
+      if (pluginId != link.id.c_str()) continue;
+      if (filename == link.icon.c_str() && !link.icon.empty()) allowed = true;
+      for (const std::string& asset : link.assets) {
+        if (filename == asset.c_str()) {
+          allowed = true;
+          break;
+        }
       }
+      if (allowed) break;
     }
   }
   if (!allowed) {
@@ -1169,7 +1177,7 @@ void LocalServer::handlePluginAsset() const {
 
   std::string contents;
   std::string error;
-  if (!PluginManager::readFile(pluginId.c_str(), filename.c_str(), contents, 64 * 1024, error)) {
+  if (!PluginManager::readFile(pluginId.c_str(), filename.c_str(), contents, MAX_PLUGIN_WEB_ASSET_BYTES, error)) {
     server->send(404, "text/plain", error.c_str());
     return;
   }

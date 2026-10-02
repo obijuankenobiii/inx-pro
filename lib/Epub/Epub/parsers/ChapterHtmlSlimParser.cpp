@@ -335,11 +335,23 @@ bool endsWithCompleteUtf8Codepoint(const char* s, int byteLen) {
 }
 
 bool hasDropCapHint(const std::string& classAttr, const std::string& idAttr, const std::string& styleAttr) {
-  return containsAsciiInsensitive(idAttr, "drop") || containsAsciiInsensitive(classAttr, "drop") ||
-         containsAsciiInsensitive(classAttr, "dropcap") || containsAsciiInsensitive(classAttr, "drop-cap") ||
-         containsAsciiInsensitive(classAttr, "initial-letter") || containsAsciiInsensitive(idAttr, "dropcap") ||
-         containsAsciiInsensitive(idAttr, "drop-cap") || containsAsciiInsensitive(idAttr, "initial-letter") ||
-         containsAsciiInsensitive(styleAttr, "initial-letter");
+  // Do not use a substring match here.  EPUB templates commonly put a
+  // marker such as `withDropcap` on a chapter wrapper even when the actual
+  // paragraph has no drop-cap element (for example, it may use lead-word
+  // spans instead).  Only an explicit drop-cap token is a layout instruction.
+  const bool explicitClass = hasClassTokenPrefix(classAttr, "dropcap") ||
+                             hasClassTokenPrefix(classAttr, "drop-cap") ||
+                             hasClassTokenPrefix(classAttr, "initial-letter");
+  const std::string loweredId = [&idAttr]() {
+    std::string value = idAttr;
+    std::transform(value.begin(), value.end(), value.begin(),
+                   [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return value;
+  }();
+  const bool explicitId = startsWithAsciiInsensitive(loweredId, "dropcap") ||
+                          startsWithAsciiInsensitive(loweredId, "drop-cap") ||
+                          startsWithAsciiInsensitive(loweredId, "initial-letter");
+  return explicitClass || explicitId || containsAsciiInsensitive(styleAttr, "initial-letter");
 }
 
 bool hasExplicitSmallCapsHint(const char* tagName, const std::string& classAttr, const std::string& idAttr,

@@ -216,19 +216,18 @@ void LocalNetworkActivity::loop() {
 
     esp_task_wdt_reset();
 
-    constexpr int MAX_ITERATIONS = 500;
+    // Keep the web service responsive without monopolizing loopTask.  A large
+    // burst here can starve IDLE0 on CPU 0 and trip the task watchdog.
+    constexpr int MAX_ITERATIONS = 8;
     for (int i = 0; i < MAX_ITERATIONS && webServer->isRunning(); i++) {
       webServer->handleClient();
-      if ((i & 0x1F) == 0x1F) {
-        esp_task_wdt_reset();
-      }
-      if ((i & 0x3F) == 0x3F) {
-        yield();
-        if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
-          INX_SERIAL.printf("[%lu] [LOCALNET] Back button pressed\n", millis());
-          if (onGoBack) onGoBack();
-          return;
-        }
+      esp_task_wdt_reset();
+      // Give the idle task a scheduling opportunity after each request.
+      vTaskDelay(1 / portTICK_PERIOD_MS);
+      if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+        INX_SERIAL.printf("[%lu] [LOCALNET] Back button pressed\n", millis());
+        if (onGoBack) onGoBack();
+        return;
       }
     }
   }

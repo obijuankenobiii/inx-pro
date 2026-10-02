@@ -14,6 +14,7 @@
 #include "images/Check.h"
 #include "images/Download.h"
 #include "images/Trash.h"
+#include "images/XtcConverter.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
 
@@ -25,6 +26,10 @@ constexpr int kLogoX = 24;
 constexpr int kTextX = 88;
 constexpr int kLogoSize = 40;
 constexpr int kIconSize = 40;
+
+const uint8_t* packageIcon(const PluginManager::Package& package) {
+  return package.id == "xtc-converter" ? XtcConverter : Anki;
+}
 
 }  // namespace
 
@@ -225,7 +230,7 @@ void PluginManagerActivity::render() {
     const int descriptionY = titleY + renderer.text.getLineHeight(font) + 5;
     const int maxNameWidth = screenW - kTextX - kSideMargin - percentWidth - 20;
     const std::string name = renderer.text.truncate(font, package.name.c_str(), maxNameWidth);
-    renderer.bitmap.icon(Anki, kLogoX, rowY + (kRowHeight - kLogoSize) / 2, kLogoSize, kLogoSize);
+    renderer.bitmap.icon(packageIcon(package), kLogoX, rowY + (kRowHeight - kLogoSize) / 2, kLogoSize, kLogoSize);
     renderer.text.render(font, kTextX, titleY, name.c_str(), true, EpdFontFamily::BOLD);
     renderer.text.render(descriptionFont, kTextX, descriptionY, description.c_str(), true,
                          EpdFontFamily::REGULAR);
@@ -250,7 +255,7 @@ void PluginManagerActivity::render() {
       const int contentHeight = renderer.text.getLineHeight(font) + 5 + renderer.text.getLineHeight(descriptionFont);
       const int titleY = y + (kRowHeight - contentHeight) / 2;
       const int descriptionY = titleY + renderer.text.getLineHeight(font) + 5;
-      renderer.bitmap.icon(Anki, kLogoX, y + (kRowHeight - kLogoSize) / 2, kLogoSize, kLogoSize);
+      renderer.bitmap.icon(packageIcon(package), kLogoX, y + (kRowHeight - kLogoSize) / 2, kLogoSize, kLogoSize);
       renderer.text.render(font, kTextX, titleY, package.name.c_str(), true, EpdFontFamily::BOLD);
       renderer.text.render(descriptionFont, kTextX, descriptionY, description.c_str(), true,
                            EpdFontFamily::REGULAR);
