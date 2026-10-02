@@ -8,6 +8,7 @@
 
 #include <GfxRenderer.h>
 #include <HardwareSerial.h>
+#include <ImageDisplayCache.h>
 #include <SDCardManager.h>
 
 #include <algorithm>
@@ -315,6 +316,7 @@ void ClearCacheActivity::clearCache() {
   if (selectedGroups[GROUP_DISPLAY]) {
     tryRemoveTree("/.system/cache");
     tryRemoveTree("/.display-cache");
+    ImageDisplayCache::invalidate();
   }
   if (selectedGroups[GROUP_BOOK]) {
     clearTreeExceptThumbnails("/.metadata/epub");

@@ -11,7 +11,7 @@ class Flow final {
 
   void render(int x, int y, int width, int height, int selectedIndex = 0,
               bool limitCardsToAvailableBooks = false) const;
-  void preview(int x, int y, int width, int height) const;
+  void preview(int x, int y, int width, int height, bool oneByOne = false) const;
   bool hitTest(int x, int y, int boundsX, int boundsY, int boundsWidth, int boundsHeight) const;
 
  private:

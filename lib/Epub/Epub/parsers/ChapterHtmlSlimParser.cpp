@@ -1516,7 +1516,10 @@ void ChapterHtmlSlimParser::applyDropCapHint(const XML_Char* name, const std::st
   dropCapLineCount = attrHint
                          ? detectDropCapLineCount(classAttr, idAttr, styleAttr)
                          : (pseudoHint ? css().getFirstLetterDropCapLineCount(tagLower, classAttr, idAttr, styleAttr)
-                                       : 3);
+                                       // A scaled inline span (for example, an EPUB's
+                                       // `span.initial`) is an enlarged first-line glyph,
+                                       // not a default three-line float.
+                                       : 1);
 }
 
 void ChapterHtmlSlimParser::applyInlineFormattingTags(const XML_Char* name, const XML_Char** atts) {

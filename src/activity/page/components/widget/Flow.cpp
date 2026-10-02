@@ -285,10 +285,11 @@ void drawPreviewCard(GfxRenderer& renderer, const int x, const int y, const int 
   const int cardHeight = std::max(height, detailHeight + 20);
   const int coverH = std::max(20, std::min(cardHeight * 80 / 100, cardHeight - detailHeight));
   renderer.rectangle.fill(x, y, width, cardHeight, false);
-  renderer.rectangle.render(x, y, width, cardHeight, true, false, false);
+  renderer.rectangle.render(x, y, width, cardHeight, true, SETTINGS.bitmapRoundedCorners != 0,
+                            SETTINGS.bitmapRoundedCorners == 2);
   const int coverY = y;
   RecentBook placeholder;
-  drawCover(renderer, placeholder, x, coverY, width, coverH, true);
+  drawCover(renderer, placeholder, x, coverY, width, coverH);
   constexpr int detailMargin = 20;
   const int detailY = y + coverH;
   const int detailWidth = std::max(1, width - detailMargin * 2);
@@ -300,7 +301,8 @@ void drawPreviewCard(GfxRenderer& renderer, const int x, const int y, const int 
     renderer.text.renderGray(authorFont, x + detailMargin, titleY + renderer.text.getLineHeight(titleFont) + 5,
                              shownAuthor.c_str(), true, EpdFontFamily::REGULAR);
   }
-  renderer.rectangle.render(x, y, width, cardHeight, true, false, false);
+  renderer.rectangle.render(x, y, width, cardHeight, true, SETTINGS.bitmapRoundedCorners != 0,
+                            SETTINGS.bitmapRoundedCorners == 2);
 }
 
 void drawFlowArrow(GfxRenderer& renderer, const int x, const int y, const int size, const bool left) {
@@ -398,14 +400,15 @@ void Flow::render(const int x, const int y, const int width, const int height, c
   }
 }
 
-void Flow::preview(const int x, const int y, const int width, const int height) const {
+void Flow::preview(const int x, const int y, const int width, const int height, const bool oneByOne) const {
   if (width <= 0 || height <= 0) return;
   renderer_.rectangle.fill(x, y, width, height, false);
   constexpr int descriptionLines = 5;
   constexpr int carouselMetadataGap = 40;
   const int metadataFontHeight = renderer_.text.getLineHeight(MONTSERRAT_10_FONT_ID);
   const int descriptionY = y + height - 20 - descriptionLines * metadataFontHeight;
-  const int progressRowY = descriptionY - 8 - metadataFontHeight;
+  const int progressRowHeight = oneByOne ? 32 : metadataFontHeight;
+  const int progressRowY = descriptionY - 8 - progressRowHeight;
   constexpr int carouselInset = 20;
   const int carouselX = x + std::min(carouselInset, width / 4);
   const int carouselWidth = std::max(1, width - (carouselX - x) * 2);
@@ -413,7 +416,7 @@ void Flow::preview(const int x, const int y, const int width, const int height) 
   const int sideWidth = std::max(240, centerWidth * 94 / 100);
   const int cardStep = std::max(140, centerWidth * 52 / 100);
   const int centerX = carouselX + (carouselWidth - centerWidth) / 2;
-  const int centerHeight = std::max(150, height * 74 / 100 - 30);
+  const int centerHeight = std::max(150, height * 74 / 100 - 70);
   const int centerY = std::max(y, progressRowY - carouselMetadataGap - centerHeight);
   const int sideHeight = std::max(130, height * 66 / 100 - 50);
   const int sideY = std::max(y, centerY + (centerHeight - sideHeight) / 2 + 8);
@@ -425,7 +428,12 @@ void Flow::preview(const int x, const int y, const int width, const int height) 
                   "A. Gardner", true);
   RecentBook previewBook;
   previewBook.progress = 0.65f;
-  drawProgressAndRating(renderer_, previewBook, x, progressRowY, width, 5);
+  if (oneByOne) {
+    drawCenteredRating(renderer_, centerX, centerY + centerHeight + 8, centerWidth, 5);
+    drawFlowProgressTrack(renderer_, previewBook, x, progressRowY, width);
+  } else {
+    drawProgressAndRating(renderer_, previewBook, x, progressRowY, width, 5);
+  }
   drawDescription(renderer_, "A bright, cheerful flower known for its large yellow petals.", x, descriptionY, width,
                   descriptionLines);
   const int arrowSize = std::min(56, std::max(36, height / 6));
@@ -447,7 +455,7 @@ bool Flow::hitTest(const int x, const int y, const int boundsX, const int bounds
   const int carouselWidth = std::max(1, boundsWidth - (carouselX - boundsX) * 2);
   const int centerWidth = std::min(400, std::max(300, carouselWidth * 40 / 100));
   const int centerX = carouselX + (carouselWidth - centerWidth) / 2;
-  const int centerHeight = std::max(150, boundsHeight * 74 / 100 - 30);
+  const int centerHeight = std::max(150, boundsHeight * 74 / 100 - 70);
   const int centerY = std::max(boundsY, progressRowY - carouselMetadataGap - centerHeight);
   return x >= centerX && x < centerX + centerWidth && y >= centerY && y < centerY + centerHeight;
 }

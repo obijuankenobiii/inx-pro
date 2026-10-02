@@ -51,10 +51,9 @@ bool murphyBusyWaitSlice(const int8_t busyPin, const uint8_t busyLevel) {
 EInkDisplay::RefreshMode convertRefreshMode(const HalDisplay::RefreshMode mode) {
   switch (mode) {
     case HalDisplay::FULL_REFRESH:
-      // Murphy's SSD1677 panel is sensitive to the stock multi-flash FULL
-      // waveform. HALF is the clean single-pass update used for this device.
       return EInkDisplay::HALF_REFRESH;
     case HalDisplay::HALF_REFRESH:
+      return EInkDisplay::HALF_REFRESH;
     case HalDisplay::MANUAL_REFRESH:
       return EInkDisplay::FAST_REFRESH;
     case HalDisplay::STRONG_FAST_REFRESH:

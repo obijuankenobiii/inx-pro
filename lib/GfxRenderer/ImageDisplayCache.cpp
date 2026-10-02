@@ -33,8 +33,10 @@ constexpr size_t kIoBufferSize = 16384;
 constexpr size_t kAsyncCacheQueueLength = 6;
 constexpr size_t kRamCacheSlots = 64;
 constexpr size_t kRamCacheByteBudget = 512 * 1024;
-constexpr size_t kSourceSizeCacheSlots = 16;
-constexpr uint32_t kSourceSizeReuseMs = 5000;
+// Source files are immutable cache inputs for the lifetime of the firmware
+// process. Keep their sizes until the cache is explicitly rebuilt instead of
+// forcing an SD open every few seconds while looking up a display cache hit.
+constexpr size_t kSourceSizeCacheSlots = 64;
 
 struct CacheHeader {
   uint32_t magic;
@@ -67,6 +69,7 @@ struct VisibleRect {
 
 struct AsyncCacheJob {
   std::string cachePath;
+  uint32_t generation = 0;
   uint16_t width = 0;
   uint16_t height = 0;
   uint16_t rowBytes = 0;
@@ -118,6 +121,7 @@ struct CacheState {
 QueueHandle_t gAsyncCacheQueue = nullptr;
 SemaphoreHandle_t gAsyncCacheInitMutex = nullptr;
 CacheState* gCacheState = nullptr;
+uint32_t gCacheGeneration = 0;
 
 CacheState* cacheState() {
   if (gCacheState) {
@@ -165,17 +169,12 @@ uint32_t fnv1aAddUint32(uint32_t hash, const uint32_t value) {
 }
 
 uint32_t sourceSize(const std::string& path) {
-  const uint32_t now = millis();
   SourceSizeCacheEntry* target = nullptr;
   CacheState* state = cacheState();
   if (state) {
     for (SourceSizeCacheEntry& entry : state->sourceSizeCache) {
       if (entry.path == path) {
-        if (now - entry.readAt < kSourceSizeReuseMs) {
-          return entry.size;
-        }
-        target = &entry;
-        break;
+        return entry.size;
       }
       if (!target && entry.path.empty()) {
         target = &entry;
@@ -194,7 +193,7 @@ uint32_t sourceSize(const std::string& path) {
     if (target) {
       target->path = path;
       target->size = 0;
-      target->readAt = now;
+      target->readAt = millis();
     }
     return 0;
   }
@@ -203,7 +202,7 @@ uint32_t sourceSize(const std::string& path) {
   if (target) {
     target->path = path;
     target->size = size;
-    target->readAt = now;
+    target->readAt = millis();
   }
   return size;
 }
@@ -445,7 +444,8 @@ bool ensureCacheDir(const std::string& path) {
 
 bool writePackedCacheFile(const AsyncCacheJob& job) {
   SdIoMutex::Lock ioLock;
-  if (job.cachePath.empty() || !job.rows || job.width == 0 || job.height == 0 || job.rowBytes == 0) {
+  if (job.generation != gCacheGeneration || job.cachePath.empty() || !job.rows || job.width == 0 || job.height == 0 ||
+      job.rowBytes == 0) {
     return false;
   }
   if (!ensureCacheDir(job.cachePath)) {
@@ -1137,6 +1137,7 @@ bool ImageDisplayCache::storeAsync(GfxRenderer& renderer, const std::string& sou
     return false;
   }
   job->cachePath = cachePath;
+  job->generation = gCacheGeneration;
   job->width = static_cast<uint16_t>(visible.width);
   job->height = static_cast<uint16_t>(visible.height);
   job->rowBytes = static_cast<uint16_t>(rowBytes);
@@ -1158,6 +1159,26 @@ bool ImageDisplayCache::storeAsync(GfxRenderer& renderer, const std::string& sou
     return false;
   }
   return true;
+}
+
+void ImageDisplayCache::invalidate() {
+  SdIoMutex::Lock ioLock;
+  ++gCacheGeneration;
+
+  if (gAsyncCacheQueue) {
+    AsyncCacheJob* job = nullptr;
+    while (xQueueReceive(gAsyncCacheQueue, &job, 0) == pdTRUE) {
+      if (!job) continue;
+      freeCacheRows(job->rows);
+      delete job;
+    }
+  }
+
+  CacheState* state = cacheState();
+  if (!state || !lockRamCache()) return;
+  for (RamCacheEntry& entry : state->ramCache) clearRamEntry(*state, entry);
+  for (SourceSizeCacheEntry& entry : state->sourceSizeCache) entry = SourceSizeCacheEntry{};
+  unlockRamCache();
 }
 
 void ImageDisplayCache::flushDeferredWrites(const uint8_t maximumJobs) {

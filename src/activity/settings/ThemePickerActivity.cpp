@@ -498,7 +498,7 @@ void ThemePickerActivity::renderWidgetPreview(const HomeTheme::Widget widget, co
       recentGrid_.preview(x, y, width, height);
       break;
     case HomeTheme::Widget::Flow:
-      flow_.preview(x, y, width, height);
+      flow_.preview(x, y, width, height, layout_ == HomeTheme::Layout::OneByOne);
       break;
     case HomeTheme::Widget::VerticalBookshelf:
       verticalBookshelf_.preview(renderer, x, y, width, height);

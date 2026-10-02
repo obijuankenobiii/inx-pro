@@ -12,11 +12,13 @@
 
 #include "state/SystemSetting.h"
 #include "system/Fonts.h"
+#include "util/SdIoMutex.h"
 
 namespace widget::support {
 namespace {
 
 std::string thumbnailPath(const RecentBook& book) {
+  SdIoMutex::Lock ioLock;
   char path[192] = {};
   const std::string cache = cachePathFor(book);
   for (const char* extension : {"thumb.jpg", "thumb.png", "thumb.bmp"}) {
@@ -76,6 +78,7 @@ void drawThumbnail(GfxRenderer& renderer, const RecentBook& book, const int x, c
     options.cropToFill = cropToFill;
     options.cropAnchorY = cropFromTop ? 0.0f : 0.5f;
     options.useDisplayCache = true;
+    options.asyncDisplayCache = true;
     if (forceSquare || SETTINGS.bitmapRoundedCorners == 0) {
       options.roundedOutside = BitmapRender::RoundedOutside::None;
     } else if (SETTINGS.bitmapRoundedCorners == 2) {
