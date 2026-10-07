@@ -4,7 +4,11 @@
 
 #include "ImageRenderMode.h"
 
+#ifdef SIMULATOR
+#include <HalStorage.h>
+#else
 class FsFile;
+#endif
 class GfxRenderer;
 struct JpegLevelCapture;
 

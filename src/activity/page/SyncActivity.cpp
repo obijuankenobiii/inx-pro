@@ -9,7 +9,6 @@
 
 #include <GfxRenderer.h>
 
-#include "activity/network/BackupRestoreActivity.h"
 #include "activity/settings/DeviceInfoActivity.h"
 #include "activity/settings/DictionaryPickerActivity.h"
 #include "activity/settings/KOReaderSettingsActivity.h"
@@ -21,10 +20,10 @@
 extern void onGoToHome();
 
 namespace {
-constexpr int menuItemCount = 9;
+constexpr int menuItemCount = 8;
 const char* menuItems[menuItemCount] = {"Manage via wifi",   "Calibre File Transfer", "Create hotspot",
-                                        "OPDS Browser",      "Backup and restore", "KOReader Sync",
-                                        "Check for updates", "Choose dictionary",  "Device Information"};
+                                        "OPDS Browser",      "KOReader Sync",       "Check for updates",
+                                        "Choose dictionary", "Device Information"};
 constexpr int listItemHeight = UiLayout::LIST_ITEM_HEIGHT;
 constexpr int headerTop = 20;
 constexpr int headerHeight = 40;
@@ -32,7 +31,7 @@ constexpr int listGap = 30;
 }
 
 void SyncActivity::onEnter() {
-  Page::onEnter();
+  UiPage::onEnter();
   selectedIndex = 0;
   selectedVisible = false;
   SETTINGS.runHalfRefreshOnLoadIfEnabled(renderer, SystemSetting::RefreshOnLoadPage::Sync);
@@ -87,14 +86,6 @@ void SyncActivity::loop() {
     if (selectedIndex == 3) mode = NetworkMode::OPDS_BROWSER;
 
     if (selectedIndex == 4) {
-      enter(new BackupRestoreActivity(renderer, mappedInput, [this] {
-        exit();
-        selectedVisible = false;
-        updateRequired = true;
-      }));
-      return;
-    }
-    if (selectedIndex == 5) {
       enter(new KOReaderSettingsActivity(renderer, mappedInput, [this] {
         exit();
         selectedVisible = false;
@@ -102,7 +93,7 @@ void SyncActivity::loop() {
       }));
       return;
     }
-    if (selectedIndex == 6) {
+    if (selectedIndex == 5) {
       enter(new OtaUpdateActivity(renderer, mappedInput, [this] {
         exit();
         selectedVisible = false;
@@ -110,7 +101,7 @@ void SyncActivity::loop() {
       }));
       return;
     }
-    if (selectedIndex == 7) {
+    if (selectedIndex == 6) {
       enter(new DictionaryPickerActivity(renderer, mappedInput, [this] {
         exit();
         selectedVisible = false;
@@ -118,7 +109,7 @@ void SyncActivity::loop() {
       }));
       return;
     }
-    if (selectedIndex == 8) {
+    if (selectedIndex == 7) {
       enter(new DeviceInfoActivity(renderer, mappedInput, [this] {
         exit();
         updateRequired = true;
@@ -175,7 +166,7 @@ void SyncActivity::content() {
 
 void SyncActivity::onExit() {
   exit();
-  Page::onExit();
+  UiPage::onExit();
 }
 
 void SyncActivity::enter(Activity* activity) {

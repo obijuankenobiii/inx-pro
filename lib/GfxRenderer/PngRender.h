@@ -14,7 +14,11 @@
 #ifdef SIMULATOR
 #include <SDCardManager.h>
 #else
+#ifdef SIMULATOR
+#include <HalStorage.h>
+#else
 class FsFile;
+#endif
 #endif
 class GfxRenderer;
 

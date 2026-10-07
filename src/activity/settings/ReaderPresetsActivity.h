@@ -79,7 +79,7 @@ class ReaderPresetsActivity final : public ActivityWithSubactivity, public navig
   const bool embedded_;
   const bool presetsOnly_;
 
-  static constexpr int kListItemHeight = Page::LIST_ITEM_HEIGHT;
+  static constexpr int kListItemHeight = UiPage::LIST_ITEM_HEIGHT;
   int selectedRow_ = -1;
   int scrollOffset_ = 0;
   int itemsPerPage_ = 1;

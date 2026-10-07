@@ -26,7 +26,7 @@ extern "C" {
 #include "system/MappedInputManager.h"
 
 namespace {
-constexpr int LIST_ITEM_HEIGHT = Page::LIST_ITEM_HEIGHT;
+constexpr int LIST_ITEM_HEIGHT = UiPage::LIST_ITEM_HEIGHT;
 constexpr uint32_t scanMaxMs = 120;
 // Wi-Fi renders translated labels and may resolve the first non-ASCII glyph by
 // loading a streamed language font. TextRender also uses a bounded glyph buffer

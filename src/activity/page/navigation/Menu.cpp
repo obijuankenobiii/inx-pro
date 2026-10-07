@@ -1,6 +1,6 @@
 /**
  * @file Menu.cpp
- * @brief Menu rendering for the redesigned Page shell.
+ * @brief Menu rendering for the redesigned UiPage shell.
  */
 
 #include "Menu.h"
@@ -176,7 +176,7 @@ bool Menu::handleTabBarTouch(MappedInputManager& mappedInput, const GfxRenderer&
   const int screenW = renderer.getScreenWidth();
   const int tapX = static_cast<int>(tapNx * screenW);
   const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
-  const int tabY = Page::tabBarTopY(renderer);
+  const int tabY = UiPage::tabBarTopY(renderer);
   const int tabH = 60;
   const int tabButtonWidth = (screenW / tabCount) - 1;
 

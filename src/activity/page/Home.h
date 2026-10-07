@@ -14,7 +14,7 @@
 
 struct ButtonBounds;
 
-class Home final : public Page {
+class Home final : public UiPage {
  public:
   Home(GfxRenderer& renderer, MappedInputManager& mappedInput);
   void onEnter() override;

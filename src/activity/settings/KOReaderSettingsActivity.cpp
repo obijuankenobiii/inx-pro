@@ -18,7 +18,7 @@
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
 
-constexpr int LIST_ITEM_HEIGHT = Page::LIST_ITEM_HEIGHT;
+constexpr int LIST_ITEM_HEIGHT = UiPage::LIST_ITEM_HEIGHT;
 
 namespace {
 constexpr uint32_t kDisplayTaskStack = 8192;

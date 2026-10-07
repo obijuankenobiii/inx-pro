@@ -19,7 +19,7 @@
 
 namespace {
 constexpr int MENU_ITEMS = 3;
-constexpr int kListItemHeight = Page::LIST_ITEM_HEIGHT;
+constexpr int kListItemHeight = UiPage::LIST_ITEM_HEIGHT;
 const char* menuNames[MENU_ITEMS] = {"OPDS Server URL", "Username", "Password"};
 }
 

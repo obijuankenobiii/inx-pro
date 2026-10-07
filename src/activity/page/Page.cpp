@@ -1,5 +1,5 @@
 /**
- * @file Page.cpp
+ * @file UiPage.cpp
  * @brief Minimal page shell for the new page redesign.
  */
 
@@ -17,20 +17,22 @@ extern void onGoToSettings();
 extern void onGoToStatistics();
 extern void openSearchFromCallback(std::function<void()> returnToCaller);
 
-Page::Page(const char* name, GfxRenderer& renderer, MappedInputManager& mappedInput)
+UiPage::UiPage(const char* name, GfxRenderer& renderer, MappedInputManager& mappedInput)
     : Activity(name, renderer, mappedInput), navigation::Menu(renderer) {}
 
-void Page::onEnter() {
+UiPage::~UiPage() {}
+
+void UiPage::onEnter() {
   Activity::onEnter();
   updateRequired = true;
 }
 
-void Page::loop() {
+void UiPage::loop() {
   if (menuInput()) return;
   renderPage();
 }
 
-bool Page::menuInput() {
+bool UiPage::menuInput() {
   if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
     return back();
   }
@@ -78,13 +80,13 @@ bool Page::menuInput() {
   return true;
 }
 
-void Page::renderPage() {
+void UiPage::renderPage() {
   if (!updateRequired) return;
   render();
   updateRequired = false;
 }
 
-bool Page::routeMenuAction(const navigation::Menu::Action action) {
+bool UiPage::routeMenuAction(const navigation::Menu::Action action) {
   switch (action) {
     case navigation::Menu::Action::Opened:
     case navigation::Menu::Action::Closed:
@@ -122,23 +124,23 @@ bool Page::routeMenuAction(const navigation::Menu::Action action) {
   return false;
 }
 
-void Page::menu() { navigation::Menu::render(); }
+void UiPage::menu() { navigation::Menu::render(); }
 
-void Page::refresh() { LibraryIndexRefresh::start(renderer, this); }
+void UiPage::refresh() { LibraryIndexRefresh::start(renderer, this); }
 
-void Page::search() { openSearchFromCallback([] { onGoToHome(); }); }
+void UiPage::search() { openSearchFromCallback([] { onGoToHome(); }); }
 
-bool Page::back() {
+bool UiPage::back() {
   onGoToHome();
   return true;
 }
 
-bool Page::menuAction(const navigation::Menu::Action action) {
+bool UiPage::menuAction(const navigation::Menu::Action action) {
   (void)action;
   return false;
 }
 
-void Page::render() {
+void UiPage::render() {
   renderer.setRenderMode(GfxRenderer::BW);
   renderer.clearScreen();
   content();
@@ -146,8 +148,8 @@ void Page::render() {
   renderer.displayBufferAsync();
 }
 
-int Page::contentBottomY(const GfxRenderer& renderer) {
+int UiPage::contentBottomY(const GfxRenderer& renderer) {
   return renderer.getScreenHeight() - TAB_BAR_HEIGHT - CONTENT_BOTTOM_PADDING;
 }
 
-int Page::tabBarTopY(const GfxRenderer& renderer) { return renderer.getScreenHeight() - TAB_BAR_HEIGHT; }
+int UiPage::tabBarTopY(const GfxRenderer& renderer) { return renderer.getScreenHeight() - TAB_BAR_HEIGHT; }

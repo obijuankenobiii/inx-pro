@@ -2,7 +2,7 @@
 
 /**
  * @file Menu.h
- * @brief Menu for the redesigned Page shell.
+ * @brief Menu for the redesigned UiPage shell.
  */
 
 class GfxRenderer;
@@ -25,6 +25,17 @@ class Menu {
   static constexpr int bottomSize = 70;
   static constexpr int bottomHeight = bottomSize + bottomPadding;
   static constexpr int height = topPadding + iconSize + bottomPadding;
+
+  /** Touch target for the top-left hamburger control. Murphy needs a larger target because its digitizer is less forgiving near small controls. */
+  static bool hamburgerHit(const int x, const int y) {
+#if FREEINK_DEVICE_MURPHY_M4
+    constexpr int touchPadding = 28;
+#else
+    constexpr int touchPadding = 10;
+#endif
+    return x >= leftMargin - touchPadding && x < leftMargin + iconSize + touchPadding &&
+           y >= topPadding - touchPadding && y < topPadding + iconSize + touchPadding;
+  }
 
   explicit Menu(GfxRenderer& renderer);
   virtual ~Menu() = default;

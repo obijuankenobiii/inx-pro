@@ -86,10 +86,10 @@ bool removeTree(const std::string& path, int& removed) {
 }  // namespace
 
 Home::Home(GfxRenderer& renderer, MappedInputManager& mappedInput)
-    : Page("Home", renderer, mappedInput), widgetLayout(renderer), shortcutList(renderer) {}
+    : UiPage("Home", renderer, mappedInput), widgetLayout(renderer), shortcutList(renderer) {}
 
 void Home::onEnter() {
-  Page::onEnter();
+  UiPage::onEnter();
   renderer.syncWriteBufferFromActive();
   carouselIndex = 0;
   favoriteIndex = 0;
@@ -106,7 +106,7 @@ void Home::onEnter() {
 }
 
 void Home::menu() {
-  Page::menu();
+  UiPage::menu();
 #if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4
   if (!isLightDrawerOpen()) drawBattery(renderer);
 #else
@@ -284,11 +284,7 @@ bool Home::handleTap() {
   if (!mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy)) return false;
   const int tapX = static_cast<int>(tapNx * renderer.getScreenWidth());
   const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
-  const int hamburgerX = navigation::Menu::leftMargin - 10;
-  const int hamburgerY = navigation::Menu::topPadding - 10;
-  const int hamburgerSize = navigation::Menu::iconSize;
-  if (tapX >= hamburgerX && tapX < hamburgerX + hamburgerSize && tapY >= hamburgerY &&
-      tapY < hamburgerY + hamburgerSize) {
+  if (navigation::Menu::hamburgerHit(tapX, tapY)) {
     shortcutDrawerOpen = true;
     updateRequired = true;
     renderPage();

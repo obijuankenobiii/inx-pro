@@ -30,7 +30,7 @@
 #include "util/LibraryIndex.h"
 
 namespace {
-constexpr int kListItemHeight = Page::LIST_ITEM_HEIGHT;
+constexpr int kListItemHeight = UiPage::LIST_ITEM_HEIGHT;
 constexpr int kActionButtonWidth = 180;
 constexpr int kActionButtonHeight = Button::height;
 constexpr int kActionButtonBottomMargin = 64;

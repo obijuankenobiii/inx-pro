@@ -291,9 +291,9 @@ class CategorySettingsActivity final : public ActivityWithSubactivity, public na
         embedded(embedded) {
     tabSelectorIndex = 2;
     const int contentTop =
-        navigation::Menu::height + 20 + Page::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra;
+        navigation::Menu::height + 20 + UiPage::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra;
     const int contentBottom = renderer.getScreenHeight() - navigation::Menu::bottomHeight - 10;
-    itemsPerPage = (contentBottom - contentTop) / Page::LIST_ITEM_HEIGHT;
+    itemsPerPage = (contentBottom - contentTop) / UiPage::LIST_ITEM_HEIGHT;
     if (itemsPerPage < 1) itemsPerPage = 1;
 
     groupExpanded_.fill(false);

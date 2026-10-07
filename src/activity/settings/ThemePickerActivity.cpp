@@ -23,7 +23,7 @@
 
 namespace {
 
-constexpr int kRowHeight = Page::LIST_ITEM_HEIGHT;
+constexpr int kRowHeight = UiPage::LIST_ITEM_HEIGHT;
 constexpr int kTop = 80;
 constexpr int kPreviewTop = 130;
 constexpr int kLayoutTabTop = 78;

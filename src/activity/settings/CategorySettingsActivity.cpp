@@ -225,7 +225,7 @@ bool CategorySettingsActivity::groupInput() {
 
   std::vector<int> rows;
   detailRows(rows);
-  const int rowHeight = Page::LIST_ITEM_HEIGHT;
+  const int rowHeight = UiPage::LIST_ITEM_HEIGHT;
   const int listTop = navigation::Menu::height + 20;
   const int visible = std::max(1, (renderer.getScreenHeight() - listTop - 10) / rowHeight);
   const int maxScroll = std::max(0, static_cast<int>(rows.size()) - visible);
@@ -321,7 +321,7 @@ void CategorySettingsActivity::renderGroupPage() {
   const int pageHeight = renderer.getScreenHeight();
   constexpr int titleFont = MONTSERRAT_16_FONT_ID;
   const int itemFont = systemFontId();
-  constexpr int rowHeight = Page::LIST_ITEM_HEIGHT;
+  constexpr int rowHeight = UiPage::LIST_ITEM_HEIGHT;
   const int listTop = navigation::Menu::height + 20;
   const int visible = std::max(1, (pageHeight - listTop - 10) / rowHeight);
 
@@ -855,7 +855,7 @@ void CategorySettingsActivity::loop() {
                                     (renderer.getScreenHeight() - (navigation::Menu::height + 20) - 10) /
                                         UiLayout::LIST_ITEM_HEIGHT))
               : PopUp::bounds(renderer, static_cast<int>(selectorOptions.size()),
-                              navigation::Menu::height + 20 + Page::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra)
+                              navigation::Menu::height + 20 + UiPage::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra)
                     .rows;
       const int maxScroll = std::max(0, static_cast<int>(selectorOptions.size()) - visibleRows);
       const int page = std::max(1, visibleRows);
@@ -878,7 +878,7 @@ void CategorySettingsActivity::loop() {
         const int tapX = static_cast<int>(tapNx * pageWidth);
         const int tapY = static_cast<int>(tapNy * pageHeight);
         const int listTop = navigation::Menu::height + 20;
-        const int rowHeight = Page::LIST_ITEM_HEIGHT;
+        const int rowHeight = UiPage::LIST_ITEM_HEIGHT;
         const int rows = std::max(0, std::min(static_cast<int>(selectorOptions.size()),
                                               (pageHeight - listTop - 10) / rowHeight));
 
@@ -905,7 +905,7 @@ void CategorySettingsActivity::loop() {
       if (mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy)) {
         const int pageWidth = renderer.getScreenWidth();
         const int pageHeight = renderer.getScreenHeight();
-        const int contentTop = navigation::Menu::height + 20 + Page::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra;
+        const int contentTop = navigation::Menu::height + 20 + UiPage::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra;
         const PopUpBounds box = PopUp::bounds(renderer, static_cast<int>(selectorOptions.size()), contentTop);
         const int tapX = static_cast<int>(tapNx * pageWidth);
         const int tapY = static_cast<int>(tapNy * pageHeight);
@@ -985,7 +985,7 @@ void CategorySettingsActivity::loop() {
     if (mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy)) {
       const int tapX = static_cast<int>(tapNx * renderer.getScreenWidth());
       const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
-      const int startY = navigation::Menu::height + 20 + Page::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra;
+      const int startY = navigation::Menu::height + 20 + UiPage::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra;
       const int tappedIndex =
           TouchHitTest::uniformListIndex(tapY, startY, UiLayout::LIST_ITEM_HEIGHT, itemsPerPage, scrollOffset,
                                          static_cast<int>(menuItems.size()));
@@ -1158,7 +1158,7 @@ void CategorySettingsActivity::renderSelectorOverlay() {
     const int pageHeight = renderer.getScreenHeight();
     const int titleFont = systemFontId();
     const int itemFont = systemFontId();
-    constexpr int rowHeight = Page::LIST_ITEM_HEIGHT;
+    constexpr int rowHeight = UiPage::LIST_ITEM_HEIGHT;
     const int listTop = navigation::Menu::height + 20;
     const int rows = std::max(0, std::min(static_cast<int>(selectorOptions.size()),
                                           (pageHeight - listTop - 10) / rowHeight));
@@ -1192,7 +1192,7 @@ void CategorySettingsActivity::renderSelectorOverlay() {
   }
 
   const int pageHeight = renderer.getScreenHeight();
-  const int contentTop = navigation::Menu::height + 20 + Page::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra;
+  const int contentTop = navigation::Menu::height + 20 + UiPage::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra;
   const PopUpBounds box = PopUp::bounds(renderer, static_cast<int>(selectorOptions.size()), contentTop);
   const int maxScroll = std::max(0, static_cast<int>(selectorOptions.size()) - box.rows);
   selectorScrollOffset = std::max(0, std::min(selectorScrollOffset, maxScroll));
@@ -1230,7 +1230,7 @@ void CategorySettingsActivity::render() {
 
   const auto pageWidth = renderer.getScreenWidth();
 
-  int startY = navigation::Menu::height + 20 + Page::LIST_ITEM_HEIGHT + 10 +
+  int startY = navigation::Menu::height + 20 + UiPage::LIST_ITEM_HEIGHT + 10 +
                kEmbeddedListTopExtra;
 
   const char* backLbl = selectorOpen ? "Cancel" : (backButtonLabel ? backButtonLabel : "\xC2\xAB Back");
@@ -1239,7 +1239,7 @@ void CategorySettingsActivity::render() {
   const char* nextLbl = selectorOpen ? "Page +" : "";
   const auto labels = mappedInput.mapLabels(backLbl, confirmLbl, prevLbl, nextLbl);
 
-  constexpr int itemHeight = Page::LIST_ITEM_HEIGHT;
+  constexpr int itemHeight = UiPage::LIST_ITEM_HEIGHT;
 
   int visibleCount = 0;
   for (int i = 0; i < itemsPerPage && (i + scrollOffset) < (int)menuItems.size(); i++) {

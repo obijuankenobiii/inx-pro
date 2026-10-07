@@ -5,9 +5,9 @@
  * @brief Hardware abstraction for the Murphy M4.
  *
  * Same public interface as lib/hal_sticky/HalGPIO.h so src/ compiles unchanged.
- * Delegates to freeink-sdk (git submodule) — InputManager (Murphy's FT6336U
- * touch bus), BatteryMonitor, and the ESP32-S3 system RTC clock path used by
- * the stock MurphyOS firmware.
+ * Delegates buttons to freeink-sdk's InputManager and uses the local
+ * MurphyTouchDriver for the FT6336U touch bus. BatteryMonitor and the
+ * ESP32-S3 system RTC path match the stock MurphyOS firmware.
  *
  * Peripherals the Murphy M4 does NOT have, and which are therefore stubbed rather
  * than wired: IMU (no tilt-to-turn), SHT40 environment sensor, PDM microphone
@@ -20,6 +20,8 @@
 
 #include <Arduino.h>
 #include <InputManager.h>
+
+#include "MurphyTouchDriver.h"
 
 class HalGPIO {
  public:
@@ -100,6 +102,7 @@ class HalGPIO {
 
  private:
   InputManager inputMgr;
+  MurphyTouchDriver touchDriver;
 
   uint8_t touchPressedEvents = 0;
   uint8_t touchReleasedEvents = 0;

@@ -29,7 +29,7 @@ class FontManagerActivity final : public ActivityWithSubactivity {
   enum class State : uint8_t { Ready, Downloading, Failed };
   enum class CategoryFilter : uint8_t { All, SansSerif, Serif };
 
-  static constexpr int kRowHeight = Page::LIST_ITEM_HEIGHT;
+  static constexpr int kRowHeight = UiPage::LIST_ITEM_HEIGHT;
   static constexpr int kFilterHeight = Button::height - 10;
 
   const std::function<void()> goBack_;

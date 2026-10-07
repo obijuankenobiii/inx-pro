@@ -1,5 +1,9 @@
 #include "PluginManager.h"
 
+#ifdef SIMULATOR
+#include <Arduino.h>
+#endif
+
 #include <ArduinoJson.h>
 #include <FsHelpers.h>
 #include <SDCardManager.h>
@@ -42,7 +46,7 @@ struct StaticPackage {
 
 constexpr StaticPackage kStaticPackages[] = {
     {"study-cards", "Anki Export", "Adds anki supported export", "plugin/study-cards.zip"},
-    {"xtc-converter", "CBZ / CBR to XTC", "Convert comic archives in the browser and upload XTC files.", "plugin/xtc-converter.zip?v=1.0.8"},
+    {"xtc-converter", "CBZ / CBR to XTC", "Convert comic archives in the browser and upload XTC files.", "plugin/xtc-converter.zip"},
 };
 
 bool safeId(const std::string& id) {

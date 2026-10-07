@@ -28,7 +28,7 @@ class DictionaryManagerActivity final : public ActivityWithSubactivity {
  private:
   enum class State : uint8_t { Ready, Downloading, Failed };
 
-  static constexpr int kRowHeight = Page::LIST_ITEM_HEIGHT;
+  static constexpr int kRowHeight = UiPage::LIST_ITEM_HEIGHT;
 
   const std::function<void()> goBack_;
   std::vector<DictionaryPackageManager::Package> packages_;

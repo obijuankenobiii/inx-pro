@@ -16,7 +16,7 @@
  * activities. It only paints the new top menu and delegates page content to
  * the derived page.
  */
-class Page : public Activity, public navigation::Menu {
+class UiPage : public Activity, public navigation::Menu {
  public:
   static constexpr int LIST_ITEM_HEIGHT = UiLayout::LIST_ITEM_HEIGHT;      ///< one row in any settings/menu list
   static constexpr int HEADER_HEIGHT = UiLayout::HEADER_HEIGHT;         ///< in-page header band
@@ -31,8 +31,8 @@ class Page : public Activity, public navigation::Menu {
   /** Top edge of the bottom tab bar. */
   static int tabBarTopY(const GfxRenderer& renderer);
 
-  Page(const char* name, GfxRenderer& renderer, MappedInputManager& mappedInput);
-  ~Page() override = default;
+  UiPage(const char* name, GfxRenderer& renderer, MappedInputManager& mappedInput);
+  ~UiPage() override;
 
   bool allowGlobalPowerRefresh() override { return true; }
   void onEnter() override;

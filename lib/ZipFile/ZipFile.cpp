@@ -5,6 +5,10 @@
 
 #include "ZipFile.h"
 
+#ifdef SIMULATOR
+#include <esp_task_wdt.h>
+#endif
+
 #include <FsHelpers.h>
 #include <HardwareSerial.h>
 #include <SDCardManager.h>

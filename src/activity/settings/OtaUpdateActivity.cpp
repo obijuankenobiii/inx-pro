@@ -27,8 +27,8 @@
 
 namespace {
 constexpr uint32_t kDisplayTaskStack = 8192;
-constexpr int kSourceItemHeight = Page::LIST_ITEM_HEIGHT;
-constexpr int kFirmwareItemHeight = Page::LIST_ITEM_HEIGHT;
+constexpr int kSourceItemHeight = UiPage::LIST_ITEM_HEIGHT;
+constexpr int kFirmwareItemHeight = UiPage::LIST_ITEM_HEIGHT;
 const std::string kEmptyPath;
 
 bool hasBinExtension(const std::string& path) {

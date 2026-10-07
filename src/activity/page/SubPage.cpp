@@ -59,7 +59,7 @@ bool SubPage::closeInput(GfxRenderer& renderer, MappedInputManager& mappedInput,
 
 SubPage::SubPage(const char* name, GfxRenderer& renderer, MappedInputManager& mappedInput,
                  std::function<void()> close)
-    : Page(name, renderer, mappedInput), close(std::move(close)) {}
+    : UiPage(name, renderer, mappedInput), close(std::move(close)) {}
 
 void SubPage::menu() {
   title();

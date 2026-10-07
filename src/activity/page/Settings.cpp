@@ -130,7 +130,7 @@ std::vector<SettingInfo> buildSystemSettings() {
   settings.push_back(SettingInfo::Enum("Time to Sleep", &SystemSetting::sleepTimeout,
                                        {"1 min", "5 min", "10 min", "15 min", "30 min"},
                                        GroupType::DEVICE_ADVANCED));
-  settings.push_back(SettingInfo::Enum("Boot Mode", &SystemSetting::bootSetting, {"Recent Book", "Home Page"},
+  settings.push_back(SettingInfo::Enum("Boot Mode", &SystemSetting::bootSetting, {"Recent Book", "Home UiPage"},
                                        GroupType::DEVICE_ADVANCED));
   settings.push_back(SettingInfo::Action("Language", GroupType::DEVICE_ADVANCED));
 #if FREEINK_DEVICE_STICKY
@@ -157,10 +157,10 @@ const char* panelBackLabel(const SettingsPanel panel) {
 
 }
 
-Settings::Settings(GfxRenderer& renderer, MappedInputManager& mappedInput) : Page("Settings", renderer, mappedInput) {}
+Settings::Settings(GfxRenderer& renderer, MappedInputManager& mappedInput) : UiPage("Settings", renderer, mappedInput) {}
 
 void Settings::onEnter() {
-  Page::onEnter();
+  UiPage::onEnter();
   currentPanel = SettingsPanel::System;
   nextPanel = SettingsPanel::System;
   pending = Pending::None;
@@ -170,11 +170,11 @@ void Settings::onEnter() {
 
 void Settings::onExit() {
   closePanel();
-  Page::onExit();
+  UiPage::onExit();
 }
 
 void Settings::loop() {
-  if (!panelDetailOpen() && Page::menuInput()) return;
+  if (!panelDetailOpen() && UiPage::menuInput()) return;
 
   if (!panelDetailOpen() && panelTabsInput()) return;
 
@@ -365,7 +365,7 @@ void Settings::content() {
 void Settings::menu() {
   if (!panelDetailOpen() || (readerPanel && readerPanel->isPopupOpen()) ||
       (presetsPanel && presetsPanel->isPopupOpen())) {
-    Page::menu();
+    UiPage::menu();
   }
 }
 

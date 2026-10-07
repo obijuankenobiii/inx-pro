@@ -799,7 +799,7 @@ std::pair<int, int> Statistics::drawGlobalRecentThumbBlock(int boxX, int yTop, c
 }
 
 void Statistics::onEnter() {
-  Page::onEnter();
+  UiPage::onEnter();
 
   hydrateFromStorage();
   viewIndex = 0;
@@ -820,7 +820,7 @@ void Statistics::onEnter() {
 }
 
 void Statistics::onExit() {
-  Page::onExit();
+  UiPage::onExit();
 
   std::vector<BookReadingStats>().swap(allBooksStats);
   std::vector<uint8_t>().swap(loadedBookStatsFlags_);
@@ -875,11 +875,7 @@ bool Statistics::handleHamburgerTap() {
   if (!mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy)) return false;
   const int tapX = static_cast<int>(tapNx * renderer.getScreenWidth());
   const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
-  const int hamburgerX = navigation::Menu::leftMargin - 10;
-  const int hamburgerY = navigation::Menu::topPadding - 10;
-  const int hamburgerSize = navigation::Menu::iconSize;
-  if (tapX < hamburgerX || tapX >= hamburgerX + hamburgerSize || tapY < hamburgerY ||
-      tapY >= hamburgerY + hamburgerSize) {
+  if (!navigation::Menu::hamburgerHit(tapX, tapY)) {
     mappedInput.restoreTouchTapInScreen(renderer, tapNx, tapNy);
     return false;
   }

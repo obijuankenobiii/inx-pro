@@ -163,7 +163,8 @@ void HalGPIO::begin() {
   }
 
   inputMgr.begin();
-  INX_SERIAL.printf("[MURPHY_M4] touch controller ready=%d ranges=x:%u..%u y:%u..%u\n", inputMgr.hasTouch() ? 1 : 0,
+  touchDriver.begin();
+  INX_SERIAL.printf("[MURPHY_M4] touch controller ready=%d ranges=x:%u..%u y:%u..%u\n", touchDriver.hasTouch() ? 1 : 0,
                  BoardConfig::ACTIVE.touch.rawMinX, BoardConfig::ACTIVE.touch.rawMaxX,
                  BoardConfig::ACTIVE.touch.rawMinY, BoardConfig::ACTIVE.touch.rawMaxY);
 }
@@ -175,22 +176,15 @@ void HalGPIO::serviceTouchGestures() {
   touchSwipeStartNx = 0.0f;
   touchSwipeStartNy = 0.0f;
   if (suppressTouchUntilRelease) {
-    if (!inputMgr.isTouchPressed()) suppressTouchUntilRelease = false;
+    if (!touchDriver.isPressed()) suppressTouchUntilRelease = false;
     return;
   }
-  if (!inputMgr.hasTouch()) {
+  if (!touchDriver.hasTouch()) {
     return;
-  }
-
-  if (inputMgr.wasHomeKeyPressed()) {
-    touchPressedEvents |= (1 << BTN_BACK);
-  }
-  if (inputMgr.wasHomeKeyTapped()) {
-    touchReleasedEvents |= (1 << BTN_BACK);
   }
 
   float sx = 0.0f, sy = 0.0f, ex = 0.0f, ey = 0.0f;
-  if (inputMgr.wasSwipe(sx, sy, ex, ey)) {
+  if (touchDriver.wasSwipe(sx, sy, ex, ey)) {
     touchSwipeStartNx = sx;
     touchSwipeStartNy = sy;
     const float dx = ex - sx;
@@ -209,38 +203,40 @@ void HalGPIO::serviceTouchGestures() {
 
 void HalGPIO::update() {
   inputMgr.update();
+  touchDriver.update();
   float pressedNx = 0.0f;
   float pressedNy = 0.0f;
-  if (inputMgr.wasTouchPressedAt(pressedNx, pressedNy)) {
+  const bool touchPressed = touchDriver.wasPressedAt(pressedNx, pressedNy);
+  if (touchPressed) {
     INX_SERIAL.printf("[MURPHY_M4][TOUCH] DOWN native=(%.3f,%.3f)\n", pressedNx, pressedNy);
   }
-  if (inputMgr.wasTouchPressed()) {
-    const InputManager::TouchPoint point = inputMgr.getTouchPoint();
+  if (touchPressed) {
+    const MurphyTouchDriver::TouchPoint point = touchDriver.point();
     INX_SERIAL.printf("[MURPHY_M4][TOUCH] point=(%u,%u) valid=%d\n", point.x, point.y, point.valid ? 1 : 0);
   }
-  if (inputMgr.wasTouchReleased()) {
+  if (touchDriver.wasActivity() && !touchDriver.isPressed()) {
     float tapNx = 0.0f;
     float tapNy = 0.0f;
-    const bool isTap = inputMgr.wasTouchTap(tapNx, tapNy);
+    const bool isTap = touchDriver.wasTap(tapNx, tapNy);
     INX_SERIAL.printf("[MURPHY_M4][TOUCH] UP tap=%d native=(%.3f,%.3f) held=%lu\n", isTap ? 1 : 0, tapNx, tapNy,
-                   inputMgr.lastTouchHeldMs());
+                   touchDriver.lastHeldMs());
   }
   serviceTouchGestures();
 }
 
-bool HalGPIO::hasTouch() const { return inputMgr.hasTouch(); }
+bool HalGPIO::hasTouch() const { return touchDriver.hasTouch(); }
 
-bool HalGPIO::isTouchPressed() const { return inputMgr.isTouchPressed(); }
+bool HalGPIO::isTouchPressed() const { return touchDriver.isPressed(); }
 
-bool HalGPIO::wasTouchPressedAt(float& nx, float& ny) const { return inputMgr.wasTouchPressedAt(nx, ny); }
+bool HalGPIO::wasTouchPressedAt(float& nx, float& ny) const { return touchDriver.wasPressedAt(nx, ny); }
 
-bool HalGPIO::isTouchHeldAt(float& nx, float& ny) const { return inputMgr.isTouchHeldAt(nx, ny); }
+bool HalGPIO::isTouchHeldAt(float& nx, float& ny) const { return touchDriver.isHeldAt(nx, ny); }
 
-bool HalGPIO::wasTouchActivity() const { return inputMgr.wasTouchActivity(); }
+bool HalGPIO::wasTouchActivity() const { return touchDriver.wasActivity(); }
 
 bool HalGPIO::wasTouchTap(float& nx, float& ny) const {
   if (suppressTouchUntilRelease) return false;
-  const bool tapped = inputMgr.wasTouchTap(nx, ny);
+  const bool tapped = touchDriver.wasTap(nx, ny);
   if (tapped) {
     INX_SERIAL.printf("[MURPHY_M4] wasTouchTap() -> nx=%.3f ny=%.3f\n", nx, ny);
   }
@@ -254,7 +250,7 @@ bool HalGPIO::touchSwipeStart(float& nx, float& ny) const {
   return true;
 }
 
-unsigned long HalGPIO::lastTouchHeldMs() const { return inputMgr.lastTouchHeldMs(); }
+unsigned long HalGPIO::lastTouchHeldMs() const { return touchDriver.lastHeldMs(); }
 
 void HalGPIO::injectOneShotPress(uint8_t) {
 }
@@ -276,7 +272,8 @@ bool HalGPIO::wasAnyReleased() const { return inputMgr.wasAnyReleased() || touch
 unsigned long HalGPIO::getHeldTime() const { return inputMgr.getHeldTime(); }
 
 void HalGPIO::ignoreCurrentTouchUntilRelease() {
-  if (!inputMgr.isTouchPressed()) return;
+  if (!touchDriver.isPressed()) return;
+  touchDriver.suppressCurrentContact();
   suppressTouchUntilRelease = true;
   touchSwipeDirection = TouchSwipe::None;
   touchPressedEvents = 0;

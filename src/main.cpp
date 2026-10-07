@@ -156,11 +156,17 @@ void switchTo(Args&&... args) {
 #endif
   if (currentActivity) {
     currentActivity->onExit();
+#ifdef SIMULATOR
+    // The native simulator's abstract Page vtable emits a trap in its deleting
+    // destructor; keep the old activity alive for the process lifetime so UI
+    // navigation can still exercise the real renderer.
+#else
     delete currentActivity;
+#endif
     currentActivity = nullptr;
   }
 
-#if FREEINK_DEVICE_X4PRO
+#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4
   input.discardPendingTouchTap();
   input.discardPendingSwipe();
   input.ignoreCurrentTouch();

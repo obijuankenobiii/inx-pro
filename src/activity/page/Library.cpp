@@ -312,7 +312,7 @@ bool removeTree(const std::string& path, int& removed) {
 
 Library::Library(GfxRenderer& renderer, MappedInputManager& mappedInput, std::string path,
                  PluginManager::LibraryMenuLink pluginMenu)
-    : Page("Library", renderer, mappedInput),
+    : UiPage("Library", renderer, mappedInput),
       path(cleanPath(std::move(path))),
       pluginMenu_(std::move(pluginMenu)),
       pluginMode_(!pluginMenu_.id.empty()),
@@ -329,7 +329,7 @@ Library::Library(GfxRenderer& renderer, MappedInputManager& mappedInput, std::st
             [this](const LibraryIndex::Book& group, const int limit) { return groupCovers(group, limit); }) {}
 
 void Library::onEnter() {
-  Page::onEnter();
+  UiPage::onEnter();
   switch (SETTINGS.libraryMode) {
     case SystemSetting::LIBRARY_LIST:
       view = View::List;
@@ -1322,11 +1322,7 @@ bool Library::handleSidebarTap() {
 
   const int tapX = static_cast<int>(tapNx * renderer.getScreenWidth());
   const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
-  const int hamburgerX = navigation::Menu::leftMargin - 10;
-  const int hamburgerY = navigation::Menu::topPadding - 10;
-  const int hamburgerSize = navigation::Menu::iconSize;
-  if (tapX >= hamburgerX && tapX < hamburgerX + hamburgerSize && tapY >= hamburgerY &&
-      tapY < hamburgerY + hamburgerSize) {
+  if (navigation::Menu::hamburgerHit(tapX, tapY)) {
     sidebarOpen = true;
     sidebarScrollOffset_ = 0;
     updateRequired = true;
@@ -1538,7 +1534,7 @@ bool Library::menuAction(const navigation::Menu::Action action) {
 }
 
 void Library::menu() {
-  Page::menu();
+  UiPage::menu();
   if (sortOpen) sortDropdown();
   if (filterOpen) filterPopup();
   if (popupBook >= 0 && popupBook < static_cast<int>(items.size())) popup();
