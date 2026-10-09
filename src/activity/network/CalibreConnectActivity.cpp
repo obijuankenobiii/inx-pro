@@ -78,13 +78,28 @@ void CalibreConnectActivity::onEnter() {
   if (alreadyConnected) {
     startWebServer();
   }
+
+  renderer.syncWriteBufferFromActive();
 }
 
 /**
  * @brief Cleans up resources when exiting the activity
  */
 void CalibreConnectActivity::onExit() {
-  ActivityWithSubactivity::onExit();
+  if (renderingMutex) {
+    xSemaphoreTake(renderingMutex, portMAX_DELAY);
+    updateRequired = false;
+    if (displayTaskHandle) {
+      vTaskDeleteWithCaps(displayTaskHandle);
+      displayTaskHandle = nullptr;
+    }
+    xSemaphoreGive(renderingMutex);
+    vSemaphoreDelete(renderingMutex);
+    renderingMutex = nullptr;
+  } else if (displayTaskHandle) {
+    vTaskDeleteWithCaps(displayTaskHandle);
+    displayTaskHandle = nullptr;
+  }
 
   stopWebServer();
   MDNS.end();
@@ -94,15 +109,7 @@ void CalibreConnectActivity::onExit() {
   delay(30);
   WiFi.mode(WIFI_OFF);
 
-  if (renderingMutex) {
-    xSemaphoreTake(renderingMutex, portMAX_DELAY);
-    if (displayTaskHandle) {
-      vTaskDeleteWithCaps(displayTaskHandle);
-      displayTaskHandle = nullptr;
-    }
-    vSemaphoreDelete(renderingMutex);
-    renderingMutex = nullptr;
-  }
+  ActivityWithSubactivity::onExit();
 }
 
 /**

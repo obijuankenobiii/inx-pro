@@ -6,6 +6,7 @@
 
 #include <EpdFontFamily.h>
 #include <GfxRenderer.h>
+#include <RtlText.h>
 
 namespace {
 
@@ -36,11 +37,15 @@ int segmentWidth(const GfxRenderer& renderer, const int fontId, const std::strin
 int wordWidth(const GfxRenderer& renderer, const int fontId, const std::string& text,
               const EpdFontFamily::Style style, const uint8_t bionicPrefix, const bool smallCaps,
               const uint8_t verticalAlign) {
-  if (bionicPrefix == 0 || bionicPrefix >= text.size()) {
+  if (bionicPrefix == 0) {
     return segmentWidth(renderer, fontId, text, style, smallCaps, verticalAlign);
   }
-  return segmentWidth(renderer, fontId, text.substr(0, bionicPrefix), bionicStyle(style), smallCaps, verticalAlign) +
-         segmentWidth(renderer, fontId, text.substr(bionicPrefix), style, smallCaps, verticalAlign);
+  std::string prefix;
+  std::string suffix;
+  RtlText::splitBionicWord(text, true, prefix, suffix);
+  if (prefix.empty()) return segmentWidth(renderer, fontId, suffix, style, smallCaps, verticalAlign);
+  return segmentWidth(renderer, fontId, prefix, bionicStyle(style), smallCaps, verticalAlign) +
+         segmentWidth(renderer, fontId, suffix, style, smallCaps, verticalAlign);
 }
 
 void setWordGeometry(PageWordHit& hit, const GfxRenderer& renderer, const int fontId, const int baseY,

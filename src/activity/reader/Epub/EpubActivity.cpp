@@ -2019,7 +2019,7 @@ bool EpubActivity::finishPreparedPageGrayscale(const PreparedPage& prepared) {
     renderer.renderGrayscalePasses(/*quality=*/false, /*preserveText=*/true, [&] {
       renderer.clearScreen(0x00);
       page->render(renderer, fontId, headerFontId, info.totalMarginLeft, info.totalMarginTop,
-                   /*skipImages=*/false, ImageRenderMode::OneBit);
+                   /*skipImages=*/true, ImageRenderMode::OneBit);
     });
   } else {
     ImageRender::displayGrayscale(renderer, /*quality=*/false, /*preserveText=*/true, [&] {
@@ -2500,7 +2500,7 @@ void EpubActivity::renderContents(Page* page, const int orientedMarginTop,
   } else if (needsTextAntiAliasPass && bwStored && !mediumImageGrayscale) {
     renderer.renderGrayscalePasses(/*quality=*/false, /*preserveText=*/true, [&] {
       renderer.clearScreen(0x00);
-      page->render(renderer, fontId, headerFontId, orientedMarginLeft, orientedMarginTop, /*skipImages=*/false,
+      page->render(renderer, fontId, headerFontId, orientedMarginLeft, orientedMarginTop, /*skipImages=*/true,
                    ImageRenderMode::OneBit);
     });
   } else if (mediumImageGrayscale || (needsTextAntiAliasPass && bwStored)) {

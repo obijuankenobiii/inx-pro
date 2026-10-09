@@ -54,6 +54,13 @@ int scaleMetricRound(const int value, const uint8_t scalePct) {
   return std::max(1, (value * static_cast<int>(scalePct) + kScaleRoundBias) / 100);
 }
 
+// A few converted Arabic font tables contain visible glyphs with a zero
+// advance. Treat those as a normal glyph-width advance; otherwise every
+// following Arabic glyph is painted at the same cursor position.
+int glyphAdvanceX(const EpdGlyph& glyph) {
+  return glyph.advanceX > 0 ? glyph.advanceX : static_cast<int>(glyph.width);
+}
+
 uint8_t mediumTextCodeForLevel(const uint8_t level) {
   return mediumTextCodeTable()[level & 3u];
 }
@@ -148,6 +155,112 @@ bool hasGlyph(const GfxRenderer& gfx, const EpdFontFamily& family, const uint32_
   return family.getGlyph(cp, style) != nullptr;
 }
 
+bool isOverlayMark(const uint32_t cp) {
+  const bool unicodeCombining = (cp >= 0x0300 && cp <= 0x036F) ||
+                                (cp >= 0x1DC0 && cp <= 0x1DFF) ||
+                                (cp >= 0x20D0 && cp <= 0x20FF) ||
+                                (cp >= 0xFE20 && cp <= 0xFE2F);
+  return unicodeCombining || RtlText::isTransparentMark(cp);
+}
+
+struct MarkAnchorMetrics {
+  int cursorX = 0;
+  int left = 0;
+  int width = 0;
+  int top = 0;
+  bool valid = false;
+};
+
+enum class MarkAnchor : uint8_t {
+  CENTER_RAISED,
+  CENTER_NATIVE,
+  RIGHT_NATIVE,
+  LEFT_NATIVE,
+};
+
+MarkAnchor markAnchorFor(const uint32_t cp) {
+  switch (cp) {
+    case 0x05BC:  // dagesh / mapiq / shuruk dot
+    case 0x05BA:  // holam haser for vav
+      return MarkAnchor::CENTER_NATIVE;
+    case 0x05C1:  // shin dot
+      return MarkAnchor::RIGHT_NATIVE;
+    case 0x05B9:  // holam
+    case 0x05C2:  // sin dot
+      return MarkAnchor::LEFT_NATIVE;
+    default:
+      return MarkAnchor::CENTER_RAISED;
+  }
+}
+
+int markAnchorShift(const MarkAnchor anchor, const int baseWidth, const int markWidth) {
+  switch (anchor) {
+    case MarkAnchor::LEFT_NATIVE:
+      return 0;
+    case MarkAnchor::RIGHT_NATIVE:
+      return baseWidth - markWidth;
+    default:
+      return baseWidth / 2 - markWidth / 2;
+  }
+}
+
+int markCursorX(const MarkAnchor anchor, const MarkAnchorMetrics& base, const EpdGlyph& mark) {
+  return base.cursorX + base.left + markAnchorShift(anchor, base.width, mark.width) - mark.left;
+}
+
+int markRaise(const MarkAnchor anchor, const EpdGlyph& mark, const MarkAnchorMetrics& base) {
+  if (anchor != MarkAnchor::CENTER_RAISED || mark.top - mark.height <= 0) return 0;
+  const int gap = mark.top - mark.height - base.top;
+  return gap < 1 ? 1 - gap : 0;
+}
+
+bool lookupGlyph(const GfxRenderer& gfx, const EpdFontFamily& family, const uint32_t cp,
+                 const EpdFontFamily::Style style, EpdGlyph& storage, const EpdGlyph*& glyph,
+                 const bool allowReplacement) {
+  glyph = nullptr;
+  const EpdFontData* data = family.getData(style);
+  if (!data) return false;
+  if (ExternalFont* stream = findStreamingFont(gfx, data)) {
+    if (stream->getGlyphMetadata(cp, storage)) {
+      glyph = &storage;
+    } else if (allowReplacement && stream->getGlyphMetadata(REPLACEMENT_GLYPH, storage)) {
+      glyph = &storage;
+    }
+  } else {
+    glyph = family.getGlyph(cp, style);
+    if (!glyph && allowReplacement) glyph = family.getGlyph(REPLACEMENT_GLYPH, style);
+  }
+  return glyph != nullptr;
+}
+
+bool containsOverlayMark(const char* text) {
+  if (!text) return false;
+  const uint8_t* ptr = reinterpret_cast<const uint8_t*>(text);
+  while (const uint32_t cp = utf8NextCodepoint(&ptr)) {
+    if (isOverlayMark(cp)) return true;
+  }
+  return false;
+}
+
+struct RtlCoverageContext {
+  const GfxRenderer* gfx = nullptr;
+  int fontId = 0;
+  EpdFontFamily::Style style = EpdFontFamily::REGULAR;
+};
+
+bool rtlGlyphIsCovered(const uint32_t cp, void* context) {
+  const auto* coverage = static_cast<const RtlCoverageContext*>(context);
+  if (!coverage || !coverage->gfx) return false;
+  const EpdFontFamily* family = findFontFamily(*coverage->gfx, coverage->fontId);
+  return family && hasGlyph(*coverage->gfx, *family, cp, coverage->style);
+}
+
+const char* prepareTextForFont(const char* text, std::string& storage, const GfxRenderer& gfx,
+                               const int fontId, const EpdFontFamily::Style style) {
+  RtlCoverageContext coverage{&gfx, fontId, style};
+  return RtlText::prepareForRender(text, storage, rtlGlyphIsCovered, &coverage);
+}
+
 int resolveFontForCodepoint(GfxRenderer& gfx, const int fontId, const uint32_t cp,
                             const EpdFontFamily::Style style) {
   const EpdFontFamily* primary = findFontFamily(gfx, fontId);
@@ -182,7 +295,7 @@ int TextRender::getWidth(const int fontId, const char* text, const EpdFontFamily
 
 int TextRender::getUntranslatedWidth(const int fontId, const char* text, const EpdFontFamily::Style style) const {
   std::string visualText;
-  text = RtlText::prepareForRender(text, visualText);
+  text = prepareTextForFont(text, visualText, gfx, fontId, style);
   const EpdFontFamily* primary = findFontFamily(gfx, fontId);
   if (primary == nullptr) {
     INX_SERIAL.printf("[%lu] [GFX] Font %d not found\n", millis(), fontId);
@@ -196,12 +309,15 @@ int TextRender::getUntranslatedWidth(const int fontId, const char* text, const E
   // its width, doubling the hot-path work during EPUB pagination.
   if (ExternalFont* stream = findStreamingFont(gfx, primary->getData(style))) {
     int streamingWidth = 0;
+    int streamingInkRight = 0;
     bool needsFallback = false;
     const uint8_t* streamPtr = reinterpret_cast<const uint8_t*>(text);
     while (const uint32_t cp = utf8NextCodepoint(&streamPtr)) {
+      if (isOverlayMark(cp)) continue;
       EpdGlyph glyph{};
       if (stream->getGlyphMetadata(cp, glyph)) {
-        streamingWidth += glyph.advanceX;
+        streamingInkRight = std::max(streamingInkRight, streamingWidth + glyph.left + glyph.width);
+        streamingWidth += glyphAdvanceX(glyph);
         continue;
       }
 
@@ -211,41 +327,25 @@ int TextRender::getUntranslatedWidth(const int fontId, const char* text, const E
         break;
       }
       if (stream->getGlyphMetadata(REPLACEMENT_GLYPH, glyph)) {
-        streamingWidth += glyph.advanceX;
+        streamingInkRight = std::max(streamingInkRight, streamingWidth + glyph.left + glyph.width);
+        streamingWidth += glyphAdvanceX(glyph);
       }
     }
     if (!needsFallback) {
-      return streamingWidth;
+      return std::max(streamingWidth, streamingInkRight);
     }
   }
 
-  // Keep the original family measurement for the common path. Besides being
-  // cheaper for embedded fonts, this preserves their existing bearing rules.
-  bool hasFallbackGlyph = false;
-  const uint8_t* scan = reinterpret_cast<const uint8_t*>(text);
-  while (const uint32_t cp = utf8NextCodepoint(&scan)) {
-    if (!hasGlyph(gfx, *primary, cp, style)) {
-      const int resolved = resolveFontForCodepoint(gfx, fontId, cp, style);
-      if (resolved != fontId) {
-        hasFallbackGlyph = true;
-        break;
-      }
-    }
-  }
-  if (!hasFallbackGlyph) {
-    const auto& family = *primary;
-    if (findStreamingFont(gfx, family.getData(style)) != nullptr) {
-      return getStreamingTextWidth(family, text, style);
-    }
-    int w = 0;
-    int h = 0;
-    family.getTextDimensions(text, &w, &h, style);
-    return w;
-  }
-
+  // Use the same cursor-advance model as the renderer for every font. The
+  // family bounding-box helper measures ink extents, not the distance the
+  // cursor advances. That difference is especially visible with Arabic
+  // joining forms and their overhangs: a line can be measured too narrowly,
+  // causing the next word to overlap and RTL margins to drift.
   int totalWidth = 0;
+  int inkRight = 0;
   const uint8_t* ptr = reinterpret_cast<const uint8_t*>(text);
   while (const uint32_t cp = utf8NextCodepoint(&ptr)) {
+    if (isOverlayMark(cp)) continue;
     const int resolvedId = resolveFontForCodepoint(gfx, fontId, cp, style);
     const EpdFontFamily* family = findFontFamily(gfx, resolvedId);
     if (!family) continue;
@@ -259,9 +359,12 @@ int TextRender::getUntranslatedWidth(const int fontId, const char* text, const E
       glyph = family->getGlyph(cp, style);
       if (!glyph) glyph = family->getGlyph(REPLACEMENT_GLYPH, style);
     }
-    if (glyph) totalWidth += glyph->advanceX;
+    if (glyph) {
+      inkRight = std::max(inkRight, totalWidth + glyph->left + glyph->width);
+      totalWidth += glyphAdvanceX(*glyph);
+    }
   }
-  return totalWidth;
+  return std::max(totalWidth, inkRight);
 }
 
 int TextRender::getHeight(const int fontId) const { return getLineHeight(fontId); }
@@ -383,7 +486,7 @@ int TextRender::getSpaceWidth(const int fontId) const {
   if (!glyph) {
     glyph = font.getGlyph(REPLACEMENT_GLYPH, EpdFontFamily::REGULAR);
   }
-  return glyph ? glyph->advanceX : 0;
+  return glyph ? glyphAdvanceX(*glyph) : 0;
 }
 
 bool TextRender::supportsAntiAliasing(const int fontId) const {
@@ -408,7 +511,7 @@ bool TextRender::supportsAntiAliasing(const int fontId) const {
 int TextRender::getSmallCapsWidth(const int fontId, const char* text, const EpdFontFamily::Style style) const {
   text = LanguageManager::translateText(text);
   std::string visualText;
-  text = RtlText::prepareForRender(text, visualText);
+  text = prepareTextForFont(text, visualText, gfx, fontId, style);
   if (!text || *text == '\0' || findFontFamily(gfx, fontId) == nullptr) {
     return 0;
   }
@@ -417,6 +520,7 @@ int TextRender::getSmallCapsWidth(const int fontId, const char* text, const EpdF
   const char* ptr = upper.c_str();
   int totalWidth = 0;
   while (const uint32_t cp = utf8NextCodepoint(reinterpret_cast<const uint8_t**>(&ptr))) {
+    if (isOverlayMark(cp)) continue;
     const int resolvedId = resolveFontForCodepoint(gfx, fontId, cp, style);
     const EpdFontFamily* family = findFontFamily(gfx, resolvedId);
     if (!family) continue;
@@ -438,7 +542,7 @@ int TextRender::getSmallCapsWidth(const int fontId, const char* text, const EpdF
     if (!glyph) {
       continue;
     }
-    totalWidth += scaleMetricRound(glyph->advanceX, kSmallCapsScalePct);
+    totalWidth += scaleMetricRound(glyphAdvanceX(*glyph), kSmallCapsScalePct);
   }
   return totalWidth;
 }
@@ -447,7 +551,7 @@ int TextRender::getScaledWidth(const int fontId, const char* text, const uint8_t
                                const EpdFontFamily::Style style) const {
   text = LanguageManager::translateText(text);
   std::string visualText;
-  text = RtlText::prepareForRender(text, visualText);
+  text = prepareTextForFont(text, visualText, gfx, fontId, style);
   if (!text || *text == '\0' || findFontFamily(gfx, fontId) == nullptr) {
     return 0;
   }
@@ -455,6 +559,7 @@ int TextRender::getScaledWidth(const int fontId, const char* text, const uint8_t
   const uint8_t* ptr = reinterpret_cast<const uint8_t*>(text);
   int totalWidth = 0;
   while (const uint32_t cp = utf8NextCodepoint(&ptr)) {
+    if (isOverlayMark(cp)) continue;
     const int resolvedId = resolveFontForCodepoint(gfx, fontId, cp, style);
     const EpdFontFamily* family = findFontFamily(gfx, resolvedId);
     if (!family) continue;
@@ -476,7 +581,7 @@ int TextRender::getScaledWidth(const int fontId, const char* text, const uint8_t
     if (!glyph) {
       continue;
     }
-    totalWidth += scaleMetricRound(glyph->advanceX, scalePct);
+    totalWidth += scaleMetricRound(glyphAdvanceX(*glyph), scalePct);
   }
   return totalWidth;
 }
@@ -504,11 +609,12 @@ void TextRender::rotated90CW(const int fontId, const int x, const int y, const c
                              const EpdFontFamily::Style style) const {
   text = LanguageManager::translateText(text);
   std::string visualText;
-  text = RtlText::prepareForRender(text, visualText);
+  text = prepareTextForFont(text, visualText, gfx, fontId, style);
   if (text == nullptr || *text == '\0' || findFontFamily(gfx, fontId) == nullptr) {
     return;
   }
   int yPos = y;
+  MarkAnchorMetrics lastBase;
 
   uint32_t cp;
   while ((cp = utf8NextCodepoint(reinterpret_cast<const uint8_t**>(&text)))) {
@@ -520,6 +626,17 @@ void TextRender::rotated90CW(const int fontId, const int x, const int y, const c
     ExternalFont* it = findStreamingFont(gfx, fontData);
     EpdGlyph glyphStorage{};
     const EpdGlyph* glyph = nullptr;
+
+    if (isOverlayMark(cp)) {
+      if (!lastBase.valid || !lookupGlyph(gfx, *resolvedFont, cp, style, glyphStorage, glyph, false)) continue;
+      const MarkAnchor anchor = markAnchorFor(cp);
+      // In the rotated coordinate system the horizontal anchor becomes a
+      // vertical cursor position. The mark remains zero-advance.
+      int markY = lastBase.cursorX - lastBase.left - markAnchorShift(anchor, lastBase.width, glyph->width) + glyph->left;
+      int markX = x;
+      renderChar(*resolvedFont, cp, &markX, &markY, black, style, false);
+      continue;
+    }
 
     if (it) {
       if (it->getGlyphMetadata(cp, glyphStorage) || it->getGlyphMetadata(REPLACEMENT_GLYPH, glyphStorage)) {
@@ -534,6 +651,18 @@ void TextRender::rotated90CW(const int fontId, const int x, const int y, const c
 
     if (!glyph) {
       continue;
+    }
+
+    const int baseY = yPos;
+
+    if (fontData->bitmap != nullptr && !embeddedGlyphBitmapIsValid(fontData, glyph)) {
+      const EpdGlyph* replacement = resolvedFont->getGlyph(REPLACEMENT_GLYPH, style);
+      if (embeddedGlyphBitmapIsValid(fontData, replacement)) {
+        glyph = replacement;
+      } else {
+        yPos -= glyphAdvanceX(*glyph);
+        continue;
+      }
     }
 
     uint8_t localStackBuffer[1024];
@@ -574,7 +703,8 @@ void TextRender::rotated90CW(const int fontId, const int x, const int y, const c
         }
       }
     }
-    yPos -= glyph->advanceX;
+    lastBase = {baseY, glyph->left, glyph->width, glyph->top, true};
+    yPos -= glyphAdvanceX(*glyph);
   }
 }
 
@@ -587,7 +717,7 @@ void TextRender::render(const int fontId, const int x, const int y, const char* 
 void TextRender::renderUntranslated(const int fontId, const int x, const int y, const char* text, const bool black,
                                     const EpdFontFamily::Style style) const {
   std::string visualText;
-  text = RtlText::prepareForRender(text, visualText);
+  text = prepareTextForFont(text, visualText, gfx, fontId, style);
   const int yPos = y + getFontAscenderSize(fontId);
   int xpos = x;
 
@@ -601,10 +731,33 @@ void TextRender::renderUntranslated(const int fontId, const int x, const int y, 
   }
   uint32_t cp;
   int yCursor = yPos;
+  MarkAnchorMetrics lastBase;
   while ((cp = utf8NextCodepoint(reinterpret_cast<const uint8_t**>(&text)))) {
     const int resolvedId = resolveFontForCodepoint(gfx, fontId, cp, style);
     const EpdFontFamily* resolvedFont = findFontFamily(gfx, resolvedId);
-    if (resolvedFont) renderChar(*resolvedFont, cp, &xpos, &yCursor, black, style, false);
+    if (!resolvedFont) continue;
+
+    EpdGlyph glyphStorage{};
+    const EpdGlyph* glyph = nullptr;
+    if (isOverlayMark(cp)) {
+      // Arabic harakat and Hebrew niqqud have no cursor advance. Draw them
+      // over the preceding base glyph; rendering them at the current cursor
+      // is what caused the visible overlap reported on Arabic pages.
+      if (!lastBase.valid || !lookupGlyph(gfx, *resolvedFont, cp, style, glyphStorage, glyph, false)) continue;
+      const MarkAnchor anchor = markAnchorFor(cp);
+      int markX = markCursorX(anchor, lastBase, *glyph);
+      int markY = yPos - markRaise(anchor, *glyph, lastBase);
+      renderChar(*resolvedFont, cp, &markX, &markY, black, style, false);
+      continue;
+    }
+
+    const int baseX = xpos;
+    renderChar(*resolvedFont, cp, &xpos, &yCursor, black, style, false);
+    if (lookupGlyph(gfx, *resolvedFont, cp, style, glyphStorage, glyph, true)) {
+      lastBase = {baseX, glyph->left, glyph->width, glyph->top, true};
+    } else {
+      lastBase.valid = false;
+    }
   }
 }
 
@@ -612,7 +765,7 @@ void TextRender::renderGray(const int fontId, const int x, const int y, const ch
                             const EpdFontFamily::Style style) const {
   text = LanguageManager::translateText(text);
   std::string visualText;
-  text = RtlText::prepareForRender(text, visualText);
+  text = prepareTextForFont(text, visualText, gfx, fontId, style);
   const int yPos = y + getFontAscenderSize(fontId);
   int xpos = x;
 
@@ -625,10 +778,30 @@ void TextRender::renderGray(const int fontId, const int x, const int y, const ch
   }
   uint32_t cp;
   int yCursor = yPos;
+  MarkAnchorMetrics lastBase;
   while ((cp = utf8NextCodepoint(reinterpret_cast<const uint8_t**>(&text)))) {
     const int resolvedId = resolveFontForCodepoint(gfx, fontId, cp, style);
     const EpdFontFamily* resolvedFont = findFontFamily(gfx, resolvedId);
-    if (resolvedFont) renderChar(*resolvedFont, cp, &xpos, &yCursor, black, style, true);
+    if (!resolvedFont) continue;
+
+    EpdGlyph glyphStorage{};
+    const EpdGlyph* glyph = nullptr;
+    if (isOverlayMark(cp)) {
+      if (!lastBase.valid || !lookupGlyph(gfx, *resolvedFont, cp, style, glyphStorage, glyph, false)) continue;
+      const MarkAnchor anchor = markAnchorFor(cp);
+      int markX = markCursorX(anchor, lastBase, *glyph);
+      int markY = yPos - markRaise(anchor, *glyph, lastBase);
+      renderChar(*resolvedFont, cp, &markX, &markY, black, style, true);
+      continue;
+    }
+
+    const int baseX = xpos;
+    renderChar(*resolvedFont, cp, &xpos, &yCursor, black, style, true);
+    if (lookupGlyph(gfx, *resolvedFont, cp, style, glyphStorage, glyph, true)) {
+      lastBase = {baseX, glyph->left, glyph->width, glyph->top, true};
+    } else {
+      lastBase.valid = false;
+    }
   }
 }
 
@@ -636,7 +809,7 @@ int TextRender::renderScaled(const int fontId, const int x, const int y, const c
                              const bool black, const EpdFontFamily::Style style) const {
   text = LanguageManager::translateText(text);
   std::string visualText;
-  text = RtlText::prepareForRender(text, visualText);
+  text = prepareTextForFont(text, visualText, gfx, fontId, style);
   if (text == nullptr || *text == '\0') {
     return x;
   }
@@ -648,12 +821,43 @@ int TextRender::renderScaled(const int fontId, const int x, const int y, const c
   const int yPos = y + getFontAscenderSize(fontId);
   int xpos = x;
   int yCursor = yPos;
+  MarkAnchorMetrics lastBase;
 
   uint32_t cp;
   while ((cp = utf8NextCodepoint(reinterpret_cast<const uint8_t**>(&text)))) {
     const int resolvedId = resolveFontForCodepoint(gfx, fontId, cp, style);
     const EpdFontFamily* resolvedFont = findFontFamily(gfx, resolvedId);
-    if (resolvedFont) renderScaledChar(*resolvedFont, cp, &xpos, &yCursor, black, style, scalePct);
+    if (!resolvedFont) continue;
+
+    EpdGlyph glyphStorage{};
+    const EpdGlyph* glyph = nullptr;
+    if (isOverlayMark(cp)) {
+      if (!lastBase.valid || !lookupGlyph(gfx, *resolvedFont, cp, style, glyphStorage, glyph, false)) continue;
+      const MarkAnchor anchor = markAnchorFor(cp);
+      const int scaledLeft = (glyph->left * static_cast<int>(scalePct) + kScaleRoundBias) / 100;
+      const int scaledWidth = std::max(1, (static_cast<int>(glyph->width) * scalePct + kScaleRoundBias) / 100);
+      const int scaledTop = std::max(1, (glyph->top * static_cast<int>(scalePct) + kScaleRoundBias) / 100);
+      EpdGlyph scaledMark = *glyph;
+      scaledMark.left = static_cast<int16_t>(scaledLeft);
+      scaledMark.width = static_cast<uint8_t>(scaledWidth);
+      scaledMark.top = static_cast<int16_t>(scaledTop);
+      scaledMark.height = static_cast<uint8_t>(std::max(1, (static_cast<int>(glyph->height) * scalePct + kScaleRoundBias) / 100));
+      int markX = markCursorX(anchor, lastBase, scaledMark);
+      int markY = yPos - markRaise(anchor, scaledMark, lastBase);
+      renderScaledChar(*resolvedFont, cp, &markX, &markY, black, style, scalePct);
+      continue;
+    }
+
+    const int baseX = xpos;
+    renderScaledChar(*resolvedFont, cp, &xpos, &yCursor, black, style, scalePct);
+    if (lookupGlyph(gfx, *resolvedFont, cp, style, glyphStorage, glyph, true)) {
+      lastBase = {baseX,
+                  (glyph->left * static_cast<int>(scalePct) + kScaleRoundBias) / 100,
+                  std::max(1, (static_cast<int>(glyph->width) * scalePct + kScaleRoundBias) / 100),
+                  std::max(1, (glyph->top * static_cast<int>(scalePct) + kScaleRoundBias) / 100), true};
+    } else {
+      lastBase.valid = false;
+    }
   }
   return xpos;
 }
@@ -671,16 +875,47 @@ int TextRender::renderSmallCaps(const int fontId, const int x, const int y, cons
 
   const std::string upper = toUpperUtf8(text);
   std::string visualText;
-  const char* ptr = RtlText::prepareForRender(upper.c_str(), visualText);
+  const char* ptr = prepareTextForFont(upper.c_str(), visualText, gfx, fontId, style);
   const int yPos = y + getFontAscenderSize(fontId);
   int xpos = x;
   int yCursor = yPos;
+  MarkAnchorMetrics lastBase;
 
   uint32_t cp;
   while ((cp = utf8NextCodepoint(reinterpret_cast<const uint8_t**>(&ptr)))) {
     const int resolvedId = resolveFontForCodepoint(gfx, fontId, cp, style);
     const EpdFontFamily* resolvedFont = findFontFamily(gfx, resolvedId);
-    if (resolvedFont) renderScaledChar(*resolvedFont, cp, &xpos, &yCursor, black, style, kSmallCapsScalePct);
+    if (!resolvedFont) continue;
+
+    EpdGlyph glyphStorage{};
+    const EpdGlyph* glyph = nullptr;
+    if (isOverlayMark(cp)) {
+      if (!lastBase.valid || !lookupGlyph(gfx, *resolvedFont, cp, style, glyphStorage, glyph, false)) continue;
+      const MarkAnchor anchor = markAnchorFor(cp);
+      const int scaledLeft = (glyph->left * static_cast<int>(kSmallCapsScalePct) + kScaleRoundBias) / 100;
+      const int scaledWidth = std::max(1, (static_cast<int>(glyph->width) * kSmallCapsScalePct + kScaleRoundBias) / 100);
+      const int scaledTop = std::max(1, (glyph->top * static_cast<int>(kSmallCapsScalePct) + kScaleRoundBias) / 100);
+      EpdGlyph scaledMark = *glyph;
+      scaledMark.left = static_cast<int16_t>(scaledLeft);
+      scaledMark.width = static_cast<uint8_t>(scaledWidth);
+      scaledMark.top = static_cast<int16_t>(scaledTop);
+      scaledMark.height = static_cast<uint8_t>(std::max(1, (static_cast<int>(glyph->height) * kSmallCapsScalePct + kScaleRoundBias) / 100));
+      int markX = markCursorX(anchor, lastBase, scaledMark);
+      int markY = yPos - markRaise(anchor, scaledMark, lastBase);
+      renderScaledChar(*resolvedFont, cp, &markX, &markY, black, style, kSmallCapsScalePct);
+      continue;
+    }
+
+    const int baseX = xpos;
+    renderScaledChar(*resolvedFont, cp, &xpos, &yCursor, black, style, kSmallCapsScalePct);
+    if (lookupGlyph(gfx, *resolvedFont, cp, style, glyphStorage, glyph, true)) {
+      lastBase = {baseX,
+                  (glyph->left * static_cast<int>(kSmallCapsScalePct) + kScaleRoundBias) / 100,
+                  std::max(1, (static_cast<int>(glyph->width) * kSmallCapsScalePct + kScaleRoundBias) / 100),
+                  std::max(1, (glyph->top * static_cast<int>(kSmallCapsScalePct) + kScaleRoundBias) / 100), true};
+    } else {
+      lastBase.valid = false;
+    }
   }
   return xpos;
 }
@@ -716,6 +951,16 @@ void TextRender::renderChar(const EpdFontFamily& fontFamily, const uint32_t cp, 
     return;
   }
 
+  if (fontData->bitmap != nullptr && !embeddedGlyphBitmapIsValid(fontData, glyph)) {
+    const EpdGlyph* replacement = fontFamily.getGlyph(REPLACEMENT_GLYPH, style);
+    if (embeddedGlyphBitmapIsValid(fontData, replacement)) {
+      glyph = replacement;
+    } else {
+      *x += glyphAdvanceX(*glyph);
+      return;
+    }
+  }
+
   const int is2Bit = fontData->is2Bit;
   const uint8_t width = glyph->width;
   const uint8_t height = glyph->height;
@@ -746,14 +991,14 @@ void TextRender::renderChar(const EpdFontFamily& fontFamily, const uint32_t cp, 
       if (it->getGlyphBitmap(glyph->dataOffset, dataLen, localStackBuffer)) {
         bitmap = localStackBuffer;
       } else {
-        *x += glyph->advanceX;
+        *x += glyphAdvanceX(*glyph);
         return;
       }
     } else {
       constexpr size_t kMaxRowBytes = 512;
       const size_t rowBytes = is2Bit ? (static_cast<size_t>(width) + 3u) / 4u : (static_cast<size_t>(width) + 7u) / 8u;
       if (rowBytes == 0 || rowBytes > kMaxRowBytes) {
-        *x += glyph->advanceX;
+        *x += glyphAdvanceX(*glyph);
         return;
       }
       uint8_t rowBuf[kMaxRowBytes];
@@ -764,7 +1009,7 @@ void TextRender::renderChar(const EpdFontFamily& fontFamily, const uint32_t cp, 
         const size_t packedRowBytes = is2Bit ? (rowPixelOffset + width + 3u) / 4u : rowBytes;
         const uint32_t rowOff = glyph->dataOffset + static_cast<uint32_t>(rowStartByte);
         if (!it->getGlyphBitmap(rowOff, packedRowBytes, rowBuf)) {
-          *x += glyph->advanceX;
+          *x += glyphAdvanceX(*glyph);
           return;
         }
         const int screenY = *y - glyph->top + glyphY;
@@ -792,7 +1037,7 @@ void TextRender::renderChar(const EpdFontFamily& fontFamily, const uint32_t cp, 
           }
         }
       }
-      *x += glyph->advanceX;
+      *x += glyphAdvanceX(*glyph);
       return;
     }
   }
@@ -830,7 +1075,7 @@ void TextRender::renderChar(const EpdFontFamily& fontFamily, const uint32_t cp, 
     }
   }
 
-  *x += glyph->advanceX;
+  *x += glyphAdvanceX(*glyph);
 }
 
 void TextRender::renderScaledChar(const EpdFontFamily& fontFamily, const uint32_t cp, int* x, const int* y,
@@ -858,10 +1103,20 @@ void TextRender::renderScaledChar(const EpdFontFamily& fontFamily, const uint32_
     return;
   }
 
+  if (fontData->bitmap != nullptr && !embeddedGlyphBitmapIsValid(fontData, glyph)) {
+    const EpdGlyph* replacement = fontFamily.getGlyph(REPLACEMENT_GLYPH, style);
+    if (embeddedGlyphBitmapIsValid(fontData, replacement)) {
+      glyph = replacement;
+    } else {
+      *x += glyphAdvanceX(*glyph);
+      return;
+    }
+  }
+
   const int is2Bit = fontData->is2Bit;
   const uint8_t width = glyph->width;
   const uint8_t height = glyph->height;
-  const int scaledAdvanceX = scaleMetricRound(glyph->advanceX, scalePct);
+  const int scaledAdvanceX = scaleMetricRound(glyphAdvanceX(*glyph), scalePct);
   const int scaledLeft = (glyph->left * static_cast<int>(scalePct) + kScaleRoundBias) / 100;
   const int scaledTop = std::max(1, (glyph->top * static_cast<int>(scalePct) + kScaleRoundBias) / 100);
   const int scaledW = std::max(1, (static_cast<int>(width) * static_cast<int>(scalePct) + kScaleRoundBias) / 100);
@@ -1009,7 +1264,7 @@ int TextRender::getStreamingTextWidth(const EpdFontFamily& family, const char* t
         continue;
       }
     }
-    totalWidth += glyph.advanceX;
+    totalWidth += glyphAdvanceX(glyph);
   }
   return totalWidth;
 }

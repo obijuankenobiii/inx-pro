@@ -25,8 +25,6 @@ constexpr int MAX_COST = std::numeric_limits<int>::max();
 
 namespace {
 
-constexpr char SOFT_HYPHEN_UTF8[] = "\xC2\xAD";
-constexpr size_t SOFT_HYPHEN_BYTES = 2;
 constexpr uint8_t kScriptScalePct = 70;
 
 template <typename T>
@@ -78,36 +76,11 @@ uint8_t moveBytePrefixToCompactVector(std::deque<uint8_t>& values, const size_t 
   return emptyDefault;
 }
 
-bool containsSoftHyphen(const std::string& word) { return word.find(SOFT_HYPHEN_UTF8) != std::string::npos; }
-
-bool isUtf8Continuation(unsigned char c) { return (c & 0xC0) == 0x80; }
-
-size_t nextUtf8CodepointOffset(const std::string& word, size_t offset) {
-  if (offset >= word.size()) {
-    return word.size();
-  }
-  ++offset;
-  while (offset < word.size() && isUtf8Continuation(static_cast<unsigned char>(word[offset]))) {
-    ++offset;
-  }
-  return offset;
-}
-
 uint8_t bionicPrefixLengthBytes(const std::string& word) {
-  size_t codepoints = 0;
-  for (size_t i = 0; i < word.size(); i = nextUtf8CodepointOffset(word, i)) {
-    ++codepoints;
-  }
-  if (codepoints < 4) {
-    return 0;
-  }
-
-  const size_t prefixCodepoints = std::min<size_t>(4, std::max<size_t>(1, (codepoints + 1) / 2));
-  size_t offset = 0;
-  for (size_t i = 0; i < prefixCodepoints && offset < word.size(); ++i) {
-    offset = nextUtf8CodepointOffset(word, offset);
-  }
-  return static_cast<uint8_t>(std::min<size_t>(offset, 255));
+  std::string prefix;
+  std::string suffix;
+  RtlText::splitBionicWord(word, true, prefix, suffix);
+  return static_cast<uint8_t>(std::min<size_t>(prefix.size(), 255));
 }
 
 uint16_t measureSmallCapsWordWidth(const GfxRenderer& renderer, const int fontId, const std::string& word,
@@ -128,26 +101,15 @@ EpdFontFamily::Style bionicStyleFor(EpdFontFamily::Style style) {
   }
 }
 
-void stripSoftHyphensInPlace(std::string& word) {
-  size_t pos = 0;
-  while ((pos = word.find(SOFT_HYPHEN_UTF8, pos)) != std::string::npos) {
-    word.erase(pos, SOFT_HYPHEN_BYTES);
-  }
-}
-
 uint16_t measureWordWidth(const GfxRenderer& renderer, const int fontId, const std::string& word,
                           const EpdFontFamily::Style style, const bool smallCaps = false,
                           const bool appendHyphen = false) {
-  const bool hasSoftHyphen = containsSoftHyphen(word);
-  if (!hasSoftHyphen && !appendHyphen) {
+  if (!appendHyphen) {
     return smallCaps ? measureSmallCapsWordWidth(renderer, fontId, word, style)
                      : renderer.text.getWidth(fontId, word.c_str(), style);
   }
 
-  std::string sanitized = word;
-  if (hasSoftHyphen) {
-    stripSoftHyphensInPlace(sanitized);
-  }
+  std::string sanitized = RtlText::normalizeForLayout(word);
   if (appendHyphen) {
     sanitized.push_back('-');
   }
@@ -158,21 +120,15 @@ uint16_t measureWordWidth(const GfxRenderer& renderer, const int fontId, const s
 uint16_t measureWordWidth(const GfxRenderer& renderer, const int fontId, const std::string& word,
                           const EpdFontFamily::Style style, const uint8_t bionicPrefixBytes, const bool smallCaps,
                           const bool appendHyphen = false) {
-  if (bionicPrefixBytes == 0 || bionicPrefixBytes >= word.size()) {
+  if (bionicPrefixBytes == 0) {
     return measureWordWidth(renderer, fontId, word, style, smallCaps, appendHyphen);
   }
 
-  std::string sanitized = word;
-  if (containsSoftHyphen(sanitized)) {
-    stripSoftHyphensInPlace(sanitized);
-  }
-  if (appendHyphen) {
-    sanitized.push_back('-');
-  }
-
-  const uint8_t prefixBytes = static_cast<uint8_t>(std::min<size_t>(bionicPrefixBytes, sanitized.size()));
-  const std::string prefix = sanitized.substr(0, prefixBytes);
-  const std::string suffix = sanitized.substr(prefixBytes);
+  std::string prefix;
+  std::string suffix;
+  RtlText::splitBionicWord(word, true, prefix, suffix);
+  if (appendHyphen) suffix.push_back('-');
+  if (prefix.empty()) return measureWordWidth(renderer, fontId, suffix, style, smallCaps);
   return measureWordWidth(renderer, fontId, prefix, bionicStyleFor(style), smallCaps) +
          measureWordWidth(renderer, fontId, suffix, style, smallCaps);
 }
@@ -818,10 +774,17 @@ void ParsedText::extractLine(const size_t breakIndex, const int pageWidth, const
     }
   }
 
-  uint16_t xpos = currentIndent;
-  if ((style == TextBlock::RIGHT_ALIGN ||
-       (rtlParagraph_ && style == TextBlock::JUSTIFIED && isLastLine)) &&
-      spareSpace >= 0) {
+  // Keep the cursor signed so alignment calculations cannot wrap when a line
+  // is wider than the available column.
+  int xpos = currentIndent;
+  const bool rtlRightEdge = rtlParagraph_ &&
+                            (style == TextBlock::RIGHT_ALIGN ||
+                             (style == TextBlock::JUSTIFIED && isLastLine));
+  // A word wider than the column cannot satisfy both margins. Keep that
+  // word visible from the left edge instead of placing it at a negative x.
+  if (rtlRightEdge && spareSpace >= 0) {
+    xpos = pageWidth - lineWordWidthSum - gapCount * spaceWidth;
+  } else if (style == TextBlock::RIGHT_ALIGN && spareSpace >= 0) {
     xpos += spareSpace - gapCount * spaceWidth;
   } else if (style == TextBlock::CENTER_ALIGN && spareSpace >= 0) {
     xpos += (spareSpace - gapCount * spaceWidth) / 2;
@@ -830,17 +793,24 @@ void ParsedText::extractLine(const size_t breakIndex, const int pageWidth, const
   std::vector<int16_t> lineXPos;
   lineXPos.reserve(lineWordCount);
   int naturalGapIndex = 0;
-  for (size_t i = lastBreakAt; i < lineBreak; i++) {
-    const uint16_t currentWordWidth = wordWidths[i];
+  for (size_t slotIndex = 0; slotIndex < lineWordCount; ++slotIndex) {
+    // x positions are visual left-to-right slots.  The word data remains in
+    // logical order and TextBlock maps the RTL word at the right end into the
+    // rightmost slot, so the width used for each slot must be reversed here as
+    // well.  Using the logical width sequence made adjacent Arabic words
+    // overlap whenever neighbouring words had different lengths.
+    const size_t logicalIndex = rtlParagraph_ ? lineBreak - 1 - slotIndex : lastBreakAt + slotIndex;
+    const uint16_t currentWordWidth = wordWidths[logicalIndex];
     int xOffset = 0;
-    if (hasWordXOffsets_ && i < wordXOffset.size()) {
-      xOffset = *std::next(wordXOffset.begin(), static_cast<std::ptrdiff_t>(i));
+    if (hasWordXOffsets_ && logicalIndex < wordXOffset.size()) {
+      xOffset = *std::next(wordXOffset.begin(), static_cast<std::ptrdiff_t>(logicalIndex));
     }
     lineXPos.push_back(static_cast<int16_t>(
         std::max<int>(std::numeric_limits<int16_t>::min(), std::min<int>(std::numeric_limits<int16_t>::max(), xpos + xOffset))));
     int gapAfter = 0;
-    if (i + 1 < lineBreak) {
-      const bool nextJoinsThis = joinedAt(i + 1);
+    if (slotIndex + 1 < lineWordCount) {
+      const size_t nextLogicalIndex = rtlParagraph_ ? logicalIndex : logicalIndex + 1;
+      const bool nextJoinsThis = joinedAt(nextLogicalIndex);
       gapAfter = nextJoinsThis ? 0 : spaceWidth;
       if (style == TextBlock::JUSTIFIED && !isLastLine && gapCount > 0) {
         if (nextJoinsThis) {
@@ -856,7 +826,7 @@ void ParsedText::extractLine(const size_t breakIndex, const int pageWidth, const
         ++naturalGapIndex;
       }
     }
-    xpos = static_cast<uint16_t>(static_cast<int>(xpos) + static_cast<int>(currentWordWidth) + gapAfter);
+    xpos += static_cast<int>(currentWordWidth) + gapAfter;
   }
 
   std::vector<std::string> lineWords = moveListPrefixToVector(words, lineWordCount);
@@ -864,8 +834,9 @@ void ParsedText::extractLine(const size_t breakIndex, const int pageWidth, const
   auto bionicIt = bionicPrefixBytes.begin();
   for (size_t i = 0; i < lineWords.size(); ++i) {
     auto& word = lineWords[i];
-    if (containsSoftHyphen(word)) {
-      stripSoftHyphensInPlace(word);
+    const std::string normalizedWord = RtlText::normalizeForLayout(word);
+    if (normalizedWord != word) {
+      word = normalizedWord;
       if (bionicReadingEnabled && bionicIt != bionicPrefixBytes.end()) {
         *bionicIt = bionicPrefixLengthBytes(word);
       }

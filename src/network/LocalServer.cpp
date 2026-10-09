@@ -22,6 +22,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <new>
 
 #include "../state/ReaderSetting.h"
 #include "../state/SystemSetting.h"
@@ -63,6 +64,32 @@ extern Activity* currentActivity;
 extern GfxRenderer& render;
 
 namespace {
+
+// WebServer retains parsed request arguments until the next request. Large
+// JSON bodies therefore stay allocated between requests and can fragment the
+// ESP32 heap during a long Wi-Fi session.
+class LocalHttpServer final : public WebServer {
+ public:
+  explicit LocalHttpServer(const uint16_t port) : WebServer(port) {}
+
+  void releaseRequestArguments() {
+    if (_currentArgs) {
+      delete[] _currentArgs;
+      _currentArgs = nullptr;
+    }
+    _currentArgCount = 0;
+
+    if (_postArgs) {
+      delete[] _postArgs;
+      _postArgs = nullptr;
+    }
+    _postArgsLen = 0;
+  }
+};
+
+void releaseRequestArguments(WebServer* server) {
+  static_cast<LocalHttpServer*>(server)->releaseRequestArguments();
+}
 
 const char* HIDDEN_ITEMS[] = {"System Volume Information", ".metadata"};
 constexpr size_t HIDDEN_ITEMS_COUNT = sizeof(HIDDEN_ITEMS) / sizeof(HIDDEN_ITEMS[0]);
@@ -553,9 +580,10 @@ void LocalServer::begin() {
   INX_SERIAL.printf("[%lu] [WEB] Network mode: %s\n", millis(), apMode ? "AP" : "STA");
 
   INX_SERIAL.printf("[%lu] [WEB] Creating web server on port %d...\n", millis(), port);
-  server.reset(new WebServer(port));
+  server.reset(new (std::nothrow) LocalHttpServer(port));
 
   WiFi.setSleep(false);
+  WiFi.setAutoReconnect(true);
 
   if (!server) {
     INX_SERIAL.printf("[%lu] [WEB] Failed to create WebServer!\n", millis());
@@ -640,7 +668,14 @@ void LocalServer::begin() {
   server->begin();
 
   INX_SERIAL.printf("[%lu] [WEB] Starting WebSocket server on port %d...\n", millis(), wsPort);
-  wsServer.reset(new WebSocketsServer(wsPort));
+  auto* websocketServer = new (std::nothrow) WebSocketsServer(wsPort);
+  if (!websocketServer) {
+    INX_SERIAL.printf("[%lu] [WEB] Failed to create WebSocket server\n", millis());
+    server->stop();
+    server.reset();
+    return;
+  }
+  wsServer.reset(websocketServer);
   wsInstance = const_cast<LocalServer*>(this);
   wsServer->begin();
   wsServer->onEvent(wsEventCallback);
@@ -660,7 +695,7 @@ void LocalServer::begin() {
 }
 
 void LocalServer::stop() {
-  if (!running || !server) {
+  if (!running && !server && !wsServer && !udpActive) {
     INX_SERIAL.printf("[%lu] [WEB] stop() called but already stopped (running=%d, server=%p)\n", millis(), running,
                   server.get());
     return;
@@ -668,6 +703,12 @@ void LocalServer::stop() {
 
   INX_SERIAL.printf("[%lu] [WEB] STOP INITIATED - setting running=false first\n", millis());
   running = false;
+
+  // Prevent a close() callback from entering this object while its server is
+  // being torn down.
+  if (wsInstance == this) {
+    wsInstance = nullptr;
+  }
 
   if (wsUploadInProgress && wsUploadFile) {
     wsUploadFile.close();
@@ -678,7 +719,6 @@ void LocalServer::stop() {
     INX_SERIAL.printf("[%lu] [WEB] Stopping WebSocket server...\n", millis());
     wsServer->close();
     wsServer.reset();
-    wsInstance = nullptr;
     INX_SERIAL.printf("[%lu] [WEB] WebSocket server stopped\n", millis());
   }
 
@@ -689,7 +729,9 @@ void LocalServer::stop() {
 
   delay(20);
 
-  server->stop();
+  if (server) {
+    server->stop();
+  }
 
   delay(10);
 
@@ -715,6 +757,7 @@ void LocalServer::handleClient() {
   }
 
   server->handleClient();
+  releaseRequestArguments(server.get());
 
   if (wsServer) {
     wsServer->loop();
