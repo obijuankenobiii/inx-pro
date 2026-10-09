@@ -39,6 +39,14 @@ RTC_DATA_ATTR uint32_t rtcGenerationMagic = 0;
 RTC_DATA_ATTR uint32_t rtcGeneration = 0;
 RTC_DATA_ATTR PersistedClock rtcBaseline;
 
+// Murphy M4 exposes the power key on the same physical GPIO as the legacy
+// confirm input. Treat that shared electrical signal as power only; touch is
+// the confirm mechanism on this device, so a power press must never activate
+// a UI Confirm action.
+bool isSharedConfirmButton(const uint8_t buttonIndex) {
+  return buttonIndex == HalGPIO::BTN_CONFIRM;
+}
+
 void initializeRtcGeneration() {
   if (rtcGenerationMagic == kClockMagic && rtcGeneration != 0) return;
   rtcGeneration = esp_random();
@@ -255,15 +263,20 @@ unsigned long HalGPIO::lastTouchHeldMs() const { return touchDriver.lastHeldMs()
 void HalGPIO::injectOneShotPress(uint8_t) {
 }
 
-bool HalGPIO::isPressed(uint8_t buttonIndex) const { return inputMgr.isPressed(buttonIndex); }
+bool HalGPIO::isPressed(uint8_t buttonIndex) const {
+  if (isSharedConfirmButton(buttonIndex)) return false;
+  return inputMgr.isPressed(buttonIndex);
+}
 
 bool HalGPIO::wasPressed(uint8_t buttonIndex) const {
+  if (isSharedConfirmButton(buttonIndex)) return false;
   return inputMgr.wasPressed(buttonIndex) || ((touchPressedEvents >> buttonIndex) & 1);
 }
 
 bool HalGPIO::wasAnyPressed() const { return inputMgr.wasAnyPressed() || touchPressedEvents != 0; }
 
 bool HalGPIO::wasReleased(uint8_t buttonIndex) const {
+  if (isSharedConfirmButton(buttonIndex)) return false;
   return inputMgr.wasReleased(buttonIndex) || ((touchReleasedEvents >> buttonIndex) & 1);
 }
 

@@ -29,11 +29,13 @@ class Statistics final : public SubPage {
   /** 0 = aggregated global overview; 1..N = one book (index N-1 in allBooksStats). */
   int viewIndex = 0;
   int statsTab_ = 0;
+  int selectedBookIndex_ = -1;
+  int booksPage_ = 0;
 
   std::vector<BookReadingStats> allBooksStats;
   std::vector<uint8_t> loadedBookStatsFlags_;
+  std::vector<BookListMetadata> bookListMetadata_;
   GlobalReadingStats globalStats;
-  bool bookIndexPending_ = false;
   int64_t calendarWeekStartDay_ = 0;
   std::array<uint32_t, 7> weeklyReadingTimeMs_{};
   uint32_t weeklyTotalReadingTimeMs_ = 0;
@@ -49,7 +51,6 @@ class Statistics final : public SubPage {
   /** Loads saved global totals and indexes persisted per-book stats without loading every record. */
   void hydrateFromStorage();
   void indexBookStatsPaths(bool includeMetadata = true);
-  void finishDeferredBookIndex();
   bool ensureBookStatsLoaded(int bookIdx);
   void refreshWeeklyChartData();
 
@@ -68,6 +69,8 @@ class Statistics final : public SubPage {
   void title() const override;
   void renderWeeklyChart(int chartTop, int chartBottom) const;
   void renderRadialChart(int chartTop, int chartBottom, int chartLeft, int chartRight) const;
+  void renderBooksView(int contentTop, int contentBottom);
+  void renderBookListThumbnail(const BookListMetadata& book, int x, int y, int width, int height) const;
 
   void renderSingleBookView(int bookIdx, int contentTop, int contentBottom) const;
 
@@ -79,6 +82,8 @@ class Statistics final : public SubPage {
   void renderSecondGrid(int y, int innerLeft, int innerRight, int contentBottom) const;
   bool handleControlDrawerInput();
   bool handleHamburgerTap();
+  bool handleRefreshTap();
+  bool handleBooksInput();
   void drawControlDrawer() const;
 
   bool controlDrawerOpen_ = false;

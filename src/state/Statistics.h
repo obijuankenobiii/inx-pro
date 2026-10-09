@@ -49,6 +49,14 @@ struct BookReadingStats {
         sessionCount(0) {}
 };
 
+/** Cached metadata used by the fast Statistics Books list. */
+struct BookListMetadata {
+  std::string thumbnailPath;
+  std::string title;
+  std::string description;
+  float progressPercent = 0.0f;
+};
+
 /**
  * Structure containing aggregated reading statistics across all books.
  */
@@ -92,6 +100,12 @@ struct ReadingHistoryBookEntry {
  * @param stats The book reading statistics to persist
  */
 void saveBookStats(const char* cachePath, const BookReadingStats& stats);
+
+/** Loads the last globally refreshed Books-list metadata aggregate. */
+std::vector<BookListMetadata> loadBookListMetadata();
+
+/** Replaces the persisted Books-list metadata aggregate. */
+bool saveBookListMetadata(const std::vector<BookListMetadata>& books);
 
 /**
  * Loads reading statistics for a book from its cache directory.
