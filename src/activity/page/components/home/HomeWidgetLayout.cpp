@@ -220,7 +220,11 @@ int HomeWidgetLayout::recentGridPageCount(const HomeTheme::Theme& theme, const i
   int page = std::max(0, widgetPageIndex);
   for (int slot = 0; slot < HomeTheme::slotCount(theme.layout); ++slot) {
     if (theme.widgets[slot] == HomeTheme::Widget::Empty) continue;
-    if (page-- == 0) return theme.widgets[slot] == HomeTheme::Widget::RecentGrid ? (bookCount + 5) / 6 : 0;
+    if (page-- == 0) {
+      if (theme.widgets[slot] != HomeTheme::Widget::RecentGrid) return 0;
+      const int remainingBookCount = std::max(0, bookCount - 1);
+      return (remainingBookCount + RecentGrid::kPageSize - 1) / RecentGrid::kPageSize;
+    }
   }
   return 0;
 }

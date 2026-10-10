@@ -205,6 +205,7 @@ bool Home::handleSwipe() {
   if (!swipeLeft && !swipeRight) return false;
 
   if (swipeRight && static_cast<int>(swipeNy * renderer.getScreenHeight()) < navigation::Menu::height) {
+    storeOverlayFrame();
     shortcutDrawerOpen = true;
     updateRequired = true;
     renderPage();
@@ -285,6 +286,7 @@ bool Home::handleTap() {
   const int tapX = static_cast<int>(tapNx * renderer.getScreenWidth());
   const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
   if (navigation::Menu::hamburgerHit(tapX, tapY)) {
+    storeOverlayFrame();
     shortcutDrawerOpen = true;
     updateRequired = true;
     renderPage();
@@ -397,6 +399,7 @@ bool Home::handleTap() {
 
 bool Home::handleShortcutDrawerInput() {
   if (mappedInput.wasPressed(MappedInputManager::Button::Back) || mappedInput.wasTouchSwipeRight()) {
+    restoreOverlayFrameOnClose();
     shortcutDrawerOpen = false;
     updateRequired = true;
     return true;
@@ -411,6 +414,7 @@ bool Home::handleShortcutDrawerInput() {
   const int drawerWidth = Sidebar::width(renderer);
   const int listTop = Sidebar::listTop();
   if (tapX >= 0 && tapX < drawerWidth && storeIconHit(renderer, tapX, tapY)) {
+    discardOverlayFrame();
     shortcutDrawerOpen = false;
     updateRequired = true;
     onGoToStore();
@@ -420,6 +424,7 @@ bool Home::handleShortcutDrawerInput() {
     const int item = shortcutList.hitTest(tapX, tapY, 0, listTop, drawerWidth, renderer.getScreenHeight() - listTop,
                                           Sidebar::rowHeight);
     if (item >= 0) {
+      discardOverlayFrame();
       shortcutDrawerOpen = false;
       updateRequired = true;
       handleShortcut(item);
@@ -428,6 +433,7 @@ bool Home::handleShortcutDrawerInput() {
   }
 
   if (tapX >= drawerWidth) {
+    restoreOverlayFrameOnClose();
     shortcutDrawerOpen = false;
     updateRequired = true;
   }

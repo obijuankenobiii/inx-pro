@@ -50,6 +50,8 @@ class Menu {
   bool isLightDrawerOpen() const { return lightDrawer.isOpen(); }
   bool isLightDrawerSliderDragging() const { return lightDrawer.isSliderDragging(); }
 #endif
+  /** Restores the page frame when only the light drawer changed. */
+  bool restoreLightDrawerFrameForRender() const;
   void render() const;
   Action handleInput(MappedInputManager& input) const;
   Action handleTap(int tapX, int tapY) const;

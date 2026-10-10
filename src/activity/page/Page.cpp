@@ -20,7 +20,7 @@ extern void openSearchFromCallback(std::function<void()> returnToCaller);
 UiPage::UiPage(const char* name, GfxRenderer& renderer, MappedInputManager& mappedInput)
     : Activity(name, renderer, mappedInput), navigation::Menu(renderer) {}
 
-UiPage::~UiPage() {}
+UiPage::~UiPage() { discardOverlayFrame(); }
 
 void UiPage::onEnter() {
   Activity::onEnter();
@@ -86,6 +86,29 @@ void UiPage::renderPage() {
   updateRequired = false;
 }
 
+bool UiPage::storeOverlayFrame() {
+  renderer.syncWriteBufferFromActive();
+  renderer.freeBwBufferChunks();
+  overlayFrameStored_ = renderer.storeBwBuffer();
+  overlayFrameActive_ = overlayFrameStored_;
+  overlayFrameRestorePending_ = false;
+  return overlayFrameStored_;
+}
+
+void UiPage::restoreOverlayFrameOnClose() {
+  if (!overlayFrameStored_) return;
+  overlayFrameActive_ = false;
+  overlayFrameRestorePending_ = true;
+}
+
+void UiPage::discardOverlayFrame() {
+  if (!overlayFrameStored_) return;
+  renderer.freeBwBufferChunks();
+  overlayFrameStored_ = false;
+  overlayFrameActive_ = false;
+  overlayFrameRestorePending_ = false;
+}
+
 bool UiPage::routeMenuAction(const navigation::Menu::Action action) {
   switch (action) {
     case navigation::Menu::Action::Opened:
@@ -142,8 +165,21 @@ bool UiPage::menuAction(const navigation::Menu::Action action) {
 
 void UiPage::render() {
   renderer.setRenderMode(GfxRenderer::BW);
-  renderer.clearScreen();
-  content();
+  bool restored = restoreLightDrawerFrameForRender();
+  if (!restored && overlayFrameStored_ && (overlayFrameActive_ || overlayFrameRestorePending_)) {
+    restored = renderer.copyStoredBwToFramebuffer();
+    if (!restored) {
+      discardOverlayFrame();
+    } else if (overlayFrameRestorePending_) {
+      renderer.freeBwBufferChunks();
+      overlayFrameStored_ = false;
+      overlayFrameRestorePending_ = false;
+    }
+  }
+  if (!restored) {
+    renderer.clearScreen();
+    content();
+  }
   menu();
   renderer.displayBufferAsync();
 }

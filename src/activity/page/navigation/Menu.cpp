@@ -166,6 +166,14 @@ void Menu::handleTabNavigation(const bool leftPressed, const bool rightPressed) 
   }
 }
 
+bool Menu::restoreLightDrawerFrameForRender() const {
+#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4
+  return lightDrawer.restoreStoredFrameForRender();
+#else
+  return false;
+#endif
+}
+
 bool Menu::handleTabBarTouch(MappedInputManager& mappedInput, const GfxRenderer& renderer) {
   if (!mappedInput.hasTouch()) return false;
 

@@ -136,28 +136,35 @@ void LightDrawer::refreshAfterSliderChange() const {
 }
 
 /**
- * Stores the whole frame for the duration of a slider drag.
- *
- * The dragged row is blanked back to paper and carets first, so what gets stored is the
- * entire screen minus the throbber: drawer chrome, both labels, the other slider, and the
- * page underneath. Each drag step then restores that frame and stamps the knob on top,
- * which is what keeps a live drag off the full render path.
+ * Stores the page frame for the duration of the drawer.
  */
-void LightDrawer::storeSliderFrame() const {
-  sliderStripTrackY = sliderControl == 0 ? lightBrightnessY : lightTemperatureY;
-  // Order matters. This panel is dual-buffer, so after the drawer's own refresh the write
-  // buffer holds a stale frame and syncWriteBufferFromActive() has to run FIRST to pull
-  // the displayed frame in. Running it after the blank would copy the on-screen knob right
-  // back over the cleared row and store it.
+void LightDrawer::storeDrawerFrame() const {
+  // The page may have been displayed asynchronously. Pull the displayed frame into the
+  // writable buffer before taking the snapshot used by the drawer-only render.
   drawerRenderer.syncWriteBufferFromActive();
-  clearLightSliderRow(drawerRenderer, sliderStripTrackY);
-  sliderFrameStored = drawerRenderer.storeBwBuffer();
+  drawerRenderer.freeBwBufferChunks();
+  drawerFrameStored = drawerRenderer.storeBwBuffer();
+  frameRestorePending = false;
 }
 
-void LightDrawer::releaseSliderFrame() const {
-  if (!sliderFrameStored) return;
+void LightDrawer::releaseDrawerFrame() const {
+  if (!drawerFrameStored) return;
   drawerRenderer.freeBwBufferChunks();
-  sliderFrameStored = false;
+  drawerFrameStored = false;
+}
+
+bool LightDrawer::restoreStoredFrameForRender() const {
+  if (!drawerFrameStored || (!open && !frameRestorePending)) return false;
+  if (!drawerRenderer.copyStoredBwToFramebuffer()) {
+    releaseDrawerFrame();
+    frameRestorePending = false;
+    return false;
+  }
+  if (!open) {
+    frameRestorePending = false;
+    releaseDrawerFrame();
+  }
+  return true;
 }
 
 /**
@@ -185,11 +192,9 @@ void LightDrawer::renderSliderRowLive() const {
   const int trackY = brightness ? lightBrightnessY : lightTemperatureY;
   const int value = brightness ? frontlight.brightness() : frontlight.colorTemperature();
 
-  if (!sliderFrameStored || sliderStripTrackY != trackY || !drawerRenderer.copyStoredBwToFramebuffer()) {
-    // No stored frame (allocation failed): pull the displayed frame in instead, or the
-    // dual-buffer swap would leave the knob being drawn onto a stale frame.
-    drawerRenderer.syncWriteBufferFromActive();
-  }
+  // The stored frame is the page beneath the drawer, not the drawer itself. Pull the
+  // currently displayed drawer frame before replacing only this slider row.
+  drawerRenderer.syncWriteBufferFromActive();
 
   // Rebuild the row rather than trusting whatever the restore brought back: paper over any
   // knob still in the frame, carets and both track bars behind where it sat, then the knob
@@ -258,7 +263,6 @@ LightDrawer::Action LightDrawer::handleInput(MappedInputManager& input) const {
 
     sliderDragging = false;
     sliderRepaintPending = false;
-    releaseSliderFrame();
     if (sliderDragChanged) {
       saveLightPreferences();
       refreshAfterSliderChange();
@@ -283,7 +287,8 @@ LightDrawer::Action LightDrawer::handleInput(MappedInputManager& input) const {
         sliderControl = inBrightnessTrack ? 0 : 1;
         sliderDragging = true;
         sliderDragChanged = false;
-        storeSliderFrame();
+        // The drawer frame was captured when the drawer opened; keep it intact so
+        // closing the drawer can restore the page without repainting its content.
         const int value = lightValueFromTrack(x, sliderControl == 0);
         const int current = sliderControl == 0 ? frontlight.brightness() : frontlight.colorTemperature();
         if (value != current) {
@@ -307,6 +312,7 @@ LightDrawer::Action LightDrawer::handleInput(MappedInputManager& input) const {
   }
   if (open && input.wasTouchSwipeUpForRenderer(drawerRenderer)) {
     open = false;
+    frameRestorePending = true;
     return Action::Closed;
   }
   if (!open) {
@@ -316,11 +322,13 @@ LightDrawer::Action LightDrawer::handleInput(MappedInputManager& input) const {
       const bool fromTop = startNy <= kOpenFromTopMaxNy;
       INX_SERIAL.printf("[LIGHTDRAWER] swipe-down start nx=%.3f ny=%.3f fromTop=%d\n", startNx, startNy, fromTop);
       if (fromTop) {
+        storeDrawerFrame();
         open = true;
         return Action::Opened;
       }
     } else if (input.wasTouchSwipeDownForRenderer(drawerRenderer)) {
       INX_SERIAL.printf("[LIGHTDRAWER] swipe-down with NO start position available\n");
+      storeDrawerFrame();
       open = true;
       return Action::Opened;
     }
@@ -333,11 +341,16 @@ LightDrawer::Action LightDrawer::handleTap(const int tapX, const int tapY) const
   const int darkModeButtonX = lightButtonX - lightButtonGap - lightButtonSize;
   if (tapX < 0 || tapX >= drawerRenderer.getScreenWidth() || tapY < 0 || tapY >= lightDrawerHeight) {
     open = false;
+    frameRestorePending = true;
     return Action::Closed;
   }
 
   if (tapX >= darkModeButtonX && tapX < darkModeButtonX + lightButtonSize && tapY >= lightButtonY &&
       tapY < lightButtonY + lightButtonSize) {
+    // The page itself must be repainted when the color mode changes; the old
+    // stored frame is no longer valid in that case.
+    releaseDrawerFrame();
+    frameRestorePending = false;
     drawerRenderer.setDarkMode(!drawerRenderer.isDarkMode());
     SETTINGS.darkMode = drawerRenderer.isDarkMode() ? 1 : 0;
     SETTINGS.saveToFile();

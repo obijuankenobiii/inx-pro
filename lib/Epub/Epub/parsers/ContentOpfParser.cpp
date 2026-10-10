@@ -65,6 +65,18 @@ void appendAuthorSort(std::string& destination, const std::string& sort) {
   if (!destination.empty()) destination += "; ";
   destination += normalized;
 }
+
+bool hasManifestProperty(const std::string& properties, const char* property) {
+  size_t start = 0;
+  while (start < properties.size()) {
+    const size_t end = properties.find(' ', start);
+    const size_t length = end == std::string::npos ? properties.size() - start : end - start;
+    if (length == std::strlen(property) && properties.compare(start, length, property) == 0) return true;
+    if (end == std::string::npos) break;
+    start = end + 1;
+  }
+  return false;
+}
 }
 
 bool ContentOpfParser::setup() {
@@ -258,7 +270,7 @@ void XMLCALL ContentOpfParser::startElement(void* userData, const XML_Char* name
       if (strcmp(atts[i], "id") == 0) {
         itemId = atts[i + 1];
       } else if (strcmp(atts[i], "href") == 0) {
-        href = FsHelpers::normalisePath(self->baseContentPath + atts[i + 1]);
+        href = FsHelpers::normalisePath(FsHelpers::decodeUriPath(self->baseContentPath + atts[i + 1]));
       } else if (strcmp(atts[i], "media-type") == 0) {
         mediaType = atts[i + 1];
       } else if (strcmp(atts[i], "properties") == 0) {
@@ -270,6 +282,12 @@ void XMLCALL ContentOpfParser::startElement(void* userData, const XML_Char* name
     serialization::writeString(self->tempItemStore, href);
 
     if (itemId == self->coverItemId) {
+      self->coverItemHref = href;
+    }
+
+    // EPUB 3 can identify the cover directly on the manifest item instead of
+    // using the legacy <meta name="cover" content="..."> declaration.
+    if (self->coverItemHref.empty() && hasManifestProperty(properties, "cover-image")) {
       self->coverItemHref = href;
     }
 
@@ -332,7 +350,7 @@ void XMLCALL ContentOpfParser::startElement(void* userData, const XML_Char* name
           break;
         }
       } else if (strcmp(atts[i], "href") == 0) {
-        textHref = FsHelpers::normalisePath(self->baseContentPath + atts[i + 1]);
+        textHref = FsHelpers::normalisePath(FsHelpers::decodeUriPath(self->baseContentPath + atts[i + 1]));
       }
     }
     if ((type == "text" || (type == "start" && !self->textReferenceHref.empty())) && (textHref.length() > 0)) {

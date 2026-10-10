@@ -49,9 +49,18 @@ class UiPage : public Activity, public navigation::Menu {
   bool menuInput();
   /** Renders the page when its content or menu state changed. */
   void renderPage();
+  /** Captures the current page before opening a lightweight overlay drawer. */
+  bool storeOverlayFrame();
+  /** Marks the overlay frame for restoration when the drawer closes. */
+  void restoreOverlayFrameOnClose();
+  /** Discards the overlay frame when closing into changed page content/navigation. */
+  void discardOverlayFrame();
   bool updateRequired = false;
   bool routeMenuAction(navigation::Menu::Action action);
 
  private:
   void render();
+  bool overlayFrameStored_ = false;
+  bool overlayFrameActive_ = false;
+  bool overlayFrameRestorePending_ = false;
 };
