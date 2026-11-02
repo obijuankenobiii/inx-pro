@@ -2,44 +2,18 @@
 
 #include <BoardConfig.h>
 #include <driver/gpio.h>
-#include <driver/i2c_master.h>
 
 #include <algorithm>
 #include <cstdlib>
 
+#include "MurphyM4I2c.h"
+
 namespace {
-i2c_master_bus_handle_t gTouchBus = nullptr;
-i2c_master_dev_handle_t gTouchDevice = nullptr;
-
 bool writeRegister(const uint8_t reg, const uint8_t value) {
-  if (gTouchDevice == nullptr) return false;
+  const auto& touch = BoardConfig::ACTIVE.touch;
   const uint8_t payload[] = {reg, value};
-  return i2c_master_transmit(gTouchDevice, payload, sizeof(payload), 20) == ESP_OK;
-}
-
-bool createBus(const int sda, const int scl, const uint8_t address) {
-  if (gTouchDevice != nullptr) return true;
-
-  i2c_master_bus_config_t busConfig = {};
-  busConfig.i2c_port = I2C_NUM_1;
-  busConfig.sda_io_num = static_cast<gpio_num_t>(sda);
-  busConfig.scl_io_num = static_cast<gpio_num_t>(scl);
-  busConfig.clk_source = I2C_CLK_SRC_DEFAULT;
-  busConfig.glitch_ignore_cnt = 7;
-  busConfig.flags.enable_internal_pullup = 1;
-
-  if (i2c_new_master_bus(&busConfig, &gTouchBus) != ESP_OK) return false;
-
-  i2c_device_config_t deviceConfig = {};
-  deviceConfig.dev_addr_length = I2C_ADDR_BIT_LEN_7;
-  deviceConfig.device_address = address;
-  deviceConfig.scl_speed_hz = 100000;
-  if (i2c_master_bus_add_device(gTouchBus, &deviceConfig, &gTouchDevice) != ESP_OK) {
-    i2c_del_master_bus(gTouchBus);
-    gTouchBus = nullptr;
-    return false;
-  }
-  return true;
+  return murphy_m4_i2c::write(murphy_m4_i2c::touchDevice(touch.sda, touch.scl, touch.i2cAddress), payload,
+                               sizeof(payload));
 }
 }  // namespace
 
@@ -62,7 +36,8 @@ void MurphyTouchDriver::begin() {
   }
   if (touch.irq >= 0) pinMode(touch.irq, INPUT_PULLUP);
 
-  if (touch.sda < 0 || touch.scl < 0 || !createBus(touch.sda, touch.scl, touch.i2cAddress)) {
+  if (touch.sda < 0 || touch.scl < 0 ||
+      murphy_m4_i2c::touchDevice(touch.sda, touch.scl, touch.i2cAddress) == nullptr) {
     INX_SERIAL.println("[MURPHY_M4][TOUCH] I2C setup failed");
     return;
   }
@@ -137,9 +112,9 @@ void MurphyTouchDriver::update() {
 }
 
 bool MurphyTouchDriver::readFrame(uint8_t* frame, const size_t length) const {
-  if (gTouchDevice == nullptr) return false;
+  const auto& touch = BoardConfig::ACTIVE.touch;
   const uint8_t reg = 0x02;
-  return i2c_master_transmit_receive(gTouchDevice, &reg, 1, frame, length, 20) == ESP_OK;
+  return murphy_m4_i2c::read(murphy_m4_i2c::touchDevice(touch.sda, touch.scl, touch.i2cAddress), reg, frame, length);
 }
 
 void MurphyTouchDriver::finishRelease(const unsigned long now) {

@@ -7,7 +7,7 @@
  * Same public interface as lib/hal_sticky/HalGPIO.h so src/ compiles unchanged.
  * Delegates buttons to freeink-sdk's InputManager and uses the local
  * MurphyTouchDriver for the FT6336U touch bus. BatteryMonitor and the
- * ESP32-S3 system RTC path match the stock MurphyOS firmware.
+ * Murphy RX8010 RTC are board-owned hardware paths.
  *
  * Peripherals the Murphy M4 does NOT have, and which are therefore stubbed rather
  * than wired: IMU (no tilt-to-turn), SHT40 environment sensor, PDM microphone
@@ -21,6 +21,7 @@
 #include <Arduino.h>
 #include <InputManager.h>
 
+#include "MurphyRtc.h"
 #include "MurphyTouchDriver.h"
 
 class HalGPIO {
@@ -103,6 +104,8 @@ class HalGPIO {
  private:
   InputManager inputMgr;
   MurphyTouchDriver touchDriver;
+  mutable MurphyRtc rtc;
+  mutable bool rtcReady = false;
 
   uint8_t touchPressedEvents = 0;
   uint8_t touchReleasedEvents = 0;

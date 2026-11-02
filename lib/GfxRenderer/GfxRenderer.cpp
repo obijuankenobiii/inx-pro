@@ -203,10 +203,43 @@ void GfxRenderer::drawPackedRow1bpp(const int x, const int y, const int width, c
     return;
   }
 
+  // Image rows are already packed.  On the unrotated landscape path, keep
+  // them packed all the way into the framebuffer instead of touching every
+  // pixel through drawPixel().
+  if (orientation == LandscapeCounterClockwise && x >= 0 && y >= 0 && x % 8 == 0 && width % 8 == 0 &&
+      x + width <= panelWidth && y < panelHeight) {
+    uint8_t* destination = frameBuffer + static_cast<uint32_t>(y) * panelWidthBytes + x / 8;
+    const bool invert = darkMode && !imageRendering;
+    const int rowBytes = width / 8;
+    for (int byte = 0; byte < rowBytes; ++byte) {
+      const uint8_t inkBits = row[byte];
+      destination[byte] = invert ? inkBits : static_cast<uint8_t>(~inkBits);
+    }
+    return;
+  }
+
   for (int col = 0; col < width; col++) {
-    int rotatedX = 0;
-    int rotatedY = 0;
-    rotateCoordinates(x + col, y, &rotatedX, &rotatedY);
+    int rotatedX;
+    int rotatedY;
+    switch (orientation) {
+      case Portrait:
+        rotatedX = y;
+        rotatedY = panelHeight - 1 - (x + col);
+        break;
+      case LandscapeClockwise:
+        rotatedX = panelWidth - 1 - (x + col);
+        rotatedY = panelHeight - 1 - y;
+        break;
+      case PortraitInverted:
+        rotatedX = panelWidth - 1 - y;
+        rotatedY = x + col;
+        break;
+      case LandscapeCounterClockwise:
+      default:
+        rotatedX = x + col;
+        rotatedY = y;
+        break;
+    }
     if (rotatedX < 0 || rotatedX >= panelWidth || rotatedY < 0 || rotatedY >= panelHeight) {
       continue;
     }

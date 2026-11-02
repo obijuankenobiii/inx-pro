@@ -103,6 +103,23 @@ bool handleGlobalPowerRefresh();
 namespace {
 constexpr unsigned long kPowerDownRestartHoldMs = 2000;
 constexpr unsigned long kPowerLongPressMs = 400;
+
+const char* buttonName(const uint8_t button) {
+  static constexpr const char* kNames[] = {"Back", "Confirm", "Left", "Right", "Up", "Down", "Power"};
+  return button < (sizeof(kNames) / sizeof(kNames[0])) ? kNames[button] : "Unknown";
+}
+
+void logButtonEdges() {
+  for (uint8_t button = HalGPIO::BTN_BACK; button <= HalGPIO::BTN_POWER; ++button) {
+    if (gpio.wasPressed(button)) {
+      INX_SERIAL.printf("[INPUT][BUTTON] %s(index=%u) pressed\n", buttonName(button), button);
+    }
+    if (gpio.wasReleased(button)) {
+      INX_SERIAL.printf("[INPUT][BUTTON] %s(index=%u) released held_ms=%lu\n", buttonName(button), button,
+                        gpio.getHeldTime());
+    }
+  }
+}
 }
 
 template <typename T>
@@ -408,8 +425,7 @@ void setup() {
  */
 void loop() {
   gpio.update();
-  const bool powerPressed = gpio.wasPressed(HalGPIO::BTN_POWER);
-  const bool powerReleased = gpio.wasReleased(HalGPIO::BTN_POWER);
+  logButtonEdges();
   const bool powerHeld = gpio.isPressed(HalGPIO::BTN_POWER);
   const bool downHeld = gpio.isPressed(HalGPIO::BTN_DOWN);
   static bool powerDownComboTracking = false;
@@ -435,11 +451,6 @@ void loop() {
     return;
   }
   powerDownComboTracking = false;
-
-  if (powerPressed || powerReleased) {
-    INX_SERIAL.printf("[STICKY][MAIN] power pressed=%d released=%d activity=%s\n", powerPressed ? 1 : 0,
-                   powerReleased ? 1 : 0, currentActivity ? currentActivity->getName() : "none");
-  }
 
   LibraryIndexRefresh::render(renderer);
   LibraryIndexRefresh::finish(renderer, currentActivity);

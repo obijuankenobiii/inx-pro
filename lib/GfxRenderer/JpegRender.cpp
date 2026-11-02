@@ -555,6 +555,7 @@ struct ProgressiveRenderOutput {
   FourToneImageDitherer* twoBitDitherer;
   Atkinson1BitDitherer* oneBitDitherer;
   JpegLevelCapture* capture;
+  uint8_t* packedOneBitRow;
 
   static bool emit(void* context, const uint16_t row, const uint8_t* pixels, const uint16_t width) {
     auto* output = static_cast<ProgressiveRenderOutput*>(context);
@@ -563,6 +564,9 @@ struct ProgressiveRenderOutput {
       yield();
     }
     const int screenY = output->drawY + row;
+    if (output->mode == ImageRenderMode::OneBit && output->packedOneBitRow) {
+      memset(output->packedOneBitRow, 0, (static_cast<size_t>(width) + 7u) / 8u);
+    }
     for (uint16_t x = 0; x < width; ++x) {
       const int gray = pixels[x];
       int quantized = 0;
@@ -589,8 +593,15 @@ struct ProgressiveRenderOutput {
         }
         drawPixelForLevel(output->renderer, output->drawX + x, screenY, level);
       } else if (quantized == 0) {
-        output->renderer.drawPixel(output->drawX + x, screenY, true);
+        if (output->packedOneBitRow) {
+          output->packedOneBitRow[x / 8] |= static_cast<uint8_t>(0x80u >> (x & 7u));
+        } else {
+          output->renderer.drawPixel(output->drawX + x, screenY, true);
+        }
       }
+    }
+    if (output->mode == ImageRenderMode::OneBit && output->packedOneBitRow) {
+      output->renderer.drawPackedRow1bpp(output->drawX, screenY, width, output->packedOneBitRow);
     }
     if (output->mode == ImageRenderMode::TwoBit) {
       output->twoBitDitherer->nextRow();
@@ -712,7 +723,8 @@ bool renderProgressiveJpegFull(FsFile& file, GfxRenderer& renderer, int x, int y
                                  quality,
                                  nullptr,
                                  nullptr,
-                                 capture};
+                                 capture,
+                                 nullptr};
   std::unique_ptr<FourToneImageDitherer> twoBitDitherer;
   std::unique_ptr<Atkinson1BitDitherer> oneBitDitherer;
   if (mode == ImageRenderMode::TwoBit) {
@@ -729,6 +741,15 @@ bool renderProgressiveJpegFull(FsFile& file, GfxRenderer& renderer, int x, int y
       return false;
     }
     output.oneBitDitherer = oneBitDitherer.get();
+  }
+  std::unique_ptr<uint8_t[]> packedOneBitRow;
+  if (mode == ImageRenderMode::OneBit) {
+    packedOneBitRow.reset(new (std::nothrow) uint8_t[(static_cast<size_t>(outputWidth) + 7u) / 8u]);
+    if (!packedOneBitRow) {
+      stbi_image_free(decoded);
+      return false;
+    }
+    output.packedOneBitRow = packedOneBitRow.get();
   }
 
   if (capture && mode == ImageRenderMode::TwoBit) {
@@ -1032,10 +1053,11 @@ bool renderProgressiveJpegDc(FsFile& file, GfxRenderer* renderer, int x, int y, 
   std::unique_ptr<ProgressiveRenderOutput> output;
   std::unique_ptr<FourToneImageDitherer> twoBitDitherer;
   std::unique_ptr<Atkinson1BitDitherer> oneBitDitherer;
+  std::unique_ptr<uint8_t[]> packedOneBitRow;
   if (!rowCallback) {
     if (!renderer) return false;
     output.reset(new (std::nothrow) ProgressiveRenderOutput{*renderer, drawX, drawY, mode, quality, nullptr, nullptr,
-                                                             capture});
+                                                             capture, nullptr});
     if (!output) return false;
     if (mode == ImageRenderMode::TwoBit) {
       twoBitDitherer.reset(new (std::nothrow) FourToneImageDitherer(outWidth));
@@ -1045,6 +1067,11 @@ bool renderProgressiveJpegDc(FsFile& file, GfxRenderer* renderer, int x, int y, 
       oneBitDitherer.reset(new (std::nothrow) Atkinson1BitDitherer(outWidth));
       if (!oneBitDitherer) return false;
       output->oneBitDitherer = oneBitDitherer.get();
+    }
+    if (mode == ImageRenderMode::OneBit) {
+      packedOneBitRow.reset(new (std::nothrow) uint8_t[(static_cast<size_t>(outWidth) + 7u) / 8u]);
+      if (!packedOneBitRow) return false;
+      output->packedOneBitRow = packedOneBitRow.get();
     }
   }
 
@@ -1333,14 +1360,16 @@ bool JpegRender::render(FsFile& jpegFile, int x, int y, int targetWidth, int tar
   uint16_t* rowCount = new (std::nothrow) uint16_t[outWidth]();
   FourToneImageDitherer* twoBitDitherer = nullptr;
   Atkinson1BitDitherer* oneBitDitherer = nullptr;
+  std::unique_ptr<uint8_t[]> packedOneBitRow;
   if (mode == ImageRenderMode::TwoBit) {
     twoBitDitherer = new (std::nothrow) FourToneImageDitherer(outWidth);
   } else {
     oneBitDitherer = new (std::nothrow) Atkinson1BitDitherer(outWidth);
+    packedOneBitRow.reset(new (std::nothrow) uint8_t[(static_cast<size_t>(outWidth) + 7u) / 8u]);
   }
   if (!mcuRowBuffer || !scaledRow || (verticalUpscale && (!prevScaledRow || !blendedRow)) || !rowAccum || !rowCount ||
       (mode == ImageRenderMode::TwoBit && (!twoBitDitherer || !twoBitDitherer->ok())) ||
-      (mode == ImageRenderMode::OneBit && !oneBitDitherer)) {
+      (mode == ImageRenderMode::OneBit && (!oneBitDitherer || !packedOneBitRow))) {
     free(mcuRowBuffer);
     free(scaledRow);
     free(prevScaledRow);
@@ -1401,6 +1430,9 @@ bool JpegRender::render(FsFile& jpegFile, int x, int y, int targetWidth, int tar
   ImageServiceBudget imageService;
   auto emitOutputRow = [&](const int screenY, const uint8_t* row) {
     imageService.service();
+    if (mode == ImageRenderMode::OneBit) {
+      memset(packedOneBitRow.get(), 0, (static_cast<size_t>(outWidth) + 7u) / 8u);
+    }
     for (int step = 0; step < outWidth; step++) {
       const int ox = step;
       const int gray = row[ox];
@@ -1432,8 +1464,11 @@ bool JpegRender::render(FsFile& jpegFile, int x, int y, int targetWidth, int tar
         }
         drawPixelForLevel(renderer_, drawOffsetX + ox, screenY, level);
       } else if (q == 0) {
-        renderer_.drawPixel(drawOffsetX + ox, screenY, true);
+        packedOneBitRow[ox / 8] |= static_cast<uint8_t>(0x80u >> (ox & 7));
       }
+    }
+    if (mode == ImageRenderMode::OneBit) {
+      renderer_.drawPackedRow1bpp(drawOffsetX, screenY, outWidth, packedOneBitRow.get());
     }
     if (mode == ImageRenderMode::TwoBit) {
       twoBitDitherer->nextRow();

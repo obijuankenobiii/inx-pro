@@ -97,11 +97,9 @@ bool MappedInputManager::mapButton(const Button button, bool (HalGPIO::*fn)(uint
 bool MappedInputManager::wasPressed(const Button button) const {
   if (injectedPressedButton_ == static_cast<int8_t>(button)) {
     injectedPressedButton_ = -1;
-    if (button == Button::Power) INX_SERIAL.println("[STICKY][INPUT] power pressed injected");
     return true;
   }
   if (mapButton(button, &HalGPIO::wasPressed)) {
-    if (button == Button::Power) INX_SERIAL.println("[STICKY][INPUT] power pressed gpio");
     return true;
   }
 
@@ -117,11 +115,9 @@ bool MappedInputManager::wasPressed(const Button button) const {
 bool MappedInputManager::wasReleased(const Button button) const {
   if (injectedReleasedButton_ == static_cast<int8_t>(button)) {
     injectedReleasedButton_ = -1;
-    if (button == Button::Power) INX_SERIAL.println("[STICKY][INPUT] power released injected");
     return true;
   }
   if (mapButton(button, &HalGPIO::wasReleased)) {
-    if (button == Button::Power) INX_SERIAL.println("[STICKY][INPUT] power released gpio");
     return true;
   }
 
