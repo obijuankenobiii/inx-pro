@@ -561,10 +561,16 @@ void ReaderPresetEditorActivity::loop() {
     return;
   }
 
-  const bool verticalSwipe = mappedInput.wasTouchSwipeUp() || mappedInput.wasTouchSwipeDown() ||
-                             mappedInput.wasTouchSwipeUpForRenderer(renderer) ||
-                             mappedInput.wasTouchSwipeDownForRenderer(renderer);
-  if (verticalSwipe) {
+  const bool swipeUp = mappedInput.wasTouchSwipeUp() || mappedInput.wasTouchSwipeUpForRenderer(renderer);
+  if (swipeUp) {
+    // Treat swipe-up like the editor's Back button. Existing presets save on
+    // exit; new presets show the existing Save/Discard prompt.
+    beginExit();
+    return;
+  }
+
+  const bool swipeDown = mappedInput.wasTouchSwipeDown() || mappedInput.wasTouchSwipeDownForRenderer(renderer);
+  if (swipeDown) {
     if (drawer_) {
       drawer_->handleInput(mappedInput);
     }

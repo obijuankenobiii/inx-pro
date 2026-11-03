@@ -5,6 +5,7 @@
 
 #include "Page.h"
 
+#include <Arduino.h>
 #include <GfxRenderer.h>
 
 #include "system/MappedInputManager.h"
@@ -176,10 +177,12 @@ void UiPage::render() {
       overlayFrameRestorePending_ = false;
     }
   }
+
   if (!restored) {
     renderer.clearScreen();
     content();
   }
+
   menu();
   renderer.displayBufferAsync();
 }

@@ -1411,7 +1411,7 @@ bool EpubActivity::handleWordSelection() {
  */
 void EpubActivity::onExit() {
   invalidatePreparedPage();
-  const bool clearImagePageOnExit = lastPageHadImages;
+  const bool clearImagePageOnExit = lastPageHadImages && lastPageHadHighQualityImage;
   closeWordSelection();
   resetPageNoteState();
 
@@ -1455,13 +1455,14 @@ void EpubActivity::onExit() {
   epub.reset();
 
   renderer.resetTransientReaderState();
-
+  // High-quality image waveforms can leave residual charge/ghosting behind.
+  // Keep the cleanup only for those pages; ordinary EPUB exits stay fast.
   if (clearImagePageOnExit) {
     renderer.clearScreen(0xFF);
-    renderer.displayBuffer(FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 ? HalDisplay::FULL_REFRESH : HalDisplay::HALF_REFRESH);
+    renderer.displayBuffer(FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 ? HalDisplay::FULL_REFRESH
+                                                                             : HalDisplay::HALF_REFRESH);
   }
 
-  FontManager::unloadAllSDFonts();
   LanguageManager::setBookLanguage("");
 
   ActivityWithSubactivity::onExit();

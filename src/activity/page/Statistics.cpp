@@ -1749,17 +1749,27 @@ void Statistics::loop() {
 
   if (statsTab_ != 0) {
     const int returnTab = statsTab_ == 3 ? 2 : 0;
-    if (SubPage::closeInput(renderer, mappedInput,
-                            [this, returnTab]() {
-                              statsTab_ = returnTab;
-                              selectedBookIndex_ = -1;
-                              updateRequired = true;
-                              renderPage();
-                            },
-                            statsTab_ != 2)) {
+    const auto closeStatsTab = [this, returnTab]() {
+      statsTab_ = returnTab;
+      selectedBookIndex_ = -1;
+      updateRequired = true;
+      renderPage();
+    };
+    if (SubPage::closeInput(renderer, mappedInput, closeStatsTab, statsTab_ != 2)) {
+      return;
+    }
+    // The shared close handler checks the default touch frame. Statistics can
+    // also be displayed in a rotated renderer frame, so accept the same
+    // physical bottom-to-top gesture in that frame as well. The Books tab
+    // keeps swipe-up for paging, matching its existing behavior above.
+    if (statsTab_ != 2 && mappedInput.hasTouch() && mappedInput.wasTouchSwipeUpForRenderer(renderer)) {
+      closeStatsTab();
       return;
     }
   } else if (closeInput()) {
+    return;
+  } else if (mappedInput.hasTouch() && mappedInput.wasTouchSwipeUpForRenderer(renderer)) {
+    dismiss();
     return;
   }
 

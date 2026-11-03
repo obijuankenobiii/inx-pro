@@ -13,6 +13,7 @@
 #include "activity/page/components/global/Button.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
+#include "system/ScreenComponents.h"
 
 namespace {
 constexpr int padding = 20;
@@ -169,6 +170,7 @@ void TocSidebar::render() {
   if (!visible) return;
 
   if (!frameStored || !renderer.copyStoredBwToFramebuffer()) renderer.syncWriteBufferFromActive();
+  ScreenComponents::drawWhiteOverlay(renderer);
   const int panelWidth = width();
   const int screenHeight = renderer.getScreenHeight();
   renderer.rectangle.fill(0, 0, panelWidth, screenHeight, false);

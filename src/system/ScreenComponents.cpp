@@ -98,6 +98,20 @@ bool ScreenComponents::drawMenuClock(const GfxRenderer& renderer, const int left
   return true;
 }
 
+bool ScreenComponents::drawMenuClockRightAligned(const GfxRenderer& renderer, const int right, const int top,
+                                                 int* outLeft) {
+  char clockText[10] = {};
+  if (!formatMenuClock(clockText, sizeof(clockText))) {
+    return false;
+  }
+
+  const int width = renderer.text.getWidth(MONTSERRAT_8_FONT_ID, clockText);
+  const int left = right - width;
+  renderer.text.render(MONTSERRAT_8_FONT_ID, left, top, clockText, true);
+  if (outLeft) *outLeft = left;
+  return true;
+}
+
 void ScreenComponents::drawMenuClockAndBattery(const GfxRenderer& renderer, const int batteryLeft, const int top,
                                                const bool showBatteryPercentage) {
   constexpr int kClockBatteryGap = 12;

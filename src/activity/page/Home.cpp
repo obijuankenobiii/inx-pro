@@ -24,8 +24,10 @@
 #include "images/Store.h"
 #include "state/BookState.h"
 #include "state/RecentBooks.h"
+#include "state/SystemSetting.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
+#include "system/ScreenComponents.h"
 
 extern void openReaderFromCallback(const std::string& path, std::function<void()> returnToCaller);
 extern void onGoToHome();
@@ -41,6 +43,35 @@ namespace {
 constexpr unsigned long longPressMs = 500;
 constexpr int kStoreIconSize = 40;
 constexpr int kStoreBottomMargin = 20;
+
+void drawHomeClockAndBattery(const GfxRenderer& renderer) {
+  constexpr int batteryRightMargin = 10;
+  constexpr int clockRightMargin = 20;
+  constexpr int batteryClockGap = 10;
+  const bool showPercentage = SETTINGS.hideBatteryPercentage != SystemSetting::HIDE_BATTERY_PERCENTAGE::HIDE_ALWAYS;
+  const int textWidth = showPercentage ? renderer.text.getWidth(MONTSERRAT_8_FONT_ID, "100%") : 0;
+  const int batteryWidth = showPercentage
+                               ? ScreenComponents::BATTERY_ICON_WIDTH + ScreenComponents::BATTERY_TEXT_GAP + textWidth
+                               : ScreenComponents::BATTERY_ICON_WIDTH;
+  const int top = navigation::Menu::topPadding + (navigation::Menu::iconSize - 18) / 2;
+  if (!SETTINGS.showMenuClock) {
+    const int batteryLeft = renderer.getScreenWidth() - batteryRightMargin - batteryWidth;
+    ScreenComponents::drawBattery(renderer, batteryLeft, top, showPercentage);
+    return;
+  }
+
+  int clockLeft = 0;
+  const bool clockDrawn = ScreenComponents::drawMenuClockRightAligned(
+      renderer, renderer.getScreenWidth() - clockRightMargin, top, &clockLeft);
+  if (!clockDrawn) {
+    const int batteryLeft = renderer.getScreenWidth() - batteryRightMargin - batteryWidth;
+    ScreenComponents::drawBattery(renderer, batteryLeft, top, showPercentage);
+    return;
+  }
+
+  const int batteryLeft = clockLeft - batteryClockGap - batteryWidth;
+  ScreenComponents::drawBattery(renderer, batteryLeft, top, showPercentage);
+}
 
 int storeIconY(const GfxRenderer& renderer) { return renderer.getScreenHeight() - kStoreBottomMargin - kStoreIconSize; }
 
@@ -108,9 +139,9 @@ void Home::onEnter() {
 void Home::menu() {
   UiPage::menu();
 #if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4
-  if (!isLightDrawerOpen()) drawBattery(renderer);
+  if (!isLightDrawerOpen()) drawHomeClockAndBattery(renderer);
 #else
-  drawBattery(renderer);
+  drawHomeClockAndBattery(renderer);
 #endif
   if (shortcutDrawerOpen) drawShortcutDrawer();
 }
@@ -141,10 +172,14 @@ void Home::loop() {
   }
 
   if (widgetLayout.needsRefresh(HomeTheme::active())) updateRequired = true;
+  // Let the first Home frame reach the panel before doing carousel I/O and
+  // thumbnail decoding. The preload is still done on the next idle loop, so
+  // it remains warm for a swipe without extending the visible screen render.
+  const bool renderedThisLoop = updateRequired;
   if (handleSwipe()) return;
   if (handleTap()) return;
   renderPage();
-  preloadCarousel();
+  if (!renderedThisLoop && !mappedInput.hasTouch()) preloadCarousel();
 }
 
 void Home::content() {

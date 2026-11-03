@@ -53,12 +53,24 @@ constexpr uint8_t kSsd1677DisplayUpdateControl1 = 0x21;
 constexpr uint8_t kSsd1677Control1Normal = 0x00;
 constexpr uint8_t kSsd1677Control1BypassRed = 0x40;
 
+// Match StickyDisplay's completion guard. BUSY can remain low briefly after
+// an async start; finishing immediately can miss the transition and leave the
+// controller's previous-frame state stale, which appears as idle ghosting.
+void finishMurphyRefresh(EInkDisplay& display) {
+  if (!display.isRefreshPending()) return;
+
+  const unsigned long started = millis();
+  while (!display.refreshBusy() && millis() - started < 25) delay(1);
+  while (display.refreshBusy()) delay(1);
+  display.finishDisplayAsync();
+}
+
 // The Murphy panel expects the two-byte form of SSD1677 command 0x21. The
 // vendored driver writes the first byte as part of every refresh, so priming
 // the register here leaves the second byte at the required value without
 // adding a Murphy branch to the vendored driver.
 void primeMurphyUpdateControl1(EInkDisplay& display, const HalDisplay::RefreshMode mode) {
-  display.waitRefreshComplete();
+  finishMurphyRefresh(display);
   const uint8_t firstByte = (mode == HalDisplay::FAST_REFRESH || mode == HalDisplay::MANUAL_REFRESH)
                                 ? kSsd1677Control1Normal
                                 : kSsd1677Control1BypassRed;
@@ -119,7 +131,7 @@ void HalDisplay::clearBothBuffers(const uint8_t color) const {
 }
 
 void HalDisplay::finishPendingRefresh() const {
-  const_cast<HalDisplay*>(this)->display.waitRefreshComplete();
+  finishMurphyRefresh(const_cast<EInkDisplay&>(display));
 }
 
 void HalDisplay::drawImage(const uint8_t* imageData, const uint16_t x, const uint16_t y, const uint16_t w,
@@ -161,11 +173,15 @@ void HalDisplay::refreshDisplay(const HalDisplay::RefreshMode mode, const bool t
   display.refreshDisplay(convertRefreshMode(mode), turnOffScreen);
 }
 
-void HalDisplay::deepSleep() { display.deepSleep(); }
+void HalDisplay::deepSleep() {
+  finishMurphyRefresh(display);
+  display.deepSleep();
+}
 
 uint8_t* HalDisplay::getFrameBuffer() const { return display.getFrameBuffer(); }
 
 void HalDisplay::copyGrayscaleBuffers(const uint8_t* lsbBuffer, const uint8_t* msbBuffer) {
+  finishMurphyRefresh(display);
   if (windowedGray.isArmed()) {
     windowedGray.copyLsb(lsbBuffer);
     windowedGray.copyMsb(msbBuffer);
@@ -175,16 +191,19 @@ void HalDisplay::copyGrayscaleBuffers(const uint8_t* lsbBuffer, const uint8_t* m
 }
 
 void HalDisplay::copyGrayscaleLsbBuffers(const uint8_t* lsbBuffer) {
+  finishMurphyRefresh(display);
   if (windowedGray.isArmed()) windowedGray.copyLsb(lsbBuffer);
   else display.copyGrayscaleLsbBuffers(lsbBuffer);
 }
 
 void HalDisplay::copyGrayscaleMsbBuffers(const uint8_t* msbBuffer) {
+  finishMurphyRefresh(display);
   if (windowedGray.isArmed()) windowedGray.copyMsb(msbBuffer);
   else display.copyGrayscaleMsbBuffers(msbBuffer);
 }
 
 void HalDisplay::cleanupGrayscaleBuffers(const uint8_t* bwBuffer) {
+  finishMurphyRefresh(display);
   display.cleanupGrayscaleBuffers(bwBuffer);
 }
 
@@ -221,7 +240,10 @@ void HalDisplay::displayGrayBufferWindow(const uint16_t x, const uint16_t y, con
 
 bool HalDisplay::supportsWindowedQuality() const { return windowedGray.supports(); }
 
-void HalDisplay::prepareQualityGrayscale() { display.prepareGrayscaleTarget(); }
+void HalDisplay::prepareQualityGrayscale() {
+  finishMurphyRefresh(display);
+  display.prepareGrayscaleTarget();
+}
 
 void HalDisplay::prepareQualityGrayscaleWindow(const uint16_t x, const uint16_t y, const uint16_t w,
                                                const uint16_t h) {

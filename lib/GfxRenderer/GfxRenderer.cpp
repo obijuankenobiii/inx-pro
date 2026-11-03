@@ -334,7 +334,9 @@ void GfxRenderer::invertRect(const DisplayRegion& region) const {
   }
 }
 
-void GfxRenderer::displayBuffer(const HalDisplay::RefreshMode refreshMode) const { display.displayBuffer(refreshMode); }
+void GfxRenderer::displayBuffer(const HalDisplay::RefreshMode refreshMode) const {
+  display.displayBuffer(refreshMode);
+}
 
 void GfxRenderer::displayWindow(const DisplayRegion& region, const HalDisplay::RefreshMode refreshMode) const {
   uint16_t x = 0;

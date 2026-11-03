@@ -41,6 +41,7 @@
 #include "state/SystemSetting.h"
 #include "system/FontManager.h"
 #include "system/Fonts.h"
+#include "system/ScreenComponents.h"
 
 constexpr int LIST_ITEM_HEIGHT = UiLayout::LIST_ITEM_HEIGHT;
 
@@ -714,6 +715,9 @@ void SettingsDrawer::renderWithRefresh(HalDisplay::RefreshMode mode) {
   syncLayoutFromRenderer();
   if (!selectorFrameRestored_) {
     renderer.syncWriteBufferFromActive();
+  }
+  if (!embedded_) {
+    ScreenComponents::drawWhiteOverlay(renderer);
   }
   drawBackground();
   drawMenuItems();
