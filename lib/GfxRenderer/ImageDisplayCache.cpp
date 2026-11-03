@@ -719,12 +719,16 @@ bool ImageDisplayCache::displayTwoBitIfAvailable(GfxRenderer& renderer, const st
   }
 
   const bool useFastQuality = quality && fastQuality;
+  const bool useWindow = quality && renderer.supportsWindowedQuality();
+  const GfxRenderer::DisplayRegion window{x, y, width, height};
 
   if (quality) {
-    renderer.prepareQualityGrayscale();
+    if (useWindow) renderer.prepareQualityGrayscaleWindow(window);
+    else renderer.prepareQualityGrayscale();
   }
 
-  renderer.clearScreen(quality ? 0xFF : 0x00);
+  if (useWindow) renderer.clearRect(window, 0xFF);
+  else renderer.clearScreen(quality ? 0xFF : 0x00);
   renderer.setRenderMode(quality ? GfxRenderer::GRAY2_LSB : GfxRenderer::GRAYSCALE_LSB);
   if (!renderIfAvailable(renderer, sourcePath, x, y, width, height, lsbOptions)) {
     renderer.setRenderMode(GfxRenderer::BW);
@@ -732,7 +736,8 @@ bool ImageDisplayCache::displayTwoBitIfAvailable(GfxRenderer& renderer, const st
   }
   renderer.copyGrayscaleLsbBuffers();
 
-  renderer.clearScreen(quality ? 0xFF : 0x00);
+  if (useWindow) renderer.clearRect(window, 0xFF);
+  else renderer.clearScreen(quality ? 0xFF : 0x00);
   renderer.setRenderMode(quality ? GfxRenderer::GRAY2_MSB : GfxRenderer::GRAYSCALE_MSB);
   if (!renderIfAvailable(renderer, sourcePath, x, y, width, height, msbOptions)) {
     renderer.setRenderMode(GfxRenderer::BW);
@@ -740,13 +745,16 @@ bool ImageDisplayCache::displayTwoBitIfAvailable(GfxRenderer& renderer, const st
   }
   renderer.copyGrayscaleMsbBuffers();
 
-  if (useFastQuality) {
+  if (useWindow) {
+    renderer.displayGrayBufferWindow(window, true, useFastQuality);
+  } else if (useFastQuality) {
     renderer.displayGrayBufferFastQuality();
   } else {
     renderer.displayGrayBuffer(quality);
   }
   renderer.setRenderMode(GfxRenderer::BW);
-  renderer.clearScreen(0xFF);
+  if (useWindow) renderer.syncWriteBufferFromActive();
+  else renderer.clearScreen(0xFF);
   renderer.cleanupGrayscaleWithFrameBuffer();
 
   return true;
@@ -851,11 +859,15 @@ bool ImageDisplayCache::renderCombinedTwoBit(GfxRenderer& renderer, const std::s
   }
   file.close();
 
+  const bool useWindow = quality && renderer.supportsWindowedQuality();
+  const GfxRenderer::DisplayRegion window{x, y, width, height};
   if (quality) {
-    renderer.prepareQualityGrayscale();
+    if (useWindow) renderer.prepareQualityGrayscaleWindow(window);
+    else renderer.prepareQualityGrayscale();
   }
 
-  renderer.clearScreen(quality ? 0xFF : 0x00);
+  if (useWindow) renderer.clearRect(window, 0xFF);
+  else renderer.clearScreen(quality ? 0xFF : 0x00);
   renderer.setRenderMode(quality ? GfxRenderer::GRAY2_LSB : GfxRenderer::GRAYSCALE_LSB);
   for (int row = 0; row < visible.height; ++row) {
     renderer.drawPackedRow1bpp(visible.x, visible.y + row, visible.width,
@@ -863,7 +875,8 @@ bool ImageDisplayCache::renderCombinedTwoBit(GfxRenderer& renderer, const std::s
   }
   renderer.copyGrayscaleLsbBuffers();
 
-  renderer.clearScreen(quality ? 0xFF : 0x00);
+  if (useWindow) renderer.clearRect(window, 0xFF);
+  else renderer.clearScreen(quality ? 0xFF : 0x00);
   renderer.setRenderMode(quality ? GfxRenderer::GRAY2_MSB : GfxRenderer::GRAYSCALE_MSB);
   for (int row = 0; row < visible.height; ++row) {
     renderer.drawPackedRow1bpp(visible.x, visible.y + row, visible.width,
@@ -871,13 +884,16 @@ bool ImageDisplayCache::renderCombinedTwoBit(GfxRenderer& renderer, const std::s
   }
   renderer.copyGrayscaleMsbBuffers();
 
-  if (quality && fastQuality) {
+  if (useWindow) {
+    renderer.displayGrayBufferWindow(window, true, quality && fastQuality);
+  } else if (quality && fastQuality) {
     renderer.displayGrayBufferFastQuality();
   } else {
     renderer.displayGrayBuffer(quality);
   }
   renderer.setRenderMode(GfxRenderer::BW);
-  renderer.clearScreen(0xFF);
+  if (useWindow) renderer.syncWriteBufferFromActive();
+  else renderer.clearScreen(0xFF);
   renderer.cleanupGrayscaleWithFrameBuffer();
 
   return true;

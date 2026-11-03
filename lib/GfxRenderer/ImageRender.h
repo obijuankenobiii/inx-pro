@@ -12,7 +12,7 @@
 #include <functional>
 #include <string>
 
-class GfxRenderer;
+#include "GfxRenderer.h"
 struct JpegLevelCapture;
 
 class ImageRender {
@@ -49,7 +49,8 @@ class ImageRender {
                         const std::function<void()>& overlay = {}) const;
 
   static void displayGrayscale(GfxRenderer& renderer, bool quality, bool preserveText,
-                               const std::function<void()>& drawPlane, bool fastQuality = false);
+                               const std::function<void()>& drawPlane, bool fastQuality = false,
+                               const GfxRenderer::DisplayRegion* window = nullptr);
 
  private:
   enum class Format { Bitmap, Jpeg, Png, Gif };

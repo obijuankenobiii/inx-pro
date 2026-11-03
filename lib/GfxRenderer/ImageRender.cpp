@@ -318,6 +318,10 @@ bool ImageRender::displayGrayscale(int x, int y, int width, int height, const Op
   }
 
   const bool effectiveQuality = quality && format_ != Format::Png;
+  // An overlay may draw outside the image rectangle (for example image-viewer
+  // controls), so keep the existing full-frame path whenever one is present.
+  const bool useWindowedQuality = effectiveQuality && !overlay && renderer_.supportsWindowedQuality();
+  const GfxRenderer::DisplayRegion imageRegion{x, y, width, height};
   Options opt = options;
   opt.mode = ImageRenderMode::TwoBit;
   opt.quality = effectiveQuality;
@@ -363,14 +367,15 @@ bool ImageRender::displayGrayscale(int x, int y, int width, int height, const Op
       renderer_.renderGrayscalePasses(
           effectiveQuality, /*preserveText=*/false,
           [&] {
-            renderer_.clearScreen(effectiveQuality ? 0xFF : 0x00);
+            if (useWindowedQuality) renderer_.clearRect(imageRegion, 0xFF);
+            else renderer_.clearScreen(effectiveQuality ? 0xFF : 0x00);
             render(x, y, width, height, renderOpt, &capture);
             captureCurrentPlane();
             if (overlay) {
               overlay();
             }
           },
-          opt.fastQuality);
+          opt.fastQuality, useWindowedQuality ? &imageRegion : nullptr);
       rendered = true;
     }
   }
@@ -379,14 +384,15 @@ bool ImageRender::displayGrayscale(int x, int y, int width, int height, const Op
     renderer_.renderGrayscalePasses(
         effectiveQuality, /*preserveText=*/false,
         [&] {
-          renderer_.clearScreen(effectiveQuality ? 0xFF : 0x00);
+          if (useWindowedQuality) renderer_.clearRect(imageRegion, 0xFF);
+          else renderer_.clearScreen(effectiveQuality ? 0xFF : 0x00);
           render(x, y, width, height, renderOpt);
           captureCurrentPlane();
           if (overlay) {
             overlay();
           }
         },
-        opt.fastQuality);
+        opt.fastQuality, useWindowedQuality ? &imageRegion : nullptr);
   }
 
   if (captureForCombinedCache) {
@@ -397,8 +403,9 @@ bool ImageRender::displayGrayscale(int x, int y, int width, int height, const Op
 }
 
 void ImageRender::displayGrayscale(GfxRenderer& renderer, const bool quality, const bool preserveText,
-                                   const std::function<void()>& drawPlane, const bool fastQuality) {
-  renderer.renderGrayscalePasses(quality, preserveText, drawPlane, fastQuality);
+                                   const std::function<void()>& drawPlane, const bool fastQuality,
+                                   const GfxRenderer::DisplayRegion* window) {
+  renderer.renderGrayscalePasses(quality, preserveText, drawPlane, fastQuality, window);
 }
 
 bool ImageRender::render(int x, int y, int width, int height) const { return render(x, y, width, height, Options()); }

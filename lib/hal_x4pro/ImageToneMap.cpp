@@ -99,7 +99,7 @@ uint8_t mapQualityGray2Level(const uint8_t level) {
 }
 
 #ifndef X4PRO_IMAGE_CONTRAST
-#define X4PRO_IMAGE_CONTRAST 145
+#define X4PRO_IMAGE_CONTRAST 100
 #endif
 #ifndef X4PRO_IMAGE_DARKEN
 #define X4PRO_IMAGE_DARKEN 12

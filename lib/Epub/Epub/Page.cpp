@@ -1085,7 +1085,7 @@ void Page::fillImageRects(GfxRenderer& renderer, const int xOffset, const int yO
 }
 
 bool Page::getImageBoundingBox(const GfxRenderer& renderer, const int xOffset, const int yOffset, int16_t& outX,
-                               int16_t& outY, int16_t& outW, int16_t& outH) const {
+                               int16_t& outY, int16_t& outW, int16_t& outH, const bool onlyGrayscale) const {
   (void)xOffset;
   const int screenW = renderer.getScreenWidth();
   bool found = false;
@@ -1098,6 +1098,9 @@ bool Page::getImageBoundingBox(const GfxRenderer& renderer, const int xOffset, c
       continue;
     }
     const auto& img = static_cast<const PageImage&>(*element);
+    if (onlyGrayscale && !needsGrayscalePass(img)) {
+      continue;
+    }
     const int rx = std::max(0, (screenW - img.getWidth()) / 2);
     const int ry = std::max(0, img.yPos + yOffset);
     minX = std::min(minX, rx);

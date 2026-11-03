@@ -90,7 +90,8 @@ EInkDisplay::RefreshMode convertRefreshMode(const HalDisplay::RefreshMode mode) 
 
 HalDisplay::HalDisplay()
     : display(panelPins().sclk, panelPins().mosi, panelPins().cs, panelPins().dc, panelPins().rst,
-              panelPins().busy) {}
+              panelPins().busy),
+      windowedGray(display) {}
 
 HalDisplay::~HalDisplay() = default;
 
@@ -131,6 +132,16 @@ void HalDisplay::displayBuffer(const HalDisplay::RefreshMode mode) {
   display.displayBuffer(convertRefreshMode(mode));
 }
 
+void HalDisplay::displayWindow(const uint16_t x, const uint16_t y, const uint16_t w, const uint16_t h,
+                               const HalDisplay::RefreshMode mode) {
+  primeMurphyUpdateControl1(display, mode);
+  display.displayWindow(x, y, w, h);
+#ifndef EINK_DISPLAY_SINGLE_BUFFER_MODE
+  if (display.frameBuffer != nullptr && display.frameBufferActive != nullptr)
+    memcpy(display.frameBufferActive, display.frameBuffer, display.getBufferSize());
+#endif
+}
+
 void HalDisplay::displayBufferAsync(const HalDisplay::RefreshMode mode) {
   primeMurphyUpdateControl1(display, mode);
   display.displayBufferAsync(convertRefreshMode(mode));
@@ -155,15 +166,22 @@ void HalDisplay::deepSleep() { display.deepSleep(); }
 uint8_t* HalDisplay::getFrameBuffer() const { return display.getFrameBuffer(); }
 
 void HalDisplay::copyGrayscaleBuffers(const uint8_t* lsbBuffer, const uint8_t* msbBuffer) {
-  display.copyGrayscaleBuffers(lsbBuffer, msbBuffer);
+  if (windowedGray.isArmed()) {
+    windowedGray.copyLsb(lsbBuffer);
+    windowedGray.copyMsb(msbBuffer);
+  } else {
+    display.copyGrayscaleBuffers(lsbBuffer, msbBuffer);
+  }
 }
 
 void HalDisplay::copyGrayscaleLsbBuffers(const uint8_t* lsbBuffer) {
-  display.copyGrayscaleLsbBuffers(lsbBuffer);
+  if (windowedGray.isArmed()) windowedGray.copyLsb(lsbBuffer);
+  else display.copyGrayscaleLsbBuffers(lsbBuffer);
 }
 
 void HalDisplay::copyGrayscaleMsbBuffers(const uint8_t* msbBuffer) {
-  display.copyGrayscaleMsbBuffers(msbBuffer);
+  if (windowedGray.isArmed()) windowedGray.copyMsb(msbBuffer);
+  else display.copyGrayscaleMsbBuffers(msbBuffer);
 }
 
 void HalDisplay::cleanupGrayscaleBuffers(const uint8_t* bwBuffer) {
@@ -188,7 +206,28 @@ void HalDisplay::displayGrayBufferFastQuality() {
   display.displayGrayBuffer(false, kMurphyQualityFastLut, true);
 }
 
+void HalDisplay::displayGrayBufferWindow(const uint16_t x, const uint16_t y, const uint16_t w, const uint16_t h,
+                                         const bool quality, const bool fastQuality) {
+  primeMurphyUpdateControl1(display, FAST_REFRESH);
+  if (quality) {
+    if (!windowedGray.displayWindow(x, y, w, h,
+                                    fastQuality ? kMurphyQualityFastLut : freeink::lut_factory_quality))
+      INX_SERIAL.printf("[MURPHY_M4][GRAY-WINDOW] rejected x=%u y=%u w=%u h=%u; full refresh suppressed\n", x, y, w,
+                        h);
+    return;
+  }
+  display.displayGrayBuffer(false, nullptr, false);
+}
+
+bool HalDisplay::supportsWindowedQuality() const { return windowedGray.supports(); }
+
 void HalDisplay::prepareQualityGrayscale() { display.prepareGrayscaleTarget(); }
+
+void HalDisplay::prepareQualityGrayscaleWindow(const uint16_t x, const uint16_t y, const uint16_t w,
+                                               const uint16_t h) {
+  prepareQualityGrayscale();
+  windowedGray.prepare(x, y, w, h);
+}
 
 void HalDisplay::forceGrayWaveformVariant(const uint8_t variant) {
   (void)variant;

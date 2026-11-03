@@ -86,6 +86,20 @@ bool pageImageFootprintAtLeastHalfScreen(const Page& page, const GfxRenderer& re
   return iw >= halfW && ih >= halfH;
 }
 
+bool pageGrayscaleImageRegion(const Page& page, const GfxRenderer& renderer, const int marginLeft,
+                              const int marginTop, GfxRenderer::DisplayRegion& region) {
+  int16_t x = 0;
+  int16_t y = 0;
+  int16_t width = 0;
+  int16_t height = 0;
+  if (!page.getImageBoundingBox(renderer, marginLeft, marginTop, x, y, width, height, /*onlyGrayscale=*/true)) {
+    return false;
+  }
+  region = {x, y, width, height};
+  INX_SERIAL.printf("[%lu] [HQ-IMAGE] logical image region=%d,%d %dx%d\n", millis(), x, y, width, height);
+  return true;
+}
+
 uint32_t addPreparedPageSignature(uint32_t hash, const uint32_t value) {
   hash ^= value;
   return hash * 16777619u;
@@ -1990,6 +2004,10 @@ bool EpubActivity::finishPreparedPageGrayscale(const PreparedPage& prepared) {
   }
 
   if (highQuality) {
+    GfxRenderer::DisplayRegion imageRegion{};
+    const bool useWindowedQuality = renderer.supportsWindowedQuality() &&
+                                    pageGrayscaleImageRegion(*page, renderer, info.totalMarginLeft,
+                                                             info.totalMarginTop, imageRegion);
     ImageRender::displayGrayscale(
         renderer, /*quality=*/true, /*preserveText=*/true,
         [&] {
@@ -1999,11 +2017,11 @@ bool EpubActivity::finishPreparedPageGrayscale(const PreparedPage& prepared) {
           page->renderImages(renderer, fontId, info.totalMarginLeft, info.totalMarginTop, imageMode, /*quality=*/true,
                              /*onlyGrayscale=*/true);
         },
-        kReaderHighQualityFastLut);
+        kReaderHighQualityFastLut, useWindowedQuality ? &imageRegion : nullptr);
 #if FREEINK_DEVICE_X4PRO
     constexpr bool kAaAfterHqImage = false;
 #else
-    constexpr bool kAaAfterHqImage = true;
+    constexpr bool kAaAfterHqImage = false;
 #endif
     if (textAa && kAaAfterHqImage) {
       const bool textBwStored = renderer.storeBwBuffer();
@@ -2444,6 +2462,11 @@ void EpubActivity::renderContents(Page* page, const int orientedMarginTop,
   const bool bwStored = (skipImagesInPageRender || mediumImageGrayscale || (needsTextAntiAliasPass && !highQuality)) &&
                         renderer.storeBwBuffer();
   const bool displayWithQualityPass = highQuality && bwStored;
+  GfxRenderer::DisplayRegion imageRegion{};
+  const bool useWindowedQuality = displayWithQualityPass && renderer.supportsWindowedQuality() &&
+                                  pageGrayscaleImageRegion(*page, renderer, orientedMarginLeft, orientedMarginTop,
+                                                           imageRegion);
+  const bool skipBasePageRefresh = (FREEINK_DEVICE_STICKY || FREEINK_DEVICE_MURPHY_M4) && useWindowedQuality;
   const bool smartRefreshThisPageAfterLargeImage = smartImageRefreshEnabled && smartRefreshAfterLargeImage;
   auto displayPageBuffer = [this, smartRefreshThisPageAfterLargeImage, smartRefreshAfterQualityImage,
                             smartImageRefreshEnabled, periodicRefreshEnabled, periodicRefreshPages]() {
@@ -2469,7 +2492,13 @@ void EpubActivity::renderContents(Page* page, const int orientedMarginTop,
   if (displayImagePlaceholder) {
     page->fillImageRects(renderer, orientedMarginLeft, orientedMarginTop, true, /*onlyGrayscale=*/true);
   }
-  displayPageBuffer();
+  if (skipBasePageRefresh) {
+    // Sticky/Murphy's HQ image pass must not be preceded by a full-panel
+    // refresh. X4Pro deliberately keeps its existing base-page refresh.
+    INX_SERIAL.printf("[%lu] [HQ-WINDOW] skipping Sticky/Murphy full page refresh\n", millis());
+  } else {
+    displayPageBuffer();
+  }
 
   if (highQuality && bwStored) {
     ImageRender::displayGrayscale(
@@ -2481,11 +2510,11 @@ void EpubActivity::renderContents(Page* page, const int orientedMarginTop,
           page->renderImages(renderer, fontId, orientedMarginLeft, orientedMarginTop, imageMode, /*quality=*/true,
                              /*onlyGrayscale=*/true);
         },
-        kReaderHighQualityFastLut);
+        kReaderHighQualityFastLut, useWindowedQuality ? &imageRegion : nullptr);
 #if FREEINK_DEVICE_X4PRO
     constexpr bool kAaAfterHqImage = false;
 #else
-    constexpr bool kAaAfterHqImage = true;
+    constexpr bool kAaAfterHqImage = false;
 #endif
     if (needsTextAntiAliasPass && kAaAfterHqImage) {
       const bool textBwStored = renderer.storeBwBuffer();

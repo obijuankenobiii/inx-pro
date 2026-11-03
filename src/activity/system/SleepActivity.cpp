@@ -364,10 +364,10 @@ void SleepActivity::onEnter() {
 
   const bool renderSleepImage = SETTINGS.sleepScreen == SystemSetting::SLEEP_SCREEN_MODE::CUSTOM ||
                                 SETTINGS.sleepScreen == SystemSetting::SLEEP_SCREEN_MODE::COVER;
-  if (renderSleepImage && !renderDateTime) {
-    prepareSleepImageBuffer(renderer);
-    renderer.displayBuffer(HalDisplay::FULL_REFRESH);
-  }
+  // if (renderSleepImage && !renderDateTime) {
+  //   prepareSleepImageBuffer(renderer);
+  //   renderer.displayBuffer(HalDisplay::FULL_REFRESH);
+  // }
 
   switch (SETTINGS.sleepScreen) {
     case SystemSetting::SLEEP_SCREEN_MODE::TRANSPARENT:

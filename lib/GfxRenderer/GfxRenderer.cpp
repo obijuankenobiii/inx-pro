@@ -117,6 +117,46 @@ __attribute__((optimize("O2"))) void GfxRenderer::rotateCoordinates(const int x,
   }
 }
 
+bool GfxRenderer::mapDisplayRegion(const DisplayRegion& region, uint16_t* x, uint16_t* y, uint16_t* width,
+                                   uint16_t* height) const {
+  if (!x || !y || !width || !height || region.width <= 0 || region.height <= 0) return false;
+
+  const int left = std::max(0, region.x);
+  const int top = std::max(0, region.y);
+  const int right = std::min(getScreenWidth(), region.x + region.width);
+  const int bottom = std::min(getScreenHeight(), region.y + region.height);
+  if (left >= right || top >= bottom) return false;
+
+  const int logicalX[4] = {left, right - 1, left, right - 1};
+  const int logicalY[4] = {top, top, bottom - 1, bottom - 1};
+  int minX = panelWidth;
+  int minY = panelHeight;
+  int maxX = -1;
+  int maxY = -1;
+  for (size_t i = 0; i < 4; ++i) {
+    int physicalX = 0;
+    int physicalY = 0;
+    rotateCoordinates(logicalX[i], logicalY[i], &physicalX, &physicalY);
+    minX = std::min(minX, physicalX);
+    minY = std::min(minY, physicalY);
+    maxX = std::max(maxX, physicalX);
+    maxY = std::max(maxY, physicalY);
+  }
+
+  minX = std::max(0, minX) & ~7;
+  minY = std::max(0, minY);
+  maxX = std::min(panelWidth - 1, maxX);
+  maxY = std::min(panelHeight - 1, maxY);
+  if (minX > maxX || minY > maxY) return false;
+
+  const int endX = std::min(static_cast<int>(panelWidth), (maxX + 8) & ~7);
+  *x = static_cast<uint16_t>(minX);
+  *y = static_cast<uint16_t>(minY);
+  *width = static_cast<uint16_t>(endX - minX);
+  *height = static_cast<uint16_t>(maxY - minY + 1);
+  return *width != 0 && *height != 0;
+}
+
 __attribute__((optimize("O2"))) void GfxRenderer::drawPixel(const int x, const int y, const bool state) const {
   uint8_t* frameBuffer = display.getFrameBuffer();
 
@@ -272,7 +312,39 @@ void GfxRenderer::invertScreen() const {
   }
 }
 
+void GfxRenderer::invertRect(const DisplayRegion& region) const {
+  uint8_t* buffer = display.getFrameBuffer();
+  if (!buffer || region.width <= 0 || region.height <= 0) return;
+
+  const int left = std::max(0, region.x);
+  const int top = std::max(0, region.y);
+  const int right = std::min(getScreenWidth(), region.x + region.width);
+  const int bottom = std::min(getScreenHeight(), region.y + region.height);
+  if (left >= right || top >= bottom) return;
+
+  for (int logicalY = top; logicalY < bottom; ++logicalY) {
+    for (int logicalX = left; logicalX < right; ++logicalX) {
+      int physicalX = 0;
+      int physicalY = 0;
+      rotateCoordinates(logicalX, logicalY, &physicalX, &physicalY);
+      if (physicalX < 0 || physicalX >= panelWidth || physicalY < 0 || physicalY >= panelHeight) continue;
+      const uint32_t byteIndex = static_cast<uint32_t>(physicalY) * panelWidthBytes + (physicalX / 8);
+      buffer[byteIndex] ^= static_cast<uint8_t>(1u << (7 - (physicalX % 8)));
+    }
+  }
+}
+
 void GfxRenderer::displayBuffer(const HalDisplay::RefreshMode refreshMode) const { display.displayBuffer(refreshMode); }
+
+void GfxRenderer::displayWindow(const DisplayRegion& region, const HalDisplay::RefreshMode refreshMode) const {
+  uint16_t x = 0;
+  uint16_t y = 0;
+  uint16_t width = 0;
+  uint16_t height = 0;
+  if (mapDisplayRegion(region, &x, &y, &width, &height)) {
+    display.displayWindow(x, y, width, height, refreshMode);
+  }
+}
 
 void GfxRenderer::displayBufferAsync(const HalDisplay::RefreshMode refreshMode) const {
   display.displayBufferAsync(refreshMode);
@@ -281,6 +353,33 @@ void GfxRenderer::displayBufferAsync(const HalDisplay::RefreshMode refreshMode) 
 bool GfxRenderer::isRefreshBusy() const { return display.refreshBusy(); }
 
 void GfxRenderer::syncWriteBufferFromActive() const { display.syncWriteBufferFromActive(); }
+
+void GfxRenderer::clearRect(const DisplayRegion& region, const uint8_t color) const {
+  uint8_t* frameBuffer = display.getFrameBuffer();
+  if (!frameBuffer || region.width <= 0 || region.height <= 0) return;
+
+  const bool ink = (color & 0x80) == 0;
+  uint16_t physicalX = 0;
+  uint16_t physicalY = 0;
+  uint16_t physicalWidth = 0;
+  uint16_t physicalHeight = 0;
+  if (!mapDisplayRegion(region, &physicalX, &physicalY, &physicalWidth, &physicalHeight)) return;
+
+  // The PTL window expands the physical X range to complete source bytes.
+  // Clear that same expanded range so its padding cannot refresh stale black
+  // pixels around the image.
+  for (uint16_t row = physicalY; row < physicalY + physicalHeight; ++row) {
+    for (uint16_t column = physicalX; column < physicalX + physicalWidth; ++column) {
+      const uint32_t byteIndex = static_cast<uint32_t>(row) * panelWidthBytes + (column / 8);
+      const uint8_t bit = static_cast<uint8_t>(1u << (7 - (column % 8)));
+      if (ink) {
+        frameBuffer[byteIndex] &= static_cast<uint8_t>(~bit);
+      } else {
+        frameBuffer[byteIndex] |= bit;
+      }
+    }
+  }
+}
 
 int GfxRenderer::getScreenWidth() const {
   switch (orientation) {
@@ -335,6 +434,27 @@ void GfxRenderer::displayGrayBufferFastQuality() const {
 #endif
 }
 
+void GfxRenderer::displayGrayBufferWindow(const DisplayRegion& region, const bool quality,
+                                          const bool fastQuality) const {
+  uint16_t x = 0;
+  uint16_t y = 0;
+  uint16_t width = 0;
+  uint16_t height = 0;
+  if (mapDisplayRegion(region, &x, &y, &width, &height)) {
+    const bool portrait = orientation == Portrait || orientation == PortraitInverted;
+    const int expectedPhysicalWidth = portrait ? region.height : region.width;
+    const int expectedPhysicalHeight = portrait ? region.width : region.height;
+    INX_SERIAL.printf(
+        "[%lu] [HQ-WINDOW] logical=%d,%d %dx%d physical=%u,%u %ux%u expected=%dx%d delta=%d,%d orient=%d\n",
+        millis(), region.x, region.y, region.width, region.height, x, y, width, height, expectedPhysicalWidth,
+        expectedPhysicalHeight, static_cast<int>(width) - expectedPhysicalWidth,
+        static_cast<int>(height) - expectedPhysicalHeight, static_cast<int>(orientation));
+    display.displayGrayBufferWindow(x, y, width, height, quality, fastQuality);
+  }
+}
+
+bool GfxRenderer::supportsWindowedQuality() const { return display.supportsWindowedQuality(); }
+
 void GfxRenderer::displayGrayscaleBase(const HalDisplay::RefreshMode fallback, const bool turnOffScreen) const {
   display.displayGrayscaleBase(fallback, turnOffScreen);
 }
@@ -344,6 +464,23 @@ void GfxRenderer::prepareQualityGrayscale() const {
   display.preconditionGrayscale();
 #else
   display.prepareQualityGrayscale();
+#endif
+}
+
+void GfxRenderer::prepareQualityGrayscaleWindow(const DisplayRegion& region) const {
+#ifdef SIMULATOR
+  (void)region;
+  display.preconditionGrayscale();
+#else
+  uint16_t x = 0;
+  uint16_t y = 0;
+  uint16_t width = 0;
+  uint16_t height = 0;
+  if (mapDisplayRegion(region, &x, &y, &width, &height)) {
+    display.prepareQualityGrayscaleWindow(x, y, width, height);
+  } else {
+    display.prepareQualityGrayscale();
+  }
 #endif
 }
 
@@ -468,11 +605,14 @@ void GfxRenderer::cleanupGrayscaleWithFrameBuffer() const {
 }
 
 void GfxRenderer::renderGrayscalePasses(const bool quality, const bool preserveText,
-                                        const std::function<void()>& drawPlane, const bool fastQuality) {
+                                        const std::function<void()>& drawPlane, const bool fastQuality,
+                                        const DisplayRegion* window) {
   const bool useFastQuality = quality && fastQuality;
+  const bool useWindow = quality && window != nullptr && supportsWindowedQuality();
 
   if (quality) {
-    prepareQualityGrayscale();
+    if (useWindow) prepareQualityGrayscaleWindow(*window);
+    else prepareQualityGrayscale();
   }
 
   setRenderMode(quality ? GRAY2_LSB : GRAYSCALE_LSB);
@@ -483,7 +623,9 @@ void GfxRenderer::renderGrayscalePasses(const bool quality, const bool preserveT
   drawPlane();
   copyGrayscaleMsbBuffers();
 
-  if (useFastQuality) {
+  if (useWindow) {
+    displayGrayBufferWindow(*window, true, useFastQuality);
+  } else if (useFastQuality) {
     displayGrayBufferFastQuality();
   } else {
     displayGrayBuffer(quality, !preserveText);
@@ -493,7 +635,13 @@ void GfxRenderer::renderGrayscalePasses(const bool quality, const bool preserveT
   if (preserveText) {
     restoreBwBuffer();
   } else {
-    clearScreen(0xFF);
+    if (useWindow) {
+      // The panel still contains the previous frame outside the requested
+      // window. Rebuild the host B/W baseline from that committed frame.
+      syncWriteBufferFromActive();
+    } else {
+      clearScreen(0xFF);
+    }
     cleanupGrayscaleWithFrameBuffer();
   }
 }
