@@ -5,6 +5,7 @@
 
 #include "activity/ActivityWithSubactivity.h"
 #include "activity/settings/BaseDescriptionActivity.h"
+#include "activity/settings/BaseStatisticsActivity.h"
 #include "activity/page/components/widget/Calendar.h"
 #include "activity/page/components/widget/Carousel.h"
 #include "activity/page/components/widget/Clock.h"
@@ -21,6 +22,7 @@
 #include "activity/page/components/widget/Heatmap.h"
 #include "activity/page/components/widget/Library.h"
 #include "activity/page/components/widget/Description.h"
+#include "activity/page/components/widget/WeeklyStatistics.h"
 #include "state/HomeTheme.h"
 
 class ThemePickerActivity final : public ActivityWithSubactivity {
@@ -31,7 +33,7 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
         shortcutList_(renderer), clock_(renderer), calendar_(renderer), recent_(renderer), temperature_(renderer),
         humidity_(renderer), todaysReading_(renderer),
         favorites_(renderer), heatmap_(renderer), library_(renderer), description_(renderer), recentGrid_(renderer),
-        flow_(renderer),
+        flow_(renderer), weeklyStatistics_(renderer),
         onBack_(std::move(onBack)), openSleepTheme_(openSleepTheme) {}
 
   void onEnter() override;
@@ -58,6 +60,8 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
   uint8_t recentProgress_[4] = {};
   uint8_t recentRatings_[4] = {};
   uint8_t carouselProgress_[4] = {};
+  uint8_t carouselFullHeight_[4] = {};
+  uint8_t statisticsSummary_[4] = {};
   HomeTheme::CarouselLabelColor carouselLabelColors_[4] = {};
   HomeTheme::CarouselShadowStyle carouselShadowStyles_[4] = {};
   HomeTheme::HeatmapView heatmapViews_[4] = {};
@@ -73,6 +77,7 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
   bool temperatureSettingsFinished_ = false;
   bool librarySettingsFinished_ = false;
   bool descriptionSettingsFinished_ = false;
+  bool statisticsSettingsFinished_ = false;
   int popupSelected_ = 0;
   int widgetPopupScroll_ = 0;
   int borderPopupSelected_ = 0;
@@ -92,6 +97,7 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
   Heatmap heatmap_;
   LibraryWidget library_;
   Description description_;
+  WeeklyStatistics weeklyStatistics_;
   std::function<void()> onBack_;
 
   void render();
@@ -103,7 +109,8 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
                            const char (*libraryFolders)[128], bool descriptionShowTitle, bool descriptionShowAuthor,
                            bool descriptionShowProgress, bool descriptionShowRating,
                            bool recentShowTitle, bool recentShowAuthor,
-                           bool recentShowProgress, bool recentShowRating, bool carouselShowProgress);
+                           bool recentShowProgress, bool recentShowRating, bool carouselShowProgress,
+                           bool carouselFullHeight, bool statisticsSummary);
   void renderDividerBorder(HomeTheme::Border border, int x, int y, int width);
   void renderBorder(HomeTheme::Border border, int x, int y, int width, int height);
   void handleTouch(int x, int y);
@@ -119,6 +126,7 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
   void openTemperatureSettings(int slot);
   void openLibrarySettings(int slot);
   void openDescriptionSettings(int slot);
+  void openStatisticsSettings(int slot);
   void renderBorderPopup();
   void moveWidgetPopupSelection(int delta);
   void pageWidgetPopup(int delta);

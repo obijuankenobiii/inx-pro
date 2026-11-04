@@ -26,6 +26,7 @@ HomeWidgetLayout::HomeWidgetLayout(GfxRenderer& renderer)
       temperature_(renderer),
       humidity_(renderer),
       todaysReading_(renderer),
+      weeklyStatistics_(renderer),
       favorites_(renderer),
       heatmap_(renderer),
       library_(renderer),
@@ -61,7 +62,8 @@ void HomeWidgetLayout::preloadCarousel(const HomeTheme::Theme& theme, const int 
     if (theme.widgets[slot] != HomeTheme::Widget::Carousel) continue;
     const Bounds bounds = slotBounds(layout, slot);
     carousel_.preload(carouselIndex, bounds.x, bounds.y, bounds.width, bounds.height, theme.carouselStyles[slot],
-                      theme.carouselLabels[slot] != 0, theme.carouselLabelColors[slot], hideFirst);
+                      theme.carouselLabels[slot] != 0, theme.carouselLabelColors[slot], hideFirst,
+                      theme.carouselFullHeight[slot] != 0);
   }
 }
 
@@ -245,7 +247,8 @@ void HomeWidgetLayout::renderSlot(const HomeTheme::Theme& theme, const int slot,
     case HomeTheme::Widget::Carousel:
       carousel_.render(carouselIndex, bounds.x, bounds.y, bounds.width, bounds.height, theme.backgrounds[slot] != 0,
                        theme.carouselStyles[slot], theme.carouselLabels[slot] != 0, theme.carouselLabelColors[slot],
-                       theme.carouselShadowStyles[slot], theme.carouselProgress[slot] != 0, hideFirst);
+                       theme.carouselShadowStyles[slot], theme.carouselProgress[slot] != 0, hideFirst,
+                       theme.carouselFullHeight[slot] != 0);
       break;
     case HomeTheme::Widget::Shortcuts: shortcut_.render(bounds.x, bounds.y, bounds.width, bounds.height); break;
     case HomeTheme::Widget::ListShortcuts: shortcutList_.render(bounds.x, bounds.y, bounds.width, bounds.height); break;
@@ -260,7 +263,8 @@ void HomeWidgetLayout::renderSlot(const HomeTheme::Theme& theme, const int slot,
       recent_.render(bounds.x, bounds.y, bounds.width, bounds.height, theme.backgrounds[slot] != 0,
                      theme.carouselStyles[slot], theme.carouselLabels[slot] != 0, theme.carouselLabelColors[slot],
                      theme.carouselShadowStyles[slot], theme.recentTitles[slot] != 0, theme.recentAuthors[slot] != 0,
-                     theme.recentProgress[slot] != 0, theme.recentRatings[slot] != 0);
+                     theme.recentProgress[slot] != 0, theme.recentRatings[slot] != 0,
+                     theme.carouselFullHeight[slot] != 0);
       break;
     case HomeTheme::Widget::RecentGrid:
       recentGrid_.render(bounds.x, bounds.y, bounds.width, bounds.height, recentGridPageIndex);
@@ -280,10 +284,16 @@ void HomeWidgetLayout::renderSlot(const HomeTheme::Theme& theme, const int slot,
       todaysReading_.render(bounds.x, bounds.y, bounds.width, bounds.height,
                             theme.layout == HomeTheme::Layout::OneByThree);
       break;
+    case HomeTheme::Widget::Statistics:
+      weeklyStatistics_.render(bounds.x, bounds.y, bounds.width, bounds.height,
+                               theme.layout == HomeTheme::Layout::OneByThree,
+                               theme.carouselStyles[slot] == HomeTheme::CarouselStyle::Left,
+                               theme.statisticsSummary[slot] != 0);
+      break;
     case HomeTheme::Widget::Favorites:
       favorites_.render(favoriteIndex, bounds.x, bounds.y, bounds.width, bounds.height, theme.backgrounds[slot] != 0,
                         theme.carouselStyles[slot], theme.carouselLabels[slot] != 0, theme.carouselLabelColors[slot],
-                        theme.carouselShadowStyles[slot]);
+                        theme.carouselShadowStyles[slot], theme.carouselFullHeight[slot] != 0);
       break;
     case HomeTheme::Widget::Heatmap:
       heatmap_.render(bounds.x, bounds.y, bounds.width, bounds.height, HomeTheme::HeatmapView::Monthly, false,
@@ -409,7 +419,7 @@ int HomeWidgetLayout::carouselAt(const HomeTheme::Theme& theme, const int carous
   const Bounds bounds = slotBounds(grid(theme.layout), slot);
   return carousel_.hitTest(carouselIndex, count, x, y, bounds.x, bounds.y, bounds.width, bounds.height,
                            theme.carouselStyles[slot], theme.carouselLabels[slot] != 0, theme.carouselLabelColors[slot],
-                           hideFirst);
+                           hideFirst, theme.carouselFullHeight[slot] != 0);
 }
 
 bool HomeWidgetLayout::hideFirstCarouselBook(const HomeTheme::Theme& theme) const {
@@ -554,7 +564,7 @@ int HomeWidgetLayout::favoritesAt(const HomeTheme::Theme& theme, const int carou
     const Bounds bounds = slotBounds(layout, slot);
     const int hit = favorites_.hitTest(carouselIndex, x, y, bounds.x, bounds.y, bounds.width, bounds.height,
                                        theme.carouselStyles[slot], theme.carouselLabels[slot] != 0,
-                                       theme.carouselLabelColors[slot]);
+                                       theme.carouselLabelColors[slot], theme.carouselFullHeight[slot] != 0);
     if (hit >= 0) return hit;
   }
   return -1;

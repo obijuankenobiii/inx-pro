@@ -65,7 +65,7 @@ const Item items[regularItemCount] = {
     {Recent, navigation::Menu::Action::Home, "Home"},
     {Library, navigation::Menu::Action::Library, "Library"},
     {Setting, navigation::Menu::Action::Settings, "Settings"},
-    {Sync, navigation::Menu::Action::Sync, "Sync"},
+    {Sync, navigation::Menu::Action::Sync, "Manage"},
     {Search, navigation::Menu::Action::Search, "Search"},
 };
 

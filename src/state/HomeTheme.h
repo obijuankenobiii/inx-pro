@@ -30,6 +30,7 @@ enum class Widget : uint8_t {
   RecentGrid = 14,
   Flow = 15,
   VerticalBookshelf = 16,
+  Statistics = 17,
 };
 
 enum class HeatmapView : uint8_t {
@@ -81,6 +82,8 @@ struct Theme {
   uint8_t recentProgress[4];
   uint8_t recentRatings[4];
   uint8_t carouselProgress[4];
+  uint8_t carouselFullHeight[4];
+  uint8_t statisticsSummary[4];
   HeatmapView heatmapViews[4];
   char libraryFolders[4][3][128];
 };
@@ -100,7 +103,9 @@ int add(Layout layout, const Widget* widgets, const Border* borders, const uint8
         const uint8_t* descriptionTitles, const uint8_t* descriptionAuthors, const uint8_t* descriptionProgress,
         const uint8_t* descriptionRatings,
         const uint8_t* recentTitles, const uint8_t* recentAuthors, const uint8_t* recentProgress,
-        const uint8_t* recentRatings, const uint8_t* carouselProgress, const char (*libraryFolders)[3][128],
+        const uint8_t* recentRatings, const uint8_t* carouselProgress, const uint8_t* carouselFullHeight,
+        const uint8_t* statisticsSummary,
+        const char (*libraryFolders)[3][128],
         int slotCount);
 void update(int index, Layout layout, const Widget* widgets, const Border* borders, const uint8_t* backgrounds,
             const CarouselStyle* carouselStyles, const uint8_t* carouselLabels,
@@ -109,6 +114,8 @@ void update(int index, Layout layout, const Widget* widgets, const Border* borde
             const uint8_t* descriptionProgress, const uint8_t* descriptionRatings,
             const uint8_t* recentTitles, const uint8_t* recentAuthors,
             const uint8_t* recentProgress, const uint8_t* recentRatings, const uint8_t* carouselProgress,
+            const uint8_t* carouselFullHeight,
+            const uint8_t* statisticsSummary,
             const char (*libraryFolders)[3][128], int slotCount);
 void updateSleep(Layout layout, const Widget* widgets, const Border* borders, const uint8_t* backgrounds,
                  const CarouselStyle* carouselStyles, const uint8_t* carouselLabels,
@@ -117,6 +124,8 @@ void updateSleep(Layout layout, const Widget* widgets, const Border* borders, co
                  const uint8_t* descriptionProgress, const uint8_t* descriptionRatings,
                  const uint8_t* recentTitles, const uint8_t* recentAuthors,
                  const uint8_t* recentProgress, const uint8_t* recentRatings, const uint8_t* carouselProgress,
+                 const uint8_t* carouselFullHeight,
+                 const uint8_t* statisticsSummary,
                  const char (*libraryFolders)[3][128], int slotCount);
 bool remove(int index);
 

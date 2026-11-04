@@ -12,10 +12,12 @@ namespace HomeTheme {
 namespace {
 
 constexpr char kThemeFile[] = "/.system/home_themes.bin";
-constexpr uint8_t kVersion = 24;
+constexpr uint8_t kVersion = 26;
 constexpr uint8_t kDescriptionOptionsVersion = 17;
 constexpr uint8_t kRecentOptionsVersion = 18;
 constexpr uint8_t kCarouselProgressVersion = 19;
+constexpr uint8_t kCarouselFullHeightVersion = 25;
+constexpr uint8_t kStatisticsSummaryVersion = 26;
 constexpr uint8_t kBookDetailsOptionsVersion = 20;
 constexpr uint8_t kLegacyFavoriteIconOptionVersion = 20;
 constexpr uint8_t kVersionBeforeRecentRatingOptions = 21;
@@ -157,7 +159,7 @@ void ensureLoaded() {
 bool validLayout(const uint8_t value) { return value <= static_cast<uint8_t>(Layout::OneByThree); }
 
 bool validWidget(const uint8_t value) {
-  return value <= static_cast<uint8_t>(Widget::VerticalBookshelf);
+  return value <= static_cast<uint8_t>(Widget::Statistics);
 }
 
 bool validBorder(const uint8_t value) {
@@ -276,7 +278,7 @@ void load() {
        version != kLegacyMultiLibraryFoldersVersion && version != kLegacySingleLibraryFoldersVersion && version != 16 &&
        version != 17 && version != 18 && version != kCarouselProgressVersion &&
        version != kVersionBeforeRecentRatingOptions &&
-       version != kLegacyFavoriteIconOptionVersion && version != 23 &&
+       version != kLegacyFavoriteIconOptionVersion && version != 23 && version != 24 && version != 25 &&
        version != kVersion) || storedCount == 0 ||
       storedCount > kMaxThemes) {
     file.close();
@@ -433,6 +435,22 @@ void load() {
       theme.carouselProgress[i] = theme.carouselProgress[i] != 0 ? 1 : 0;
     }
     for (int i = 0; i < 4; ++i) {
+      if (version < kCarouselFullHeightVersion) {
+        theme.carouselFullHeight[i] = 0;
+        continue;
+      }
+      serialization::readPod(file, theme.carouselFullHeight[i]);
+      theme.carouselFullHeight[i] = theme.carouselFullHeight[i] != 0 ? 1 : 0;
+    }
+    for (int i = 0; i < 4; ++i) {
+      if (version < kStatisticsSummaryVersion) {
+        theme.statisticsSummary[i] = 1;
+        continue;
+      }
+      serialization::readPod(file, theme.statisticsSummary[i]);
+      theme.statisticsSummary[i] = theme.statisticsSummary[i] != 0 ? 1 : 0;
+    }
+    for (int i = 0; i < 4; ++i) {
       if (version < kHeatmapViewVersion) {
         theme.heatmapViews[i] = HeatmapView::Weekly;
         continue;
@@ -480,6 +498,8 @@ void load() {
       setDefaultDescriptionOptions(theme);
       setDefaultRecentOptions(theme);
       setDefaultCarouselProgress(theme);
+      for (uint8_t& value : theme.carouselFullHeight) value = 0;
+      for (uint8_t& value : theme.statisticsSummary) value = 1;
       for (HeatmapView& view : theme.heatmapViews) view = HeatmapView::Weekly;
       setDefaultLibraryFolders(theme);
     }
@@ -566,6 +586,8 @@ bool save() {
       serialization::writePod(file, theme.recentRatings[i]);
     }
     for (int i = 0; i < 4; ++i) serialization::writePod(file, theme.carouselProgress[i]);
+    for (int i = 0; i < 4; ++i) serialization::writePod(file, theme.carouselFullHeight[i]);
+    for (int i = 0; i < 4; ++i) serialization::writePod(file, theme.statisticsSummary[i]);
     for (const HeatmapView view : theme.heatmapViews) {
       serialization::writePod(file, static_cast<uint8_t>(view));
     }
@@ -616,6 +638,8 @@ int add(const Layout layout, const Widget* widgets, const Border* borders, const
         const uint8_t* descriptionProgress, const uint8_t* descriptionRatings,
         const uint8_t* recentTitles, const uint8_t* recentAuthors,
         const uint8_t* recentProgress, const uint8_t* recentRatings, const uint8_t* carouselProgress,
+        const uint8_t* carouselFullHeight,
+        const uint8_t* statisticsSummary,
         const char (*libraryFolders)[3][128],
         const int slotCountValue) {
   ensureLoaded();
@@ -673,6 +697,12 @@ int add(const Layout layout, const Widget* widgets, const Border* borders, const
     theme.carouselProgress[i] = layout != Layout::Classic && carouselProgress && i < slotCountValue
                                     ? (carouselProgress[i] != 0 ? 1 : 0)
                                     : 1;
+    theme.carouselFullHeight[i] = layout != Layout::Classic && carouselFullHeight && i < slotCountValue
+                                      ? (carouselFullHeight[i] != 0 ? 1 : 0)
+                                      : 0;
+    theme.statisticsSummary[i] = layout != Layout::Classic && statisticsSummary && i < slotCountValue
+                                     ? (statisticsSummary[i] != 0 ? 1 : 0)
+                                     : 1;
     theme.heatmapViews[i] = layout != Layout::Classic && heatmapViews && i < slotCountValue &&
                                    validHeatmapView(static_cast<uint8_t>(heatmapViews[i]))
                                ? heatmapViews[i]
@@ -696,6 +726,8 @@ void update(const int index, const Layout layout, const Widget* widgets, const B
             const uint8_t* descriptionProgress, const uint8_t* descriptionRatings,
             const uint8_t* recentTitles, const uint8_t* recentAuthors,
             const uint8_t* recentProgress, const uint8_t* recentRatings, const uint8_t* carouselProgress,
+            const uint8_t* carouselFullHeight,
+            const uint8_t* statisticsSummary,
             const char (*libraryFolders)[3][128],
             const int slotCountValue) {
   ensureLoaded();
@@ -750,6 +782,12 @@ void update(const int index, const Layout layout, const Widget* widgets, const B
     theme.carouselProgress[i] = layout != Layout::Classic && carouselProgress && i < slotCountValue
                                     ? (carouselProgress[i] != 0 ? 1 : 0)
                                     : 1;
+    theme.carouselFullHeight[i] = layout != Layout::Classic && carouselFullHeight && i < slotCountValue
+                                      ? (carouselFullHeight[i] != 0 ? 1 : 0)
+                                      : 0;
+    theme.statisticsSummary[i] = layout != Layout::Classic && statisticsSummary && i < slotCountValue
+                                     ? (statisticsSummary[i] != 0 ? 1 : 0)
+                                     : 1;
     theme.heatmapViews[i] = layout != Layout::Classic && heatmapViews && i < slotCountValue &&
                                    validHeatmapView(static_cast<uint8_t>(heatmapViews[i]))
                                ? heatmapViews[i]
@@ -771,6 +809,8 @@ void updateSleep(const Layout layout, const Widget* widgets, const Border* borde
                  const uint8_t* descriptionProgress, const uint8_t* descriptionRatings,
                  const uint8_t* recentTitles, const uint8_t* recentAuthors,
                  const uint8_t* recentProgress, const uint8_t* recentRatings, const uint8_t* carouselProgress,
+                 const uint8_t* carouselFullHeight,
+                 const uint8_t* statisticsSummary,
                  const char (*libraryFolders)[3][128],
                  const int slotCountValue) {
   ensureLoaded();
@@ -823,6 +863,12 @@ void updateSleep(const Layout layout, const Widget* widgets, const Border* borde
     sleepTheme.carouselProgress[i] = layout != Layout::Classic && carouselProgress && i < slotCountValue
                                          ? (carouselProgress[i] != 0 ? 1 : 0)
                                          : 1;
+    sleepTheme.carouselFullHeight[i] = layout != Layout::Classic && carouselFullHeight && i < slotCountValue
+                                           ? (carouselFullHeight[i] != 0 ? 1 : 0)
+                                           : 0;
+    sleepTheme.statisticsSummary[i] = layout != Layout::Classic && statisticsSummary && i < slotCountValue
+                                          ? (statisticsSummary[i] != 0 ? 1 : 0)
+                                          : 1;
     sleepTheme.heatmapViews[i] = layout != Layout::Classic && heatmapViews && i < slotCountValue &&
                                          validHeatmapView(static_cast<uint8_t>(heatmapViews[i]))
                                      ? heatmapViews[i]
@@ -905,6 +951,8 @@ const char* widgetLabel(const Widget widget) {
       return "Title & Description Flow";
     case Widget::VerticalBookshelf:
       return "Vertical Bookshelf";
+    case Widget::Statistics:
+      return "Statistics";
     default:
       return "Unknown";
   }

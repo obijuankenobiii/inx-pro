@@ -63,6 +63,10 @@ bool supportsDescriptionSettings(const HomeTheme::Widget widget) {
   return widget == HomeTheme::Widget::Description;
 }
 
+bool supportsStatisticsSettings(const HomeTheme::Widget widget) {
+  return widget == HomeTheme::Widget::Statistics;
+}
+
 #if FREEINK_DEVICE_STICKY
 bool supportsTemperatureSettings(const HomeTheme::Widget widget) {
   return widget == HomeTheme::Widget::Temperature;
@@ -100,9 +104,9 @@ int widgetOptionCount(const HomeTheme::Layout layout, const bool sleepTheme) {
   if (layout == HomeTheme::Layout::Classic) return 1;
   if (layout == HomeTheme::Layout::OneByOne && !sleepTheme) return 3;
 #if FREEINK_DEVICE_STICKY
-  const int count = sleepTheme ? 5 : 17;
+  const int count = sleepTheme ? 5 : 18;
 #else
-  const int count = sleepTheme ? 3 : 15;
+  const int count = sleepTheme ? 3 : 16;
 #endif
   return count - (layout == HomeTheme::Layout::OneByOne || sleepTheme ? 0 : 3);
 }
@@ -135,6 +139,7 @@ HomeTheme::Widget widgetOptionAt(const HomeTheme::Layout layout, const bool slee
     HomeTheme::Widget::Favorites,
     HomeTheme::Widget::Heatmap,
     HomeTheme::Widget::Library,
+    HomeTheme::Widget::Statistics,
   };
   if (layout == HomeTheme::Layout::OneByOne && !sleepTheme) {
     if (index < 0 || index >= static_cast<int>(sizeof(oneByOneOptions) / sizeof(oneByOneOptions[0]))) {
@@ -395,7 +400,8 @@ void ThemePickerActivity::renderWidgetPicker() {
                         descriptionProgress_[firstSlot] != 0, descriptionRatings_[firstSlot] != 0,
                         recentTitles_[firstSlot] != 0, recentAuthors_[firstSlot] != 0,
                         recentProgress_[firstSlot] != 0, recentRatings_[firstSlot] != 0,
-                        carouselProgress_[firstSlot] != 0);
+                        carouselProgress_[firstSlot] != 0, carouselFullHeight_[firstSlot] != 0,
+                        statisticsSummary_[firstSlot] != 0);
   } else {
     // Keep the established 1 x 2 preview path: two storage slots map directly
     // to the two visible rows.
@@ -408,7 +414,8 @@ void ThemePickerActivity::renderWidgetPicker() {
                           descriptionTitles_[slot] != 0, descriptionAuthors_[slot] != 0,
                           descriptionProgress_[slot] != 0, descriptionRatings_[slot] != 0,
                           recentTitles_[slot] != 0, recentAuthors_[slot] != 0,
-                          recentProgress_[slot] != 0, recentRatings_[slot] != 0, carouselProgress_[slot] != 0);
+                          recentProgress_[slot] != 0, recentRatings_[slot] != 0, carouselProgress_[slot] != 0,
+                          carouselFullHeight_[slot] != 0, statisticsSummary_[slot] != 0);
     }
   }
 
@@ -459,6 +466,12 @@ void ThemePickerActivity::renderWidgetPicker() {
       renderer.bitmap.icon(Setting, settings.x, settings.y, settings.size, settings.size);
     }
     if (supportsDescriptionSettings(widgets_[slot])) {
+      const CarouselSettingsBounds settings = carouselSettingsBounds(cellX, cellY, cellW, cellH);
+      renderer.rectangle.fill(settings.x - 4, settings.y - 4, settings.size + 8, settings.size + 8, false);
+      renderer.rectangle.render(settings.x - 4, settings.y - 4, settings.size + 8, settings.size + 8, true);
+      renderer.bitmap.icon(Setting, settings.x, settings.y, settings.size, settings.size);
+    }
+    if (supportsStatisticsSettings(widgets_[slot])) {
       const CarouselSettingsBounds settings = carouselSettingsBounds(cellX, cellY, cellW, cellH);
       renderer.rectangle.fill(settings.x - 4, settings.y - 4, settings.size + 8, settings.size + 8, false);
       renderer.rectangle.render(settings.x - 4, settings.y - 4, settings.size + 8, settings.size + 8, true);
@@ -542,17 +555,18 @@ void ThemePickerActivity::renderWidgetPreview(const HomeTheme::Widget widget, co
                                               const bool descriptionShowRating,
                                               const bool recentShowTitle, const bool recentShowAuthor,
                                               const bool recentShowProgress, const bool recentShowRating,
-                                              const bool carouselShowProgress) {
+                                              const bool carouselShowProgress, const bool carouselFullHeight,
+                                              const bool statisticsSummary) {
   if (width <= 0 || height <= 0) return;
 
   switch (widget) {
     case HomeTheme::Widget::Carousel:
       carousel_.preview(x, y, width, height, background, style, showLabel, labelColor, shadowStyle,
-                        carouselShowProgress);
+                        carouselShowProgress, carouselFullHeight);
       break;
     case HomeTheme::Widget::Recent:
       recent_.preview(x, y, width, height, background, style, showLabel, labelColor, shadowStyle, recentShowTitle,
-                      recentShowAuthor, recentShowProgress, recentShowRating);
+                      recentShowAuthor, recentShowProgress, recentShowRating, carouselFullHeight);
       break;
     case HomeTheme::Widget::RecentGrid:
       recentGrid_.preview(x, y, width, height);
@@ -586,8 +600,13 @@ void ThemePickerActivity::renderWidgetPreview(const HomeTheme::Widget widget, co
     case HomeTheme::Widget::TodaysReading:
       todaysReading_.preview(x, y, width, height, layout_ == HomeTheme::Layout::OneByThree);
       break;
+    case HomeTheme::Widget::Statistics:
+      weeklyStatistics_.preview(x, y, width, height, layout_ == HomeTheme::Layout::OneByThree,
+                                style == HomeTheme::CarouselStyle::Left, statisticsSummary);
+      break;
     case HomeTheme::Widget::Favorites:
-      favorites_.preview(x, y, width, height, background, style, showLabel, labelColor, shadowStyle);
+      favorites_.preview(x, y, width, height, background, style, showLabel, labelColor, shadowStyle,
+                         carouselFullHeight);
       break;
     case HomeTheme::Widget::Heatmap:
       heatmap_.preview(x, y, width, height, HomeTheme::HeatmapView::Monthly, false, labelColor,
@@ -681,6 +700,8 @@ void ThemePickerActivity::editTheme() {
     recentProgress_[i] = theme.recentProgress[i];
     recentRatings_[i] = theme.recentRatings[i];
     carouselProgress_[i] = theme.carouselProgress[i];
+    carouselFullHeight_[i] = theme.carouselFullHeight[i];
+    statisticsSummary_[i] = theme.statisticsSummary[i];
     carouselLabelColors_[i] = theme.carouselLabelColors[i];
     carouselShadowStyles_[i] = theme.carouselShadowStyles[i];
     heatmapViews_[i] = theme.heatmapViews[i];
@@ -721,6 +742,8 @@ void ThemePickerActivity::editTheme() {
     for (uint8_t& value : recentProgress_) value = 1;
     for (uint8_t& value : recentRatings_) value = 1;
     for (uint8_t& value : carouselProgress_) value = 1;
+    for (uint8_t& value : carouselFullHeight_) value = 0;
+    for (uint8_t& value : statisticsSummary_) value = 1;
     for (HomeTheme::CarouselLabelColor& color : carouselLabelColors_) color = HomeTheme::CarouselLabelColor::Black;
     for (HomeTheme::CarouselShadowStyle& style : carouselShadowStyles_) {
       style = HomeTheme::CarouselShadowStyle::None;
@@ -751,6 +774,8 @@ void ThemePickerActivity::promoteSelectedOneByOneWidget() {
   std::swap(recentProgress_[0], recentProgress_[selectedSlot]);
   std::swap(recentRatings_[0], recentRatings_[selectedSlot]);
   std::swap(carouselProgress_[0], carouselProgress_[selectedSlot]);
+  std::swap(carouselFullHeight_[0], carouselFullHeight_[selectedSlot]);
+  std::swap(statisticsSummary_[0], statisticsSummary_[selectedSlot]);
   std::swap(carouselLabelColors_[0], carouselLabelColors_[selectedSlot]);
   std::swap(carouselShadowStyles_[0], carouselShadowStyles_[selectedSlot]);
   std::swap(heatmapViews_[0], heatmapViews_[selectedSlot]);
@@ -768,13 +793,15 @@ void ThemePickerActivity::saveEditorState() {
                              carouselLabelColors_, carouselShadowStyles_, heatmapViews_, descriptionTitles_,
                              descriptionAuthors_, descriptionProgress_, descriptionRatings_,
                              recentTitles_, recentAuthors_, recentProgress_,
-                             recentRatings_, carouselProgress_, libraryFolders_, HomeTheme::slotCount(layout_));
+                             recentRatings_, carouselProgress_, carouselFullHeight_, statisticsSummary_, libraryFolders_,
+                             HomeTheme::slotCount(layout_));
     } else {
         HomeTheme::update(selected_, layout_, widgets_, borders_, backgrounds_, carouselStyles_, carouselLabels_,
                         carouselLabelColors_, carouselShadowStyles_, heatmapViews_, descriptionTitles_,
                         descriptionAuthors_, descriptionProgress_, descriptionRatings_,
                         recentTitles_, recentAuthors_, recentProgress_,
-                        recentRatings_, carouselProgress_, libraryFolders_, HomeTheme::slotCount(layout_));
+                        recentRatings_, carouselProgress_, carouselFullHeight_, statisticsSummary_, libraryFolders_,
+                        HomeTheme::slotCount(layout_));
     }
   }
 }
@@ -810,12 +837,13 @@ void ThemePickerActivity::openCarouselSettings(const int slot) {
       [this, slot](const HomeTheme::CarouselStyle style, const bool background, const bool showLabel,
                    const HomeTheme::CarouselLabelColor labelColor,
                    const HomeTheme::CarouselShadowStyle shadowStyle, const bool showTitle, const bool showAuthor,
-                   const bool showProgress, const bool showRating) {
+                   const bool showProgress, const bool showRating, const bool fullHeight) {
         carouselStyles_[slot] = style;
         backgrounds_[slot] = background ? 1 : 0;
         carouselLabels_[slot] = showLabel ? 1 : 0;
         carouselLabelColors_[slot] = labelColor;
         carouselShadowStyles_[slot] = shadowStyle;
+        carouselFullHeight_[slot] = fullHeight ? 1 : 0;
         if (widgets_[slot] == HomeTheme::Widget::Recent) {
           recentTitles_[slot] = showTitle ? 1 : 0;
           recentAuthors_[slot] = showAuthor ? 1 : 0;
@@ -830,7 +858,8 @@ void ThemePickerActivity::openCarouselSettings(const int slot) {
       widgets_[slot] == HomeTheme::Widget::Recent ? recentTitles_[slot] != 0 : true,
       widgets_[slot] == HomeTheme::Widget::Recent ? recentAuthors_[slot] != 0 : true,
       widgets_[slot] == HomeTheme::Widget::Recent ? recentProgress_[slot] != 0 : carouselProgress_[slot] != 0,
-      widgets_[slot] == HomeTheme::Widget::Recent ? recentRatings_[slot] != 0 : true));
+      widgets_[slot] == HomeTheme::Widget::Recent ? recentRatings_[slot] != 0 : true,
+      carouselFullHeight_[slot] != 0));
 }
 
 void ThemePickerActivity::openHeatmapSettings(const int slot) {
@@ -844,6 +873,20 @@ void ThemePickerActivity::openHeatmapSettings(const int slot) {
         carouselLabels_[slot] = showLabel ? 1 : 0;
         carouselLabelColors_[slot] = labelColor;
         heatmapSettingsFinished_ = true;
+      },
+      [] {}));
+}
+
+void ThemePickerActivity::openStatisticsSettings(const int slot) {
+  widgetSlot_ = slot;
+  statisticsSettingsFinished_ = false;
+  enterNewActivity(new BaseStatisticsActivity(
+      renderer, mappedInput, carouselStyles_[slot] == HomeTheme::CarouselStyle::Left,
+      statisticsSummary_[slot] != 0,
+      [this, slot](const bool lineChart, const bool showSummary) {
+        carouselStyles_[slot] = lineChart ? HomeTheme::CarouselStyle::Left : HomeTheme::CarouselStyle::Centered;
+        statisticsSummary_[slot] = showSummary ? 1 : 0;
+        statisticsSettingsFinished_ = true;
       },
       [] {}));
 }
@@ -1149,6 +1192,13 @@ void ThemePickerActivity::handleTouch(const int x, const int y) {
           return;
         }
       }
+      if (supportsStatisticsSettings(widgets_[slot])) {
+        const CarouselSettingsBounds settings = carouselSettingsBounds(cellX, cellY, cellW, cellH);
+        if (inside(x, y, settings.x - 8, settings.y - 8, settings.size + 16, settings.size + 16)) {
+          openStatisticsSettings(slot);
+          return;
+        }
+      }
     }
     if (inside(x, y, previewX, previewY, previewW, previewH)) {
       const int column = std::min(columns - 1, (x - previewX) / cellW);
@@ -1202,6 +1252,11 @@ void ThemePickerActivity::loop() {
     if (descriptionSettingsFinished_) {
       exitActivity();
       descriptionSettingsFinished_ = false;
+      render();
+    }
+    if (statisticsSettingsFinished_) {
+      exitActivity();
+      statisticsSettingsFinished_ = false;
       render();
     }
     return;
