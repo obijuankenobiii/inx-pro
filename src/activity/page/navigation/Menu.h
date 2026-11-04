@@ -8,7 +8,7 @@
 class GfxRenderer;
 #include "system/MappedInputManager.h"
 #include "state/SystemSetting.h"
-#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4
+#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
 #include "LightDrawer.h"
 #endif
 
@@ -33,7 +33,7 @@ class Menu {
     Sync,
   };
 
-  static constexpr int topPadding = (FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4) ? 20 : 15;
+  static constexpr int topPadding = (FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO) ? 20 : 15;
   static constexpr int iconSize = 40;
   static constexpr int leftMargin = 20;
   static constexpr int bottomPadding = 10;
@@ -68,7 +68,7 @@ class Menu {
     open = false;
     selectedVisible = false;
   }
-#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4
+#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
   bool isLightDrawerOpen() const { return lightDrawer.isOpen(); }
   bool isLightDrawerSliderDragging() const { return lightDrawer.isSliderDragging(); }
 #endif
@@ -104,7 +104,7 @@ class Menu {
   mutable bool open = false;
   mutable int selected = 0;
   mutable bool selectedVisible = false;
-#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4
+#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
   mutable LightDrawer lightDrawer;
 #endif
 

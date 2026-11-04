@@ -66,7 +66,7 @@ MappedInputManager input(gpio);
 GfxRenderer renderer(display);
 GfxRenderer& render = renderer;
 
-#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4
+#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
 FrontlightManager frontlight;
 #endif
 
@@ -120,6 +120,23 @@ void logButtonEdges() {
     }
   }
 }
+
+#if FREEINK_DEVICE_PICCO
+void applyPiccoPhysicalLightSwitch() {
+  static bool synchronized = false;
+  if (!gpio.hasToggleSwitch()) return;
+  if (synchronized && !gpio.wasToggleSwitchChanged()) return;
+
+  if (gpio.isToggleSwitchOn()) {
+    frontlight.on();
+  } else {
+    frontlight.off();
+  }
+  frontlight_ui::persist();
+  INX_SERIAL.printf("[INPUT][LIGHT-SWITCH] %s\n", gpio.isToggleSwitchOn() ? "on" : "off");
+  synchronized = true;
+}
+#endif
 }
 
 template <typename T>
@@ -398,8 +415,14 @@ void setup() {
 #if FREEINK_DEVICE_X4PRO
   freeink::applyXteinkDisplayController();
 #endif
-#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4
+#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
   frontlight.begin();
+#endif
+#if FREEINK_DEVICE_PICCO
+  // FrontlightManager and the Picco TMA525C share SDA7/SCL8. The frontlight
+  // probe reinitializes Wire, so restore the touch controller and its bus
+  // timeout before the first input update.
+  gpio.reinitializeTouch();
 #endif
 
   sdCardAvailable = SdMan.begin();
@@ -492,6 +515,12 @@ void loop() {
     currentActivity->loop();
     activityLoopRunning = false;
   }
+
+#if FREEINK_DEVICE_PICCO
+  // Run after BootActivity has loaded the saved brightness, so the physical
+  // switch's initial position takes precedence over the saved light state.
+  applyPiccoPhysicalLightSwitch();
+#endif
 
   if (deferredActivitySwitch) {
     auto action = std::move(deferredActivitySwitch);

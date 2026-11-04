@@ -2,7 +2,7 @@
 
 #include <cmath>
 
-#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4
+#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
 #include <FrontlightManager.h>
 
 #include "system/FrontlightPreferences.h"

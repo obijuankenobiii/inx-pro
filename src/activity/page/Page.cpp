@@ -51,7 +51,7 @@ bool UiPage::menuInput() {
     return true;
   }
 
-#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4
+#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
   if (mappedInput.isTouchPressed() || isLightDrawerSliderDragging()) {
     const navigation::Menu::Action action = navigation::Menu::handleInput(mappedInput);
     if (action != navigation::Menu::Action::None) {

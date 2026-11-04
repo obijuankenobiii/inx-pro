@@ -1,6 +1,6 @@
 #include "LightDrawer.h"
 
-#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4
+#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
 
 #include <Arduino.h>
 #include <GfxRenderer.h>
@@ -359,10 +359,7 @@ LightDrawer::Action LightDrawer::handleTap(const int tapX, const int tapY) const
 
   if (tapX >= lightButtonX && tapX < lightButtonX + lightButtonSize && tapY >= lightButtonY &&
       tapY < lightButtonY + lightButtonSize) {
-    if (frontlight.brightness() > 0)
-      frontlight.off();
-    else
-      frontlight.on();
+    frontlight.toggle();
     saveLightPreferences();
     return Action::Opened;
   }
