@@ -253,7 +253,7 @@ bool Home::handleSwipe() {
   const int swipeY = (swipeLeftInScreen || swipeRightInScreen)
                          ? static_cast<int>(swipeNy * renderer.getScreenHeight())
                          : navigation::Menu::height +
-                               (renderer.getScreenHeight() - navigation::Menu::height - navigation::Menu::bottomHeight) / 2;
+                               (renderer.getScreenHeight() - navigation::Menu::height - navigation::Menu::bottomInset()) / 2;
   const HomeWidgetLayout::SwipeTarget target =
       widgetLayout.horizontalSwipeTarget(HomeTheme::active(), widgetPageIndex, swipeX, swipeY);
   if (target == HomeWidgetLayout::SwipeTarget::Carousel) {
@@ -334,7 +334,7 @@ bool Home::handleTap() {
   if (favoriteHit.type == HomeWidgetLayout::HitType::Heatmap) {
     if (mappedInput.lastTouchHeldMs() >= longPressMs) {
       heatmapPopupOpen = true;
-      heatmapPopupView = HomeTheme::active().heatmapViews[favoriteHit.index];
+      heatmapPopupView = HomeTheme::HeatmapView::Monthly;
       updateRequired = true;
     }
     return true;

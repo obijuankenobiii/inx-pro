@@ -79,6 +79,7 @@ class HomeWidgetLayout final {
   void renderSlot(const HomeTheme::Theme& theme, int slot, const Bounds& bounds, int carouselIndex,
                   int favoriteIndex, int descriptionRecentIndex, bool hideFirst, int recentGridPageIndex,
                   int flowIndex) const;
+  void renderBorders(const HomeTheme::Theme& theme, const Grid& layout) const;
   void renderBorder(HomeTheme::Border border, const Grid& layout) const;
   int findWidget(const HomeTheme::Theme& theme, HomeTheme::Widget widget, int x, int y) const;
   int carouselAt(const HomeTheme::Theme& theme, int carouselIndex, int count, int x, int y) const;

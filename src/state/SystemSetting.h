@@ -349,6 +349,11 @@ class SystemSetting {
   char timeZoneId[64] = "";
   /** Show the ambient clock (ScreenComponents::drawMenuClock) in the tab-bar chrome. */
   uint8_t showMenuClock = 1;
+  /** Hide the bottom navigation bar and expose it through a bottom-edge swipe grid. */
+  uint8_t hiddenMenu = 0;
+  /** Reserved coordinate slots retained only for settings-file compatibility. */
+  uint16_t legacyMenuX = 0;
+  uint16_t legacyMenuY = 0;
   /** Keyboard layout used by text-entry activities. */
   uint8_t keyboardLayout = KEYBOARD_QWERTY;
   /** System UI text size: Small=10pt, Medium=12pt, Large=14pt. */

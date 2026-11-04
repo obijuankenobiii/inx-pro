@@ -9,6 +9,7 @@
 
 #include "activity/page/SubPage.h"
 #include "activity/page/components/global/PopUp.h"
+#include "activity/page/components/global/Toggle.h"
 #include "activity/settings/BaseCarouselActivity.h"
 #include "activity/settings/BaseHeatmapActivity.h"
 #include "activity/settings/BaseLibraryActivity.h"
@@ -17,6 +18,7 @@
 #include "images/ThemeBorder.h"
 #include "images/Setting.h"
 #include "state/HomeTheme.h"
+#include "state/SystemSetting.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
 #include "system/TemperaturePreferences.h"
@@ -24,7 +26,7 @@
 namespace {
 
 constexpr int kRowHeight = UiPage::LIST_ITEM_HEIGHT;
-constexpr int kTop = 80;
+constexpr int kTop = FREEINK_DEVICE_X4PRO ? 80 : 75;
 constexpr int kPreviewTop = 130;
 constexpr int kLayoutTabTop = 78;
 constexpr int kLayoutButtonSize = 42;
@@ -50,7 +52,10 @@ bool supportsCarouselSettings(const HomeTheme::Widget widget) {
          widget == HomeTheme::Widget::Favorites;
 }
 
-bool supportsHeatmapSettings(const HomeTheme::Widget widget) { return widget == HomeTheme::Widget::Heatmap; }
+bool supportsHeatmapSettings(const HomeTheme::Widget widget) {
+  (void)widget;
+  return false;
+}
 
 bool supportsLibrarySettings(const HomeTheme::Widget widget) { return widget == HomeTheme::Widget::Library; }
 
@@ -77,6 +82,12 @@ CarouselSettingsBounds carouselSettingsBounds(const int cellX, const int cellY, 
 }
 
 int layoutColumns(const HomeTheme::Layout layout) { return layout == HomeTheme::Layout::TwoByTwo ? 2 : 1; }
+
+int layoutRows(const HomeTheme::Layout layout) {
+  if (layout == HomeTheme::Layout::OneByOne) return 1;
+  if (layout == HomeTheme::Layout::OneByThree) return 3;
+  return 2;
+}
 
 void setDefaultLibraryFolders(char (&folders)[3][128]) {
   for (char (&folder)[128] : folders) {
@@ -260,6 +271,7 @@ void ThemePickerActivity::onEnter() {
   HomeTheme::load();
   selected_ = openSleepTheme_ ? HomeTheme::count() : HomeTheme::activeIndex();
   screen_ = Screen::List;
+  hiddenMenuFocused_ = false;
   if (openSleepTheme_) {
     editTheme();
   } else {
@@ -292,8 +304,22 @@ void ThemePickerActivity::renderList() {
   const int font = systemFontId();
   const int width = renderer.getScreenWidth();
   const int themeCount = HomeTheme::count() + 1;
+  const int hiddenMenuY = contentTop;
+  const bool hiddenMenuSelected = hiddenMenuFocused_;
+  if (hiddenMenuSelected) {
+    renderer.rectangle.fill(0, hiddenMenuY, width, kRowHeight, static_cast<int>(GfxRenderer::FillTone::Ink));
+  } else {
+    renderer.rectangle.fill(0, hiddenMenuY, width, kRowHeight,
+                            static_cast<int>(GfxRenderer::FillTone::Paper));
+  }
+  const int hiddenMenuTextY = hiddenMenuY + (kRowHeight - renderer.text.getLineHeight(font)) / 2;
+  renderer.text.render(font, 20, hiddenMenuTextY, "Hidden Menu", !hiddenMenuSelected, EpdFontFamily::REGULAR);
+  Toggle::render(renderer, width - 24, hiddenMenuY, kRowHeight, SETTINGS.hiddenMenu != 0, hiddenMenuSelected);
+  renderer.line.render(0, hiddenMenuY + kRowHeight - 1, width, hiddenMenuY + kRowHeight - 1,
+                       !hiddenMenuSelected, LineRender::Style::Dotted);
+
   for (int i = 0; i < themeCount; ++i) {
-    const int y = contentTop + i * kRowHeight;
+    const int y = contentTop + (i + 1) * kRowHeight;
     const bool sleepTheme = i == HomeTheme::count();
     const HomeTheme::Theme& theme = sleepTheme ? HomeTheme::sleep() : HomeTheme::at(i);
     renderer.rectangle.fill(0, y, width, kRowHeight,
@@ -316,7 +342,8 @@ void ThemePickerActivity::renderWidgetPicker() {
   SubPage::header(renderer, "Choose widget");
   const int right = renderer.getScreenWidth() - 20;
   const int rightButtonX = right - kLayoutButtonSize;
-  const int leftButtonX = rightButtonX - kLayoutButtonGap - kLayoutButtonSize;
+  const int middleButtonX = rightButtonX - kLayoutButtonGap - kLayoutButtonSize;
+  const int leftButtonX = middleButtonX - kLayoutButtonGap - kLayoutButtonSize;
   const auto drawLayoutButton = [&](const int x, const HomeTheme::Layout layout, const bool active) {
     renderer.rectangle.fill(x, kLayoutTabTop, kLayoutButtonSize, kLayoutButtonSize,
                             active ? static_cast<int>(GfxRenderer::FillTone::Ink)
@@ -326,22 +353,19 @@ void ThemePickerActivity::renderWidgetPicker() {
     const int innerY = kLayoutTabTop + 8;
     const int innerW = kLayoutButtonSize - 16;
     const int innerH = kLayoutButtonSize - 16;
-    if (layout == HomeTheme::Layout::OneByTwo) {
-      const int halfH = (innerH - 3) / 2;
-      renderer.rectangle.fill(innerX, innerY, innerW, halfH,
+    constexpr int rowGap = 2;
+    const int rows = layoutRows(layout);
+    const int rowHeight = (innerH - rowGap * (rows - 1)) / rows;
+    for (int row = 0; row < rows; ++row) {
+      const int rowY = innerY + row * (rowHeight + rowGap);
+      renderer.rectangle.fill(innerX, rowY, innerW, rowHeight,
                               static_cast<int>(GfxRenderer::FillTone::Paper));
-      renderer.rectangle.render(innerX, innerY, innerW, halfH, true);
-      renderer.rectangle.fill(innerX, innerY + halfH + 3, innerW, halfH,
-                              static_cast<int>(GfxRenderer::FillTone::Paper));
-      renderer.rectangle.render(innerX, innerY + halfH + 3, innerW, halfH, true);
-    } else {
-      renderer.rectangle.fill(innerX, innerY, innerW, innerH,
-                              static_cast<int>(GfxRenderer::FillTone::Paper));
-      renderer.rectangle.render(innerX, innerY, innerW, innerH, true);
+      renderer.rectangle.render(innerX, rowY, innerW, rowHeight, true);
     }
   };
-  drawLayoutButton(leftButtonX, HomeTheme::Layout::OneByTwo, layout_ == HomeTheme::Layout::OneByTwo);
-  drawLayoutButton(rightButtonX, HomeTheme::Layout::OneByOne, layout_ == HomeTheme::Layout::OneByOne);
+  drawLayoutButton(leftButtonX, HomeTheme::Layout::OneByOne, layout_ == HomeTheme::Layout::OneByOne);
+  drawLayoutButton(middleButtonX, HomeTheme::Layout::OneByTwo, layout_ == HomeTheme::Layout::OneByTwo);
+  drawLayoutButton(rightButtonX, HomeTheme::Layout::OneByThree, layout_ == HomeTheme::Layout::OneByThree);
   const PreviewBounds preview = widgetPreviewBounds(renderer);
   const int previewX = preview.x;
   const int previewY = preview.y;
@@ -354,7 +378,7 @@ void ThemePickerActivity::renderWidgetPicker() {
   const int layoutW = previewW;
   const int layoutH = previewH;
   const int columns = layoutColumns(layout_);
-  const int rows = layout_ == HomeTheme::Layout::OneByOne ? 1 : 2;
+  const int rows = layoutRows(layout_);
   const int cellW = layoutW / columns;
   const int cellH = layoutH / rows;
   const int firstSlot = layout_ == HomeTheme::Layout::OneByOne
@@ -388,12 +412,20 @@ void ThemePickerActivity::renderWidgetPicker() {
     }
   }
 
-  renderBorder(borders_[firstSlot], layoutX, layoutY, layoutW, layoutH);
+  if (layout_ == HomeTheme::Layout::OneByThree) {
+    renderDividerBorder(borders_[0], layoutX, layoutY + cellH, layoutW);
+    renderDividerBorder(borders_[1], layoutX, layoutY + cellH * 2, layoutW);
+  } else {
+    renderBorder(borders_[firstSlot], layoutX, layoutY, layoutW, layoutH);
+  }
   if (layout_ != HomeTheme::Layout::OneByOne) {
-    const BorderIconBounds icon = borderIconBounds(layoutX, layoutY, layoutW, cellH);
-    renderer.rectangle.fill(icon.x - 3, icon.y - 3, icon.size + 6, icon.size + 6, false);
-    renderer.rectangle.render(icon.x - 3, icon.y - 3, icon.size + 6, icon.size + 6, true);
-    renderer.icon.render(ThemeBorder, icon.x, icon.y, icon.size, icon.size);
+    const int dividerCount = layout_ == HomeTheme::Layout::OneByThree ? 2 : 1;
+    for (int divider = 0; divider < dividerCount; ++divider) {
+      const BorderIconBounds icon = borderIconBounds(layoutX, layoutY + divider * cellH, layoutW, cellH);
+      renderer.rectangle.fill(icon.x - 3, icon.y - 3, icon.size + 6, icon.size + 6, false);
+      renderer.rectangle.render(icon.x - 3, icon.y - 3, icon.size + 6, icon.size + 6, true);
+      renderer.icon.render(ThemeBorder, icon.x, icon.y, icon.size, icon.size);
+    }
   }
 
   for (int slot = firstSlot; slot < lastSlot; ++slot) {
@@ -435,6 +467,27 @@ void ThemePickerActivity::renderWidgetPicker() {
   }
 }
 
+void ThemePickerActivity::renderDividerBorder(const HomeTheme::Border border, const int x, const int y,
+                                              const int width) {
+  if (width <= 0) return;
+  switch (border) {
+    case HomeTheme::Border::Subtle:
+      renderer.line.render(x, y, x + width, y, true, LineRender::Style::Dotted);
+      break;
+    case HomeTheme::Border::Normal:
+      renderer.line.render(x, y, x + width, y, true);
+      break;
+    case HomeTheme::Border::Thick:
+      for (int offset = -1; offset <= 1; ++offset) {
+        renderer.line.render(x, y + offset, x + width, y + offset, true);
+      }
+      break;
+    case HomeTheme::Border::None:
+    default:
+      break;
+  }
+}
+
 void ThemePickerActivity::renderBorder(const HomeTheme::Border border, const int x, const int y, const int width,
                                        const int height) {
   if (width <= 0 || height <= 0) return;
@@ -449,19 +502,26 @@ void ThemePickerActivity::renderBorder(const HomeTheme::Border border, const int
   }
   const int columns = layoutColumns(layout_);
   const int cellW = width / columns;
-  const int cellH = height / 2;
+  const int rows = layoutRows(layout_);
+  const int cellH = height / rows;
   switch (border) {
     case HomeTheme::Border::Subtle:
-      renderer.line.render(x, y + cellH, x + width, y + cellH, true, LineRender::Style::Dotted);
+      for (int row = 1; row < rows; ++row) {
+        renderer.line.render(x, y + row * cellH, x + width, y + row * cellH, true, LineRender::Style::Dotted);
+      }
       if (columns == 2) renderer.line.render(x + cellW, y, x + cellW, y + height, true, LineRender::Style::Dotted);
       break;
     case HomeTheme::Border::Normal:
-      renderer.line.render(x, y + cellH, x + width, y + cellH, true);
+      for (int row = 1; row < rows; ++row) {
+        renderer.line.render(x, y + row * cellH, x + width, y + row * cellH, true);
+      }
       if (columns == 2) renderer.line.render(x + cellW, y, x + cellW, y + height, true);
       break;
     case HomeTheme::Border::Thick:
       for (int offset = -1; offset <= 1; ++offset) {
-        renderer.line.render(x, y + cellH + offset, x + width, y + cellH + offset, true);
+        for (int row = 1; row < rows; ++row) {
+          renderer.line.render(x, y + row * cellH + offset, x + width, y + row * cellH + offset, true);
+        }
         if (columns == 2) renderer.line.render(x + cellW + offset, y, x + cellW + offset, y + height, true);
       }
       break;
@@ -510,10 +570,10 @@ void ThemePickerActivity::renderWidgetPreview(const HomeTheme::Widget widget, co
       shortcutList_.render(x, y, width, height);
       break;
     case HomeTheme::Widget::Clock:
-      clock_.render(x, y, width, height);
+      clock_.render(x, y, width, height, layout_ == HomeTheme::Layout::OneByThree);
       break;
     case HomeTheme::Widget::Calendar:
-      calendar_.render(x, y, width, height);
+      calendar_.render(x, y, width, height, layout_ == HomeTheme::Layout::OneByThree);
       break;
 #if FREEINK_DEVICE_STICKY
     case HomeTheme::Widget::Temperature:
@@ -524,13 +584,14 @@ void ThemePickerActivity::renderWidgetPreview(const HomeTheme::Widget widget, co
       break;
 #endif
     case HomeTheme::Widget::TodaysReading:
-      todaysReading_.preview(x, y, width, height);
+      todaysReading_.preview(x, y, width, height, layout_ == HomeTheme::Layout::OneByThree);
       break;
     case HomeTheme::Widget::Favorites:
       favorites_.preview(x, y, width, height, background, style, showLabel, labelColor, shadowStyle);
       break;
     case HomeTheme::Widget::Heatmap:
-      heatmap_.preview(x, y, width, height, heatmapView, showLabel, labelColor);
+      heatmap_.preview(x, y, width, height, HomeTheme::HeatmapView::Monthly, false, labelColor,
+                       layout_ == HomeTheme::Layout::OneByTwo);
       break;
     case HomeTheme::Widget::Library:
       drawLibraryPreviewPlaceholders(renderer, x, y, width, height, background, showLabel);
@@ -538,7 +599,7 @@ void ThemePickerActivity::renderWidgetPreview(const HomeTheme::Widget widget, co
     case HomeTheme::Widget::Description:
       description_.render(0, x, y, width, height, background, showLabel, labelColor, shadowStyle,
                           descriptionShowTitle, descriptionShowAuthor, descriptionShowProgress,
-                          descriptionShowRating);
+                          descriptionShowRating, layout_ == HomeTheme::Layout::OneByThree);
       break;
     case HomeTheme::Widget::Empty:
     default:
@@ -600,6 +661,7 @@ void ThemePickerActivity::renderBorderPopup() {
 }
 
 void ThemePickerActivity::editTheme() {
+  hiddenMenuFocused_ = false;
   editingSleep_ = selected_ == HomeTheme::count();
   const HomeTheme::Theme& theme = editingSleep_ ? HomeTheme::sleep() : HomeTheme::at(selected_);
   if (!editingSleep_) HomeTheme::activate(selected_);
@@ -911,21 +973,34 @@ void ThemePickerActivity::switchLayout(const HomeTheme::Layout layout) {
 void ThemePickerActivity::handleTouch(const int x, const int y) {
   if (screen_ == Screen::List) {
     const int themeCount = HomeTheme::count() + 1;
-    if (y >= kTop && y < kTop + themeCount * kRowHeight) {
-      selected_ = (y - kTop) / kRowHeight;
+    if (y >= kTop && y < kTop + kRowHeight) {
+      SETTINGS.hiddenMenu = SETTINGS.hiddenMenu == 0 ? 1 : 0;
+      SETTINGS.saveToFile();
+      hiddenMenuFocused_ = true;
+      render();
+      return;
+    }
+    if (y >= kTop + kRowHeight && y < kTop + (themeCount + 1) * kRowHeight) {
+      selected_ = (y - kTop) / kRowHeight - 1;
+      hiddenMenuFocused_ = false;
       editTheme();
       return;
     }
   } else {
     const int right = renderer.getScreenWidth() - 20;
     const int rightButtonX = right - kLayoutButtonSize;
-    const int leftButtonX = rightButtonX - kLayoutButtonGap - kLayoutButtonSize;
+    const int middleButtonX = rightButtonX - kLayoutButtonGap - kLayoutButtonSize;
+    const int leftButtonX = middleButtonX - kLayoutButtonGap - kLayoutButtonSize;
     if (inside(x, y, leftButtonX, kLayoutTabTop, kLayoutButtonSize, kLayoutButtonSize)) {
+      switchLayout(HomeTheme::Layout::OneByOne);
+      return;
+    }
+    if (inside(x, y, middleButtonX, kLayoutTabTop, kLayoutButtonSize, kLayoutButtonSize)) {
       switchLayout(HomeTheme::Layout::OneByTwo);
       return;
     }
     if (inside(x, y, rightButtonX, kLayoutTabTop, kLayoutButtonSize, kLayoutButtonSize)) {
-      switchLayout(HomeTheme::Layout::OneByOne);
+      switchLayout(HomeTheme::Layout::OneByThree);
       return;
     }
     if (borderPopup_) {
@@ -995,6 +1070,9 @@ void ThemePickerActivity::handleTouch(const int x, const int y) {
           recentRatings_[widgetSlot_] = 1;
         }
         if (widgets_[widgetSlot_] == HomeTheme::Widget::Carousel && !wasCarousel) {
+          carouselStyles_[widgetSlot_] = HomeTheme::CarouselStyle::Left;
+          carouselLabels_[widgetSlot_] = 0;
+          carouselShadowStyles_[widgetSlot_] = HomeTheme::CarouselShadowStyle::Gray;
           carouselProgress_[widgetSlot_] = 1;
         }
       } else if (supportsHeatmapSettings(widgets_[widgetSlot_])) {
@@ -1024,7 +1102,7 @@ void ThemePickerActivity::handleTouch(const int x, const int y) {
     const int previewH = preview.height;
     const int columns = layoutColumns(layout_);
     const int cellW = previewW / columns;
-    const int rows = layout_ == HomeTheme::Layout::OneByOne ? 1 : 2;
+    const int rows = layoutRows(layout_);
     const int cellH = previewH / rows;
     const int firstSlot = layout_ == HomeTheme::Layout::OneByOne
                               ? oneByOneSlotAtPage(widgets_, widgetSlot_)
@@ -1076,6 +1154,15 @@ void ThemePickerActivity::handleTouch(const int x, const int y) {
       const int column = std::min(columns - 1, (x - previewX) / cellW);
       const int row = std::min(rows - 1, (y - previewY) / cellH);
       const int slot = layout_ == HomeTheme::Layout::OneByOne ? firstSlot : row * columns + column;
+      if (layout_ == HomeTheme::Layout::OneByThree) {
+        for (int divider = 0; divider < 2; ++divider) {
+          const BorderIconBounds icon = borderIconBounds(previewX, previewY + divider * cellH, previewW, cellH);
+          if (inside(x, y, icon.x - 4, icon.y - 4, icon.size + 8, icon.size + 8)) {
+            openBorderPopup(divider);
+            return;
+          }
+        }
+      }
       if (slot < HomeTheme::slotCount(layout_)) {
         const BorderIconBounds icon = borderIconBounds(previewX, previewY, previewW, cellH);
         if (inside(x, y, icon.x - 4, icon.y - 4, icon.size + 8, icon.size + 8)) {
@@ -1176,13 +1263,33 @@ void ThemePickerActivity::loop() {
   if (screen_ == Screen::List) {
     const int themeCount = HomeTheme::count() + 1;
     if (mappedInput.wasPressed(MappedInputManager::Button::Up)) {
-      selected_ = (selected_ + themeCount - 1) % themeCount;
+      if (hiddenMenuFocused_) {
+        selected_ = themeCount - 1;
+        hiddenMenuFocused_ = false;
+      } else if (selected_ == 0) {
+        hiddenMenuFocused_ = true;
+      } else {
+        --selected_;
+      }
       render();
     } else if (mappedInput.wasPressed(MappedInputManager::Button::Down)) {
-      selected_ = (selected_ + 1) % themeCount;
+      if (hiddenMenuFocused_) {
+        selected_ = 0;
+        hiddenMenuFocused_ = false;
+      } else if (selected_ + 1 >= themeCount) {
+        hiddenMenuFocused_ = true;
+      } else {
+        ++selected_;
+      }
       render();
     } else if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
-      editTheme();
+      if (hiddenMenuFocused_) {
+        SETTINGS.hiddenMenu = SETTINGS.hiddenMenu == 0 ? 1 : 0;
+        SETTINGS.saveToFile();
+        render();
+      } else {
+        editTheme();
+      }
     }
     return;
   }

@@ -35,6 +35,11 @@ void UiPage::loop() {
 
 bool UiPage::menuInput() {
   if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+    if (isOpen()) {
+      close();
+      updateRequired = true;
+      return true;
+    }
     return back();
   }
 
@@ -188,7 +193,9 @@ void UiPage::render() {
 }
 
 int UiPage::contentBottomY(const GfxRenderer& renderer) {
-  return renderer.getScreenHeight() - TAB_BAR_HEIGHT - CONTENT_BOTTOM_PADDING;
+  return renderer.getScreenHeight() - navigation::Menu::bottomInset() - CONTENT_BOTTOM_PADDING;
 }
 
-int UiPage::tabBarTopY(const GfxRenderer& renderer) { return renderer.getScreenHeight() - TAB_BAR_HEIGHT; }
+int UiPage::tabBarTopY(const GfxRenderer& renderer) {
+  return renderer.getScreenHeight() - navigation::Menu::bottomInset();
+}

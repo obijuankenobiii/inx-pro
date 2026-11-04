@@ -150,7 +150,7 @@ void ReaderPresetsActivity::onEnter() {
   READER_PRESETS.load();
   const int screenH = renderer.getScreenHeight();
   const int listTop = navigation::Menu::height + 20 + UiPage::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra;
-  const int contentBottom = screenH - navigation::Menu::bottomHeight - 10;
+  const int contentBottom = screenH - navigation::Menu::bottomInset() - 10;
   listItemHeight_ = kListItemHeight;
   if (!presetsOnly_) {
     const int rows = rowCount();

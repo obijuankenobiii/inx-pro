@@ -18,6 +18,6 @@ struct DateTimeView {
 const char* styleName(uint8_t style);
 uint8_t styleCount();
 void render(GfxRenderer& renderer, uint8_t style, const DateTimeView& dateTime, bool available, int x, int y, int w,
-            int h);
+            int h, bool compact = false);
 
 }

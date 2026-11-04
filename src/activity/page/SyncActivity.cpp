@@ -65,7 +65,7 @@ void SyncActivity::loop() {
       const int tapX = static_cast<int>(tapNx * renderer.getScreenWidth());
       const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
       const int listStartY = headerTop + headerHeight + listGap;
-      const int contentBottom = renderer.getScreenHeight() - navigation::Menu::bottomHeight - 10;
+      const int contentBottom = renderer.getScreenHeight() - navigation::Menu::bottomInset() - 10;
       const int tappedIndex = (tapY - listStartY) / listItemHeight;
 
       if (tapY >= listStartY && tapY < contentBottom && tappedIndex >= 0 && tappedIndex < menuItemCount) {
@@ -141,7 +141,7 @@ void SyncActivity::content() {
 
   const int listStartY = headerTop + headerHeight + listGap;
 
-  const int contentBottom = screenHeight - navigation::Menu::bottomHeight - 10;
+  const int contentBottom = screenHeight - navigation::Menu::bottomInset() - 10;
   for (int index = 0; index < menuItemCount; ++index) {
     const int itemY = listStartY + index * listItemHeight;
     if (itemY >= contentBottom || itemY + listItemHeight <= listStartY) continue;

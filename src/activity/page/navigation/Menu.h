@@ -7,6 +7,7 @@
 
 class GfxRenderer;
 #include "system/MappedInputManager.h"
+#include "state/SystemSetting.h"
 #if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4
 #include "LightDrawer.h"
 #endif
@@ -16,7 +17,21 @@ namespace navigation {
 
 class Menu {
  public:
-  enum class Action { None, Opened, Closed, Refresh, Search, View, Sort, Filter, Home, Library, Settings, Stats, Sync };
+  enum class Action {
+    None,
+    Opened,
+    Closed,
+    Refresh,
+    Search,
+    View,
+    Sort,
+    Filter,
+    Home,
+    Library,
+    Settings,
+    Stats,
+    Sync,
+  };
 
   static constexpr int topPadding = (FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4) ? 20 : 15;
   static constexpr int iconSize = 40;
@@ -25,6 +40,9 @@ class Menu {
   static constexpr int bottomSize = 70;
   static constexpr int bottomHeight = bottomSize + bottomPadding;
   static constexpr int height = topPadding + iconSize + bottomPadding;
+
+  /** Bottom space reserved by the tab bar, or zero when the hidden menu replaces it. */
+  static int bottomInset() { return SETTINGS.hiddenMenu != 0 ? 0 : bottomHeight; }
 
   /** Touch target for the top-left hamburger control. Murphy needs a larger target because its digitizer is less forgiving near small controls. */
   static bool hamburgerHit(const int x, const int y) {
@@ -46,6 +64,10 @@ class Menu {
   virtual bool showRefresh() const { return true; }
 
   bool isOpen() const { return open; }
+  void close() const {
+    open = false;
+    selectedVisible = false;
+  }
 #if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4
   bool isLightDrawerOpen() const { return lightDrawer.isOpen(); }
   bool isLightDrawerSliderDragging() const { return lightDrawer.isSliderDragging(); }
@@ -80,9 +102,6 @@ class Menu {
  private:
   GfxRenderer& menuRenderer;
   mutable bool open = false;
-  mutable bool ignoreOpeningTap = false;
-  mutable int openingX = -1;
-  mutable int openingY = -1;
   mutable int selected = 0;
   mutable bool selectedVisible = false;
 #if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4

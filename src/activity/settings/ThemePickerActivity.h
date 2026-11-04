@@ -64,6 +64,7 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
   char libraryFolders_[4][3][128] = {};
   bool editingExisting_ = false;
   bool editingSleep_ = false;
+  bool hiddenMenuFocused_ = false;
   bool openSleepTheme_ = false;
   bool widgetPopup_ = false;
   bool borderPopup_ = false;
@@ -103,6 +104,7 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
                            bool descriptionShowProgress, bool descriptionShowRating,
                            bool recentShowTitle, bool recentShowAuthor,
                            bool recentShowProgress, bool recentShowRating, bool carouselShowProgress);
+  void renderDividerBorder(HomeTheme::Border border, int x, int y, int width);
   void renderBorder(HomeTheme::Border border, int x, int y, int width, int height);
   void handleTouch(int x, int y);
   void editTheme();

@@ -292,7 +292,7 @@ class CategorySettingsActivity final : public ActivityWithSubactivity, public na
     tabSelectorIndex = 2;
     const int contentTop =
         navigation::Menu::height + 20 + UiPage::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra;
-    const int contentBottom = renderer.getScreenHeight() - navigation::Menu::bottomHeight - 10;
+    const int contentBottom = renderer.getScreenHeight() - navigation::Menu::bottomInset() - 10;
     itemsPerPage = (contentBottom - contentTop) / UiPage::LIST_ITEM_HEIGHT;
     if (itemsPerPage < 1) itemsPerPage = 1;
 

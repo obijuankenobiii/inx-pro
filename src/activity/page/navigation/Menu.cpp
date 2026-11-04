@@ -9,6 +9,7 @@
 #include <Arduino.h>
 #include <GfxRenderer.h>
 
+#include <algorithm>
 #include <climits>
 #include <cstdlib>
 #include <cstring>
@@ -17,84 +18,169 @@
 #include "images/Recent.h"
 #include "images/Search.h"
 #include "images/Setting.h"
-#include "images/Stats.h"
 #include "images/Sync.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
 #include "system/ScreenComponents.h"
 
 namespace {
-constexpr int itemCount = 5;
-constexpr int shownCount = 4;
-constexpr int itemSize = 72;
-constexpr int cellSize = 120;
-constexpr int itemGap = 24;
-constexpr int popupSize = 320;
-constexpr int popupPadding = 28;
+constexpr int regularItemCount = 5;
+constexpr int hiddenItemCount = 4;
+constexpr int itemSize = 40;
+constexpr int gridColumns = 3;
+constexpr int cellSize = 80;
+constexpr int itemGap = 16;
+constexpr int popupPadding = 24;
+constexpr int popupWidth = gridColumns * cellSize + (gridColumns - 1) * itemGap + 2 * popupPadding;
+constexpr int popupRows = (regularItemCount + gridColumns - 1) / gridColumns;
+constexpr int popupHeight = popupRows * cellSize + (popupRows - 1) * itemGap + 2 * popupPadding;
+constexpr int hiddenDrawerGridColumns = 2;
+constexpr int hiddenDrawerGridRows = (hiddenItemCount + hiddenDrawerGridColumns - 1) / hiddenDrawerGridColumns;
+constexpr int hiddenDrawerRowHeight = 48;
+constexpr int hiddenDrawerRowGap = 40;
+constexpr int hiddenDrawerGridTopMargin = 40;
+constexpr int hiddenDrawerBottomPadding = 40;
+constexpr int hiddenDrawerSideInset = 20;
+constexpr int hiddenDrawerColumnGap = 40;
+constexpr int hiddenDrawerIconSize = 40;
+constexpr int hiddenDrawerIconLabelGap = 20;
+constexpr int hiddenDrawerIndicatorWidth = 96;
+constexpr int hiddenDrawerIndicatorHeight = 6;
+constexpr int hiddenDrawerIndicatorTopMargin = 8;
+#if FREEINK_DEVICE_X4PRO
+// Match the light drawer's edge-only gesture: its top edge band is 15%, so
+// the hidden drawer accepts only the mirrored bottom 15% band.
+constexpr float hiddenDrawerSwipeStartNy = 0.85f;
+#else
+constexpr float hiddenDrawerSwipeStartNy = 0.85f;
+#endif
 
 struct Item {
   const uint8_t* icon;
   navigation::Menu::Action action;
+  const char* label;
 };
 
-const Item items[itemCount] = {
-    {Recent, navigation::Menu::Action::Home},
-    {Library, navigation::Menu::Action::Library},
-    {Setting, navigation::Menu::Action::Settings},
-    {Sync, navigation::Menu::Action::Sync},
-    {Stats, navigation::Menu::Action::Stats},
+const Item items[regularItemCount] = {
+    {Recent, navigation::Menu::Action::Home, "Home"},
+    {Library, navigation::Menu::Action::Library, "Library"},
+    {Setting, navigation::Menu::Action::Settings, "Settings"},
+    {Sync, navigation::Menu::Action::Sync, "Sync"},
+    {Search, navigation::Menu::Action::Search, "Search"},
 };
 
-int hidden(const navigation::Menu& menu) {
-  const char* page = menu.name();
-  if (page && (std::strcmp(page, "Library") == 0)) return 1;
-  if (page && (std::strcmp(page, "Settings") == 0)) return 2;
-  if (page && (std::strcmp(page, "Stats") == 0 || std::strcmp(page, "Statistics") == 0 ||
-               std::strcmp(page, "Reading Stats") == 0))
-    return 4;
-  if (page && (std::strcmp(page, "Sync") == 0 || std::strcmp(page, "Device Management") == 0 ||
-               std::strcmp(page, "Network Settings") == 0))
-    return 3;
-  return 0;
+bool current(const navigation::Menu& menu, navigation::Menu::Action action);
+
+bool excludedFromHiddenDrawer(const navigation::Menu& menu, const int index) {
+  if (current(menu, items[index].action)) return true;
+  // Keep the drawer at four entries even on pages without a matching main-page action.
+  if (index == regularItemCount - 1) {
+    for (int candidate = 0; candidate < regularItemCount - 1; ++candidate) {
+      if (current(menu, items[candidate].action)) return false;
+    }
+    return true;
+  }
+  return false;
+}
+
+int visibleCount(const navigation::Menu& menu) {
+  if (SETTINGS.hiddenMenu == 0) return regularItemCount;
+  int count = 0;
+  for (int index = 0; index < regularItemCount; ++index) {
+    if (!excludedFromHiddenDrawer(menu, index)) ++count;
+  }
+  return count;
+}
+
+int hiddenDrawerGroupWidth(const GfxRenderer& renderer) {
+  const int labelFont = MONTSERRAT_10_FONT_ID;
+  int widestLabel = 0;
+  for (int index = 0; index < regularItemCount; ++index) {
+    widestLabel = std::max(widestLabel, renderer.text.getWidth(labelFont, items[index].label));
+  }
+  return hiddenDrawerIconSize + hiddenDrawerIconLabelGap + widestLabel;
 }
 
 int actual(const navigation::Menu& menu, const int shown) {
-  const int skip = hidden(menu);
-  int count = 0;
-  for (int index = 0; index < itemCount; ++index) {
-    if (index == skip) continue;
-    if (count++ == shown) return index;
+  if (shown < 0 || shown >= visibleCount(menu)) return -1;
+  if (SETTINGS.hiddenMenu == 0) return shown;
+
+  int visible = 0;
+  for (int index = 0; index < regularItemCount; ++index) {
+    if (excludedFromHiddenDrawer(menu, index)) continue;
+    if (visible++ == shown) return index;
   }
   return -1;
 }
 
-int width() { return popupSize; }
+int width(const GfxRenderer& renderer) {
+  return SETTINGS.hiddenMenu != 0 ? renderer.getScreenWidth() : popupWidth;
+}
 
 int heightFor(const GfxRenderer& renderer) {
   (void)renderer;
-  return popupSize;
+  return SETTINGS.hiddenMenu != 0
+             ? hiddenDrawerGridTopMargin + hiddenDrawerGridRows * hiddenDrawerRowHeight +
+                   (hiddenDrawerGridRows - 1) * hiddenDrawerRowGap + hiddenDrawerBottomPadding
+             : popupHeight;
 }
 
 int x(const GfxRenderer& renderer) {
-  return (renderer.getScreenWidth() - width()) / 2;
+  return SETTINGS.hiddenMenu != 0 ? 0 : (renderer.getScreenWidth() - width(renderer)) / 2;
 }
 
 int y(const GfxRenderer& renderer) {
-  return (renderer.getScreenHeight() - heightFor(renderer)) / 2;
+  return SETTINGS.hiddenMenu != 0 ? renderer.getScreenHeight() - heightFor(renderer)
+                                  : (renderer.getScreenHeight() - heightFor(renderer)) / 2;
+}
+
+int hiddenIconTop(const GfxRenderer& renderer) {
+  return y(renderer) + hiddenDrawerGridTopMargin;
 }
 
 int cellX(const GfxRenderer& renderer, const int column) {
+  if (SETTINGS.hiddenMenu != 0) {
+    const int contentWidth = renderer.getScreenWidth() - hiddenDrawerSideInset * 2;
+    const int cellWidth = (contentWidth - hiddenDrawerColumnGap) / hiddenDrawerGridColumns;
+    return hiddenDrawerSideInset + column * (cellWidth + hiddenDrawerColumnGap);
+  }
   return x(renderer) + popupPadding + column * (cellSize + itemGap);
 }
 
 int cellY(const GfxRenderer& renderer, const int row) {
+  if (SETTINGS.hiddenMenu != 0) {
+    return hiddenIconTop(renderer) + row * (hiddenDrawerRowHeight + hiddenDrawerRowGap);
+  }
   return y(renderer) + popupPadding + row * (cellSize + itemGap);
 }
 
 int itemAt(const navigation::Menu& menu, const GfxRenderer& renderer, const int tapX, const int tapY) {
-  for (int shown = 0; shown < shownCount; ++shown) {
-    const int column = shown % 2;
-    const int row = shown / 2;
+  if (SETTINGS.hiddenMenu != 0) {
+    const int menuX = hiddenDrawerSideInset;
+    const int contentWidth = renderer.getScreenWidth() - hiddenDrawerSideInset * 2;
+    const int slotWidth = (contentWidth - hiddenDrawerColumnGap) / hiddenDrawerGridColumns;
+    const int top = hiddenIconTop(renderer);
+    const int relativeX = tapX - menuX;
+    const int relativeY = tapY - top;
+    const int rowPitch = hiddenDrawerRowHeight + hiddenDrawerRowGap;
+    if (tapX < menuX || tapX >= menuX + contentWidth || relativeY < 0 ||
+        relativeY >= hiddenDrawerGridRows * hiddenDrawerRowHeight +
+                          (hiddenDrawerGridRows - 1) * hiddenDrawerRowGap) {
+      return -1;
+    }
+    const int column = relativeX / (slotWidth + hiddenDrawerColumnGap);
+    const int row = relativeY / rowPitch;
+    if (relativeX < 0 || column < 0 || column >= hiddenDrawerGridColumns || row < 0 || row >= hiddenDrawerGridRows ||
+        relativeX % (slotWidth + hiddenDrawerColumnGap) >= slotWidth || relativeY % rowPitch >= hiddenDrawerRowHeight) {
+      return -1;
+    }
+    const int shown = row * hiddenDrawerGridColumns + column;
+    return shown >= 0 && shown < visibleCount(menu) ? shown : -1;
+  }
+
+  for (int shown = 0; shown < regularItemCount; ++shown) {
+    const int column = shown % gridColumns;
+    const int row = shown / gridColumns;
     const int x = cellX(renderer, column);
     const int y = cellY(renderer, row);
     if (tapX >= x && tapX < x + cellSize && tapY >= y && tapY < y + cellSize) {
@@ -120,6 +206,8 @@ bool current(const navigation::Menu& menu, const navigation::Menu::Action action
     case navigation::Menu::Action::Sync:
       return std::strcmp(page, "Sync") == 0 || std::strcmp(page, "Device Management") == 0 ||
              std::strcmp(page, "Network Settings") == 0;
+    case navigation::Menu::Action::Search:
+      return std::strcmp(page, "Search") == 0;
     default:
       return false;
   }
@@ -228,6 +316,7 @@ void Menu::title() const {
 }
 
 void Menu::navigation() const {
+  if (SETTINGS.hiddenMenu != 0) return;
   constexpr int count = 5;
   const int left = leftMargin + iconSize / 2;
   const int right = menuRenderer.getScreenWidth() - leftMargin - iconSize / 2;
@@ -264,27 +353,65 @@ void Menu::popup() const {
 
   const int left = x(menuRenderer);
   const int top = y(menuRenderer);
-  const int popupW = width();
+  const int popupW = width(menuRenderer);
   const int popupH = heightFor(menuRenderer);
-  menuRenderer.rectangle.fill(left, top, popupW, popupH, false);
 
-  for (int shown = 0; shown < shownCount; ++shown) {
+  if (SETTINGS.hiddenMenu != 0) {
+    ScreenComponents::drawWhiteOverlay(menuRenderer, 0);
+    menuRenderer.rectangle.fill(left, top, popupW, popupH,
+                               static_cast<int>(GfxRenderer::FillTone::Paper));
+    menuRenderer.rectangle.render(left, top, popupW, popupH, true);
+    menuRenderer.rectangle.fill(left, top, popupW, 2, true);
+
+    const int indicatorX = left + (popupW - hiddenDrawerIndicatorWidth) / 2;
+    const int indicatorY = top + hiddenDrawerIndicatorTopMargin;
+    const int indicatorRadius = hiddenDrawerIndicatorHeight / 2;
+    const int indicatorMiddleWidth = hiddenDrawerIndicatorWidth - 2 * indicatorRadius;
+    menuRenderer.rectangle.fill(indicatorX + indicatorRadius, indicatorY, indicatorMiddleWidth,
+                                hiddenDrawerIndicatorHeight, static_cast<int>(GfxRenderer::FillTone::Ink), true);
+    menuRenderer.circle.render(indicatorX + indicatorRadius, indicatorY + indicatorRadius, indicatorRadius, true);
+    menuRenderer.circle.render(indicatorX + hiddenDrawerIndicatorWidth - indicatorRadius - 1,
+                               indicatorY + indicatorRadius, indicatorRadius, true);
+  } else {
+    menuRenderer.rectangle.fill(left, top, popupW, popupH, false);
+  }
+
+  for (int shown = 0; shown < visibleCount(*this); ++shown) {
     const int index = actual(*this, shown);
-    const int column = shown % 2;
-    const int row = shown / 2;
+    const int column = shown % (SETTINGS.hiddenMenu != 0 ? hiddenDrawerGridColumns : gridColumns);
+    const int row = shown / (SETTINGS.hiddenMenu != 0 ? hiddenDrawerGridColumns : gridColumns);
     const int itemX = cellX(menuRenderer, column);
-    const int itemY = cellY(menuRenderer, row) + 10;
+    const int itemY = cellY(menuRenderer, row) + (SETTINGS.hiddenMenu != 0 ? 0 : 10);
     const bool active = selectedVisible && shown == selected;
 
-    if (active) {
-      menuRenderer.rectangle.fill(itemX, itemY, cellSize, cellSize, true);
+    if (SETTINGS.hiddenMenu != 0) {
+      const int itemCellWidth = (menuRenderer.getScreenWidth() - hiddenDrawerSideInset * 2 -
+                                 hiddenDrawerColumnGap) /
+                                hiddenDrawerGridColumns;
+      const int labelFont = MONTSERRAT_10_FONT_ID;
+      const int labelLineHeight = menuRenderer.text.getLineHeight(labelFont);
+      const int groupWidth = hiddenDrawerGroupWidth(menuRenderer);
+      const int groupX = itemX + (itemCellWidth - groupWidth) / 2;
+      const int iconY = itemY + (hiddenDrawerRowHeight - hiddenDrawerIconSize) / 2;
+      const int labelY = itemY + (hiddenDrawerRowHeight - labelLineHeight) / 2;
+      if (active) {
+        menuRenderer.rectangle.fill(itemX, itemY, itemCellWidth, hiddenDrawerRowHeight, true, true, false);
+      }
+      menuRenderer.bitmap.icon(items[index].icon, groupX, iconY, hiddenDrawerIconSize, hiddenDrawerIconSize,
+                               BitmapRender::Orientation::None, active);
+      menuRenderer.text.render(labelFont, groupX + hiddenDrawerIconSize + hiddenDrawerIconLabelGap, labelY,
+                               items[index].label, !active, EpdFontFamily::REGULAR);
+    } else {
+      if (active) menuRenderer.rectangle.fill(itemX, itemY, cellSize, cellSize, true);
+      const int iconX = itemX + (cellSize - itemSize) / 2;
+      const int iconY = itemY + (cellSize - itemSize) / 2;
+      menuRenderer.bitmap.icon(items[index].icon, iconX, iconY, itemSize, itemSize,
+                               BitmapRender::Orientation::None, active);
     }
-    const int iconX = itemX + (cellSize - itemSize) / 2;
-    const int iconY = itemY + (cellSize - itemSize) / 2;
-    menuRenderer.bitmap.icon(items[index].icon, iconX, iconY, itemSize, itemSize,
-                             BitmapRender::Orientation::None, active);
   }
-  menuRenderer.rectangle.render(left, top, popupW, popupH, true);
+  if (SETTINGS.hiddenMenu == 0) {
+    menuRenderer.rectangle.render(left, top, popupW, popupH, true);
+  }
 }
 
 Menu::Action Menu::choose() const {
@@ -303,24 +430,46 @@ Menu::Action Menu::handleInput(MappedInputManager& input) const {
   if (lightAction == LightDrawer::Action::Closed) return Action::Closed;
   if (lightAction == LightDrawer::Action::Adjusted) return Action::Opened;
 #endif
+  if (SETTINGS.hiddenMenu != 0) {
+    if (open && input.wasTouchSwipeDownForRenderer(menuRenderer)) {
+      open = false;
+      selectedVisible = false;
+      return Action::Closed;
+    }
+
+    if (!open) {
+      float startNx = 0.0f;
+      float startNy = 0.0f;
+      if (input.wasTouchSwipeUpInScreen(menuRenderer, startNx, startNy)) {
+        if (startNy >= hiddenDrawerSwipeStartNy) {
+          open = true;
+          selected = 0;
+          selectedVisible = false;
+          return Action::Opened;
+        }
+      }
+    }
+  }
   const bool touchSwipe = input.wasTouchSwipeUpForRenderer(menuRenderer) ||
                           input.wasTouchSwipeDownForRenderer(menuRenderer) ||
                           input.wasTouchSwipeLeftForRenderer(menuRenderer) ||
                           input.wasTouchSwipeRightForRenderer(menuRenderer);
   if (touchSwipe) {
-    ignoreOpeningTap = false;
     return Action::None;
   }
 
   if (open && input.wasPressed(MappedInputManager::Button::Up)) {
-    selected = (selected + shownCount - 1) % shownCount;
+    selected = (selected + visibleCount(*this) - 1) % visibleCount(*this);
     selectedVisible = true;
     return Action::Opened;
   }
   if (open && input.wasPressed(MappedInputManager::Button::Down)) {
-    selected = (selected + 1) % shownCount;
+    selected = (selected + 1) % visibleCount(*this);
     selectedVisible = true;
     return Action::Opened;
+  }
+  if (open && input.wasPressed(MappedInputManager::Button::Confirm)) {
+    return choose();
   }
 
   if (!input.hasTouch()) {
@@ -354,17 +503,9 @@ Menu::Action Menu::handleTap(const int tapX, const int tapY) const {
 #endif
 
   if (open) {
-    const bool duplicateOpeningTap = ignoreOpeningTap && openingX >= 0 && openingY >= 0 &&
-                                     std::abs(tapX - openingX) <= 18 && std::abs(tapY - openingY) <= 18;
-    if (duplicateOpeningTap) {
-      ignoreOpeningTap = false;
-      return Action::None;
-    }
-    ignoreOpeningTap = false;
-
     const int menuX = x(menuRenderer);
     const int menuY = y(menuRenderer);
-    const int menuW = width();
+    const int menuW = width(menuRenderer);
     const int menuH = heightFor(menuRenderer);
     const bool inside = tapX >= menuX && tapX < menuX + menuW && tapY >= menuY && tapY < menuY + menuH;
     if (!inside) {
@@ -373,7 +514,7 @@ Menu::Action Menu::handleTap(const int tapX, const int tapY) const {
     }
 
     const int item = itemAt(*this, menuRenderer, tapX, tapY);
-    if (item < 0 || item >= shownCount) {
+    if (item < 0 || item >= visibleCount(*this)) {
       open = false;
       return Action::Closed;
     }
@@ -387,6 +528,8 @@ Menu::Action Menu::handleTap(const int tapX, const int tapY) const {
   if (centerAction != Action::None) {
     return centerAction;
   }
+
+  if (SETTINGS.hiddenMenu != 0) return Action::None;
 
   constexpr int count = 5;
   const int left = leftMargin + iconSize / 2;

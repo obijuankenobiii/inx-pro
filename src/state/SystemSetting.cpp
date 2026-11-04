@@ -42,7 +42,7 @@ void readAndValidate(FsFile& file, uint8_t& member, const uint8_t maxValue) {
 
 namespace {
 constexpr uint8_t SETTINGS_FILE_VERSION = 1;
-constexpr uint8_t SETTINGS_COUNT = 39;
+constexpr uint8_t SETTINGS_COUNT = 42;
 constexpr char SETTINGS_FILE[] = "/.system/settings.bin";
 constexpr uint32_t FNV1A_OFFSET = 2166136261UL;
 constexpr uint32_t FNV1A_PRIME = 16777619UL;
@@ -159,6 +159,9 @@ uint32_t settingsHash(const SystemSetting& settings) {
   hashPod(hash, settings.shakePageTurn);
   hashPod(hash, settings.shakePageTurnSensitivity);
   hashPod(hash, settings.showMenuClock);
+  hashPod(hash, settings.hiddenMenu);
+  hashPod(hash, settings.legacyMenuX);
+  hashPod(hash, settings.legacyMenuY);
   hashPod(hash, settings.keyboardLayout);
   hashPod(hash, settings.systemTextSize);
   hashPod(hash, settings.darkMode);
@@ -282,6 +285,9 @@ bool SystemSetting::saveToFile() const {
   serialization::writePod(outputFile, timeZoneAutoDetectEnabled);
   serialization::writeString(outputFile, std::string(timeZoneId));
   serialization::writeString(outputFile, std::string(languageCode));
+  serialization::writePod(outputFile, hiddenMenu);
+  serialization::writePod(outputFile, legacyMenuX);
+  serialization::writePod(outputFile, legacyMenuY);
 
   outputFile.close();
 
@@ -316,7 +322,7 @@ bool SystemSetting::loadFromFile() {
   uint8_t fileSettingsCount = 0;
   serialization::readPod(inputFile, fileSettingsCount);
 
-  if (fileSettingsCount != SETTINGS_COUNT) {
+  if (fileSettingsCount > SETTINGS_COUNT) {
     INX_SERIAL.printf("[%lu] [CPS] Deserialization failed: Expected %u settings, found %u\n", millis(),
                       SETTINGS_COUNT, fileSettingsCount);
     inputFile.close();
@@ -502,12 +508,26 @@ bool SystemSetting::loadFromFile() {
       }
       ++settingsRead;
     }
+    if (settingsRead < fileSettingsCount) {
+      serialization::readPod(inputFile, hiddenMenu);
+      if (hiddenMenu > 1) hiddenMenu = 0;
+      ++settingsRead;
+    }
+    if (settingsRead < fileSettingsCount) {
+      serialization::readPod(inputFile, legacyMenuX);
+      ++settingsRead;
+    }
+    if (settingsRead < fileSettingsCount) {
+      serialization::readPod(inputFile, legacyMenuY);
+      ++settingsRead;
+    }
 
   } while (false);
 
   inputFile.close();
 
   if (showMenuClock > 1) showMenuClock = 1;
+  if (hiddenMenu > 1) hiddenMenu = 0;
   if (keyboardLayout >= KEYBOARD_LAYOUT_COUNT) keyboardLayout = KEYBOARD_QWERTY;
   if (systemTextSize >= SYSTEM_TEXT_SIZE_COUNT) systemTextSize = SYSTEM_TEXT_SMALL;
   if (darkMode > 1) darkMode = 0;

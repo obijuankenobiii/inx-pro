@@ -9,17 +9,19 @@ class Heatmap final {
   explicit Heatmap(GfxRenderer& renderer) : renderer_(renderer) {}
 
   void render(int x, int y, int width, int height, HomeTheme::HeatmapView view, bool showLabel = true,
-              HomeTheme::CarouselLabelColor labelColor = HomeTheme::CarouselLabelColor::Black) const;
+              HomeTheme::CarouselLabelColor labelColor = HomeTheme::CarouselLabelColor::Black,
+              bool compact = false) const;
   void preview(int x, int y, int width, int height, HomeTheme::HeatmapView view, bool showLabel = true,
-               HomeTheme::CarouselLabelColor labelColor = HomeTheme::CarouselLabelColor::Black) const;
+               HomeTheme::CarouselLabelColor labelColor = HomeTheme::CarouselLabelColor::Black,
+               bool compact = false) const;
   /** Returns the RTC date represented by a touched cell, or 0 outside the grid. */
   uint32_t hitTestDateKey(int px, int py, int x, int y, int width, int height, HomeTheme::HeatmapView view,
-                          bool showLabel = true) const;
+                          bool showLabel = true, bool compact = false) const;
   bool needsRefresh(HomeTheme::HeatmapView view) const;
 
  private:
   void renderContent(int x, int y, int width, int height, HomeTheme::HeatmapView view, bool sample, bool showLabel,
-                     HomeTheme::CarouselLabelColor labelColor) const;
+                     HomeTheme::CarouselLabelColor labelColor, bool compact) const;
 
   GfxRenderer& renderer_;
   mutable uint64_t renderedKey_ = 0;
