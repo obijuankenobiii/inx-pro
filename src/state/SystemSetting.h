@@ -356,6 +356,10 @@ class SystemSetting {
   uint8_t hideMenuClock = 0;
   /** Hide the bottom navigation bar and expose it through a bottom-edge swipe grid. */
   uint8_t hiddenMenu = 0;
+  /** Show the curved/dithered visual when a swipe exits an activity. */
+  uint8_t exitAnimation = 1;
+  /** Hide reading statistics from the home shortcuts and statistics entry. */
+  uint8_t disableStatistics = 0;
   /** Reserved coordinate slots retained only for settings-file compatibility. */
   uint16_t legacyMenuX = 0;
   uint16_t legacyMenuY = 0;

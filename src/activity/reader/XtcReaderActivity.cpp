@@ -14,6 +14,7 @@
 
 #include <FsHelpers.h>
 #include <GfxRenderer.h>
+#include <HalDisplay.h>
 #include <SDCardManager.h>
 
 #include <algorithm>
@@ -28,6 +29,7 @@
 #include "images/Close.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
+#include "system/ScreenComponents.h"
 
 namespace {
 constexpr unsigned long skipPageMs = 700;
@@ -208,6 +210,15 @@ void XtcReaderActivity::loop() {
 
   if (menuDrawerVisible) {
     handleMenuDrawerInput();
+    return;
+  }
+
+  float backGestureStartX = 0.0f;
+  float backGestureStartY = 0.0f;
+  if (mappedInput.hasTouch() && mappedInput.wasTouchSwipeRightInScreen(renderer, backGestureStartX,
+                                                                        backGestureStartY) &&
+      backGestureStartX <= 0.30f) {
+    onGoBack();
     return;
   }
 

@@ -14,6 +14,7 @@
 
 #include "SubPage.h"
 #include "state/Statistics.h"
+#include "util/LibraryIndex.h"
 
 class Bitmap;
 
@@ -35,6 +36,7 @@ class Statistics final : public SubPage {
   std::vector<BookReadingStats> allBooksStats;
   std::vector<uint8_t> loadedBookStatsFlags_;
   std::vector<BookListMetadata> bookListMetadata_;
+  std::vector<LibraryIndex::Book> indexedBooks_;
   GlobalReadingStats globalStats;
   int64_t calendarWeekStartDay_ = 0;
   std::array<uint32_t, 7> weeklyReadingTimeMs_{};
@@ -46,11 +48,11 @@ class Statistics final : public SubPage {
    * Loads and sorts reading statistics for all books by most recently read.
    * Refreshes aggregates from disk, updates the global snapshot file, and redraws progress UI.
    */
-  void loadStats();
+  void loadStats(bool showProgress = true);
 
-  /** Loads saved global totals and indexes persisted per-book stats without loading every record. */
+  /** Loads the saved global snapshot and the persisted, already-built book index. */
   void hydrateFromStorage();
-  void indexBookStatsPaths(bool includeMetadata = true);
+  void loadIndexedBooks();
   bool ensureBookStatsLoaded(int bookIdx);
   void refreshWeeklyChartData();
 
@@ -73,6 +75,9 @@ class Statistics final : public SubPage {
   void renderBookListThumbnail(const BookListMetadata& book, int x, int y, int width, int height) const;
 
   void renderSingleBookView(int bookIdx, int contentTop, int contentBottom) const;
+  void renderSingleBookTopSection(int bookIdx) const;
+  void renderSingleBookMiddleChart(int bookIdx) const;
+  void renderSingleBookBottomGrid(int bookIdx) const;
 
   /** Legacy recent-book layout helper retained for cached cover sizing. */
   int renderRecent(int y, int innerLeft, int innerRight, int innerW, int Margin) const;
@@ -85,8 +90,10 @@ class Statistics final : public SubPage {
   bool handleRefreshTap();
   bool handleBooksInput();
   void drawControlDrawer() const;
+  void refresh() override;
 
   bool controlDrawerOpen_ = false;
+  bool indexRefreshPending_ = false;
 
  public:
   Statistics(GfxRenderer& renderer, MappedInputManager& mappedInput, std::function<void()> close);

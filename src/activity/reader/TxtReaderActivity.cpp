@@ -6,6 +6,7 @@
 #include "TxtReaderActivity.h"
 
 #include <GfxRenderer.h>
+#include <HalDisplay.h>
 #include <SDCardManager.h>
 #include <Serialization.h>
 #include <Utf8.h>
@@ -116,6 +117,15 @@ void TxtReaderActivity::loop() {
   }
 
   if (mappedInput.wasReleased(MappedInputManager::Button::Back) && mappedInput.getHeldTime() < goHomeMs) {
+    onGoBack();
+    return;
+  }
+
+  float backGestureStartX = 0.0f;
+  float backGestureStartY = 0.0f;
+  if (mappedInput.hasTouch() && mappedInput.wasTouchSwipeRightInScreen(renderer, backGestureStartX,
+                                                                        backGestureStartY) &&
+      backGestureStartX <= 0.30f) {
     onGoBack();
     return;
   }

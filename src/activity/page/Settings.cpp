@@ -145,6 +145,8 @@ std::vector<SettingInfo> buildSystemSettings() {
                                        {SystemSetting::SHORT_PWRBTN::SLEEP,
                                         SystemSetting::SHORT_PWRBTN::PAGE_REFRESH},
                                        GroupType::DEVICE_ADVANCED));
+  settings.push_back(SettingInfo::Toggle("Turn off statistics", &SystemSetting::disableStatistics,
+                                         GroupType::DEVICE_ADVANCED));
 #if FREEINK_DEVICE_PICCO
   settings.push_back(SettingInfo::Enum("Toggle", &SystemSetting::piccoToggleMode, {"Light", "Power"},
                                        GroupType::DEVICE_ADVANCED));

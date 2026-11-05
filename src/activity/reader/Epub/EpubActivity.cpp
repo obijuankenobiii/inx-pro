@@ -1637,6 +1637,15 @@ void EpubActivity::loop() {
   }
 #endif
 
+  float backGestureStartX = 0.0f;
+  float backGestureStartY = 0.0f;
+  if (mappedInput.wasTouchSwipeRightInScreen(renderer, backGestureStartX, backGestureStartY) &&
+      backGestureStartX <= 0.30f) {
+    pauseReadingStats();
+    onGoBack();
+    return;
+  }
+
   if (mappedInput.wasTouchSwipeUpForRenderer(renderer)) {
     pauseReadingStats();
     vTaskDelay(pdMS_TO_TICKS(100));

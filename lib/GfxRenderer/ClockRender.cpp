@@ -185,8 +185,9 @@ void renderCenteredDate(GfxRenderer& renderer, const ClockRender::DateTimeView& 
     renderClockSegment(renderer, timeX, timeTop, hourText, true, EpdFontFamily::BOLD, compact);
     renderClockSegment(renderer, timeX + hourW, timeTop, ":", true, EpdFontFamily::REGULAR, compact);
     if (compact) {
-      renderer.text.renderScaled(TIME_FONT, std::max(0, timeX + hourW + colonW), clockRenderY(renderer, timeTop, true),
-                                 minuteText, COMPACT_TIME_SCALE, true, EpdFontFamily::REGULAR);
+      renderer.text.renderScaledGray(TIME_FONT, std::max(0, timeX + hourW + colonW),
+                                     clockRenderY(renderer, timeTop, true), minuteText, COMPACT_TIME_SCALE, true,
+                                     EpdFontFamily::REGULAR);
     } else {
       renderer.text.renderGray(TIME_FONT, std::max(0, timeX + hourW + colonW), clockRenderY(renderer, timeTop, false),
                                minuteText, true, EpdFontFamily::REGULAR);
@@ -207,8 +208,8 @@ void renderCenteredDate(GfxRenderer& renderer, const ClockRender::DateTimeView& 
     const int minuteY = clockRenderY(renderer, stackTop + visibleHeight + gap, compact);
     const int minuteX = x + (w - timeTextW(renderer, minuteText, EpdFontFamily::BOLD, compact)) / 2;
     if (compact) {
-      renderer.text.renderScaled(TIME_FONT, std::max(0, minuteX), std::max(0, minuteY), minuteText,
-                                 COMPACT_TIME_SCALE, true, EpdFontFamily::BOLD);
+      renderer.text.renderScaledGray(TIME_FONT, std::max(0, minuteX), std::max(0, minuteY), minuteText,
+                                     COMPACT_TIME_SCALE, true, EpdFontFamily::BOLD);
     } else {
       renderer.text.renderGray(TIME_FONT, std::max(0, minuteX), std::max(0, minuteY), minuteText, true,
                                EpdFontFamily::BOLD);
@@ -237,15 +238,18 @@ void renderHorizontalCard(GfxRenderer& renderer, const ClockRender::DateTimeView
   std::snprintf(hourText, sizeof(hourText), "%02u", displayHour(dt));
   std::snprintf(minuteText, sizeof(minuteText), "%02u", dt.minute);
 
-  const bool largeScreen = w >= 460 && h >= 300;
-  const int cardW = largeScreen ? std::min(w - 36, 560) : w;
+  constexpr int compactCardLeftPadding = 20;
+  const int contentX = x + (compact ? compactCardLeftPadding : 0);
+  const int contentW = std::max(1, w - (compact ? compactCardLeftPadding : 0));
+  const bool largeScreen = contentW >= 460 && h >= 300;
+  const int cardW = largeScreen ? std::min(contentW - 36, 560) : contentW;
   const int cardH = largeScreen ? 188 : std::max(1, h > 220 ? 170 : h);
-  const int cardX = largeScreen ? x + (w - cardW) / 2 : x;
+  const int cardX = largeScreen ? contentX + (contentW - cardW) / 2 : contentX;
   const int cardY = y + (h - cardH) / 2;
   const int dateW =
       largeScreen ? clampInt(cardW * 25 / 100, 104, cardW - 220) : clampInt(cardW * 28 / 100, 44, cardW - 72);
 
-  renderer.rectangle.fill(cardX, cardY, dateW, cardH, true);
+  renderer.rectangle.fill(cardX, cardY, dateW, cardH, static_cast<int>(GfxRenderer::FillTone::Gray));
 
   const int dateLineHeight = renderer.text.getLineHeight(LARGE_SYSTEM_FONT);
   const int dayY = cardY + (cardH - (dateLineHeight * 2 + 8)) / 2;
@@ -265,13 +269,25 @@ void renderHorizontalCard(GfxRenderer& renderer, const ClockRender::DateTimeView
   if (timeAreaW > 0 && timeW <= timeAreaW - 12) {
     renderClockSegment(renderer, timeX, timeTop, hourText, true, EpdFontFamily::BOLD, compact);
     renderClockSegment(renderer, timeX + hourW, timeTop, ":", true, EpdFontFamily::REGULAR, compact);
-    renderClockSegment(renderer, timeX + hourW + colonW, timeTop, minuteText, true, EpdFontFamily::REGULAR, compact);
+    if (compact) {
+      renderer.text.renderScaledGray(TIME_FONT, timeX + hourW + colonW, clockRenderY(renderer, timeTop, true),
+                                     minuteText, COMPACT_TIME_SCALE, true, EpdFontFamily::REGULAR);
+    } else {
+      renderer.text.renderGray(TIME_FONT, timeX + hourW + colonW, clockRenderY(renderer, timeTop, false), minuteText,
+                               true, EpdFontFamily::REGULAR);
+    }
   } else if (timeAreaW > 48) {
     const int halfW = std::max(1, timeAreaW / 2);
     const int hourX = timeAreaX + std::max(2, (halfW - hourW) / 2);
     const int minuteX = timeAreaX + halfW + std::max(2, (timeAreaW - halfW - minuteW) / 2);
     renderClockSegment(renderer, hourX, timeTop, hourText, true, EpdFontFamily::BOLD, compact);
-    renderClockSegment(renderer, minuteX, timeTop, minuteText, true, EpdFontFamily::REGULAR, compact);
+    if (compact) {
+      renderer.text.renderScaledGray(TIME_FONT, minuteX, clockRenderY(renderer, timeTop, true), minuteText,
+                                     COMPACT_TIME_SCALE, true, EpdFontFamily::REGULAR);
+    } else {
+      renderer.text.renderGray(TIME_FONT, minuteX, clockRenderY(renderer, timeTop, false), minuteText, true,
+                               EpdFontFamily::REGULAR);
+    }
     renderer.text.render(systemFontId(), timeAreaX + halfW - 2, std::max(0, timeTop + 42), ":", true);
   }
   if (SETTINGS.sleepClockTimeFormat == SystemSetting::CLOCK_12_HOUR) {

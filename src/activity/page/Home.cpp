@@ -488,6 +488,11 @@ void Home::drawShortcutDrawer() const {
 }
 
 bool Home::handleShortcut(const int item) {
+  if (SETTINGS.disableStatistics != 0 && item == 3) {
+    // Removing Statistics shifts Dictionary from row 4 to row 3.
+    openHomeSubPage(HomeSubPage::Section::Dictionary);
+    return true;
+  }
   switch (item) {
     case 0:
       openHomeSubPage(HomeSubPage::Section::Bookmarks);

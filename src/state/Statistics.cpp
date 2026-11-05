@@ -663,6 +663,16 @@ void saveReadingHistory() {
   saveReadingHistoryBooks();
 }
 
+void clearReadingStatisticsState() {
+  cachedGlobalStats = GlobalReadingStats();
+  globalStatsLoaded = false;
+  readingHistory.clear();
+  readingHistoryDirty = false;
+  readingHistoryBooks.clear();
+  readingHistoryBooksLoaded = false;
+  readingHistoryBooksDirty = false;
+}
+
 const std::vector<ReadingHistoryEntry>& getReadingHistory() {
   if (!globalStatsLoaded) {
     GlobalReadingStats ignored;

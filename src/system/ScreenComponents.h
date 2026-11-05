@@ -28,6 +28,8 @@ class ScreenComponents {
   static void resetPageHeaderBackButton();
   /** Hit-test a tap against the recorded icon (with a small touch margin). */
   static bool pageHeaderBackButtonHit(int x, int y);
+
+  /** Draws a transient curved back-gesture guide anchored at the touch origin. */
   static constexpr int BATTERY_ICON_WIDTH = 28;
   static constexpr int BATTERY_ICON_HEIGHT = 14;
   static constexpr int BATTERY_TEXT_GAP = 5;

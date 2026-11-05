@@ -8,14 +8,29 @@
 #include <GfxRenderer.h>
 
 #include <algorithm>
-#include <cstdio>
 
+#include "activity/page/SubPage.h"
 #include "state/SystemSetting.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
 #include <ClockRender.h>
 
 namespace {
+constexpr int kPickerSideInset = 20;
+constexpr int kPickerTopInset = 10;
+constexpr int kPickerBottomInset = 20;
+constexpr int kPickerRowGap = 10;
+
+int pickerContentTop() {
+  constexpr int headerTop = FREEINK_DEVICE_X4PRO ? 20 : 15;
+  return headerTop + 40 + 20 + kPickerTopInset;
+}
+
+int pickerRowHeight(const int screenHeight) {
+  const int count = ClockRender::styleCount();
+  return std::max(1, (screenHeight - pickerContentTop() - kPickerBottomInset - kPickerRowGap * (count - 1)) / count);
+}
+
 ClockRender::DateTimeView previewDateTime() {
   ClockRender::DateTimeView dt;
   dt.year = 2026;
@@ -73,27 +88,57 @@ void ClockStylePickerActivity::displayTaskLoop() {
 void ClockStylePickerActivity::render() {
   const int pageWidth = renderer.getScreenWidth();
   const int pageHeight = renderer.getScreenHeight();
+  const int styleCount = ClockRender::styleCount();
+  const int contentTop = pickerContentTop();
+  const int rowHeight = pickerRowHeight(pageHeight);
 
   renderer.clearScreen();
+  SubPage::header(renderer, "Clock face");
   const auto dt = previewDateTime();
-  ClockRender::render(renderer, selectedIndex, dt, true, 0, 0, pageWidth, pageHeight);
+  for (int index = 0; index < styleCount; ++index) {
+    const int rowY = contentTop + index * (rowHeight + kPickerRowGap);
+    const bool selected = index == selectedIndex;
+    const char* name = ClockRender::styleName(static_cast<uint8_t>(index));
+    const int labelFont = systemFontId();
+    const int labelY = rowY + 2;
+    const int labelLineHeight = renderer.text.getLineHeight(labelFont);
+    const int previewY = labelY + renderer.text.getLineHeight(labelFont) + 2;
+    const int previewHeight = std::max(1, rowHeight - (previewY - rowY) - 2);
 
-  const char* name = ClockRender::styleName(selectedIndex);
-  renderer.rectangle.fill(0, 0, pageWidth, 24, false);
-  renderer.text.render(MONTSERRAT_16_FONT_ID, 8, 6, name, true, EpdFontFamily::BOLD);
-  char countText[8];
-  std::snprintf(countText, sizeof(countText), "%d/%d", selectedIndex + 1, ClockRender::styleCount());
-  renderer.text.render(MONTSERRAT_16_FONT_ID,
-                       pageWidth - renderer.text.getWidth(MONTSERRAT_16_FONT_ID, countText) - 8, 6, countText,
-                       true);
+    if (index + 1 < styleCount) {
+      const int dividerY = rowY + rowHeight + kPickerRowGap / 2;
+      renderer.line.render(kPickerSideInset, dividerY, pageWidth - kPickerSideInset - 1, dividerY, true,
+                           LineRender::Style::Dotted);
+    }
+    renderer.text.render(labelFont, kPickerSideInset, labelY, name, true, EpdFontFamily::REGULAR);
+    if (selected) {
+      constexpr int tagHorizontalPadding = 8;
+      const char* activeText = "Active";
+      const int tagHeight = labelLineHeight + 4;
+      const int tagWidth = renderer.text.getWidth(labelFont, activeText) + tagHorizontalPadding * 2;
+      const int tagX = pageWidth - kPickerSideInset - tagWidth;
+      const int tagY = rowY;
+      renderer.rectangle.fill(tagX, tagY, tagWidth, tagHeight, false);
+      renderer.rectangle.render(tagX, tagY, tagWidth, tagHeight, true);
+      renderer.text.render(labelFont, tagX + tagHorizontalPadding, tagY + 2, activeText, true,
+                           EpdFontFamily::REGULAR);
+    }
+    int clockY = previewY;
+    int clockHeight = previewHeight;
+    constexpr int compactClockPadding = 20;
+    if (clockHeight > compactClockPadding * 2) {
+      clockY += compactClockPadding;
+      clockHeight -= compactClockPadding * 2;
+    }
+    ClockRender::render(renderer, static_cast<uint8_t>(index), dt, true, kPickerSideInset, clockY,
+                         std::max(1, pageWidth - kPickerSideInset * 2), clockHeight, true);
+  }
 
-  const auto labels = mappedInput.mapLabels("\xC2\xAB Back", "Select", "Prev", "Next");
   renderer.displayBuffer();
 }
 
 void ClockStylePickerActivity::applySelection() {
   SETTINGS.sleepClockStyle = static_cast<uint8_t>(selectedIndex);
-  SETTINGS.sleepScreen = SystemSetting::SLEEP_SCREEN_MODE::DATETIME;
   SETTINGS.saveToFile();
   onBack();
 }
@@ -104,20 +149,25 @@ void ClockStylePickerActivity::loop() {
     return;
   }
 
+  if (SubPage::closeInput(renderer, mappedInput, onBack)) return;
+
   if (mappedInput.hasTouch()) {
     float tapNx = 0.0f;
     float tapNy = 0.0f;
     if (mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy)) {
       const int screenWidth = renderer.getScreenWidth();
+      const int screenHeight = renderer.getScreenHeight();
       const int tapX = static_cast<int>(tapNx * screenWidth);
-      if (tapX < screenWidth / 3) {
-        selectedIndex = (selectedIndex + ClockRender::styleCount() - 1) % ClockRender::styleCount();
-        updateRequired = true;
-      } else if (tapX >= (screenWidth * 2) / 3) {
-        selectedIndex = (selectedIndex + 1) % ClockRender::styleCount();
-        updateRequired = true;
-      } else {
-        applySelection();
+      const int rowHeight = pickerRowHeight(screenHeight);
+      const int tapY = static_cast<int>(tapNy * screenHeight);
+      const int contentTop = pickerContentTop();
+      if (tapX >= kPickerSideInset && tapX < screenWidth - kPickerSideInset && tapY >= contentTop) {
+        const int row = (tapY - contentTop) / (rowHeight + kPickerRowGap);
+        const int rowY = contentTop + row * (rowHeight + kPickerRowGap);
+        if (row >= 0 && row < ClockRender::styleCount() && tapY < rowY + rowHeight) {
+          selectedIndex = row;
+          applySelection();
+        }
       }
       return;
     }

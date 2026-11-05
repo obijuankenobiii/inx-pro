@@ -17,7 +17,6 @@
 #include <cctype>
 #include <cstdio>
 #include <functional>
-#include <set>
 #include <string>
 #include <unordered_set>
 #include <utility>
@@ -43,6 +42,7 @@
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
 #include "system/ScreenComponents.h"
+#include "util/LibraryIndexRefresh.h"
 
 extern void onGoToHome();
 
@@ -93,8 +93,78 @@ std::string formatReadingDuration(const uint32_t readingTimeMs) {
   return text;
 }
 
+void drawStatisticsLine(GfxRenderer& renderer, int x1, int y1, const int x2, const int y2) {
+  const int dx = std::abs(x2 - x1);
+  const int sx = x1 < x2 ? 1 : -1;
+  const int dy = -std::abs(y2 - y1);
+  const int sy = y1 < y2 ? 1 : -1;
+  int error = dx + dy;
+  while (true) {
+    renderer.drawPixel(x1, y1, true);
+    if (x1 == x2 && y1 == y2) break;
+    const int doubled = 2 * error;
+    if (doubled >= dy) {
+      error += dy;
+      x1 += sx;
+    }
+    if (doubled <= dx) {
+      error += dx;
+      y1 += sy;
+    }
+  }
+}
+
+std::string formatBookHistoryDate(const uint32_t dateKey) {
+  constexpr const char* kMonths[] = {"",    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+  const unsigned month = static_cast<unsigned>((dateKey / 100U) % 100U);
+  const unsigned day = static_cast<unsigned>(dateKey % 100U);
+  char text[16];
+  if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+    std::snprintf(text, sizeof(text), "%s %u", kMonths[month], day);
+  } else {
+    std::snprintf(text, sizeof(text), "--");
+  }
+  return text;
+}
+
 ButtonBounds nextButton(const GfxRenderer& renderer) {
   return {renderer.getScreenWidth() - 80, renderer.getScreenHeight() - 20 - Button::height, 60, Button::height};
+}
+
+ButtonBounds statisticsRefreshButton(const GfxRenderer& renderer) {
+  constexpr int kButtonSize = 56;
+  constexpr int kRightMargin = 0;
+  constexpr int kBottomMargin = 0;
+  return {renderer.getScreenWidth() - kRightMargin - kButtonSize,
+          renderer.getScreenHeight() - navigation::Menu::bottomInset() - kBottomMargin - kButtonSize,
+          kButtonSize, kButtonSize};
+}
+
+struct SingleBookLayout {
+  int areaY;
+  int topH;
+  int middleH;
+  int bottomH;
+};
+
+SingleBookLayout singleBookLayout(const GfxRenderer& renderer) {
+  const int areaY = navigation::Menu::height;
+  const int areaH = std::max(0, renderer.getScreenHeight() - areaY - navigation::Menu::bottomInset());
+  const int baseH = areaH / 3;
+  const int topH = std::max(1, (baseH * 90) / 100);
+  const int transferredH = baseH - topH;
+  const int middleH = baseH + transferredH;
+  const int bottomH = std::max(0, areaH - topH - middleH);
+  return {areaY, topH, middleH, bottomH};
+}
+
+void drawStatisticsRefreshButton(const GfxRenderer& renderer) {
+  const ButtonBounds refresh = statisticsRefreshButton(renderer);
+  renderer.rectangle.fill(refresh.x, refresh.y, refresh.width, refresh.height,
+                          static_cast<int>(GfxRenderer::FillTone::Ink), true, true);
+  renderer.bitmap.icon(Refresh, refresh.x + (refresh.width - 40) / 2, refresh.y + (refresh.height - 40) / 2,
+                       40, 40, BitmapRender::Orientation::None, true);
 }
 
 struct StatisticsAction {
@@ -107,14 +177,6 @@ constexpr StatisticsAction kStatisticsActions[] = {
 
 static std::string epubCachePathForBookPath(const std::string& bookPath) {
   return "/.metadata/epub/" + std::to_string(std::hash<std::string>{}(bookPath));
-}
-
-static bool statsFileExistsForCachePath(const std::string& cachePath) {
-  if (cachePath.empty()) {
-    return false;
-  }
-  const std::string statsPath = cachePath + "/statistics.bin";
-  return SdMan.exists(statsPath.c_str());
 }
 
 std::string plainBookDescription(const std::string& raw) {
@@ -589,23 +651,38 @@ int drawFourColumnStats2x2(const GfxRenderer& renderer, int innerLeft, int y, in
 
 }
 
-void Statistics::loadStats() {
-  ScreenComponents::LoadingProgressLayout layout =
-      ScreenComponents::LoadingProgress::show(renderer, "Loading statistics...", 12);
+void Statistics::loadStats(const bool showProgress) {
+  ScreenComponents::LoadingProgressLayout layout{};
+  if (showProgress) {
+    layout = ScreenComponents::LoadingProgress::show(renderer, "Loading statistics...", 12);
+  }
+  const auto setProgress = [this, &layout, showProgress](const int progress) {
+    if (showProgress) {
+      ScreenComponents::LoadingProgress::setProgress(renderer, layout, progress);
+    }
+  };
   allBooksStats = getAllBooksStats();
+  allBooksStats.erase(
+      std::remove_if(allBooksStats.begin(), allBooksStats.end(), [](const BookReadingStats& book) {
+        // A zero-progress cache is normally created when a book is opened
+        // before the first page is read. It is not a useful statistics entry
+        // and should not pollute the Books list or aggregate totals.
+        return !(book.progressPercent > 0.0f);
+      }),
+      allBooksStats.end());
   loadedBookStatsFlags_.assign(allBooksStats.size(), 1);
-  ScreenComponents::LoadingProgress::setProgress(renderer, layout, 40);
+  setProgress(40);
   std::sort(allBooksStats.begin(), allBooksStats.end(),
             [](const BookReadingStats& a, const BookReadingStats& b) { return a.lastReadTimeMs > b.lastReadTimeMs; });
-  ScreenComponents::LoadingProgress::setProgress(renderer, layout, 65);
+  setProgress(65);
   globalStats = aggregateGlobalStatsFromBooks(allBooksStats);
   mergeFinishedBookStatuses(globalStats, allBooksStats);
   bookListMetadata_ = buildBookListMetadata(allBooksStats);
   saveBookListMetadata(bookListMetadata_);
-  ScreenComponents::LoadingProgress::setProgress(renderer, layout, 90);
+  setProgress(90);
   viewIndex = 0;
   booksPage_ = 0;
-  ScreenComponents::LoadingProgress::setProgress(renderer, layout, 100);
+  setProgress(100);
   saveGlobalStats(globalStats);
   refreshWeeklyChartData();
 }
@@ -648,80 +725,67 @@ void Statistics::hydrateFromStorage() {
   allBooksStats.clear();
   loadedBookStatsFlags_.clear();
   bookListMetadata_ = loadBookListMetadata();
-  // The recent list is small and gives the first screen enough book data to
-  // render immediately. The complete cache directory scan only happens when
-  // the global refresh action rebuilds the persisted aggregate.
-  indexBookStatsPaths(false);
+  bookListMetadata_.erase(
+      std::remove_if(bookListMetadata_.begin(), bookListMetadata_.end(), [](const BookListMetadata& book) {
+        return !(book.progressPercent > 0.0f);
+      }),
+      bookListMetadata_.end());
+
+  // Restore the recent book snapshot without scanning the cache directories.
+  // This keeps the main page's progress populated while the full statistics
+  // rebuild remains an explicit refresh action.
+  RECENT_BOOKS.loadFromFile();
+  for (const RecentBook& recent : RECENT_BOOKS.getBooks()) {
+    std::string cachePath = recent.cachePath;
+    if (cachePath.empty() && !recent.path.empty()) {
+      cachePath = epubCachePathForBookPath(recent.path);
+    }
+    if (cachePath.empty()) continue;
+
+    BookReadingStats stats;
+    if (!loadBookStats(cachePath.c_str(), stats) || !(stats.progressPercent > 0.0f)) continue;
+    stats.path = cachePath;
+    if (stats.title.empty()) stats.title = recent.title;
+    if (stats.author.empty()) stats.author = recent.author;
+    allBooksStats.push_back(std::move(stats));
+  }
+  std::sort(allBooksStats.begin(), allBooksStats.end(),
+            [](const BookReadingStats& left, const BookReadingStats& right) {
+              return left.lastReadTimeMs > right.lastReadTimeMs;
+            });
+  loadedBookStatsFlags_.assign(allBooksStats.size(), 1);
+  loadIndexedBooks();
 }
 
-void Statistics::indexBookStatsPaths(const bool includeMetadata) {
-  std::set<std::string> seen;
-  uint32_t scanned = 0;
-  const auto service = [&] {
-    if ((++scanned & 7u) == 0u) {
-      esp_task_wdt_reset();
-      yield();
-    }
-  };
-  loadedBookStatsFlags_.clear();
-  auto addCachePath = [&](const std::string& cachePath, const RecentBook* recent) {
-    if (cachePath.empty() || seen.count(cachePath) != 0 || !statsFileExistsForCachePath(cachePath)) {
-      return;
-    }
-    BookReadingStats placeholder;
-    placeholder.path = cachePath;
-    if (recent != nullptr) {
-      placeholder.title = recent->title;
-      placeholder.author = recent->author;
-      if (recent->progress >= 0.f) {
-        placeholder.progressPercent = recent->progress * 100.f;
-      }
-    }
-    allBooksStats.push_back(placeholder);
-    loadedBookStatsFlags_.push_back(0);
-    seen.insert(cachePath);
-  };
-
-  RECENT_BOOKS.loadFromFile();
-  for (const auto& book : RECENT_BOOKS.getBooks()) {
-    service();
-    std::string cachePath = book.cachePath;
-    if (cachePath.empty() && !book.path.empty()) {
-      cachePath = epubCachePathForBookPath(book.path);
-    }
-    addCachePath(cachePath, &book);
+void Statistics::loadIndexedBooks() {
+  indexedBooks_.clear();
+  if (!LibraryIndex::hasIndex() || !LibraryIndex::search("", indexedBooks_, LibraryIndex::all)) {
+    indexedBooks_.clear();
+    return;
   }
+  indexedBooks_.erase(
+      std::remove_if(indexedBooks_.begin(), indexedBooks_.end(), [](const LibraryIndex::Book& book) {
+        return book.type != LibraryIndex::Book::Type::BOOK;
+      }),
+      indexedBooks_.end());
 
-  auto appendMetadataRoot = [&](const char* rootDir) {
-    FsFile root = SdMan.open(rootDir);
-    if (!root || !root.isDirectory()) {
-      if (root) {
-        root.close();
-      }
-      return;
-    }
-
-    char name[128];
-    root.rewindDirectory();
-    while (true) {
-      FsFile entry = root.openNextFile();
-      if (!entry) {
-        break;
-      }
-      if (entry.isDirectory()) {
-        entry.getName(name, sizeof(name));
-        addCachePath(std::string(rootDir) + "/" + std::string(name), nullptr);
-      }
-      entry.close();
-      service();
-    }
-    root.close();
-  };
-
-  if (includeMetadata) {
-    appendMetadataRoot("/.metadata/epub");
-    appendMetadataRoot("/.metadata/xtc");
-  }
+  // The library index contains every book on the card, while Statistics only
+  // shows books that have actually been started. Use the persisted metadata
+  // snapshot here so opening the page remains a read-only, fast operation.
+  indexedBooks_.erase(
+      std::remove_if(indexedBooks_.begin(), indexedBooks_.end(), [this](const LibraryIndex::Book& book) {
+        const std::string cachePath = epubCachePathForBookPath(book.path);
+        const std::string thumbnailPath = thumbnailPathForBookCache(cachePath);
+        const auto metadata = std::find_if(
+            bookListMetadata_.begin(), bookListMetadata_.end(), [&book, &thumbnailPath](const BookListMetadata& item) {
+              if (!thumbnailPath.empty() && item.thumbnailPath == thumbnailPath) {
+                return true;
+              }
+              return !book.title.empty() && item.title == book.title;
+            });
+        return metadata == bookListMetadata_.end() || !(metadata->progressPercent > 0.0f);
+      }),
+      indexedBooks_.end());
 }
 
 bool Statistics::ensureBookStatsLoaded(const int bookIdx) {
@@ -929,6 +993,7 @@ void Statistics::onEnter() {
   viewIndex = 0;
   statsTab_ = 0;
   controlDrawerOpen_ = false;
+  indexRefreshPending_ = false;
 
   uint32_t calendarDate = 0;
   currentRtcDateKey(calendarDate);
@@ -949,18 +1014,27 @@ void Statistics::onExit() {
   std::vector<BookReadingStats>().swap(allBooksStats);
   std::vector<uint8_t>().swap(loadedBookStatsFlags_);
   std::vector<BookListMetadata>().swap(bookListMetadata_);
+  std::vector<LibraryIndex::Book>().swap(indexedBooks_);
+}
+
+void Statistics::refresh() {
+  if (LibraryIndexRefresh::isRunning()) return;
+  // Rebuild the persisted per-book snapshot only on an explicit refresh.
+  // Opening Statistics uses the already saved snapshot and library index.
+  loadStats(false);
+  indexRefreshPending_ = true;
+  LibraryIndexRefresh::start(renderer, this, "Loading statistics...");
 }
 
 void Statistics::menu() {
   if (statsTab_ != 0) {
     const char* pageTitle = statsTab_ == 1 ? "Week" : (statsTab_ == 2 ? "Books" : "Book");
     SubPage::header(renderer, pageTitle);
-    renderer.bitmap.icon(Refresh, renderer.getScreenWidth() - 110,
-                         FREEINK_DEVICE_X4PRO ? 20 : 15, 40, 40);
+    drawStatisticsRefreshButton(renderer);
     return;
   }
   title();
-  renderer.bitmap.icon(Refresh, renderer.getScreenWidth() - 110, navigation::Menu::topPadding, 40, 40);
+  drawStatisticsRefreshButton(renderer);
   renderer.bitmap.icon(Close, renderer.getScreenWidth() - 60, navigation::Menu::topPadding, 40, 40);
   if (controlDrawerOpen_) drawControlDrawer();
 }
@@ -1026,15 +1100,11 @@ bool Statistics::handleRefreshTap() {
 
   const int tapX = static_cast<int>(tapNx * renderer.getScreenWidth());
   const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
-  const int iconY = statsTab_ == 1 ? (FREEINK_DEVICE_X4PRO ? 20 : 15) : navigation::Menu::topPadding;
-  constexpr int iconSize = 40;
   constexpr int touchPadding = 8;
-  const int iconX = renderer.getScreenWidth() - 110;
-  if (tapX >= iconX - touchPadding && tapX < iconX + iconSize + touchPadding &&
-      tapY >= iconY - touchPadding && tapY < iconY + iconSize + touchPadding) {
-    loadStats();
-    updateRequired = true;
-    renderPage();
+  const ButtonBounds refreshBounds = statisticsRefreshButton(renderer);
+  if (tapX >= refreshBounds.x - touchPadding && tapX < refreshBounds.x + refreshBounds.width + touchPadding &&
+      tapY >= refreshBounds.y - touchPadding && tapY < refreshBounds.y + refreshBounds.height + touchPadding) {
+    refresh();
     return true;
   }
 
@@ -1093,7 +1163,9 @@ bool Statistics::handleBooksInput() {
   }
 
   const auto pageCount = [this] {
-    return std::max(1, (static_cast<int>(bookListMetadata_.size()) + kBooksPerPage - 1) / kBooksPerPage);
+    const int bookCount = indexedBooks_.empty() ? static_cast<int>(bookListMetadata_.size())
+                                                : static_cast<int>(indexedBooks_.size());
+    return std::max(1, (bookCount + kBooksPerPage - 1) / kBooksPerPage);
   };
   if (mappedInput.wasPressed(MappedInputManager::Button::Up)) {
     booksPage_ = std::max(0, booksPage_ - 1);
@@ -1138,9 +1210,31 @@ bool Statistics::handleBooksInput() {
     const int row = (tapY - contentTop) / rowHeight;
     const int index = booksPage_ * kBooksPerPage + row;
     const int rowY = contentTop + row * rowHeight;
-    if (index >= 0 && index < static_cast<int>(bookListMetadata_.size()) && rowY >= contentTop &&
+    const int bookCount = indexedBooks_.empty() ? static_cast<int>(bookListMetadata_.size())
+                                                : static_cast<int>(indexedBooks_.size());
+    if (index >= 0 && index < bookCount && rowY >= contentTop &&
         rowY + rowHeight <= contentBottom) {
-      selectedBookIndex_ = index;
+      if (!indexedBooks_.empty()) {
+        const std::string cachePath = epubCachePathForBookPath(indexedBooks_[static_cast<size_t>(index)].path);
+        auto existing = std::find_if(allBooksStats.begin(), allBooksStats.end(), [&cachePath](const BookReadingStats& book) {
+          return book.path == cachePath;
+        });
+        if (existing == allBooksStats.end()) {
+          BookReadingStats loaded;
+          if (!loadBookStats(cachePath.c_str(), loaded)) {
+            loaded.path = cachePath;
+            loaded.title = indexedBooks_[static_cast<size_t>(index)].title;
+          }
+          loaded.path = cachePath;
+          allBooksStats.push_back(std::move(loaded));
+          loadedBookStatsFlags_.push_back(1);
+          selectedBookIndex_ = static_cast<int>(allBooksStats.size()) - 1;
+        } else {
+          selectedBookIndex_ = static_cast<int>(std::distance(allBooksStats.begin(), existing));
+        }
+      } else {
+        selectedBookIndex_ = index;
+      }
       statsTab_ = 3;
       updateRequired = true;
       renderPage();
@@ -1418,6 +1512,303 @@ void Statistics::renderSingleBookView(int bookIdx, int contentTop, int contentBo
   renderer.text.centered(FONT_SANS_SM, contentBottom - 5, footer);
 }
 
+void Statistics::renderSingleBookTopSection(const int bookIdx) const {
+  if (bookIdx < 0 || bookIdx >= static_cast<int>(allBooksStats.size())) {
+    return;
+  }
+
+  const BookReadingStats& book = allBooksStats[static_cast<size_t>(bookIdx)];
+  constexpr int kPanelPadding = 20;
+  const SingleBookLayout layout = singleBookLayout(renderer);
+  const int panelW = renderer.getScreenWidth();
+  if (panelW <= 0 || layout.topH <= 0) return;
+
+  renderer.rectangle.fill(0, layout.areaY, panelW, layout.topH, false);
+
+  const int coverH = std::max(1, layout.topH - kPanelPadding * 2);
+  const int coverW = std::max(140, std::min(180, panelW * 30 / 100));
+  renderCover(book.path, kPanelPadding, layout.areaY + kPanelPadding, coverW, coverH, book.title, book.author);
+
+  const int radialLeft = kPanelPadding + coverW + 28;
+  const int radialRight = panelW - kPanelPadding;
+  const int radialWidth = std::max(1, radialRight - radialLeft);
+  const int radius = std::max(20, std::min(radialWidth / 2 - 8, layout.topH / 2 - 12));
+  const int centerX = radialLeft + radialWidth / 2;
+  const int centerY = layout.areaY + layout.topH / 2;
+  const float progress = book.progressPercent >= 0.0f
+                             ? std::min(1.0f, std::max(0.0f, book.progressPercent / 100.0f))
+                             : 0.0f;
+  char percentText[16];
+  std::snprintf(percentText, sizeof(percentText), "%.0f%%", progress * 100.0f);
+  drawFullDonutGauge(renderer, centerX, centerY, radius, std::max(8, radius / 8), progress, percentText);
+}
+
+void Statistics::renderSingleBookMiddleChart(const int bookIdx) const {
+  if (bookIdx < 0 || bookIdx >= static_cast<int>(allBooksStats.size())) {
+    return;
+  }
+
+  const BookReadingStats& book = allBooksStats[static_cast<size_t>(bookIdx)];
+  constexpr int kPanelPaddingX = 20;
+  constexpr int kSummaryTopPadding = 6;
+  constexpr int kSummaryChartGap = 6;
+  constexpr int kChartBottomLabelHeight = 30;
+  constexpr int kMiddleBottomPadding = 20;
+  const SingleBookLayout layout = singleBookLayout(renderer);
+  const int panelX = 0;
+  const int panelW = renderer.getScreenWidth();
+  const int panelY = layout.areaY + layout.topH;
+  const int panelBottom = panelY + layout.middleH;
+  if (panelW <= 0 || layout.middleH <= 0) return;
+
+  renderer.rectangle.fill(panelX, panelY, panelW, layout.middleH, false);
+
+  struct Point {
+    uint32_t dateKey;
+    uint32_t readingTimeMs;
+  };
+  std::vector<Point> points;
+  const std::vector<ReadingHistoryBookEntry>& history = getReadingHistoryBooks();
+  for (const ReadingHistoryBookEntry& entry : history) {
+    if (entry.bookPath != book.path || entry.dateKey == 0 || entry.readingTimeMs == 0) continue;
+    auto existing = std::find_if(points.begin(), points.end(), [&entry](const Point& point) {
+      return point.dateKey == entry.dateKey;
+    });
+    if (existing == points.end()) {
+      points.push_back({entry.dateKey, entry.readingTimeMs});
+    } else {
+      const uint32_t room = UINT32_MAX - existing->readingTimeMs;
+      existing->readingTimeMs += std::min(room, entry.readingTimeMs);
+    }
+  }
+
+  // Keep the most recent dates readable on the compact 1x3 chart while retaining
+  // the chronological order stored by the history manager.
+  constexpr size_t kMaxChartPoints = 14;
+  if (points.size() > kMaxChartPoints) {
+    points.erase(points.begin(), points.begin() + static_cast<int>(points.size() - kMaxChartPoints));
+  }
+
+  const int valueFont = FONT_SERIF_LG;
+  const int labelFont = FONT_SANS_SM;
+  const int valueLine = renderer.text.getLineHeight(valueFont);
+  const int labelLine = renderer.text.getLineHeight(labelFont);
+  const int summaryY = panelY + kSummaryTopPadding;
+  const int summaryValueY = summaryY;
+  const int summaryLabelY = summaryValueY + valueLine + 1;
+  const int halfW = panelW / 2;
+
+  char totalText[24];
+  const float totalHours = static_cast<float>(book.totalReadingTimeMs) / 3600000.0f;
+  std::snprintf(totalText, sizeof(totalText), "%.1fh", totalHours);
+  const float averageMinutes = book.sessionCount > 0
+                                   ? static_cast<float>(book.totalReadingTimeMs) / 60000.0f /
+                                         static_cast<float>(book.sessionCount)
+                                   : 0.0f;
+  char averageText[24];
+  std::snprintf(averageText, sizeof(averageText), "%.0fm", averageMinutes);
+
+  renderer.text.render(valueFont, kPanelPaddingX, summaryValueY, totalText, true, EpdFontFamily::BOLD);
+  renderer.text.renderGray(labelFont, kPanelPaddingX, summaryLabelY, "Total Hours", true,
+                           EpdFontFamily::REGULAR);
+  const int averageWidth = renderer.text.getWidth(valueFont, averageText, EpdFontFamily::BOLD);
+  const int averageX = halfW + (panelW - halfW - averageWidth) / 2;
+  renderer.text.render(valueFont, averageX, summaryValueY, averageText, true, EpdFontFamily::BOLD);
+  const char* averageLabel = "Average / Session";
+  const int averageLabelWidth = renderer.text.getWidth(labelFont, averageLabel);
+  renderer.text.renderGray(labelFont, halfW + (panelW - halfW - averageLabelWidth) / 2, summaryLabelY,
+                           averageLabel, true, EpdFontFamily::REGULAR);
+
+  const int plotTop = summaryLabelY + labelLine + kSummaryChartGap;
+  const int contentBottom = panelBottom - kMiddleBottomPadding;
+  const int plotBottom = contentBottom - kChartBottomLabelHeight;
+  if (plotBottom <= plotTop + 8) return;
+
+  const int gridLeft = kPanelPaddingX;
+  const int gridRight = panelW - kPanelPaddingX;
+  const int plotWidth = std::max(1, gridRight - gridLeft);
+  const int plotHeight = plotBottom - plotTop;
+  uint32_t maximum = 0;
+  for (const Point& point : points) {
+    maximum = std::max(maximum, point.readingTimeMs);
+  }
+  if (maximum == 0) maximum = 1;
+
+  for (int level = 0; level <= 2; ++level) {
+    const int lineY = plotBottom - (plotHeight * level) / 2;
+    renderer.line.render(gridLeft, lineY, gridRight, lineY, true, LineRender::Style::Dotted);
+  }
+
+  if (points.empty()) {
+    renderer.text.renderGray(labelFont, gridLeft, plotTop + std::max(0, plotHeight - labelLine) / 2,
+                             "No reading history", true, EpdFontFamily::REGULAR);
+    return;
+  }
+
+  const int pointCount = static_cast<int>(points.size());
+  const int pointStep = pointCount > 1 ? plotWidth / (pointCount - 1) : 0;
+  std::vector<int> pointYs;
+  pointYs.reserve(points.size());
+  for (int index = 0; index < pointCount; ++index) {
+    const int pointX = pointCount > 1 ? gridLeft + index * pointStep : gridLeft + plotWidth / 2;
+    const int pointY = plotBottom - static_cast<int>((static_cast<uint64_t>(points[static_cast<size_t>(index)].readingTimeMs) *
+                                                     static_cast<uint64_t>(plotHeight)) /
+                                                    maximum);
+    pointYs.push_back(pointY);
+    if (index > 0) {
+      const int previousX = pointCount > 1 ? gridLeft + (index - 1) * pointStep : pointX;
+      drawStatisticsLine(renderer, previousX, pointYs[static_cast<size_t>(index - 1)], pointX, pointY);
+    }
+  }
+
+  for (int index = 0; index < pointCount; ++index) {
+    const int pointX = pointCount > 1 ? gridLeft + index * pointStep : gridLeft + plotWidth / 2;
+    constexpr int pointSize = 9;
+    renderer.rectangle.fill(pointX - pointSize / 2, pointYs[static_cast<size_t>(index)] - pointSize / 2, pointSize,
+                            pointSize, static_cast<int>(GfxRenderer::FillTone::Gray), true);
+
+    const std::string dateLabel = formatBookHistoryDate(points[static_cast<size_t>(index)].dateKey);
+    const int labelX = std::max(0, pointX - labelLine / 2);
+    const int labelBaseY = contentBottom - 2;
+    renderer.text.rotated90CW(labelFont, labelX, labelBaseY, dateLabel.c_str(), true, EpdFontFamily::REGULAR);
+  }
+}
+
+void Statistics::renderSingleBookBottomGrid(const int bookIdx) const {
+  if (bookIdx < 0 || bookIdx >= static_cast<int>(allBooksStats.size())) {
+    return;
+  }
+  const BookReadingStats& book = allBooksStats[static_cast<size_t>(bookIdx)];
+  const SingleBookLayout layout = singleBookLayout(renderer);
+  constexpr int kPanelPad = 10;
+  constexpr int kCardGap = 12;
+  const int panelX = 0;
+  const int panelW = renderer.getScreenWidth();
+  const int panelY = layout.areaY + layout.topH + layout.middleH;
+  const int panelBottom = panelY + layout.bottomH;
+  const int panelH = panelBottom - panelY;
+  if (panelW <= 0 || panelH <= 0) return;
+
+  // Separate the bottom statistics section from the chart above it.
+  renderer.line.render(panelX, panelY, panelX + panelW - 1, panelY, true);
+  renderer.line.render(panelX, panelY + 1, panelX + panelW - 1, panelY + 1, true);
+
+  std::vector<ReadingHistoryBookEntry> entries;
+  const std::vector<ReadingHistoryBookEntry>& history = getReadingHistoryBooks();
+  uint32_t latestDateKey = 0;
+  uint32_t maximum = 0;
+  for (const ReadingHistoryBookEntry& entry : history) {
+    if (entry.bookPath != book.path || entry.dateKey == 0 || entry.readingTimeMs == 0) continue;
+    entries.push_back(entry);
+    maximum = std::max(maximum, entry.readingTimeMs);
+    if (latestDateKey == 0 || readingDateToDay(entry.dateKey) > readingDateToDay(latestDateKey)) {
+      latestDateKey = entry.dateKey;
+    }
+  }
+  if (maximum == 0) maximum = 1;
+
+  for (int py = panelY; py < panelBottom; py += 2) {
+    const int offset = ((py - panelY) & 2) != 0 ? 0 : 1;
+    for (int px = panelX + offset; px < panelX + panelW; px += 2) {
+      renderer.drawPixel(px, py, true);
+    }
+  }
+
+  char chapters[16], pages[16], sessions[16];
+  std::snprintf(chapters, sizeof(chapters), "%u", static_cast<unsigned>(book.totalChaptersRead));
+  std::snprintf(pages, sizeof(pages), "%u", static_cast<unsigned>(book.totalPagesRead));
+  std::snprintf(sessions, sizeof(sessions), "%u", static_cast<unsigned>(book.sessionCount));
+  const char* values[] = {chapters, pages, sessions};
+  const char* labels[] = {"Chapters", "Pages", "Sessions"};
+  const int valueFont = FONT_SERIF_LG;
+  const int labelFont = FONT_SANS_SM;
+  const int valueLine = renderer.text.getLineHeight(valueFont);
+  const int labelLine = renderer.text.getLineHeight(labelFont);
+  const int groupH = valueLine + 4 + labelLine;
+  const int cardW = (panelW - kPanelPad * 2 - kCardGap) / 2;
+  const int cardH = (panelH - kPanelPad * 2 - kCardGap) / 2;
+  const bool rounded = SETTINGS.bitmapRoundedCorners != 0;
+
+  for (int index = 0; index < 4; ++index) {
+    const int row = index / 2;
+    const int col = index % 2;
+    const int cardX = panelX + kPanelPad + col * (cardW + kCardGap);
+    const int cardY = panelY + kPanelPad + row * (cardH + kCardGap);
+    BaseCarousel::renderShadow(renderer, cardX + 4, cardY + 4, cardW, cardH,
+                                HomeTheme::CarouselShadowStyle::Gray);
+    renderer.rectangle.fill(cardX, cardY, cardW, cardH, false, rounded,
+                            SETTINGS.bitmapRoundedCorners == 2);
+    renderer.rectangle.render(cardX, cardY, cardW, cardH, true, rounded,
+                              SETTINGS.bitmapRoundedCorners == 2);
+
+    if (index != 0) {
+      const int statIndex = index - 1;
+      const int centerX = cardX + cardW / 2;
+      const int valueWidth = renderer.text.getWidth(valueFont, values[statIndex]);
+      const int labelWidth = renderer.text.getWidth(labelFont, labels[statIndex]);
+      const int textY = cardY + std::max(0, (cardH - groupH) / 2);
+      renderer.text.render(valueFont, centerX - valueWidth / 2, textY, values[statIndex]);
+      renderer.text.render(labelFont, centerX - labelWidth / 2, textY + valueLine + 4, labels[statIndex]);
+      continue;
+    }
+
+    // The first card is a compact Sunday-to-Saturday bar chart. Use only
+    // first-letter weekday markers to keep the card readable at this size.
+    constexpr int kColumns = 7;
+    constexpr int kGap = 4;
+    constexpr const char* kWeekdayLabels[kColumns] = {"S", "M", "T", "W", "T", "F", "S"};
+    const int chartLeft = cardX + 10;
+    const int chartRight = cardX + cardW - 10;
+    const int labelY = cardY + cardH - 8 - labelLine;
+    const int baselineY = labelY - 6;
+    const int chartTop = cardY + 10;
+    const int chartHeight = std::max(1, baselineY - chartTop);
+    const int barWidth = std::max(2, (chartRight - chartLeft - kGap * (kColumns - 1)) / kColumns);
+    const int chartWidth = barWidth * kColumns + kGap * (kColumns - 1);
+    const int chartX = cardX + (cardW - chartWidth) / 2;
+
+    std::array<uint32_t, kColumns> dailyReading{};
+    maximum = 0;
+    if (latestDateKey != 0) {
+      const int64_t latestDay = readingDateToDay(latestDateKey);
+      const int64_t sunday = latestDay - ((mondayBasedWeekday(latestDay) + 1) % 7);
+      for (int column = 0; column < kColumns; ++column) {
+        const uint32_t dateKey = readingDayToDate(sunday + column);
+        uint32_t readingTimeMs = 0;
+        for (const ReadingHistoryBookEntry& entry : entries) {
+          if (entry.dateKey == dateKey) {
+            const uint32_t room = UINT32_MAX - readingTimeMs;
+            readingTimeMs += std::min(room, entry.readingTimeMs);
+          }
+        }
+        dailyReading[static_cast<size_t>(column)] = readingTimeMs;
+        maximum = std::max(maximum, readingTimeMs);
+      }
+    }
+    if (maximum == 0) maximum = 1;
+
+    renderer.line.render(chartX, baselineY, chartX + chartWidth, baselineY, true, LineRender::Style::Dotted);
+    for (int column = 0; column < kColumns; ++column) {
+      const int x = chartX + column * (barWidth + kGap);
+      const uint32_t readingTimeMs = dailyReading[static_cast<size_t>(column)];
+      const int barHeight = readingTimeMs == 0
+                                ? 0
+                                : std::max(4, static_cast<int>((static_cast<uint64_t>(readingTimeMs) * chartHeight) /
+                                                                 maximum));
+      if (barHeight > 0) {
+        const int tone = readingTimeMs * 3ULL >= static_cast<uint64_t>(maximum) * 2ULL
+                             ? static_cast<int>(GfxRenderer::FillTone::Ink)
+                             : static_cast<int>(GfxRenderer::FillTone::Gray);
+        renderer.rectangle.fill(x, baselineY - barHeight, barWidth, barHeight, tone, true, true);
+      }
+
+      const int labelWidth = renderer.text.getWidth(labelFont, kWeekdayLabels[column]);
+      renderer.text.renderGray(labelFont, x + (barWidth - labelWidth) / 2, labelY, kWeekdayLabels[column], true,
+                               EpdFontFamily::REGULAR);
+    }
+  }
+}
+
 void Statistics::renderWeeklyChart(const int chartTop, const int chartBottom) const {
   const int screenWidth = renderer.getScreenWidth();
   if (screenWidth <= 0 || chartBottom <= chartTop + 160) return;
@@ -1559,10 +1950,14 @@ void Statistics::content() {
     char readingValue[16];
     std::snprintf(readingValue, sizeof(readingValue), "%u",
                   static_cast<unsigned>(globalStats.totalBooksStarted));
+    char pagesValue[16];
+    std::snprintf(pagesValue, sizeof(pagesValue), "%u", static_cast<unsigned>(globalStats.totalPagesRead));
     const int valueFont = FONT_SERIF_LG;
     const int labelFont = FONT_SANS_SM;
     const int valueWidth = renderer.text.getWidth(valueFont, readingValue);
     const int labelWidth = renderer.text.getWidth(labelFont, "Reading");
+    const int pagesValueWidth = renderer.text.getWidth(valueFont, pagesValue);
+    const int pagesLabelWidth = renderer.text.getWidth(labelFont, "Pages");
     // The gray panel begins at the split line; keep both the radial row and card centered in that full panel.
     const int radialRegionTop = split;
     const int radialRegionHeight = std::max(0, sectionBottom - radialRegionTop);
@@ -1600,6 +1995,11 @@ void Statistics::content() {
       const int centerX = cardX + squareSize / 2;
       renderer.text.render(valueFont, centerX - valueWidth / 2, valueY, readingValue);
       renderer.text.render(labelFont, centerX - labelWidth / 2, valueY + valueLine + 4, "Reading");
+
+      const int pagesValueY = secondCardTop + (squareSize - groupHeight) / 2;
+      const int pagesCenterX = cardX + squareSize / 2;
+      renderer.text.render(valueFont, pagesCenterX - pagesValueWidth / 2, pagesValueY, pagesValue);
+      renderer.text.render(labelFont, pagesCenterX - pagesLabelWidth / 2, pagesValueY + valueLine + 4, "Pages");
     }
     return;
   }
@@ -1618,6 +2018,12 @@ void Statistics::content() {
   }
 
   if (statsTab_ == 3) {
+    if (selectedBookIndex_ >= 0) {
+      ensureBookStatsLoaded(selectedBookIndex_);
+      renderSingleBookTopSection(selectedBookIndex_);
+      renderSingleBookMiddleChart(selectedBookIndex_);
+      renderSingleBookBottomGrid(selectedBookIndex_);
+    }
     return;
   }
 
@@ -1684,40 +2090,73 @@ void Statistics::renderBooksView(const int contentTop, const int contentBottom) 
   const int caretX = width - sideMargin - caretSize;
   const int progressWidth = 74;
   const int visibleHeight = std::max(0, contentBottom - contentTop);
-  const int pageCount = std::max(1, (static_cast<int>(bookListMetadata_.size()) + kBooksPerPage - 1) / kBooksPerPage);
+  const bool useLibraryIndex = !indexedBooks_.empty();
+  const int bookCount = useLibraryIndex ? static_cast<int>(indexedBooks_.size())
+                                       : static_cast<int>(bookListMetadata_.size());
+  const int pageCount = std::max(1, (bookCount + kBooksPerPage - 1) / kBooksPerPage);
   const int pageStart = std::min(static_cast<int>(bookListMetadata_.size()), booksPage_ * kBooksPerPage);
-  const int pageEnd = std::min(static_cast<int>(bookListMetadata_.size()), pageStart + kBooksPerPage);
+  const int indexedPageStart = std::min(bookCount, booksPage_ * kBooksPerPage);
+  const int visiblePageStart = useLibraryIndex ? indexedPageStart : pageStart;
+  const int pageEnd = std::min(bookCount, visiblePageStart + kBooksPerPage);
 
-  if (bookListMetadata_.empty()) {
+  if (bookCount == 0) {
     renderer.text.centered(systemFontId(), contentTop + 24, "Refresh statistics to load books");
     return;
   }
 
-  for (int index = pageStart; index < pageEnd; ++index) {
-    const int row = index - pageStart;
+  for (int index = visiblePageStart; index < pageEnd; ++index) {
+    const int row = index - visiblePageStart;
     const int rowY = contentTop + row * rowHeight;
     if (rowY < contentTop || rowY + rowHeight > contentBottom) {
       continue;
     }
 
-    const BookListMetadata& book = bookListMetadata_[static_cast<size_t>(index)];
+    BookListMetadata indexedMetadata;
+    const BookListMetadata* book = nullptr;
+    if (useLibraryIndex) {
+      const LibraryIndex::Book& indexedBook = indexedBooks_[static_cast<size_t>(index)];
+      const std::string cachePath = epubCachePathForBookPath(indexedBook.path);
+      indexedMetadata.title = indexedBook.title.empty() ? "Untitled" : indexedBook.title;
+      indexedMetadata.description = indexedBook.folder;
+      indexedMetadata.thumbnailPath = thumbnailPathForBookCache(cachePath);
+      const auto cached = std::find_if(bookListMetadata_.begin(), bookListMetadata_.end(),
+                                       [&indexedMetadata](const BookListMetadata& cachedBook) {
+                                         return cachedBook.title == indexedMetadata.title;
+                                       });
+      if (cached != bookListMetadata_.end()) {
+        indexedMetadata.progressPercent = cached->progressPercent;
+        if (!cached->thumbnailPath.empty()) indexedMetadata.thumbnailPath = cached->thumbnailPath;
+        if (!cached->description.empty()) indexedMetadata.description = cached->description;
+      }
+
+      // The persisted list metadata can lag behind the per-book statistics
+      // file. Read the same record used by the individual-book view so the
+      // main list never displays a stale 0% value.
+      BookReadingStats liveStats;
+      if (loadBookStats(cachePath.c_str(), liveStats) && liveStats.progressPercent > 0.0f) {
+        indexedMetadata.progressPercent = liveStats.progressPercent;
+      }
+      book = &indexedMetadata;
+    } else {
+      book = &bookListMetadata_[static_cast<size_t>(index)];
+    }
     const int thumbY = rowY + (rowHeight - thumbnailHeight) / 2;
-    renderBookListThumbnail(book, sideMargin, thumbY, thumbnailWidth, thumbnailHeight);
+    renderBookListThumbnail(*book, sideMargin, thumbY, thumbnailWidth, thumbnailHeight);
 
     const int textX = sideMargin + thumbnailWidth + textGap;
     const int progressX = caretX - 12 - progressWidth;
     const int textWidth = std::max(40, progressX - textX - textGap);
     const int titleY = rowY + 18;
     const int titleLine = renderer.text.getLineHeight(titleFont);
-    const std::string title = renderer.text.truncate(titleFont, book.title.c_str(), textWidth, EpdFontFamily::BOLD);
+    const std::string title = renderer.text.truncate(titleFont, book->title.c_str(), textWidth, EpdFontFamily::BOLD);
     renderer.text.render(titleFont, textX, titleY, title.c_str(), true, EpdFontFamily::BOLD);
 
-    const std::string& description = book.description;
+    const std::string& description = book->description;
     const int descriptionY = titleY + titleLine + 12;
     const std::string descriptionLine = renderer.text.truncate(descriptionFont, description.c_str(), textWidth);
     renderer.text.render(descriptionFont, textX, descriptionY, descriptionLine.c_str(), true);
 
-    const int progress = std::max(0, std::min(100, static_cast<int>(book.progressPercent + 0.5f)));
+    const int progress = std::max(0, std::min(100, static_cast<int>(book->progressPercent + 0.5f)));
     const std::string progressText = std::to_string(progress) + "%";
     const int progressActualWidth = renderer.text.getWidth(progressFont, progressText.c_str());
     const int progressY = rowY + (rowHeight - renderer.text.getLineHeight(progressFont)) / 2;
@@ -1745,6 +2184,14 @@ void Statistics::renderBooksView(const int contentTop, const int contentBottom) 
 }
 
 void Statistics::loop() {
+  if (indexRefreshPending_ && !LibraryIndexRefresh::isRunning()) {
+    indexRefreshPending_ = false;
+    loadIndexedBooks();
+    updateRequired = true;
+    renderPage();
+    return;
+  }
+
   if (handleControlDrawerInput()) return;
 
   if (statsTab_ != 0) {
@@ -1758,11 +2205,17 @@ void Statistics::loop() {
     if (SubPage::closeInput(renderer, mappedInput, closeStatsTab, statsTab_ != 2)) {
       return;
     }
-    // The shared close handler checks the default touch frame. Statistics can
-    // also be displayed in a rotated renderer frame, so accept the same
-    // physical bottom-to-top gesture in that frame as well. The Books tab
-    // keeps swipe-up for paging, matching its existing behavior above.
-    if (statsTab_ != 2 && mappedInput.hasTouch() && mappedInput.wasTouchSwipeUpForRenderer(renderer)) {
+    // Books uses an ordinary upward swipe for paging. Reserve the bottom edge
+    // for closing so both actions remain available on the same page.
+    if (statsTab_ == 2 && mappedInput.hasTouch()) {
+      float swipeStartNx = 0.0f;
+      float swipeStartNy = 0.0f;
+      if (mappedInput.wasTouchSwipeUpInScreen(renderer, swipeStartNx, swipeStartNy) &&
+          swipeStartNy >= 0.80f) {
+        closeStatsTab();
+        return;
+      }
+    } else if (statsTab_ != 2 && mappedInput.hasTouch() && mappedInput.wasTouchSwipeUpForRenderer(renderer)) {
       closeStatsTab();
       return;
     }

@@ -807,6 +807,17 @@ void TextRender::renderGray(const int fontId, const int x, const int y, const ch
 
 int TextRender::renderScaled(const int fontId, const int x, const int y, const char* text, const uint8_t scalePct,
                              const bool black, const EpdFontFamily::Style style) const {
+  return renderScaledInternal(fontId, x, y, text, scalePct, black, style, false);
+}
+
+int TextRender::renderScaledGray(const int fontId, const int x, const int y, const char* text,
+                                 const uint8_t scalePct, const bool black, const EpdFontFamily::Style style) const {
+  return renderScaledInternal(fontId, x, y, text, scalePct, black, style, true);
+}
+
+int TextRender::renderScaledInternal(const int fontId, const int x, const int y, const char* text,
+                                     const uint8_t scalePct, const bool black,
+                                     const EpdFontFamily::Style style, const bool gray) const {
   text = LanguageManager::translateText(text);
   std::string visualText;
   text = prepareTextForFont(text, visualText, gfx, fontId, style);
@@ -844,12 +855,12 @@ int TextRender::renderScaled(const int fontId, const int x, const int y, const c
       scaledMark.height = static_cast<uint8_t>(std::max(1, (static_cast<int>(glyph->height) * scalePct + kScaleRoundBias) / 100));
       int markX = markCursorX(anchor, lastBase, scaledMark);
       int markY = yPos - markRaise(anchor, scaledMark, lastBase);
-      renderScaledChar(*resolvedFont, cp, &markX, &markY, black, style, scalePct);
+      renderScaledChar(*resolvedFont, cp, &markX, &markY, black, style, scalePct, gray);
       continue;
     }
 
     const int baseX = xpos;
-    renderScaledChar(*resolvedFont, cp, &xpos, &yCursor, black, style, scalePct);
+    renderScaledChar(*resolvedFont, cp, &xpos, &yCursor, black, style, scalePct, gray);
     if (lookupGlyph(gfx, *resolvedFont, cp, style, glyphStorage, glyph, true)) {
       lastBase = {baseX,
                   (glyph->left * static_cast<int>(scalePct) + kScaleRoundBias) / 100,
@@ -1080,7 +1091,7 @@ void TextRender::renderChar(const EpdFontFamily& fontFamily, const uint32_t cp, 
 
 void TextRender::renderScaledChar(const EpdFontFamily& fontFamily, const uint32_t cp, int* x, const int* y,
                                   const bool pixelState, const EpdFontFamily::Style style,
-                                  const uint8_t scalePct) const {
+                                  const uint8_t scalePct, const bool gray) const {
   EpdGlyph glyphStorage{};
   const EpdGlyph* glyph = nullptr;
   const EpdFontData* fontData = fontFamily.getData(style);
@@ -1168,7 +1179,11 @@ void TextRender::renderScaledChar(const EpdFontFamily& fontFamily, const uint32_
               if (raw > rawMax) rawMax = raw;
             }
             const uint8_t bmpVal = 3 - rawMax;
-            if (!pixelState && bmpVal < 3) {
+            if (gray && gfx.renderMode == GfxRenderer::BW && bmpVal < 3) {
+              if (((screenX + screenY) & 1) == 0) {
+                gfx.drawPixel(screenX, screenY, pixelState);
+              }
+            } else if (!pixelState && bmpVal < 3) {
               renderSolidTextPixel(gfx, screenX, screenY, false);
             } else if (gfx.renderMode == GfxRenderer::BW && bmpVal < 3) {
               gfx.drawPixel(screenX, screenY, pixelState);
@@ -1183,7 +1198,7 @@ void TextRender::renderScaledChar(const EpdFontFamily& fontFamily, const uint32_
                 break;
               }
             }
-            if (ink) {
+            if (ink && (!gray || ((screenX + screenY) & 1) == 0)) {
               renderSolidTextPixel(gfx, screenX, screenY, pixelState);
             }
           }
@@ -1217,7 +1232,11 @@ void TextRender::renderScaledChar(const EpdFontFamily& fontFamily, const uint32_
             }
           }
           const uint8_t bmpVal = 3 - rawMax;
-          if (!pixelState && bmpVal < 3) {
+          if (gray && gfx.renderMode == GfxRenderer::BW && bmpVal < 3) {
+            if (((screenX + screenY) & 1) == 0) {
+              gfx.drawPixel(screenX, screenY, pixelState);
+            }
+          } else if (!pixelState && bmpVal < 3) {
             renderSolidTextPixel(gfx, screenX, screenY, false);
           } else if (gfx.renderMode == GfxRenderer::BW && bmpVal < 3) {
             gfx.drawPixel(screenX, screenY, pixelState);
@@ -1235,7 +1254,7 @@ void TextRender::renderScaledChar(const EpdFontFamily& fontFamily, const uint32_
               }
             }
           }
-          if (ink) {
+          if (ink && (!gray || ((screenX + screenY) & 1) == 0)) {
             renderSolidTextPixel(gfx, screenX, screenY, pixelState);
           }
         }

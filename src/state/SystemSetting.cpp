@@ -42,7 +42,7 @@ void readAndValidate(FsFile& file, uint8_t& member, const uint8_t maxValue) {
 
 namespace {
 constexpr uint8_t SETTINGS_FILE_VERSION = 1;
-constexpr uint8_t SETTINGS_COUNT = 44;
+constexpr uint8_t SETTINGS_COUNT = 46;
 constexpr char SETTINGS_FILE[] = "/.system/settings.bin";
 constexpr uint32_t FNV1A_OFFSET = 2166136261UL;
 constexpr uint32_t FNV1A_PRIME = 16777619UL;
@@ -160,6 +160,7 @@ uint32_t settingsHash(const SystemSetting& settings) {
   hashPod(hash, settings.shakePageTurnSensitivity);
   hashPod(hash, settings.showMenuClock);
   hashPod(hash, settings.hiddenMenu);
+  hashPod(hash, settings.exitAnimation);
   hashPod(hash, settings.legacyMenuX);
   hashPod(hash, settings.legacyMenuY);
   hashPod(hash, settings.keyboardLayout);
@@ -171,6 +172,7 @@ uint32_t settingsHash(const SystemSetting& settings) {
   hashString(hash, settings.languageCode);
   hashPod(hash, settings.piccoToggleMode);
   hashPod(hash, settings.hideMenuClock);
+  hashPod(hash, settings.disableStatistics);
   return hash;
 }
 
@@ -293,6 +295,8 @@ bool SystemSetting::saveToFile() const {
   serialization::writePod(outputFile, legacyMenuY);
   serialization::writePod(outputFile, piccoToggleMode);
   serialization::writePod(outputFile, hideMenuClock);
+  serialization::writePod(outputFile, exitAnimation);
+  serialization::writePod(outputFile, disableStatistics);
 
   outputFile.close();
 
@@ -536,6 +540,16 @@ bool SystemSetting::loadFromFile() {
       if (hideMenuClock > 1) hideMenuClock = 0;
       ++settingsRead;
     }
+    if (settingsRead < fileSettingsCount) {
+      serialization::readPod(inputFile, exitAnimation);
+      if (exitAnimation > 1) exitAnimation = 1;
+      ++settingsRead;
+    }
+    if (settingsRead < fileSettingsCount) {
+      serialization::readPod(inputFile, disableStatistics);
+      if (disableStatistics > 1) disableStatistics = 0;
+      ++settingsRead;
+    }
 
   } while (false);
 
@@ -544,6 +558,8 @@ bool SystemSetting::loadFromFile() {
   if (showMenuClock > 1) showMenuClock = 1;
   if (hideMenuClock > 1) hideMenuClock = 0;
   if (hiddenMenu > 1) hiddenMenu = 0;
+  if (exitAnimation > 1) exitAnimation = 1;
+  if (disableStatistics > 1) disableStatistics = 0;
   if (keyboardLayout >= KEYBOARD_LAYOUT_COUNT) keyboardLayout = KEYBOARD_QWERTY;
   if (systemTextSize >= SYSTEM_TEXT_SIZE_COUNT) systemTextSize = SYSTEM_TEXT_SMALL;
   if (darkMode > 1) darkMode = 0;

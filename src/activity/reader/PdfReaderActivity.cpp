@@ -8,6 +8,7 @@
 #include <esp_heap_caps.h>
 
 #include <GfxRenderer.h>
+#include <HalDisplay.h>
 #include <SDCardManager.h>
 #include <Serialization.h>
 
@@ -22,6 +23,7 @@
 #include "system/FontManager.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
+#include "system/ScreenComponents.h"
 
 namespace {
 constexpr unsigned long goHomeMs = 1000;
@@ -182,6 +184,15 @@ void PdfReaderActivity::loop() {
   }
 
   if (mappedInput.wasReleased(MappedInputManager::Button::Back) && mappedInput.getHeldTime() < goHomeMs) {
+    onGoBack();
+    return;
+  }
+
+  float backGestureStartX = 0.0f;
+  float backGestureStartY = 0.0f;
+  if (mappedInput.hasTouch() && mappedInput.wasTouchSwipeRightInScreen(renderer, backGestureStartX,
+                                                                        backGestureStartY) &&
+      backGestureStartX <= 0.30f) {
     onGoBack();
     return;
   }
