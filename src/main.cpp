@@ -75,6 +75,14 @@ bool sdCardAvailable = false;
 bool activityLoopRunning = false;
 std::function<void()> deferredActivitySwitch;
 
+namespace {
+constexpr float kHomeSwipeLeftEdge = 0.05f;
+
+bool isHomeActivity(const Activity* activity) {
+  return activity && std::strcmp(activity->getName(), "Home") == 0;
+}
+}  // namespace
+
 unsigned long t1 = 0;
 unsigned long t2 = 0;
 
@@ -124,8 +132,26 @@ void logButtonEdges() {
 #if FREEINK_DEVICE_PICCO
 void applyPiccoPhysicalLightSwitch() {
   static bool synchronized = false;
+  static uint8_t lastMode = 0xff;
   if (!gpio.hasToggleSwitch()) return;
-  if (synchronized && !gpio.wasToggleSwitchChanged()) return;
+  const bool modeChanged = lastMode != SETTINGS.piccoToggleMode;
+  const bool switchChanged = gpio.wasToggleSwitchChanged();
+
+  if (SETTINGS.piccoToggleMode == SystemSetting::PICCO_TOGGLE_POWER) {
+    if (!gpio.isToggleSwitchOn()) {
+      INX_SERIAL.println("[INPUT][POWER-SWITCH] off -> deep sleep");
+      enterDeepSleep();
+      return;
+    }
+    if (!synchronized || modeChanged || switchChanged) {
+      INX_SERIAL.println("[INPUT][POWER-SWITCH] on");
+    }
+    synchronized = true;
+    lastMode = SETTINGS.piccoToggleMode;
+    return;
+  }
+
+  if (synchronized && !switchChanged && !modeChanged) return;
 
   if (gpio.isToggleSwitchOn()) {
     frontlight.on();
@@ -135,6 +161,7 @@ void applyPiccoPhysicalLightSwitch() {
   frontlight_ui::persist();
   INX_SERIAL.printf("[INPUT][LIGHT-SWITCH] %s\n", gpio.isToggleSwitchOn() ? "on" : "off");
   synchronized = true;
+  lastMode = SETTINGS.piccoToggleMode;
 }
 #endif
 }
@@ -374,7 +401,12 @@ void enterDeepSleep() {
   switchTo<SleepActivity>(render, input);
   display.deepSleep();
   SdMan.shutdown();
+#if FREEINK_DEVICE_PICCO
+  gpio.startDeepSleep(SETTINGS.piccoToggleMode == SystemSetting::PICCO_TOGGLE_POWER && gpio.hasToggleSwitch() &&
+                      !gpio.isToggleSwitchOn());
+#else
   gpio.startDeepSleep();
+#endif
 }
 
 void setupDisplayAndFonts() {
@@ -505,6 +537,20 @@ void loop() {
   if (LibraryIndexRefresh::isRunning()) {
     delay(10);
     return;
+  }
+
+  // A right swipe that starts at the logical left edge is a global escape
+  // gesture. Keep it edge-only so ordinary horizontal content swipes remain
+  // available everywhere, including Home's carousel.
+  if (!isHomeActivity(currentActivity)) {
+    float swipeStartX = 0.0f;
+    float swipeStartY = 0.0f;
+    if (input.wasTouchSwipeRightInScreen(renderer, swipeStartX, swipeStartY) &&
+        swipeStartX <= kHomeSwipeLeftEdge) {
+      INX_SERIAL.printf("[GESTURE] left-edge right-swipe -> Home start=(%.3f,%.3f)\n", swipeStartX, swipeStartY);
+      onGoToHome();
+      return;
+    }
   }
 
   if (currentActivity) {

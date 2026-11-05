@@ -42,7 +42,7 @@ void readAndValidate(FsFile& file, uint8_t& member, const uint8_t maxValue) {
 
 namespace {
 constexpr uint8_t SETTINGS_FILE_VERSION = 1;
-constexpr uint8_t SETTINGS_COUNT = 42;
+constexpr uint8_t SETTINGS_COUNT = 44;
 constexpr char SETTINGS_FILE[] = "/.system/settings.bin";
 constexpr uint32_t FNV1A_OFFSET = 2166136261UL;
 constexpr uint32_t FNV1A_PRIME = 16777619UL;
@@ -169,6 +169,8 @@ uint32_t settingsHash(const SystemSetting& settings) {
   hashPod(hash, settings.hideFinishedBooks);
   hashPod(hash, settings.thumbnailSize);
   hashString(hash, settings.languageCode);
+  hashPod(hash, settings.piccoToggleMode);
+  hashPod(hash, settings.hideMenuClock);
   return hash;
 }
 
@@ -228,6 +230,7 @@ bool SystemSetting::saveToFile() const {
     if (mut->shakePageTurnSensitivity > 2) mut->shakePageTurnSensitivity = 1;
     if (mut->keyboardLayout >= KEYBOARD_LAYOUT_COUNT) mut->keyboardLayout = KEYBOARD_QWERTY;
     if (mut->thumbnailSize >= THUMBNAIL_SIZE_COUNT) mut->thumbnailSize = THUMBNAIL_ACTUAL;
+    if (mut->piccoToggleMode >= PICCO_TOGGLE_MODE_COUNT) mut->piccoToggleMode = PICCO_TOGGLE_LIGHT;
   }
 
   const uint32_t currentHash = settingsHash(*this);
@@ -288,6 +291,8 @@ bool SystemSetting::saveToFile() const {
   serialization::writePod(outputFile, hiddenMenu);
   serialization::writePod(outputFile, legacyMenuX);
   serialization::writePod(outputFile, legacyMenuY);
+  serialization::writePod(outputFile, piccoToggleMode);
+  serialization::writePod(outputFile, hideMenuClock);
 
   outputFile.close();
 
@@ -521,12 +526,23 @@ bool SystemSetting::loadFromFile() {
       serialization::readPod(inputFile, legacyMenuY);
       ++settingsRead;
     }
+    if (settingsRead < fileSettingsCount) {
+      serialization::readPod(inputFile, piccoToggleMode);
+      if (piccoToggleMode >= PICCO_TOGGLE_MODE_COUNT) piccoToggleMode = PICCO_TOGGLE_LIGHT;
+      ++settingsRead;
+    }
+    if (settingsRead < fileSettingsCount) {
+      serialization::readPod(inputFile, hideMenuClock);
+      if (hideMenuClock > 1) hideMenuClock = 0;
+      ++settingsRead;
+    }
 
   } while (false);
 
   inputFile.close();
 
   if (showMenuClock > 1) showMenuClock = 1;
+  if (hideMenuClock > 1) hideMenuClock = 0;
   if (hiddenMenu > 1) hiddenMenu = 0;
   if (keyboardLayout >= KEYBOARD_LAYOUT_COUNT) keyboardLayout = KEYBOARD_QWERTY;
   if (systemTextSize >= SYSTEM_TEXT_SIZE_COUNT) systemTextSize = SYSTEM_TEXT_SMALL;
@@ -545,6 +561,7 @@ bool SystemSetting::loadFromFile() {
   if (libraryViewMode >= LIBRARY_VIEW_MODE_COUNT) {
     libraryViewMode = LIBRARY_VIEW_FOLDERS;
   }
+  if (piccoToggleMode >= PICCO_TOGGLE_MODE_COUNT) piccoToggleMode = PICCO_TOGGLE_LIGHT;
 
   INX_SERIAL.printf("[%lu] [CPS] Settings loaded (version %u, %u items)\n", millis(), version, settingsRead);
 

@@ -147,6 +147,11 @@ int cellX(const GfxRenderer& renderer, const int column) {
   return x(renderer) + popupPadding + column * (cellSize + itemGap);
 }
 
+int hiddenCellWidth(const GfxRenderer& renderer) {
+  const int contentWidth = renderer.getScreenWidth() - hiddenDrawerSideInset * 2;
+  return (contentWidth - hiddenDrawerColumnGap) / hiddenDrawerGridColumns;
+}
+
 int cellY(const GfxRenderer& renderer, const int row) {
   if (SETTINGS.hiddenMenu != 0) {
     return hiddenIconTop(renderer) + row * (hiddenDrawerRowHeight + hiddenDrawerRowGap);
@@ -158,22 +163,23 @@ int itemAt(const navigation::Menu& menu, const GfxRenderer& renderer, const int 
   if (SETTINGS.hiddenMenu != 0) {
     const int menuX = hiddenDrawerSideInset;
     const int contentWidth = renderer.getScreenWidth() - hiddenDrawerSideInset * 2;
-    const int slotWidth = (contentWidth - hiddenDrawerColumnGap) / hiddenDrawerGridColumns;
+    const int slotWidth = hiddenCellWidth(renderer);
     const int top = hiddenIconTop(renderer);
     const int relativeX = tapX - menuX;
     const int relativeY = tapY - top;
-    const int rowPitch = hiddenDrawerRowHeight + hiddenDrawerRowGap;
     if (tapX < menuX || tapX >= menuX + contentWidth || relativeY < 0 ||
         relativeY >= hiddenDrawerGridRows * hiddenDrawerRowHeight +
                           (hiddenDrawerGridRows - 1) * hiddenDrawerRowGap) {
       return -1;
     }
-    const int column = relativeX / (slotWidth + hiddenDrawerColumnGap);
-    const int row = relativeY / rowPitch;
-    if (relativeX < 0 || column < 0 || column >= hiddenDrawerGridColumns || row < 0 || row >= hiddenDrawerGridRows ||
-        relativeX % (slotWidth + hiddenDrawerColumnGap) >= slotWidth || relativeY % rowPitch >= hiddenDrawerRowHeight) {
-      return -1;
-    }
+
+    // Treat the gap between cells as part of the nearest cell. The drawer is
+    // visually laid out with gaps, but the entire grid area should be a
+    // reliable touch target rather than requiring a tap on the icon/label.
+    const int columnBoundary = slotWidth + hiddenDrawerColumnGap / 2;
+    const int rowBoundary = hiddenDrawerRowHeight + hiddenDrawerRowGap / 2;
+    const int column = relativeX < columnBoundary ? 0 : 1;
+    const int row = relativeY < rowBoundary ? 0 : 1;
     const int shown = row * hiddenDrawerGridColumns + column;
     return shown >= 0 && shown < visibleCount(menu) ? shown : -1;
   }
@@ -361,7 +367,6 @@ void Menu::popup() const {
     menuRenderer.rectangle.fill(left, top, popupW, popupH,
                                static_cast<int>(GfxRenderer::FillTone::Paper));
     menuRenderer.rectangle.render(left, top, popupW, popupH, true);
-    menuRenderer.rectangle.fill(left, top, popupW, 2, true);
 
     const int indicatorX = left + (popupW - hiddenDrawerIndicatorWidth) / 2;
     const int indicatorY = top + hiddenDrawerIndicatorTopMargin;
@@ -385,9 +390,7 @@ void Menu::popup() const {
     const bool active = selectedVisible && shown == selected;
 
     if (SETTINGS.hiddenMenu != 0) {
-      const int itemCellWidth = (menuRenderer.getScreenWidth() - hiddenDrawerSideInset * 2 -
-                                 hiddenDrawerColumnGap) /
-                                hiddenDrawerGridColumns;
+      const int itemCellWidth = hiddenCellWidth(menuRenderer);
       const int labelFont = MONTSERRAT_10_FONT_ID;
       const int labelLineHeight = menuRenderer.text.getLineHeight(labelFont);
       const int groupWidth = hiddenDrawerGroupWidth(menuRenderer);
@@ -428,7 +431,20 @@ Menu::Action Menu::handleInput(MappedInputManager& input) const {
     return Action::Opened;
   }
   if (lightAction == LightDrawer::Action::Closed) return Action::Closed;
-  if (lightAction == LightDrawer::Action::Adjusted) return Action::Opened;
+  if (lightAction == LightDrawer::Action::Adjusted) {
+#if FREEINK_DEVICE_PICCO
+    // Picco's e-paper refresh is much slower than the X4 Pro/Murphy path.  A
+    // slider sample already updates the frontlight and its live row renderer;
+    // routing it as Opened sets UiPage::updateRequired and immediately causes
+    // a second full drawer render.  That render waits for the Picco panel and
+    // drops the next touch samples, making the slider jump or miss values.
+    // Keep the input cycle consumed and let the release path perform the one
+    // final drawer refresh.
+    return Action::None;
+#else
+    return Action::Opened;
+#endif
+  }
 #endif
   if (SETTINGS.hiddenMenu != 0) {
     if (open && input.wasTouchSwipeDownForRenderer(menuRenderer)) {

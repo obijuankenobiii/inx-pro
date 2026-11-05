@@ -112,6 +112,7 @@ std::vector<SettingInfo> buildSystemSettings() {
   settings.push_back(SettingInfo::Action("Face", GroupType::CLOCK));
   settings.push_back(
       SettingInfo::Enum("Format", &SystemSetting::sleepClockTimeFormat, {"12 hour", "24 hour"}, GroupType::CLOCK));
+  settings.push_back(SettingInfo::Toggle("Hide", &SystemSetting::hideMenuClock, GroupType::CLOCK));
   settings.push_back(SettingInfo::Action("Sync", GroupType::CLOCK));
 
   settings.push_back(SettingInfo::Separator("Image", GroupType::IMAGE));
@@ -144,6 +145,10 @@ std::vector<SettingInfo> buildSystemSettings() {
                                        {SystemSetting::SHORT_PWRBTN::SLEEP,
                                         SystemSetting::SHORT_PWRBTN::PAGE_REFRESH},
                                        GroupType::DEVICE_ADVANCED));
+#if FREEINK_DEVICE_PICCO
+  settings.push_back(SettingInfo::Enum("Toggle", &SystemSetting::piccoToggleMode, {"Light", "Power"},
+                                       GroupType::DEVICE_ADVANCED));
+#endif
 
   settings.push_back(SettingInfo::Separator("Actions", GroupType::DEVICE_ACTIONS));
   settings.push_back(SettingInfo::Action("Delete Cache", GroupType::DEVICE_ACTIONS));

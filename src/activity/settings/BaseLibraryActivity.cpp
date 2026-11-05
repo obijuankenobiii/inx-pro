@@ -164,8 +164,7 @@ void BaseLibraryActivity::loop() {
       render();
       return;
     }
-  } else if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
-    close();
+  } else if (SubPage::closeInput(renderer, mappedInput, [this] { close(); })) {
     return;
   }
   if (mappedInput.hasTouch()) {

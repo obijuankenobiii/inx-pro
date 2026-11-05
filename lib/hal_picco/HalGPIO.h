@@ -46,7 +46,8 @@ class HalGPIO {
 
   enum class MotionGesture : uint8_t { None, Previous, Next };
   MotionGesture readMotionGesture(uint8_t orientation, uint8_t mode, uint8_t sensitivity);
-  void startDeepSleep();
+  /** Enter deep sleep; in toggle-power mode also wake when the slide switch returns on. */
+  void startDeepSleep(bool wakeOnToggle = false);
   int getBatteryPercentage() const;
   bool isCharging() const;
   bool isUsbConnected() const;

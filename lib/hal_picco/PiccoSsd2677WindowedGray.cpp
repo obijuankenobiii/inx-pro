@@ -157,7 +157,10 @@ void PiccoSsd2677WindowedGray::writePackedWindow() {
   if (used) transaction.writeBytes(chunk, used);
 }
 
-void PiccoSsd2677WindowedGray::uploadImageLut() {
+void PiccoSsd2677WindowedGray::uploadImageLut(const bool fastQuality) {
+  (void)fastQuality;
+  // The dedicated image LUT is required for the two-plane HQ image encoding.
+  // Do not substitute the menu or overlay-AA waveforms here.
   _display._bus.cmd(kLut);
   _display._bus.data(lut_picco_se0400_image, kLutLength);
 }
@@ -194,35 +197,48 @@ void PiccoSsd2677WindowedGray::syncDualBufferBaseline() {
 }
 
 bool PiccoSsd2677WindowedGray::displayWindow(const uint16_t x, const uint16_t y, const uint16_t w,
-                                             const uint16_t h, const bool) {
+                                             const uint16_t h, const bool fastQuality) {
   if (!_armed || x != _windowX || y != _windowY || w != _windowW || h != _windowH) {
     _armed = false;
     return false;
   }
 
+  const unsigned long startedAt = millis();
   _display.syncPendingAsync();
+  const unsigned long syncMs = millis() - startedAt;
   // DTM (0x10) must be written while PTLW still describes the full panel.
   // PTLW is opened only after both complete planes are staged, immediately
   // before the LUT/PON/DRF sequence. Opening PTLW before DTM causes the
   // controller to interpret the full stream with the partial cursor and
   // produces corrupted/repeated image data.
   restoreFullWindow();
+  const unsigned long fullWindowMs = millis() - startedAt - syncMs;
   writePackedWindow();
+  const unsigned long ramStageMs = millis() - startedAt - syncMs - fullWindowMs;
   setPartialWindow();
+  const unsigned long partialWindowMs = millis() - startedAt - syncMs - fullWindowMs - ramStageMs;
   // Keep the proven SSD2677 order: load the waveform, power the analog
   // section, and activate refresh for the already-staged partial window.
-  uploadImageLut();
+  uploadImageLut(fastQuality);
+  const unsigned long lutMs = millis() - startedAt - syncMs - fullWindowMs - ramStageMs - partialWindowMs;
   _display._bus.cmd(kPowerOn);
   _display._bus.data(0x00);
   _display._bus.waitBusy("picco_gray_window_power_on");
+  const unsigned long powerOnMs = millis() - startedAt - syncMs - fullWindowMs - ramStageMs - partialWindowMs - lutMs;
   _display._bus.cmd(kRefresh);
   _display._bus.data(0x00);
   _display._bus.waitRefreshComplete("picco_gray_window");
+  const unsigned long refreshMs = millis() - startedAt - syncMs - fullWindowMs - ramStageMs - partialWindowMs - lutMs - powerOnMs;
   restoreFullWindow();
   finishDriverState();
+  const unsigned long finishMs = millis() - startedAt - syncMs - fullWindowMs - ramStageMs - partialWindowMs - lutMs - powerOnMs - refreshMs;
   _armed = false;
   _completedWindow = true;
   Serial.printf("[PICCO][HQ-WINDOW] refresh window x=%u y=%u w=%u h=%u full-stage=%ux%u bytes=%u\n", x, y, w, h,
                 _display.getDisplayWidth(), _display.getDisplayHeight(), static_cast<unsigned>(_display.getBufferSize()));
+  INX_SERIAL.printf(
+      "[PICCO][HQ-TIMING] window fast=%d sync=%lu ms full_window=%lu ms ram_stage=%lu ms partial_window=%lu ms lut=%lu ms power_on=%lu ms refresh=%lu ms finish=%lu ms total=%lu ms\n",
+      fastQuality ? 1 : 0, syncMs, fullWindowMs, ramStageMs, partialWindowMs, lutMs, powerOnMs, refreshMs, finishMs,
+      millis() - startedAt);
   return true;
 }

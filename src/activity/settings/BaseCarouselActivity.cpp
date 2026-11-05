@@ -338,7 +338,7 @@ void BaseCarouselActivity::loop() {
     return;
   }
 
-  if (SubPage::closeInput(renderer, mappedInput, [this] { close(); }, false)) return;
+  if (SubPage::closeInput(renderer, mappedInput, [this] { close(); })) return;
 
   const int itemCount = recentStyle_ ? 10 : 7;
   const int visibleRows = std::max(1, (renderer.getScreenHeight() - contentTop_) / kRowHeight);

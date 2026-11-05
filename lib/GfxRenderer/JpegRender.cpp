@@ -552,6 +552,7 @@ struct ProgressiveRenderOutput {
   int drawY;
   ImageRenderMode mode;
   bool quality;
+  bool fastQuality;
   FourToneImageDitherer* twoBitDitherer;
   Atkinson1BitDitherer* oneBitDitherer;
   JpegLevelCapture* capture;
@@ -671,7 +672,8 @@ int stbiEof(void* user) {
 
 bool renderProgressiveJpegFull(FsFile& file, GfxRenderer& renderer, int x, int y, int targetWidth, int targetHeight,
                                bool cropToFill, ImageRenderMode mode, bool quality, JpegLevelCapture* capture,
-                               const float cropAnchorX = 0.5f, const float cropAnchorY = 0.5f) {
+                               const float cropAnchorX = 0.5f, const float cropAnchorY = 0.5f,
+                               const bool fastQuality = false) {
   ProgressiveDecodeJob job;
   job.file = &file;
   job.waiter = xTaskGetCurrentTaskHandle();
@@ -721,6 +723,7 @@ bool renderProgressiveJpegFull(FsFile& file, GfxRenderer& renderer, int x, int y
                                  y + (targetHeight - outputHeight) / 2,
                                  mode,
                                  quality,
+                                 fastQuality,
                                  nullptr,
                                  nullptr,
                                  capture,
@@ -866,7 +869,8 @@ bool renderProgressiveJpegFull(FsFile& file, GfxRenderer& renderer, int x, int y
 bool renderProgressiveJpegDc(FsFile& file, GfxRenderer* renderer, int x, int y, int targetWidth, int targetHeight,
                              bool cropToFill, ImageRenderMode mode, bool quality, JpegLevelCapture* capture,
                              ProgressiveRowCallback rowCallback = nullptr, void* rowCallbackContext = nullptr,
-                             const float cropAnchorX = 0.5f, const float cropAnchorY = 0.5f) {
+                             const float cropAnchorX = 0.5f, const float cropAnchorY = 0.5f,
+                             const bool fastQuality = false) {
   file.seek(0);
   ProgressiveJpeg jpeg{file};
   auto readBytes = [&](uint8_t* destination, const uint32_t count) {
@@ -1056,8 +1060,8 @@ bool renderProgressiveJpegDc(FsFile& file, GfxRenderer* renderer, int x, int y, 
   std::unique_ptr<uint8_t[]> packedOneBitRow;
   if (!rowCallback) {
     if (!renderer) return false;
-    output.reset(new (std::nothrow) ProgressiveRenderOutput{*renderer, drawX, drawY, mode, quality, nullptr, nullptr,
-                                                             capture, nullptr});
+    output.reset(new (std::nothrow) ProgressiveRenderOutput{*renderer, drawX, drawY, mode, quality, fastQuality,
+                                                             nullptr, nullptr, capture, nullptr});
     if (!output) return false;
     if (mode == ImageRenderMode::TwoBit) {
       twoBitDitherer.reset(new (std::nothrow) FourToneImageDitherer(outWidth));
@@ -1265,18 +1269,18 @@ bool JpegRender::writeProgressiveThumbnailJpeg(FsFile& jpegFile, Print& jpegOut,
 
 bool JpegRender::render(FsFile& jpegFile, int x, int y, int targetWidth, int targetHeight, bool cropToFill,
                         const ImageRenderMode mode, const bool quality, JpegLevelCapture* capture,
-                        const float cropAnchorX, const float cropAnchorY) const {
+                        const float cropAnchorX, const float cropAnchorY, const bool fastQuality) const {
   const uint32_t tRenderStart = millis();
   if (!jpegFile || targetWidth <= 0 || targetHeight <= 0) {
     return false;
   }
   if (isUnsupportedJpeg(jpegFile)) {
     const bool usedFull = renderProgressiveJpegFull(jpegFile, renderer_, x, y, targetWidth, targetHeight, cropToFill,
-                                                    mode, quality, capture, cropAnchorX, cropAnchorY);
+                                                    mode, quality, capture, cropAnchorX, cropAnchorY, fastQuality);
     bool ok = usedFull;
     if (!ok) {
       ok = renderProgressiveJpegDc(jpegFile, &renderer_, x, y, targetWidth, targetHeight, cropToFill, mode, quality,
-                                   capture, nullptr, nullptr, cropAnchorX, cropAnchorY);
+                                   capture, nullptr, nullptr, cropAnchorX, cropAnchorY, fastQuality);
     }
     EPUB_PERF_LOG("[%lu] [IMG-TIMING] progressive JPEG render=%lums ok=%d full=%d\n", millis(),
                   static_cast<unsigned long>(millis() - tRenderStart), ok ? 1 : 0, usedFull ? 1 : 0);
@@ -1361,15 +1365,21 @@ bool JpegRender::render(FsFile& jpegFile, int x, int y, int targetWidth, int tar
   FourToneImageDitherer* twoBitDitherer = nullptr;
   Atkinson1BitDitherer* oneBitDitherer = nullptr;
   std::unique_ptr<uint8_t[]> packedOneBitRow;
+  std::unique_ptr<uint8_t[]> packedTwoBitPlaneRow;
   if (mode == ImageRenderMode::TwoBit) {
     twoBitDitherer = new (std::nothrow) FourToneImageDitherer(outWidth);
+    if (renderer_.getRenderMode() == GfxRenderer::GRAY2_LSB || renderer_.getRenderMode() == GfxRenderer::GRAY2_MSB) {
+      packedTwoBitPlaneRow.reset(new (std::nothrow) uint8_t[(static_cast<size_t>(outWidth) + 7u) / 8u]);
+    }
   } else {
     oneBitDitherer = new (std::nothrow) Atkinson1BitDitherer(outWidth);
     packedOneBitRow.reset(new (std::nothrow) uint8_t[(static_cast<size_t>(outWidth) + 7u) / 8u]);
   }
   if (!mcuRowBuffer || !scaledRow || (verticalUpscale && (!prevScaledRow || !blendedRow)) || !rowAccum || !rowCount ||
       (mode == ImageRenderMode::TwoBit && (!twoBitDitherer || !twoBitDitherer->ok())) ||
-      (mode == ImageRenderMode::OneBit && (!oneBitDitherer || !packedOneBitRow))) {
+      (mode == ImageRenderMode::OneBit && (!oneBitDitherer || !packedOneBitRow)) ||
+      ((renderer_.getRenderMode() == GfxRenderer::GRAY2_LSB || renderer_.getRenderMode() == GfxRenderer::GRAY2_MSB) &&
+       !packedTwoBitPlaneRow)) {
     free(mcuRowBuffer);
     free(scaledRow);
     free(prevScaledRow);
@@ -1381,6 +1391,8 @@ bool JpegRender::render(FsFile& jpegFile, int x, int y, int targetWidth, int tar
     return false;
   }
 
+  // Keep the HQ tone and error diffusion identical for both waveform choices.
+  // fastQuality is a display-waveform selection only.
   const bool qualityTone = quality;
 
   int currentOutY = 0;
@@ -1433,6 +1445,11 @@ bool JpegRender::render(FsFile& jpegFile, int x, int y, int targetWidth, int tar
     if (mode == ImageRenderMode::OneBit) {
       memset(packedOneBitRow.get(), 0, (static_cast<size_t>(outWidth) + 7u) / 8u);
     }
+    const GfxRenderer::RenderMode renderMode = renderer_.getRenderMode();
+    const bool packedTwoBitPlane = renderMode == GfxRenderer::GRAY2_LSB || renderMode == GfxRenderer::GRAY2_MSB;
+    if (packedTwoBitPlane) {
+      memset(packedTwoBitPlaneRow.get(), 0, (static_cast<size_t>(outWidth) + 7u) / 8u);
+    }
     for (int step = 0; step < outWidth; step++) {
       const int ox = step;
       const int gray = row[ox];
@@ -1462,13 +1479,23 @@ bool JpegRender::render(FsFile& jpegFile, int x, int y, int targetWidth, int tar
           const size_t pixelIndex = static_cast<size_t>(screenY - drawOffsetY) * outWidth + ox;
           capture->values[pixelIndex / 4] |= static_cast<uint8_t>((level & 0x3) << ((pixelIndex % 4) * 2));
         }
-        drawPixelForLevel(renderer_, drawOffsetX + ox, screenY, level);
+        if (packedTwoBitPlane) {
+          const uint8_t bit = renderMode == GfxRenderer::GRAY2_LSB ? 0b01 : 0b10;
+          const bool bitSet = (mapQualityGray2Level(level) & bit) != 0;
+          const bool invert = BoardConfig::ACTIVE.displayController == BoardConfig::DisplayController::UC8179;
+          if (bitSet == invert) packedTwoBitPlaneRow[ox / 8] |= static_cast<uint8_t>(0x80u >> (ox & 7));
+        } else {
+          drawPixelForLevel(renderer_, drawOffsetX + ox, screenY, level);
+        }
       } else if (q == 0) {
         packedOneBitRow[ox / 8] |= static_cast<uint8_t>(0x80u >> (ox & 7));
       }
     }
     if (mode == ImageRenderMode::OneBit) {
       renderer_.drawPackedRow1bpp(drawOffsetX, screenY, outWidth, packedOneBitRow.get());
+    }
+    if (packedTwoBitPlane) {
+      renderer_.drawPackedRow1bpp(drawOffsetX, screenY, outWidth, packedTwoBitPlaneRow.get());
     }
     if (mode == ImageRenderMode::TwoBit) {
       twoBitDitherer->nextRow();
@@ -1591,6 +1618,12 @@ bool JpegRender::render(FsFile& jpegFile, int x, int y, int targetWidth, int tar
       static_cast<unsigned long>(tAfterInit - tAfterHeaderScan), static_cast<unsigned long>(mcuDecodeMs),
       static_cast<unsigned long>(rowProcessMs), static_cast<unsigned long>(tEnd - tAfterInit),
       static_cast<unsigned long>(tEnd - tRenderStart));
+#if defined(FREEINK_DEVICE_PICCO)
+  INX_SERIAL.printf("[PICCO][HQ-JPEG] fast=%d mode=%d quality=%d capture=%d mcu_decode=%lu ms row_dither=%lu ms total=%lu ms\n",
+                    fastQuality ? 1 : 0, static_cast<int>(mode), quality ? 1 : 0, capture ? 1 : 0,
+                    static_cast<unsigned long>(mcuDecodeMs), static_cast<unsigned long>(rowProcessMs),
+                    static_cast<unsigned long>(tEnd - tRenderStart));
+#endif
   if (baselineOk) {
     return true;
   }
@@ -1598,7 +1631,7 @@ bool JpegRender::render(FsFile& jpegFile, int x, int y, int targetWidth, int tar
   picoJpegGuard.release();
   jpegFile.seek(0);
   const bool fallbackOk = renderProgressiveJpegFull(jpegFile, renderer_, x, y, targetWidth, targetHeight, cropToFill,
-                                                    mode, quality, capture, cropAnchorX, cropAnchorY);
+                                                    mode, quality, capture, cropAnchorX, cropAnchorY, fastQuality);
   EPUB_PERF_LOG("[%lu] [IMG-TIMING] JPEG fallback render=%lums ok=%d\n", millis(),
                 static_cast<unsigned long>(millis() - tRenderStart), fallbackOk ? 1 : 0);
   return fallbackOk;
@@ -1606,7 +1639,7 @@ bool JpegRender::render(FsFile& jpegFile, int x, int y, int targetWidth, int tar
 
 bool JpegRender::fromPath(const std::string& path, int x, int y, int targetWidth, int targetHeight, bool cropToFill,
                           const ImageRenderMode mode, const bool quality, JpegLevelCapture* capture,
-                          const float cropAnchorX, const float cropAnchorY) const {
+                          const float cropAnchorX, const float cropAnchorY, const bool fastQuality) const {
   const uint32_t tOpenStart = millis();
   FsFile file;
   if (!SdMan.openFileForRead("JRG", path, file)) {
@@ -1614,7 +1647,7 @@ bool JpegRender::fromPath(const std::string& path, int x, int y, int targetWidth
   }
   const uint32_t tOpenEnd = millis();
   const bool ok = render(file, x, y, targetWidth, targetHeight, cropToFill, mode, quality, capture, cropAnchorX,
-                         cropAnchorY);
+                         cropAnchorY, fastQuality);
   file.close();
   EPUB_PERF_LOG("[%lu] [IMG-TIMING] fromPath %s: open=%lums render=%lums\n", millis(), path.c_str(),
                 static_cast<unsigned long>(tOpenEnd - tOpenStart), static_cast<unsigned long>(millis() - tOpenEnd));

@@ -25,7 +25,7 @@ class PiccoSsd2677WindowedGray {
   void setPartialWindow();
   void restoreFullWindow();
   void writePackedWindow();
-  void uploadImageLut();
+  void uploadImageLut(bool fastQuality);
   void finishDriverState();
 
   freeink::FreeInkDisplay& _display;

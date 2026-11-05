@@ -43,11 +43,15 @@ inline int stepBrightness(const int current, const bool up) {
   return next;
 }
 
-/** Slider position (0..1 along the track) -> brightness percent, square-law weighted so the
- *  left third of the track covers roughly 0-11%. */
+/** Slider position (0..1 along the track) -> brightness percent. */
 inline int percentFromFraction(const float fraction) {
   const float f = fraction < 0.0f ? 0.0f : (fraction > 1.0f ? 1.0f : fraction);
-#if FREEINK_DEVICE_MURPHY_M4
+#if FREEINK_DEVICE_PICCO
+  // Picco's frontlight controller already applies its calibrated hardware LUT
+  // in FrontlightManager::applyPicco(). Keep the drawer position one-to-one
+  // with the stored brightness instead of applying another gamma curve here.
+  return static_cast<int>(100.0f * f + 0.5f);
+#elif FREEINK_DEVICE_MURPHY_M4
   if (f <= 0.0f) return 0;
   const int pct = static_cast<int>(100.0f * std::pow(f, 1.0f / kMurphyFrontlightGamma) + 0.5f);
   return (pct == 0) ? 1 : pct;
@@ -60,7 +64,9 @@ inline int percentFromFraction(const float fraction) {
 /** Inverse of percentFromFraction(), for drawing the marker. */
 inline float fractionFromPercent(const int percent) {
   const int p = percent < 0 ? 0 : (percent > 100 ? 100 : percent);
-#if FREEINK_DEVICE_MURPHY_M4
+#if FREEINK_DEVICE_PICCO
+  return static_cast<float>(p) / 100.0f;
+#elif FREEINK_DEVICE_MURPHY_M4
   if (p == 0) return 0.0f;
   return std::pow(static_cast<float>(p) / 100.0f, kMurphyFrontlightGamma);
 #else

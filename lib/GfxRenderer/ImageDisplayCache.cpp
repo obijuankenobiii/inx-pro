@@ -702,6 +702,15 @@ bool ImageDisplayCache::displayTwoBitIfAvailable(GfxRenderer& renderer, const st
                                                  const ImageDisplayCacheOptions& options, const bool quality,
                                                  const bool fastQuality) {
   SdIoMutex::Lock ioLock;
+  const unsigned long hqStartedAt = millis();
+  unsigned long hqCacheCheckMs = 0;
+  unsigned long hqPrepareMs = 0;
+  unsigned long hqLsbRenderMs = 0;
+  unsigned long hqLsbCopyMs = 0;
+  unsigned long hqMsbRenderMs = 0;
+  unsigned long hqMsbCopyMs = 0;
+  unsigned long hqDisplayMs = 0;
+  unsigned long hqCleanupMs = 0;
   ImageDisplayCacheOptions lsbOptions = options;
   lsbOptions.mode = ImageRenderMode::TwoBit;
   lsbOptions.renderPlane = static_cast<uint8_t>(quality ? GfxRenderer::GRAY2_LSB : GfxRenderer::GRAYSCALE_LSB);
@@ -714,6 +723,7 @@ bool ImageDisplayCache::displayTwoBitIfAvailable(GfxRenderer& renderer, const st
 
   const std::string lsbPath = pathFor(renderer, sourcePath, x, y, width, height, lsbOptions);
   const std::string msbPath = pathFor(renderer, sourcePath, x, y, width, height, msbOptions);
+  hqCacheCheckMs = millis() - hqStartedAt;
   if (lsbPath.empty() || msbPath.empty() || !cachePathAvailable(lsbPath) || !cachePathAvailable(msbPath)) {
     return false;
   }
@@ -726,6 +736,7 @@ bool ImageDisplayCache::displayTwoBitIfAvailable(GfxRenderer& renderer, const st
     if (useWindow) renderer.prepareQualityGrayscaleWindow(window);
     else renderer.prepareQualityGrayscale();
   }
+  hqPrepareMs = millis() - hqStartedAt - hqCacheCheckMs;
 
   if (useWindow) renderer.clearRect(window, 0xFF);
   else renderer.clearScreen(quality ? 0xFF : 0x00);
@@ -734,7 +745,9 @@ bool ImageDisplayCache::displayTwoBitIfAvailable(GfxRenderer& renderer, const st
     renderer.setRenderMode(GfxRenderer::BW);
     return false;
   }
+  hqLsbRenderMs = millis() - hqStartedAt - hqCacheCheckMs - hqPrepareMs;
   renderer.copyGrayscaleLsbBuffers();
+  hqLsbCopyMs = millis() - hqStartedAt - hqCacheCheckMs - hqPrepareMs - hqLsbRenderMs;
 
   if (useWindow) renderer.clearRect(window, 0xFF);
   else renderer.clearScreen(quality ? 0xFF : 0x00);
@@ -743,7 +756,9 @@ bool ImageDisplayCache::displayTwoBitIfAvailable(GfxRenderer& renderer, const st
     renderer.setRenderMode(GfxRenderer::BW);
     return false;
   }
+  hqMsbRenderMs = millis() - hqStartedAt - hqCacheCheckMs - hqPrepareMs - hqLsbRenderMs - hqLsbCopyMs;
   renderer.copyGrayscaleMsbBuffers();
+  hqMsbCopyMs = millis() - hqStartedAt - hqCacheCheckMs - hqPrepareMs - hqLsbRenderMs - hqLsbCopyMs - hqMsbRenderMs;
 
   if (useWindow) {
     renderer.displayGrayBufferWindow(window, true, useFastQuality);
@@ -752,10 +767,19 @@ bool ImageDisplayCache::displayTwoBitIfAvailable(GfxRenderer& renderer, const st
   } else {
     renderer.displayGrayBuffer(quality);
   }
+  hqDisplayMs = millis() - hqStartedAt - hqCacheCheckMs - hqPrepareMs - hqLsbRenderMs - hqLsbCopyMs - hqMsbRenderMs - hqMsbCopyMs;
   renderer.setRenderMode(GfxRenderer::BW);
   if (useWindow) renderer.syncWriteBufferFromActive();
   else renderer.clearScreen(0xFF);
   renderer.cleanupGrayscaleWithFrameBuffer();
+  hqCleanupMs = millis() - hqStartedAt - hqCacheCheckMs - hqPrepareMs - hqLsbRenderMs - hqLsbCopyMs - hqMsbRenderMs - hqMsbCopyMs - hqDisplayMs;
+
+  if (quality) {
+    INX_SERIAL.printf(
+        "[PICCO][HQ-TIMING] cached two-bit window=%d fast=%d cache=%lu ms prepare=%lu ms lsb_render=%lu ms lsb_copy=%lu ms msb_render=%lu ms msb_copy=%lu ms display=%lu ms cleanup=%lu ms total=%lu ms\n",
+        useWindow ? 1 : 0, useFastQuality ? 1 : 0, hqCacheCheckMs, hqPrepareMs, hqLsbRenderMs, hqLsbCopyMs,
+        hqMsbRenderMs, hqMsbCopyMs, hqDisplayMs, hqCleanupMs, millis() - hqStartedAt);
+  }
 
   return true;
 }
@@ -792,6 +816,15 @@ bool ImageDisplayCache::renderCombinedTwoBit(GfxRenderer& renderer, const std::s
                                              const ImageDisplayCacheOptions& options, const bool quality,
                                              const bool fastQuality) {
   SdIoMutex::Lock ioLock;
+  const unsigned long hqStartedAt = millis();
+  unsigned long hqFileReadMs = 0;
+  unsigned long hqPrepareMs = 0;
+  unsigned long hqLsbDrawMs = 0;
+  unsigned long hqLsbCopyMs = 0;
+  unsigned long hqMsbDrawMs = 0;
+  unsigned long hqMsbCopyMs = 0;
+  unsigned long hqDisplayMs = 0;
+  unsigned long hqCleanupMs = 0;
   VisibleRect visible;
   if (!visibleBounds(renderer, x, y, width, height, visible)) {
     return false;
@@ -858,6 +891,7 @@ bool ImageDisplayCache::renderCombinedTwoBit(GfxRenderer& renderer, const std::s
     return false;
   }
   file.close();
+  hqFileReadMs = millis() - hqStartedAt;
 
   const bool useWindow = quality && renderer.supportsWindowedQuality();
   const GfxRenderer::DisplayRegion window{x, y, width, height};
@@ -865,6 +899,7 @@ bool ImageDisplayCache::renderCombinedTwoBit(GfxRenderer& renderer, const std::s
     if (useWindow) renderer.prepareQualityGrayscaleWindow(window);
     else renderer.prepareQualityGrayscale();
   }
+  hqPrepareMs = millis() - hqStartedAt - hqFileReadMs;
 
   if (useWindow) renderer.clearRect(window, 0xFF);
   else renderer.clearScreen(quality ? 0xFF : 0x00);
@@ -873,7 +908,9 @@ bool ImageDisplayCache::renderCombinedTwoBit(GfxRenderer& renderer, const std::s
     renderer.drawPackedRow1bpp(visible.x, visible.y + row, visible.width,
                                lsbRows.get() + static_cast<size_t>(row) * header.rowBytes);
   }
+  hqLsbDrawMs = millis() - hqStartedAt - hqFileReadMs - hqPrepareMs;
   renderer.copyGrayscaleLsbBuffers();
+  hqLsbCopyMs = millis() - hqStartedAt - hqFileReadMs - hqPrepareMs - hqLsbDrawMs;
 
   if (useWindow) renderer.clearRect(window, 0xFF);
   else renderer.clearScreen(quality ? 0xFF : 0x00);
@@ -882,7 +919,9 @@ bool ImageDisplayCache::renderCombinedTwoBit(GfxRenderer& renderer, const std::s
     renderer.drawPackedRow1bpp(visible.x, visible.y + row, visible.width,
                                msbRows.get() + static_cast<size_t>(row) * header.rowBytes);
   }
+  hqMsbDrawMs = millis() - hqStartedAt - hqFileReadMs - hqPrepareMs - hqLsbDrawMs - hqLsbCopyMs;
   renderer.copyGrayscaleMsbBuffers();
+  hqMsbCopyMs = millis() - hqStartedAt - hqFileReadMs - hqPrepareMs - hqLsbDrawMs - hqLsbCopyMs - hqMsbDrawMs;
 
   if (useWindow) {
     renderer.displayGrayBufferWindow(window, true, quality && fastQuality);
@@ -891,10 +930,19 @@ bool ImageDisplayCache::renderCombinedTwoBit(GfxRenderer& renderer, const std::s
   } else {
     renderer.displayGrayBuffer(quality);
   }
+  hqDisplayMs = millis() - hqStartedAt - hqFileReadMs - hqPrepareMs - hqLsbDrawMs - hqLsbCopyMs - hqMsbDrawMs - hqMsbCopyMs;
   renderer.setRenderMode(GfxRenderer::BW);
   if (useWindow) renderer.syncWriteBufferFromActive();
   else renderer.clearScreen(0xFF);
   renderer.cleanupGrayscaleWithFrameBuffer();
+  hqCleanupMs = millis() - hqStartedAt - hqFileReadMs - hqPrepareMs - hqLsbDrawMs - hqLsbCopyMs - hqMsbDrawMs - hqMsbCopyMs - hqDisplayMs;
+
+  if (quality) {
+    INX_SERIAL.printf(
+        "[PICCO][HQ-TIMING] combined window=%d fast=%d file_read=%lu ms prepare=%lu ms lsb_draw=%lu ms lsb_copy=%lu ms msb_draw=%lu ms msb_copy=%lu ms display=%lu ms cleanup=%lu ms total=%lu ms\n",
+        useWindow ? 1 : 0, fastQuality && quality ? 1 : 0, hqFileReadMs, hqPrepareMs, hqLsbDrawMs, hqLsbCopyMs,
+        hqMsbDrawMs, hqMsbCopyMs, hqDisplayMs, hqCleanupMs, millis() - hqStartedAt);
+  }
 
   return true;
 }

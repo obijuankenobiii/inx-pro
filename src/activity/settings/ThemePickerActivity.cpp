@@ -1019,7 +1019,7 @@ void ThemePickerActivity::handleTouch(const int x, const int y) {
     if (y >= kTop && y < kTop + kRowHeight) {
       SETTINGS.hiddenMenu = SETTINGS.hiddenMenu == 0 ? 1 : 0;
       SETTINGS.saveToFile();
-      hiddenMenuFocused_ = true;
+      hiddenMenuFocused_ = false;
       render();
       return;
     }
@@ -1341,6 +1341,7 @@ void ThemePickerActivity::loop() {
       if (hiddenMenuFocused_) {
         SETTINGS.hiddenMenu = SETTINGS.hiddenMenu == 0 ? 1 : 0;
         SETTINGS.saveToFile();
+        hiddenMenuFocused_ = false;
         render();
       } else {
         editTheme();

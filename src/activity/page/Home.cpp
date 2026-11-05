@@ -54,7 +54,7 @@ void drawHomeClockAndBattery(const GfxRenderer& renderer) {
                                ? ScreenComponents::BATTERY_ICON_WIDTH + ScreenComponents::BATTERY_TEXT_GAP + textWidth
                                : ScreenComponents::BATTERY_ICON_WIDTH;
   const int top = navigation::Menu::topPadding + (navigation::Menu::iconSize - 18) / 2;
-  if (!SETTINGS.showMenuClock) {
+  if (!SETTINGS.showMenuClock || SETTINGS.hideMenuClock) {
     const int batteryLeft = renderer.getScreenWidth() - batteryRightMargin - batteryWidth;
     ScreenComponents::drawBattery(renderer, batteryLeft, top, showPercentage);
     return;

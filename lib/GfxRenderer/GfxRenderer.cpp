@@ -218,6 +218,38 @@ bool GfxRenderer::readPackedRow1bpp(const int x, const int y, const int width, u
     return false;
   }
 
+  // Picco renders the reader in portrait while the SSD2677 framebuffer is
+  // landscape. A logical row is therefore one physical column. Keep this
+  // path allocation-free and avoid rotateCoordinates() for every pixel while
+  // the display-cache writer snapshots a grayscale plane.
+  if (orientation == Portrait && x >= 0 && y >= 0 && x + width <= panelHeight && y < panelWidth) {
+    const uint32_t physicalByte = static_cast<uint32_t>(y) / 8;
+    const uint8_t physicalBit = static_cast<uint8_t>(1u << (7 - (y % 8)));
+    for (int col = 0; col < width; ++col) {
+      const int physicalY = panelHeight - 1 - (x + col);
+      if (physicalY < 0 || physicalY >= panelHeight) continue;
+      const uint32_t byteIndex = static_cast<uint32_t>(physicalY) * panelWidthBytes + physicalByte;
+      if ((frameBuffer[byteIndex] & physicalBit) == 0) {
+        outRow[col / 8] |= static_cast<uint8_t>(0x80 >> (col % 8));
+      }
+    }
+    return true;
+  }
+
+  if (orientation == PortraitInverted && x >= 0 && y >= 0 && x + width <= panelHeight && y < panelWidth) {
+    const uint32_t physicalByte = static_cast<uint32_t>(panelWidth - 1 - y) / 8;
+    const uint8_t physicalBit = static_cast<uint8_t>(1u << (7 - ((panelWidth - 1 - y) % 8)));
+    for (int col = 0; col < width; ++col) {
+      const int physicalY = x + col;
+      if (physicalY < 0 || physicalY >= panelHeight) continue;
+      const uint32_t byteIndex = static_cast<uint32_t>(physicalY) * panelWidthBytes + physicalByte;
+      if ((frameBuffer[byteIndex] & physicalBit) == 0) {
+        outRow[col / 8] |= static_cast<uint8_t>(0x80 >> (col % 8));
+      }
+    }
+    return true;
+  }
+
   for (int col = 0; col < width; col++) {
     int rotatedX = 0;
     int rotatedY = 0;
@@ -254,6 +286,39 @@ void GfxRenderer::drawPackedRow1bpp(const int x, const int y, const int width, c
     for (int byte = 0; byte < rowBytes; ++byte) {
       const uint8_t inkBits = row[byte];
       destination[byte] = invert ? inkBits : static_cast<uint8_t>(~inkBits);
+    }
+    return;
+  }
+
+  if (orientation == Portrait && x >= 0 && y >= 0 && x + width <= panelHeight && y < panelWidth) {
+    const uint32_t physicalByte = static_cast<uint32_t>(y) / 8;
+    const uint8_t physicalBit = static_cast<uint8_t>(1u << (7 - (y % 8)));
+    const bool invert = darkMode && !imageRendering;
+    for (int col = 0; col < width; ++col) {
+      const int physicalY = panelHeight - 1 - (x + col);
+      if (physicalY < 0 || physicalY >= panelHeight) continue;
+      const bool ink = (row[col / 8] & (0x80 >> (col % 8))) != 0;
+      const bool outputInk = invert ? !ink : ink;
+      uint8_t& destination = frameBuffer[static_cast<uint32_t>(physicalY) * panelWidthBytes + physicalByte];
+      if (outputInk) destination &= static_cast<uint8_t>(~physicalBit);
+      else destination |= physicalBit;
+    }
+    return;
+  }
+
+  if (orientation == PortraitInverted && x >= 0 && y >= 0 && x + width <= panelHeight && y < panelWidth) {
+    const int physicalX = panelWidth - 1 - y;
+    const uint32_t physicalByte = static_cast<uint32_t>(physicalX) / 8;
+    const uint8_t physicalBit = static_cast<uint8_t>(1u << (7 - (physicalX % 8)));
+    const bool invert = darkMode && !imageRendering;
+    for (int col = 0; col < width; ++col) {
+      const int physicalY = x + col;
+      if (physicalY < 0 || physicalY >= panelHeight) continue;
+      const bool ink = (row[col / 8] & (0x80 >> (col % 8))) != 0;
+      const bool outputInk = invert ? !ink : ink;
+      uint8_t& destination = frameBuffer[static_cast<uint32_t>(physicalY) * panelWidthBytes + physicalByte];
+      if (outputInk) destination &= static_cast<uint8_t>(~physicalBit);
+      else destination |= physicalBit;
     }
     return;
   }
@@ -611,20 +676,38 @@ void GfxRenderer::renderGrayscalePasses(const bool quality, const bool preserveT
                                         const DisplayRegion* window) {
   const bool useFastQuality = quality && fastQuality;
   const bool useWindow = quality && window != nullptr && supportsWindowedQuality();
+  const unsigned long hqStartedAt = quality ? millis() : 0;
+  unsigned long hqPrepareMs = 0;
+  unsigned long hqLsbDrawMs = 0;
+  unsigned long hqLsbCopyMs = 0;
+  unsigned long hqMsbDrawMs = 0;
+  unsigned long hqMsbCopyMs = 0;
+  unsigned long hqDisplayMs = 0;
+  unsigned long hqCleanupMs = 0;
 
   if (quality) {
     if (useWindow) prepareQualityGrayscaleWindow(*window);
     else prepareQualityGrayscale();
+    hqPrepareMs = millis() - hqStartedAt;
   }
 
   setRenderMode(quality ? GRAY2_LSB : GRAYSCALE_LSB);
+  const unsigned long lsbStartedAt = quality ? millis() : 0;
   drawPlane();
+  if (quality) hqLsbDrawMs = millis() - lsbStartedAt;
+  const unsigned long lsbCopyStartedAt = quality ? millis() : 0;
   copyGrayscaleLsbBuffers();
+  if (quality) hqLsbCopyMs = millis() - lsbCopyStartedAt;
 
   setRenderMode(quality ? GRAY2_MSB : GRAYSCALE_MSB);
+  const unsigned long msbStartedAt = quality ? millis() : 0;
   drawPlane();
+  if (quality) hqMsbDrawMs = millis() - msbStartedAt;
+  const unsigned long msbCopyStartedAt = quality ? millis() : 0;
   copyGrayscaleMsbBuffers();
+  if (quality) hqMsbCopyMs = millis() - msbCopyStartedAt;
 
+  const unsigned long displayStartedAt = quality ? millis() : 0;
   if (useWindow) {
     displayGrayBufferWindow(*window, true, useFastQuality);
   } else if (useFastQuality) {
@@ -632,8 +715,10 @@ void GfxRenderer::renderGrayscalePasses(const bool quality, const bool preserveT
   } else {
     displayGrayBuffer(quality, !preserveText);
   }
+  if (quality) hqDisplayMs = millis() - displayStartedAt;
   setRenderMode(BW);
 
+  const unsigned long cleanupStartedAt = quality ? millis() : 0;
   if (preserveText) {
     restoreBwBuffer();
   } else {
@@ -645,6 +730,13 @@ void GfxRenderer::renderGrayscalePasses(const bool quality, const bool preserveT
       clearScreen(0xFF);
     }
     cleanupGrayscaleWithFrameBuffer();
+  }
+  if (quality) {
+    hqCleanupMs = millis() - cleanupStartedAt;
+    INX_SERIAL.printf(
+        "[PICCO][HQ-TIMING] passes window=%d fast=%d prepare=%lu ms lsb_draw=%lu ms lsb_copy=%lu ms msb_draw=%lu ms msb_copy=%lu ms display=%lu ms cleanup=%lu ms total=%lu ms\n",
+        useWindow ? 1 : 0, useFastQuality ? 1 : 0, hqPrepareMs, hqLsbDrawMs, hqLsbCopyMs, hqMsbDrawMs,
+        hqMsbCopyMs, hqDisplayMs, hqCleanupMs, millis() - hqStartedAt);
   }
 }
 

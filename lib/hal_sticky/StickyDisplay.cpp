@@ -140,7 +140,10 @@ void StickyDisplay::refreshDisplay(const RefreshMode mode, const bool turnOffScr
   qualityReferenceScreenOn = false;
 }
 
-void StickyDisplay::syncWriteBufferFromActive() const { display.syncWriteBufferFromActive(); }
+void StickyDisplay::syncWriteBufferFromActive() const {
+  const_cast<StickyDisplay*>(this)->finish();
+  display.syncWriteBufferFromActive();
+}
 
 void StickyDisplay::deepSleep() {
   finish();

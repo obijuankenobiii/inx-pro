@@ -255,9 +255,13 @@ LightDrawer::Action LightDrawer::handleInput(MappedInputManager& input) const {
           sliderRepaintPending = true;
         }
       }
-      // Retry every pass, not just on a change: a move made while the panel was busy still
-      // owes a repaint once it goes idle.
+      // Match the working in-book Picco drawer: update the frontlight hardware
+      // during the drag, but do not start an e-paper refresh for every sample.
+      // The display is refreshed once after release. X4 Pro/Murphy retain their
+      // existing live slider repaint behavior.
+#if !FREEINK_DEVICE_PICCO
       if (sliderRepaintPending) renderSliderRowLive();
+#endif
       return Action::Adjusted;
     }
 
@@ -299,9 +303,11 @@ LightDrawer::Action LightDrawer::handleInput(MappedInputManager& input) const {
           }
           sliderDragChanged = true;
         }
-        // Always repaint: storing the frame cleared the row, so the knob has to be put
-        // back even when the press landed on the value the slider already held.
+        // Picco follows the in-book drawer and waits until release for the
+        // single e-paper refresh. Other devices keep their live knob repaint.
+#if !FREEINK_DEVICE_PICCO
         renderSliderRowLive();
+#endif
         return Action::Adjusted;
       }
     }

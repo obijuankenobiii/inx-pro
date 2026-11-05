@@ -29,7 +29,7 @@ extern HalGPIO gpio;
 
 namespace {
 bool formatMenuClock(char* out, const size_t outSize) {
-  if (!out || outSize == 0 || !SETTINGS.showMenuClock) {
+  if (!out || outSize == 0 || !SETTINGS.showMenuClock || SETTINGS.hideMenuClock) {
     return false;
   }
 

@@ -84,6 +84,7 @@ void PiccoDisplay::refreshDisplay(const RefreshMode mode, const bool turnOffScre
 }
 
 void PiccoDisplay::syncWriteBufferFromActive() const {
+  const_cast<EInkDisplay&>(display).waitRefreshComplete();
   if (writeBufferDirty_) {
     INX_SERIAL.printf("[PICCO][BUFFER] preserve prepared write buffer; skip active sync\n");
     return;
@@ -138,6 +139,8 @@ void PiccoDisplay::displayGrayscaleBase(const RefreshMode mode, const bool turnO
 }
 
 void PiccoDisplay::prepareQualityGrayscale() {
+  const unsigned long startedAt = millis();
+  unsigned long bwCommitMs = 0;
   // The prepared-reader path may intentionally skip its preceding B/W
   // refresh. The writable buffer then contains the new page while the panel
   // still contains the previous one. Commit that complete B/W page before
@@ -147,12 +150,16 @@ void PiccoDisplay::prepareQualityGrayscale() {
     INX_SERIAL.printf("[PICCO][BUFFER] commit prepared B/W page before HQ\n");
     display.displayBuffer(EInkDisplay::FAST_REFRESH);
     writeBufferDirty_ = false;
+    bwCommitMs = millis() - startedAt;
   }
 
   // Picco HQ images are complete four-level frames. Enter the SDK driver's
   // absolute mode before the renderer writes the LSB/MSB planes; the overlay
   // mode is reserved for medium image rendering and text anti-aliasing.
   display.displayGrayscaleBase(freeink::GrayscaleMode::Absolute, EInkDisplay::HALF_REFRESH, false);
+  const unsigned long grayscaleBaseMs = millis() - startedAt - bwCommitMs;
+  INX_SERIAL.printf("[PICCO][HQ-TIMING] prepare bw_commit=%lu ms grayscale_base=%lu ms total=%lu ms\n", bwCommitMs,
+                    grayscaleBaseMs, millis() - startedAt);
 }
 
 void PiccoDisplay::prepareGrayscaleWindow(const uint16_t x, const uint16_t y, const uint16_t w, const uint16_t h) {

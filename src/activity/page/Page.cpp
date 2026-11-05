@@ -66,20 +66,23 @@ bool UiPage::menuInput() {
 
     float tapX = 0.0f;
     float tapY = 0.0f;
-    if (!mappedInput.wasTouchTapInScreen(renderer, tapX, tapY)) return false;
+    if (mappedInput.wasTouchTapInScreen(renderer, tapX, tapY)) {
+      const int x = static_cast<int>(tapX * renderer.getScreenWidth());
+      const int y = static_cast<int>(tapY * renderer.getScreenHeight());
+      const navigation::Menu::Action action = navigation::Menu::handleTap(x, y);
+      if (action == navigation::Menu::Action::None) {
+        mappedInput.restoreTouchTapInScreen(renderer, tapX, tapY);
+        return false;
+      }
 
-    const int x = static_cast<int>(tapX * renderer.getScreenWidth());
-    const int y = static_cast<int>(tapY * renderer.getScreenHeight());
-    const navigation::Menu::Action action = navigation::Menu::handleTap(x, y);
-    if (action == navigation::Menu::Action::None) {
-      mappedInput.restoreTouchTapInScreen(renderer, tapX, tapY);
-      return false;
+      routeMenuAction(action);
+      return true;
     }
-
-    routeMenuAction(action);
-    return true;
   }
 
+  // A board can expose a touch controller even when the current input frame
+  // contains no touch event. Do not let that capability check swallow the
+  // physical navigation buttons used by the hidden menu.
   const navigation::Menu::Action action = navigation::Menu::handleInput(mappedInput);
   if (action == navigation::Menu::Action::None) return false;
   routeMenuAction(action);

@@ -14,6 +14,7 @@
 #include <cmath>
 #include <ctime>
 
+
 namespace {
 constexpr int kPiccoSwipeMinPx = 40;
 constexpr unsigned long kPiccoSwipeMaxMs = 700;
@@ -124,7 +125,15 @@ void HalGPIO::update() {
     float nx = 0.0f;
     float ny = 0.0f;
     if (touchPressed && inputMgr.wasTouchPressedAt(nx, ny)) {
-      LOG_INF("INPUT", "Picco touch pressed nx=%.3f ny=%.3f", nx, ny);
+      const auto point = inputMgr.getTouchPoint();
+      // Picco's app orientation is portrait: screen=(1-nativeY,nativeX).
+      const float screenNx = 1.0f - ny;
+      const float screenNy = nx;
+      const auto& touch = BoardConfig::ACTIVE.touch;
+      LOG_INF("INPUT",
+              "Picco touch pressed native=(%.3f,%.3f) mapped=(%u,%u) screen=(%.3f,%.3f) rawRange=x:%u..%u y:%u..%u",
+              nx, ny, point.x, point.y, screenNx, screenNy, touch.rawMinX, touch.rawMaxX, touch.rawMinY,
+              touch.rawMaxY);
     } else {
       LOG_INF("INPUT", "Picco touch released");
     }
@@ -209,7 +218,7 @@ HalGPIO::MotionGesture HalGPIO::readMotionGesture(const uint8_t orientation, con
   return MotionGesture::None;
 }
 
-void HalGPIO::startDeepSleep() {
+void HalGPIO::startDeepSleep(const bool wakeOnToggle) {
   const auto& power = BoardConfig::ACTIVE.power;
   if (power.latch0 >= 0) {
     const auto pin = static_cast<gpio_num_t>(power.latch0);
@@ -219,6 +228,23 @@ void HalGPIO::startDeepSleep() {
     gpio_hold_en(pin);
   }
   freeink::PowerManager::powerDownRailsForSleep();
+  if (wakeOnToggle && hasToggleSwitch() && !BoardConfig::ACTIVE.input.powerActiveHigh) {
+    const int8_t powerPin = BoardConfig::ACTIVE.input.power;
+    const int8_t togglePin = BoardConfig::ACTIVE.input.toggleSwitch;
+    freeink::PowerManager::waitForPowerButtonRelease();
+    pinMode(togglePin, INPUT_PULLUP);
+    uint64_t wakeMask = 1ULL << togglePin;
+    if (powerPin >= 0) {
+      pinMode(powerPin, INPUT_PULLUP);
+      wakeMask |= 1ULL << powerPin;
+    }
+    // Picco's power button and slide switch are both active-low. Wake from
+    // either one so switching Power back on can boot the device.
+    freeink::PowerManager::armWakeOnPins(wakeMask, true);
+    INX_SERIAL.printf("[PICCO][POWER-SWITCH] deep sleep wake mask=0x%llX\n",
+                      static_cast<unsigned long long>(wakeMask));
+    freeink::PowerManager::deepSleep();
+  }
   freeink::PowerManager::deepSleepUntilPowerButton();
 }
 

@@ -1459,8 +1459,9 @@ void EpubActivity::onExit() {
   // Keep the cleanup only for those pages; ordinary EPUB exits stay fast.
   if (clearImagePageOnExit) {
     renderer.clearScreen(0xFF);
-    renderer.displayBuffer(FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 ? HalDisplay::FULL_REFRESH
-                                                                             : HalDisplay::HALF_REFRESH);
+    renderer.displayBuffer(FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
+                               ? HalDisplay::FULL_REFRESH
+                               : HalDisplay::HALF_REFRESH);
   }
 
   LanguageManager::setBookLanguage("");
@@ -1630,7 +1631,7 @@ void EpubActivity::loop() {
     return;
   }
 
-#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4
+#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
   if (!READER_SETTINGS.disableLightControl && frontlight_ui::handleEdgeSwipe(mappedInput, renderer)) {
     return;
   }
@@ -2013,7 +2014,9 @@ bool EpubActivity::finishPreparedPageGrayscale(const PreparedPage& prepared) {
         renderer, /*quality=*/true, /*preserveText=*/true,
         [&] {
           renderer.copyStoredBwToFramebuffer();
+#if !FREEINK_DEVICE_PICCO
           renderer.invertScreen();
+#endif
           page->fillImageRects(renderer, info.totalMarginLeft, info.totalMarginTop, false, /*onlyGrayscale=*/true);
           page->renderImages(renderer, fontId, info.totalMarginLeft, info.totalMarginTop, imageMode, /*quality=*/true,
                              /*onlyGrayscale=*/true);
@@ -2084,7 +2087,15 @@ bool EpubActivity::presentPreparedForwardPage() {
           ? ((FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4) ? HalDisplay::FULL_REFRESH
                                                                   : HalDisplay::HALF_REFRESH)
           : static_cast<HalDisplay::RefreshMode>(presented.refreshMode);
+#if FREEINK_DEVICE_PICCO
+  // Picco's absolute SSD2677 image pass contains the complete page. Avoid a
+  // redundant B/W waveform before the four-tone image waveform.
+  if (!presented.highQuality) {
+    renderer.displayBufferAsync(turnRefresh);
+  }
+#else
   renderer.displayBufferAsync(turnRefresh);
+#endif
 
   if (!finishPreparedPageGrayscale(presented)) {
     invalidatePreparedPage();
@@ -2468,6 +2479,14 @@ void EpubActivity::renderContents(Page* page, const int orientedMarginTop,
                                   pageGrayscaleImageRegion(*page, renderer, orientedMarginLeft, orientedMarginTop,
                                                            imageRegion);
   const bool skipBasePageRefresh = (FREEINK_DEVICE_STICKY || FREEINK_DEVICE_MURPHY_M4) && useWindowedQuality;
+#if FREEINK_DEVICE_PICCO
+  // A real Picco PTLW update only drives the image rectangle. The freshly
+  // rendered B/W page must therefore be shown first; skipping it would leave
+  // the previous page visible outside the image window.
+  const bool skipPiccoBasePageRefresh = displayWithQualityPass && !useWindowedQuality;
+#else
+  const bool skipPiccoBasePageRefresh = false;
+#endif
   const bool smartRefreshThisPageAfterLargeImage = smartImageRefreshEnabled && smartRefreshAfterLargeImage;
   auto displayPageBuffer = [this, smartRefreshThisPageAfterLargeImage, smartRefreshAfterQualityImage,
                             smartImageRefreshEnabled, periodicRefreshEnabled, periodicRefreshPages]() {
@@ -2493,9 +2512,10 @@ void EpubActivity::renderContents(Page* page, const int orientedMarginTop,
   if (displayImagePlaceholder) {
     page->fillImageRects(renderer, orientedMarginLeft, orientedMarginTop, true, /*onlyGrayscale=*/true);
   }
-  if (skipBasePageRefresh) {
-    // Sticky/Murphy's HQ image pass must not be preceded by a full-panel
-    // refresh. X4Pro deliberately keeps its existing base-page refresh.
+  if (skipBasePageRefresh || skipPiccoBasePageRefresh) {
+    // Windowed Sticky/Murphy and absolute Picco HQ image passes must not be
+    // preceded by a redundant full-panel refresh. X4Pro deliberately keeps
+    // its existing base-page refresh.
     INX_SERIAL.printf("[%lu] [HQ-WINDOW] skipping Sticky/Murphy full page refresh\n", millis());
   } else {
     displayPageBuffer();
@@ -2506,7 +2526,9 @@ void EpubActivity::renderContents(Page* page, const int orientedMarginTop,
         renderer, /*quality=*/true, /*preserveText=*/true,
         [&] {
           renderer.copyStoredBwToFramebuffer();
+#if !FREEINK_DEVICE_PICCO
           renderer.invertScreen();
+#endif
           page->fillImageRects(renderer, orientedMarginLeft, orientedMarginTop, false, /*onlyGrayscale=*/true);
           page->renderImages(renderer, fontId, orientedMarginLeft, orientedMarginTop, imageMode, /*quality=*/true,
                              /*onlyGrayscale=*/true);

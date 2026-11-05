@@ -38,11 +38,14 @@ void SyncActivity::onEnter() {
 }
 
 void SyncActivity::loop() {
+  // Let the shared page shell handle the hidden menu first.  The hidden menu
+  // opens from the bottom edge on an upward swipe; handling the page's generic
+  // upward-swipe guard first would consume that gesture on Device Management.
+  if (!subActivity && menuInput()) return;
+
   if (!subActivity && mappedInput.hasTouch() && mappedInput.wasTouchSwipeUpForRenderer(renderer)) {
     return;
   }
-
-  if (!subActivity && menuInput()) return;
 
   if (subActivity) {
     subActivity->loop();

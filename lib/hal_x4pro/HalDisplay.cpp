@@ -153,7 +153,13 @@ void HalDisplay::displayGrayscaleBase(const HalDisplay::RefreshMode mode, const 
   display.displayGrayscaleBase(convertRefreshMode(mode), turnOffScreen);
 }
 
-void HalDisplay::syncWriteBufferFromActive() const { display.syncWriteBufferFromActive(); }
+void HalDisplay::syncWriteBufferFromActive() const {
+  // An async page turn swaps the host buffers before the panel waveform has
+  // finished. Drain that handoff before copying the active page; otherwise an
+  // overlay can capture the pre-turn buffer on the first frame after paging.
+  const_cast<EInkDisplay&>(display).waitRefreshComplete();
+  display.syncWriteBufferFromActive();
+}
 
 bool HalDisplay::refreshBusy() { return display.refreshBusy(); }
 

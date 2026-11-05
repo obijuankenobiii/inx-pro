@@ -108,7 +108,7 @@ void BaseStatisticsActivity::loop() {
     return;
   }
 
-  if (SubPage::closeInput(renderer, mappedInput, [this] { close(); }, false)) return;
+  if (SubPage::closeInput(renderer, mappedInput, [this] { close(); })) return;
   if (mappedInput.hasTouch()) {
     float nx = 0.0f;
     float ny = 0.0f;

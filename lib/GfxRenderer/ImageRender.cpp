@@ -192,7 +192,7 @@ bool ImageRender::render(int x, int y, int width, int height, const Options& opt
       JpegRender jpeg(renderer_);
       ok = jpeg.fromPath(path_, x, y, width, height, effectiveOptions.cropToFill, effectiveOptions.mode,
                          effectiveOptions.quality, jpegCapture, effectiveOptions.cropAnchorX,
-                         effectiveOptions.cropAnchorY);
+                         effectiveOptions.cropAnchorY, effectiveOptions.fastQuality);
     } else if (format_ == Format::Gif) {
       FsFile gif;
       if (SdMan.openFileForRead("EHP", path_, gif)) {
