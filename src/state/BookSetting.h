@@ -96,7 +96,7 @@ struct BookSettings {
   uint8_t fontFamily = SystemSetting::MONTSERRAT;         ///< Font family
   /** Preferred language package for this book. Empty means follow the system/default reader language. */
   char languageCode[33] = "";
-  uint8_t fontSize = SystemSetting::SMALL;                 ///< Legacy index for built-in/.bin fonts; actual 8-60pt for TTF/OTF
+  uint8_t fontSize = SystemSetting::SMALL;                 ///< Legacy index for built-in/.bin fonts; actual 6-45pt for TTF/OTF
   uint8_t lineHeight = 100;                                ///< Line height, % of natural (10-200)
   uint8_t textSpace = 100;                                 ///< Word spacing, % of natural (10-200)
   uint8_t paragraphAlignment = SystemSetting::FOLLOW_CSS;  ///< Paragraph alignment
