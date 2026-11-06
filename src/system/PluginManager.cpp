@@ -1,5 +1,9 @@
 #include "PluginManager.h"
 
+#ifdef SIMULATOR
+#include <Arduino.h>
+#endif
+
 #include <ArduinoJson.h>
 #include <FsHelpers.h>
 #include <SDCardManager.h>
@@ -29,8 +33,8 @@ constexpr char kDownloadPath[] = "/.system/plugin-package.zip";
 constexpr char kPluginRoot[] = "/.system/plugins";
 constexpr size_t kMaxPackageBytes = 512 * 1024;
 constexpr size_t kMaxManifestBytes = 16 * 1024;
-constexpr size_t kMaxScriptBytes = 128 * 1024;
-constexpr size_t kMaxExtractedBytes = 256 * 1024;
+constexpr size_t kMaxScriptBytes = 256 * 1024;
+constexpr size_t kMaxExtractedBytes = 512 * 1024;
 constexpr char kPluginIdRegistryKey[] = "inx.plugin.id";
 
 struct StaticPackage {
@@ -42,6 +46,7 @@ struct StaticPackage {
 
 constexpr StaticPackage kStaticPackages[] = {
     {"study-cards", "Anki Export", "Adds anki supported export", "plugin/study-cards.zip"},
+    {"xtc-converter", "CBZ / CBR to XTC", "Convert comic archives in the browser and upload XTC files.", "plugin/xtc-converter.zip"},
 };
 
 bool safeId(const std::string& id) {
@@ -150,6 +155,11 @@ bool readWebLink(const char* candidate, PluginManager::WebLink& link) {
   link.page = page;
   link.script = script;
   link.icon = icon ? icon : "";
+  link.assets.clear();
+  for (JsonVariant candidate : web["assets"].as<JsonArray>()) {
+    const char* asset = candidate | "";
+    if (asset && asset[0] && safeEntryName(asset)) link.assets.emplace_back(asset);
+  }
   link.order = web["order"] | 100;
   return true;
 }

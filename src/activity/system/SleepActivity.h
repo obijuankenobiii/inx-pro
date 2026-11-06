@@ -86,11 +86,6 @@ class SleepActivity final : public Activity {
    */
   void renderBlankSleepScreen() const;
 
-  /**
-   * @brief Renders a minimal clock sleep screen using the Sticky RTC.
-   */
-  void renderDateTimeSleepScreen() const;
-
   /** Renders the configured Sleep theme widgets. */
   void renderWidgetSleepScreen() const;
 

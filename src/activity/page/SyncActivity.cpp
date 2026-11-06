@@ -9,7 +9,6 @@
 
 #include <GfxRenderer.h>
 
-#include "activity/network/BackupRestoreActivity.h"
 #include "activity/settings/DeviceInfoActivity.h"
 #include "activity/settings/DictionaryPickerActivity.h"
 #include "activity/settings/KOReaderSettingsActivity.h"
@@ -21,10 +20,10 @@
 extern void onGoToHome();
 
 namespace {
-constexpr int menuItemCount = 9;
+constexpr int menuItemCount = 8;
 const char* menuItems[menuItemCount] = {"Manage via wifi",   "Calibre File Transfer", "Create hotspot",
-                                        "OPDS Browser",      "Backup and restore", "KOReader Sync",
-                                        "Check for updates", "Choose dictionary",  "Device Information"};
+                                        "OPDS Browser",      "KOReader Sync",       "Check for updates",
+                                        "Choose dictionary", "Device Information"};
 constexpr int listItemHeight = UiLayout::LIST_ITEM_HEIGHT;
 constexpr int headerTop = 20;
 constexpr int headerHeight = 40;
@@ -32,18 +31,21 @@ constexpr int listGap = 30;
 }
 
 void SyncActivity::onEnter() {
-  Page::onEnter();
+  UiPage::onEnter();
   selectedIndex = 0;
   selectedVisible = false;
   SETTINGS.runHalfRefreshOnLoadIfEnabled(renderer, SystemSetting::RefreshOnLoadPage::Sync);
 }
 
 void SyncActivity::loop() {
+  // Let the shared page shell handle the hidden menu first.  The hidden menu
+  // opens from the bottom edge on an upward swipe; handling the page's generic
+  // upward-swipe guard first would consume that gesture on Device Management.
+  if (!subActivity && menuInput()) return;
+
   if (!subActivity && mappedInput.hasTouch() && mappedInput.wasTouchSwipeUpForRenderer(renderer)) {
     return;
   }
-
-  if (!subActivity && menuInput()) return;
 
   if (subActivity) {
     subActivity->loop();
@@ -66,7 +68,7 @@ void SyncActivity::loop() {
       const int tapX = static_cast<int>(tapNx * renderer.getScreenWidth());
       const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
       const int listStartY = headerTop + headerHeight + listGap;
-      const int contentBottom = renderer.getScreenHeight() - navigation::Menu::bottomHeight - 10;
+      const int contentBottom = renderer.getScreenHeight() - navigation::Menu::bottomInset() - 10;
       const int tappedIndex = (tapY - listStartY) / listItemHeight;
 
       if (tapY >= listStartY && tapY < contentBottom && tappedIndex >= 0 && tappedIndex < menuItemCount) {
@@ -87,14 +89,6 @@ void SyncActivity::loop() {
     if (selectedIndex == 3) mode = NetworkMode::OPDS_BROWSER;
 
     if (selectedIndex == 4) {
-      enter(new BackupRestoreActivity(renderer, mappedInput, [this] {
-        exit();
-        selectedVisible = false;
-        updateRequired = true;
-      }));
-      return;
-    }
-    if (selectedIndex == 5) {
       enter(new KOReaderSettingsActivity(renderer, mappedInput, [this] {
         exit();
         selectedVisible = false;
@@ -102,7 +96,7 @@ void SyncActivity::loop() {
       }));
       return;
     }
-    if (selectedIndex == 6) {
+    if (selectedIndex == 5) {
       enter(new OtaUpdateActivity(renderer, mappedInput, [this] {
         exit();
         selectedVisible = false;
@@ -110,7 +104,7 @@ void SyncActivity::loop() {
       }));
       return;
     }
-    if (selectedIndex == 7) {
+    if (selectedIndex == 6) {
       enter(new DictionaryPickerActivity(renderer, mappedInput, [this] {
         exit();
         selectedVisible = false;
@@ -118,7 +112,7 @@ void SyncActivity::loop() {
       }));
       return;
     }
-    if (selectedIndex == 8) {
+    if (selectedIndex == 7) {
       enter(new DeviceInfoActivity(renderer, mappedInput, [this] {
         exit();
         updateRequired = true;
@@ -150,7 +144,7 @@ void SyncActivity::content() {
 
   const int listStartY = headerTop + headerHeight + listGap;
 
-  const int contentBottom = screenHeight - navigation::Menu::bottomHeight - 10;
+  const int contentBottom = screenHeight - navigation::Menu::bottomInset() - 10;
   for (int index = 0; index < menuItemCount; ++index) {
     const int itemY = listStartY + index * listItemHeight;
     if (itemY >= contentBottom || itemY + listItemHeight <= listStartY) continue;
@@ -175,7 +169,7 @@ void SyncActivity::content() {
 
 void SyncActivity::onExit() {
   exit();
-  Page::onExit();
+  UiPage::onExit();
 }
 
 void SyncActivity::enter(Activity* activity) {

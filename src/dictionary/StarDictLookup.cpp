@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cctype>
 
+#include "Utf8.h"
 #include "util/SdIoMutex.h"
 #include "util/StringUtils.h"
 
@@ -92,20 +93,19 @@ std::string toTitleCaseCopy(const std::string& s) {
   return out;
 }
 
-/** Strips leading/trailing characters that aren't letters/digits/apostrophe/hyphen, so a word
- *  lifted straight from rendered book text (with trailing commas/periods/quotes) can still match
- *  a dictionary entry. */
-std::string stripPunctuation(const std::string& s) {
-  size_t start = 0;
-  size_t end = s.size();
-  auto keep = [](unsigned char c) { return std::isalnum(c) || c == '\'' || c == '-'; };
-  while (start < end && !keep(static_cast<unsigned char>(s[start]))) {
-    ++start;
+bool isUnicodePunctuation(const uint32_t codepoint) {
+  return codepoint == 0x00A0 || (codepoint >= 0x2000 && codepoint <= 0x206F) ||
+         (codepoint >= 0x2E00 && codepoint <= 0x2E7F) || (codepoint >= 0x3000 && codepoint <= 0x303F) ||
+         (codepoint >= 0xFE00 && codepoint <= 0xFEFF) || (codepoint >= 0xFF00 && codepoint <= 0xFF65);
+}
+
+bool isWordCodepoint(const uint32_t codepoint) {
+  if (codepoint < 0x80) {
+    return std::isalnum(static_cast<unsigned char>(codepoint)) || codepoint == '\'' || codepoint == '-';
   }
-  while (end > start && !keep(static_cast<unsigned char>(s[end - 1]))) {
-    --end;
-  }
-  return s.substr(start, end - start);
+  // Classify decoded codepoints, not the individual bytes of a UTF-8 sequence. Keep non-ASCII
+  // letters, combining marks, and script-specific joiners; trim common Unicode punctuation.
+  return !isUnicodePunctuation(codepoint);
 }
 
 /** Generates candidate base forms for a possibly-inflected English word (possessive, plural,
@@ -163,6 +163,33 @@ std::vector<std::string> stemCandidates(const std::string& lower) {
   return out;
 }
 
+}
+
+std::string StarDictLookup::cleanQueryWord(const std::string& s) {
+  size_t start = 0;
+  size_t end = s.size();
+
+  while (start < end) {
+    const unsigned char* cursor = reinterpret_cast<const unsigned char*>(s.data() + start);
+    const uint32_t codepoint = utf8NextCodepoint(&cursor);
+    const size_t next = static_cast<size_t>(cursor - reinterpret_cast<const unsigned char*>(s.data()));
+    if (isWordCodepoint(codepoint)) break;
+    start = std::max(start + 1, next);
+  }
+
+  while (end > start) {
+    size_t codepointStart = end - 1;
+    while (codepointStart > start &&
+           (static_cast<unsigned char>(s[codepointStart]) & 0xC0) == 0x80) {
+      --codepointStart;
+    }
+    const unsigned char* cursor = reinterpret_cast<const unsigned char*>(s.data() + codepointStart);
+    const uint32_t codepoint = utf8NextCodepoint(&cursor);
+    if (isWordCodepoint(codepoint)) break;
+    end = codepointStart;
+  }
+
+  return s.substr(start, end - start);
 }
 
 int StarDictLookup::compareWord(const std::string& a, const std::string& b) {
@@ -446,7 +473,7 @@ bool StarDictLookup::lookupViaLinearScan(const std::vector<std::string>& candida
     }
     const std::string entryLower = toLowerCopy(entryWord);
     for (const std::string& candidate : candidates) {
-      if (entryLower == candidate) {
+      if (entryWord == candidate || entryLower == candidate) {
         outDictOffset = dictOffset;
         outDictSize = dictSize;
         matched = candidate;
@@ -468,9 +495,9 @@ bool StarDictLookup::lookup(const std::string& queryWord, std::string& outDefini
     return false;
   }
 
-  const std::string cleaned = stripPunctuation(queryWord);
+  const std::string cleaned = cleanQueryWord(queryWord);
   if (cleaned.empty()) {
-    INX_SERIAL.printf("[%lu] [DICT] lookup('%s'): empty after stripPunctuation\n", millis(), queryWord.c_str());
+    INX_SERIAL.printf("[%lu] [DICT] lookup('%s'): empty after cleanQueryWord\n", millis(), queryWord.c_str());
     return false;
   }
 
@@ -482,6 +509,11 @@ bool StarDictLookup::lookup(const std::string& queryWord, std::string& outDefini
 
   std::vector<std::string> candidates = {cleaned, lowerCleaned, toTitleCaseCopy(cleaned)};
   std::vector<std::string> foldedCandidates = {lowerCleaned};
+  if (cleaned != lowerCleaned) {
+    // ASCII-only folding leaves non-ASCII scripts unchanged. Keep the original spelling so
+    // uppercase or accented entries can still be found by the linear fallback.
+    foldedCandidates.push_back(cleaned);
+  }
   for (const std::string& stem : stemCandidates(lowerCleaned)) {
     candidates.push_back(stem);
     candidates.push_back(toTitleCaseCopy(stem));

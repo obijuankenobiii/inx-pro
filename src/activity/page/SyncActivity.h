@@ -12,11 +12,11 @@
 
 enum class NetworkMode { JOIN_NETWORK, CONNECT_CALIBRE, CREATE_HOTSPOT, OPDS_BROWSER };
 
-class SyncActivity final : public Page {
+class SyncActivity final : public UiPage {
  public:
   SyncActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
                const std::function<void(NetworkMode)>& onModeSelected)
-      : Page("Device Management", renderer, mappedInput), onModeSelected(onModeSelected) {}
+      : UiPage("Device Management", renderer, mappedInput), onModeSelected(onModeSelected) {}
 
   const char* name() const override { return "Device Management"; }
 

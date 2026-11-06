@@ -23,6 +23,12 @@ class TextRender {
   /** Pixels between a glyph's top edge and the font's ascender line (ascender - glyph.top). Used to align
    *  a drop cap's cap-top with the surrounding body text, whose font has a different inset. */
   int getGlyphTopInset(int fontId, uint32_t codepoint, EpdFontFamily::Style style = EpdFontFamily::REGULAR) const;
+  /**
+   * Top inset for the highest common ascender glyphs in a font. Text blocks use
+   * this instead of assuming that the capital H is always the highest glyph;
+   * some fonts place b/h above H and clip them when the top margin is zero.
+   */
+  int getFontTopInset(int fontId, EpdFontFamily::Style style = EpdFontFamily::REGULAR) const;
   /** Pixels from a glyph's bottom edge to the font line box bottom. */
   int getGlyphBottomInset(int fontId, uint32_t codepoint, EpdFontFamily::Style style = EpdFontFamily::REGULAR) const;
   std::string truncate(int fontId, const char* text, int maxWidth,
@@ -41,6 +47,8 @@ class TextRender {
                      EpdFontFamily::Style style = EpdFontFamily::REGULAR) const;
   int renderScaled(int fontId, int x, int y, const char* text, uint8_t scalePct, bool black = true,
                    EpdFontFamily::Style style = EpdFontFamily::REGULAR) const;
+  int renderScaledGray(int fontId, int x, int y, const char* text, uint8_t scalePct, bool black = true,
+                       EpdFontFamily::Style style = EpdFontFamily::REGULAR) const;
   int getSmallCapsWidth(int fontId, const char* text, EpdFontFamily::Style style = EpdFontFamily::REGULAR) const;
   /** Renders small caps and returns the x position after the text (its advance), so callers don't re-measure. */
   int renderSmallCaps(int fontId, int x, int y, const char* text, bool black = true,
@@ -52,7 +60,9 @@ class TextRender {
   void renderChar(const EpdFontFamily& fontFamily, uint32_t cp, int* x, const int* y, bool pixelState,
                   EpdFontFamily::Style style, bool gray = false) const;
   void renderScaledChar(const EpdFontFamily& fontFamily, uint32_t cp, int* x, const int* y, bool pixelState,
-                        EpdFontFamily::Style style, uint8_t scalePct) const;
+                        EpdFontFamily::Style style, uint8_t scalePct, bool gray = false) const;
+  int renderScaledInternal(int fontId, int x, int y, const char* text, uint8_t scalePct, bool black,
+                           EpdFontFamily::Style style, bool gray) const;
   int getStreamingTextWidth(const EpdFontFamily& family, const char* text, EpdFontFamily::Style style) const;
   GfxRenderer& gfx;
 };

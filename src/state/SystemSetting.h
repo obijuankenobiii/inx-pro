@@ -33,7 +33,7 @@ class SystemSetting {
     COVER = 3,        ///< Book cover
     TRANSPARENT = 4,  ///< Transparent
     BLANK = 5,        ///< Blank screen
-    DATETIME = 6,     ///< Minimal date and time
+    DATETIME_LEGACY = 6,  ///< Removed; migrate old settings to the widget sleep screen
     WIDGET = 7,       ///< Configurable sleep widgets
     SLEEP_SCREEN_MODE_COUNT
   };
@@ -241,6 +241,9 @@ class SystemSetting {
     SHORT_PWRBTN_COUNT
   };
 
+  /** Picco's physical slide switch behavior. */
+  enum PICCO_TOGGLE_MODE { PICCO_TOGGLE_LIGHT = 0, PICCO_TOGGLE_POWER = 1, PICCO_TOGGLE_MODE_COUNT };
+
   /**
    * @brief Action assignable to a reader button's short or long press. Supersedes the older, more
    * legacy reader-navigation settings, which are no longer surfaced in the settings UI or consulted
@@ -349,6 +352,17 @@ class SystemSetting {
   char timeZoneId[64] = "";
   /** Show the ambient clock (ScreenComponents::drawMenuClock) in the tab-bar chrome. */
   uint8_t showMenuClock = 1;
+  /** Hide the ambient clock from the page header. */
+  uint8_t hideMenuClock = 0;
+  /** Hide the bottom navigation bar and expose it through a bottom-edge swipe grid. */
+  uint8_t hiddenMenu = 0;
+  /** Show the curved/dithered visual when a swipe exits an activity. */
+  uint8_t exitAnimation = 1;
+  /** Hide reading statistics from the home shortcuts and statistics entry. */
+  uint8_t disableStatistics = 0;
+  /** Reserved coordinate slots retained only for settings-file compatibility. */
+  uint16_t legacyMenuX = 0;
+  uint16_t legacyMenuY = 0;
   /** Keyboard layout used by text-entry activities. */
   uint8_t keyboardLayout = KEYBOARD_QWERTY;
   /** System UI text size: Small=10pt, Medium=12pt, Large=14pt. */
@@ -357,6 +371,9 @@ class SystemSetting {
   uint8_t darkMode = 0;
 
   uint8_t shortPwrBtn = PAGE_REFRESH;  ///< Short power button behavior
+
+  /** Picco-only physical slide switch behavior; ignored on other devices. */
+  uint8_t piccoToggleMode = PICCO_TOGGLE_LIGHT;
 
   uint8_t sideButtonLayout = PREV_NEXT;                 ///< Side button layout
 

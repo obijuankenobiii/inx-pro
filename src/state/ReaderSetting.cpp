@@ -16,6 +16,7 @@
 #include <Serialization.h>
 
 #include <cstring>
+#include <algorithm>
 #include <string>
 
 #ifndef INX_SIMULATOR_WEB_ONLY
@@ -28,8 +29,10 @@ void readAndValidate(FsFile& file, uint8_t& member, uint8_t maxValue);
 ReaderSetting ReaderSetting::instance;
 
 namespace {
-constexpr uint8_t READER_SETTINGS_FILE_VERSION = 1;
-constexpr uint8_t READER_SETTINGS_COUNT = 35;
+constexpr uint8_t READER_SETTINGS_FILE_VERSION = 2;
+constexpr uint8_t READER_SETTINGS_LEGACY_VERSION = 1;
+constexpr uint8_t READER_SETTINGS_COUNT = 38;
+constexpr uint8_t READER_SETTINGS_LEGACY_COUNT = 35;
 constexpr char READER_SETTINGS_FILE[] = "/.system/reader_settings.bin";
 constexpr uint32_t FNV1A_OFFSET = 2166136261UL;
 constexpr uint32_t FNV1A_PRIME = 16777619UL;
@@ -96,12 +99,15 @@ uint32_t readerSettingsHash(const ReaderSetting& settings, const uint8_t fontFam
   hashPod(hash, settings.refreshFrequency);
   hashPod(hash, settings.hyphenationEnabled);
   hashPod(hash, settings.bionicReadingEnabled);
-  hashPod(hash, settings.readingGuideLinesEnabled);
-  hashPod(hash, settings.screenMargin);
+  hashPod(hash, settings.marginTop);
+  hashPod(hash, settings.marginLeft);
+  hashPod(hash, settings.marginRight);
+  hashPod(hash, settings.marginBottom);
   hashPod(hash, settings.pageAutoTurnSeconds);
   hashPod(hash, settings.readerImageGrayscale);
   hashPod(hash, settings.readerSmartRefreshOnImages);
   hashPod(hash, settings.longPressChapterSkip);
+  hashPod(hash, settings.readingGuideLinesEnabled);
   hashPod(hash, settings.quickActionsMask);
   hashPod(hash, settings.dailyReadingGoalMinutes);
   hashPod(hash, settings.btnLeftAction);
@@ -173,7 +179,10 @@ bool ReaderSetting::saveToFile() const {
   serialization::writePod(outputFile, refreshFrequency);
   serialization::writePod(outputFile, hyphenationEnabled);
   serialization::writePod(outputFile, bionicReadingEnabled);
-  serialization::writePod(outputFile, screenMargin);
+  serialization::writePod(outputFile, marginTop);
+  serialization::writePod(outputFile, marginLeft);
+  serialization::writePod(outputFile, marginRight);
+  serialization::writePod(outputFile, marginBottom);
   serialization::writePod(outputFile, pageAutoTurnSeconds);
   serialization::writePod(outputFile, readerImageGrayscale);
   serialization::writePod(outputFile, readerSmartRefreshOnImages);
@@ -211,9 +220,9 @@ bool ReaderSetting::loadFromFile() {
   uint8_t version;
   serialization::readPod(inputFile, version);
 
-  if (version != READER_SETTINGS_FILE_VERSION) {
-    INX_SERIAL.printf("[%lu] [CPR] Deserialization failed: Unsupported version %u (expected %u)\n", millis(), version,
-                      READER_SETTINGS_FILE_VERSION);
+  if (version < READER_SETTINGS_LEGACY_VERSION || version > READER_SETTINGS_FILE_VERSION) {
+    INX_SERIAL.printf("[%lu] [CPR] Deserialization failed: Unsupported version %u (expected %u or %u)\n", millis(),
+                      version, READER_SETTINGS_LEGACY_VERSION, READER_SETTINGS_FILE_VERSION);
     inputFile.close();
     SdMan.remove(READER_SETTINGS_FILE);
     saveToFile();
@@ -222,9 +231,11 @@ bool ReaderSetting::loadFromFile() {
 
   uint8_t fileSettingsCount = 0;
   serialization::readPod(inputFile, fileSettingsCount);
-  if (fileSettingsCount != READER_SETTINGS_COUNT) {
+  const uint8_t expectedSettingsCount = version == READER_SETTINGS_LEGACY_VERSION ? READER_SETTINGS_LEGACY_COUNT
+                                                                                    : READER_SETTINGS_COUNT;
+  if (fileSettingsCount != expectedSettingsCount) {
     INX_SERIAL.printf("[%lu] [CPR] Deserialization failed: Expected %u settings, found %u\n", millis(),
-                      READER_SETTINGS_COUNT, fileSettingsCount);
+                      expectedSettingsCount, fileSettingsCount);
     inputFile.close();
     SdMan.remove(READER_SETTINGS_FILE);
     saveToFile();
@@ -321,8 +332,21 @@ bool ReaderSetting::loadFromFile() {
     if (bionicReadingEnabled > 1) bionicReadingEnabled = 0;
     if (++settingsRead >= fileSettingsCount) break;
 
-    serialization::readPod(inputFile, screenMargin);
+    serialization::readPod(inputFile, marginTop);
     if (++settingsRead >= fileSettingsCount) break;
+
+    if (version >= READER_SETTINGS_FILE_VERSION) {
+      serialization::readPod(inputFile, marginLeft);
+      if (++settingsRead >= fileSettingsCount) break;
+      serialization::readPod(inputFile, marginRight);
+      if (++settingsRead >= fileSettingsCount) break;
+      serialization::readPod(inputFile, marginBottom);
+      if (++settingsRead >= fileSettingsCount) break;
+    } else {
+      marginLeft = marginTop;
+      marginRight = marginTop;
+      marginBottom = marginTop;
+    }
 
     serialization::readPod(inputFile, pageAutoTurnSeconds);
     if (pageAutoTurnSeconds > 180 || pageAutoTurnSeconds % 10 != 0) pageAutoTurnSeconds = 0;
@@ -418,6 +442,11 @@ bool ReaderSetting::loadFromFile() {
   if (doubleTapAction >= SystemSetting::READER_BUTTON_ACTION_COUNT) {
     doubleTapAction = SystemSetting::BTN_ACTION_NONE;
   }
+
+  marginTop = std::min<uint8_t>(marginTop, 80);
+  marginLeft = std::min<uint8_t>(marginLeft, 80);
+  marginRight = std::min<uint8_t>(marginRight, 80);
+  marginBottom = std::min<uint8_t>(marginBottom, 80);
 
   INX_SERIAL.printf("[%lu] [CPR] Reader settings loaded (version %u, %u items)\n", millis(), version, settingsRead);
 

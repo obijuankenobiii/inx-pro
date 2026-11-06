@@ -10,6 +10,7 @@
 #include <HalGPIO.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <string>
@@ -29,7 +30,7 @@ extern HalGPIO gpio;
 
 namespace {
 bool formatMenuClock(char* out, const size_t outSize) {
-  if (!out || outSize == 0 || !SETTINGS.showMenuClock) {
+  if (!out || outSize == 0 || !SETTINGS.showMenuClock || SETTINGS.hideMenuClock) {
     return false;
   }
 
@@ -98,6 +99,20 @@ bool ScreenComponents::drawMenuClock(const GfxRenderer& renderer, const int left
   return true;
 }
 
+bool ScreenComponents::drawMenuClockRightAligned(const GfxRenderer& renderer, const int right, const int top,
+                                                 int* outLeft) {
+  char clockText[10] = {};
+  if (!formatMenuClock(clockText, sizeof(clockText))) {
+    return false;
+  }
+
+  const int width = renderer.text.getWidth(MONTSERRAT_8_FONT_ID, clockText);
+  const int left = right - width;
+  renderer.text.render(MONTSERRAT_8_FONT_ID, left, top, clockText, true);
+  if (outLeft) *outLeft = left;
+  return true;
+}
+
 void ScreenComponents::drawMenuClockAndBattery(const GfxRenderer& renderer, const int batteryLeft, const int top,
                                                const bool showBatteryPercentage) {
   constexpr int kClockBatteryGap = 12;
@@ -110,6 +125,23 @@ void ScreenComponents::drawMenuClockAndBattery(const GfxRenderer& renderer, cons
   }
 
   drawBattery(renderer, batteryLeft, top, showBatteryPercentage);
+}
+
+void ScreenComponents::drawWhiteOverlay(const GfxRenderer& renderer, const int startY) {
+  const int width = renderer.getScreenWidth();
+  const int height = renderer.getScreenHeight();
+  const int firstY = std::max(0, std::min(startY, height));
+  const bool whitePixel = renderer.isDarkMode() && !renderer.isImageRendering();
+
+  // The display is 1-bit, so a paper-colored checkerboard creates a white
+  // scrim over the existing framebuffer while preserving the page underneath.
+  for (int y = firstY; y < height; ++y) {
+    for (int x = 0; x < width; ++x) {
+      if ((x & 1) == (y & 1)) {
+        renderer.drawPixel(x, y, whitePixel);
+      }
+    }
+  }
 }
 
 ScreenComponents::PopupLayout ScreenComponents::drawPopup(const GfxRenderer& renderer, const char* message) {
@@ -153,7 +185,7 @@ namespace {
 
 constexpr int kLoadProgSideMargin = 20;
 constexpr int kLoadProgInnerPad = 12;
-constexpr int kLoadProgBarH = 10;
+constexpr int kLoadProgBarH = 6;
 constexpr int kLoadProgGapLabelToBar = 10;
 
 void paintLoadingProgressBarRow(const GfxRenderer& renderer, const ScreenComponents::LoadingProgressLayout& L,

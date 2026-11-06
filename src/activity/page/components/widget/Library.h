@@ -11,7 +11,7 @@
 class LibraryWidget final : public BaseCarousel {
  public:
   static constexpr int kFolderCount = 3;
-  static constexpr int kVisibleFolderCount = 2;
+  static constexpr int kVisibleFolderCount = kFolderCount;
   using FolderPaths = std::array<std::string, kFolderCount>;
 
   struct Folder {
@@ -22,9 +22,9 @@ class LibraryWidget final : public BaseCarousel {
   explicit LibraryWidget(GfxRenderer& renderer) : BaseCarousel(renderer) {}
 
   void render(int x, int y, int width, int height, const char (*folders)[128], bool background = false,
-              bool showLabel = true) const;
+              bool showLabel = true, bool oneByThree = false) const;
   void preview(int x, int y, int width, int height, const char (*folders)[128] = nullptr, bool background = false,
-               bool showLabel = true) const;
+               bool showLabel = true, bool oneByThree = false) const;
   bool hitTest(int x, int y, int areaX, int areaY, int areaW, int areaH) const;
   void invalidate() const;
   static std::vector<Folder> folders();
@@ -36,8 +36,10 @@ class LibraryWidget final : public BaseCarousel {
   std::string folderImagePath(const std::string& folder) const;
   std::string folderName(const std::string& folder) const;
   void renderStack(const std::vector<std::string>& paths, int x, int y, int width, int height) const;
-  void renderFolder(int x, int y, int width, int height, const char* folder, bool showLabel) const;
-  void renderFolders(int x, int y, int width, int height, const char (*folders)[128], bool showLabel) const;
+  void renderFolder(int x, int y, int width, int height, const char* folder, bool showLabel, bool compactThumbnail,
+                    int innerPadding) const;
+  void renderFolders(int x, int y, int width, int height, const char (*folders)[128], bool showLabel,
+                     bool oneByThree) const;
 
   mutable bool loaded_ = false;
   mutable std::vector<LibraryIndex::Book> books_;

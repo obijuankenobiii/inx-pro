@@ -8,6 +8,7 @@
 
 #include <GfxRenderer.h>
 #include <HardwareSerial.h>
+#include <ImageDisplayCache.h>
 #include <SDCardManager.h>
 
 #include <algorithm>
@@ -23,13 +24,14 @@
 #include "state/ReadingGoal.h"
 #include "state/RecentBooks.h"
 #include "state/Session.h"
+#include "state/Statistics.h"
 #include "state/SystemSetting.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
 #include "util/LibraryIndex.h"
 
 namespace {
-constexpr int kListItemHeight = Page::LIST_ITEM_HEIGHT;
+constexpr int kListItemHeight = UiPage::LIST_ITEM_HEIGHT;
 constexpr int kActionButtonWidth = 180;
 constexpr int kActionButtonHeight = Button::height;
 constexpr int kActionButtonBottomMargin = 64;
@@ -134,7 +136,7 @@ void ClearCacheActivity::render() {
 
   if (state == WARNING) {
     constexpr const char* names[GROUP_COUNT] = {"Display", "Book", "Thumbnails", "Recent", "Library index",
-                                                 "Network", "Daily Reading"};
+                                                 "Network", "Daily Reading", "Statistics"};
     constexpr int rowH = kListItemHeight;
     const int listTop = bodyTop + 1;
     const int left = 20;
@@ -312,9 +314,51 @@ void ClearCacheActivity::clearCache() {
     root.close();
   };
 
+  const auto clearBookStatisticsFiles = [&](const char* rootPath) {
+    std::function<void(const std::string&)> removeStatistics;
+    removeStatistics = [&](const std::string& path) {
+      FsFile dir = SdMan.open(path.c_str());
+      if (!dir || !dir.isDirectory()) {
+        if (dir) dir.close();
+        return;
+      }
+
+      char name[128];
+      dir.rewindDirectory();
+      while (true) {
+        FsFile entry = dir.openNextFile();
+        if (!entry) break;
+        entry.getName(name, sizeof(name));
+        const std::string entryPath = path + "/" + name;
+        if (entry.isDirectory()) {
+          entry.close();
+          removeStatistics(entryPath);
+          continue;
+        }
+
+        const bool isStatistics = strcasecmp(name, "statistics.bin") == 0 ||
+                                  strcasecmp(name, "statistics.bin.tmp") == 0;
+        entry.close();
+        if (!isStatistics) continue;
+
+        INX_SERIAL.printf("[%lu] [CLEAR_CACHE] Removing statistics %s\n", millis(), entryPath.c_str());
+        if (SdMan.remove(entryPath.c_str())) {
+          clearedCount++;
+        } else {
+          failedCount++;
+          INX_SERIAL.printf("[%lu] [CLEAR_CACHE] Failed to remove statistics %s\n", millis(), entryPath.c_str());
+        }
+        yield();
+      }
+      dir.close();
+    };
+    removeStatistics(rootPath);
+  };
+
   if (selectedGroups[GROUP_DISPLAY]) {
     tryRemoveTree("/.system/cache");
     tryRemoveTree("/.display-cache");
+    ImageDisplayCache::invalidate();
   }
   if (selectedGroups[GROUP_BOOK]) {
     clearTreeExceptThumbnails("/.metadata/epub");
@@ -386,6 +430,18 @@ void ClearCacheActivity::clearCache() {
     INX_SERIAL.printf("[%lu] [CLEAR_CACHE] Clearing daily reading data\n", millis());
     ReadingGoal::clear();
     clearedCount++;
+  }
+  if (selectedGroups[GROUP_STATISTICS]) {
+    INX_SERIAL.printf("[%lu] [CLEAR_CACHE] Clearing reading statistics data\n", millis());
+    tryRemoveFile("/.system/statistics.bin");
+    tryRemoveFile("/.system/statistics.bin.tmp");
+    tryRemoveFile("/.system/book_list.bin");
+    tryRemoveFile("/.system/book_list.bin.tmp");
+    tryRemoveFile("/.system/reading_history_books.bin");
+    tryRemoveFile("/.system/reading_history_books.bin.tmp");
+    clearBookStatisticsFiles("/.metadata/epub");
+    clearBookStatisticsFiles("/.metadata/xtc");
+    clearReadingStatisticsState();
   }
 
   INX_SERIAL.printf("[%lu] [CLEAR_CACHE] Done: %d removed, %d failed\n", millis(), clearedCount, failedCount);

@@ -194,7 +194,7 @@ bool readIconBitMsbFirst(const uint8_t* bitmap, const int width, const int heigh
 
 void BitmapRender::render(const Bitmap& bitmap, const int x, const int y, const int maxWidth, const int maxHeight,
                           const float cropX, const float cropY, const RoundedOutside roundedOutside,
-                          const ImageRenderMode mode, const float cropAnchorX) const {
+                          const ImageRenderMode mode, const float cropAnchorX, const float cropAnchorY) const {
   if (bitmap.is1Bit() && cropX == 0.0f && cropY == 0.0f) {
     oneBit(bitmap, x, y, maxWidth, maxHeight, roundedOutside);
     return;
@@ -203,8 +203,9 @@ void BitmapRender::render(const Bitmap& bitmap, const int x, const int y, const 
   float scale = 1.0f;
   bool isScaled = false;
   const float clampedCropAnchorX = std::max(0.0f, std::min(1.0f, cropAnchorX));
+  const float clampedCropAnchorY = std::max(0.0f, std::min(1.0f, cropAnchorY));
   const int cropPixX = static_cast<int>(std::floor(bitmap.getWidth() * cropX * clampedCropAnchorX));
-  const int cropPixY = static_cast<int>(std::floor(bitmap.getHeight() * cropY / 2.0f));
+  const int cropPixY = static_cast<int>(std::floor(bitmap.getHeight() * cropY * clampedCropAnchorY));
 
   const float croppedWidth = (1.0f - cropX) * static_cast<float>(bitmap.getWidth());
   const float croppedHeight = (1.0f - cropY) * static_cast<float>(bitmap.getHeight());

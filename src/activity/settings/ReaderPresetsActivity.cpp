@@ -149,8 +149,8 @@ ReaderPresetsActivity::ReaderPresetsActivity(GfxRenderer& renderer, MappedInputM
 void ReaderPresetsActivity::onEnter() {
   READER_PRESETS.load();
   const int screenH = renderer.getScreenHeight();
-  const int listTop = navigation::Menu::height + 20 + Page::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra;
-  const int contentBottom = screenH - navigation::Menu::bottomHeight - 10;
+  const int listTop = navigation::Menu::height + 20 + UiPage::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra;
+  const int contentBottom = screenH - navigation::Menu::bottomInset() - 10;
   listItemHeight_ = kListItemHeight;
   if (!presetsOnly_) {
     const int rows = rowCount();
@@ -229,7 +229,7 @@ void ReaderPresetsActivity::render() {
   const int screenW = renderer.getScreenWidth();
   renderer.clearScreen(0xFF);
 
-  const int listTop = navigation::Menu::height + 20 + Page::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra;
+  const int listTop = navigation::Menu::height + 20 + UiPage::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra;
   const int presetListTop = listTop - kAddPresetButtonRaise + listItemHeight_ + kPresetListGap;
 
   if (presetsOnly_) {
@@ -444,7 +444,7 @@ void ReaderPresetsActivity::handleActionSelectorInput() {
   }
 
   if (mappedInput.hasTouch() && (mappedInput.wasTouchSwipeUp() || mappedInput.wasTouchSwipeDown())) {
-    const int contentTop = navigation::Menu::height + 20 + Page::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra;
+    const int contentTop = navigation::Menu::height + 20 + UiPage::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra;
     const PopUpBounds box = PopUp::bounds(renderer, optionCount, contentTop);
     const int maxScroll = std::max(0, optionCount - box.rows);
     if (mappedInput.wasTouchSwipeUp()) {
@@ -468,7 +468,7 @@ void ReaderPresetsActivity::handleActionSelectorInput() {
     if (mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy)) {
       const int screenW = renderer.getScreenWidth();
       const int screenH = renderer.getScreenHeight();
-      const int contentTop = navigation::Menu::height + 20 + Page::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra;
+      const int contentTop = navigation::Menu::height + 20 + UiPage::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra;
       const PopUpBounds box = PopUp::bounds(renderer, optionCount, contentTop);
       const int tapX = static_cast<int>(tapNx * screenW);
       const int tapY = static_cast<int>(tapNy * screenH);
@@ -500,7 +500,7 @@ void ReaderPresetsActivity::handleActionSelectorInput() {
   }
 
   if (mappedInput.wasPressed(readerSettingsItemPrevButton())) {
-    const int contentTop = navigation::Menu::height + 20 + Page::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra;
+    const int contentTop = navigation::Menu::height + 20 + UiPage::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra;
     const int visibleRows = PopUp::bounds(renderer, optionCount, contentTop).rows;
     actionSelectorSel_ = (actionSelectorSel_ - 1 + optionCount) % optionCount;
     if (actionSelectorSel_ < actionSelectorScroll_) actionSelectorScroll_ = actionSelectorSel_;
@@ -511,7 +511,7 @@ void ReaderPresetsActivity::handleActionSelectorInput() {
     return;
   }
   if (mappedInput.wasPressed(readerSettingsItemNextButton())) {
-    const int contentTop = navigation::Menu::height + 20 + Page::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra;
+    const int contentTop = navigation::Menu::height + 20 + UiPage::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra;
     const int visibleRows = PopUp::bounds(renderer, optionCount, contentTop).rows;
     actionSelectorSel_ = (actionSelectorSel_ + 1) % optionCount;
     if (actionSelectorSel_ < actionSelectorScroll_) actionSelectorScroll_ = actionSelectorSel_;
@@ -526,7 +526,7 @@ void ReaderPresetsActivity::handleActionSelectorInput() {
 void ReaderPresetsActivity::renderActionSelectorOverlay() {
   if (embedded_) updateRequired_ = true;
   const int optionCount = static_cast<int>(selectorOptions_.size());
-  const int contentTop = navigation::Menu::height + 20 + Page::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra;
+  const int contentTop = navigation::Menu::height + 20 + UiPage::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra;
   if (optionCount <= 0) return;
   const PopUpBounds box = PopUp::bounds(renderer, optionCount, contentTop);
   PopUp::background(renderer, box);
@@ -714,7 +714,7 @@ void ReaderPresetsActivity::handleListInput() {
       const int tapX = static_cast<int>(tapNx * renderer.getScreenWidth());
       const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
 
-      const int listTop = navigation::Menu::height + 20 + Page::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra;
+      const int listTop = navigation::Menu::height + 20 + UiPage::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra;
       const int presetListTop = listTop - kAddPresetButtonRaise + listItemHeight_ + kPresetListGap;
       if (presetsOnly_) {
         const int buttonWidth = Button::width(renderer, kAddPresetButtonLabel, systemFontId());

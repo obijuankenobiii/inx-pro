@@ -27,9 +27,8 @@
 namespace {
 // Heading font IDs are stored per h1-h6 semantic size for outline fonts, and heading/drop-cap layout changed.
 // Image bounds now match the aspect-fitted raster dimensions, which also changes cached page layout.
-// Bionic reader text normalization changes word bytes and prefix offsets;
-// invalidate old section pages so they are rebuilt from normalized EPUB text.
-constexpr uint8_t SECTION_FILE_VERSION = 101;
+// The generic shrink-to-fit box geometry changed; cached pages must be rebuilt.
+constexpr uint8_t SECTION_FILE_VERSION = 106;
 constexpr uint32_t HEADER_SIZE = sizeof(uint8_t) + sizeof(int) + sizeof(float) + sizeof(float) + sizeof(bool) +
                                  sizeof(uint8_t) + sizeof(uint16_t) + sizeof(uint16_t) + sizeof(bool) + sizeof(bool) +
                                  sizeof(bool) + sizeof(uint32_t) + sizeof(uint16_t) + sizeof(uint32_t);

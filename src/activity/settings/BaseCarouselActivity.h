@@ -9,13 +9,13 @@
 class BaseCarouselActivity final : public Activity {
  public:
   using ApplyCallback = std::function<void(HomeTheme::CarouselStyle, bool, bool, HomeTheme::CarouselLabelColor,
-                                           HomeTheme::CarouselShadowStyle, bool, bool, bool, bool)>;
+                                           HomeTheme::CarouselShadowStyle, bool, bool, bool, bool, bool)>;
 
   BaseCarouselActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, HomeTheme::CarouselStyle style,
                        bool background, bool showLabel, HomeTheme::CarouselLabelColor labelColor,
                        HomeTheme::CarouselShadowStyle shadowStyle, ApplyCallback onApply, std::function<void()> onBack,
                        bool recentStyle = false, bool showTitle = true, bool showAuthor = true,
-                       bool showProgress = true, bool showRating = true)
+                       bool showProgress = true, bool showRating = true, bool fullHeight = false)
       : Activity("BaseCarousel", renderer, mappedInput),
         style_(style),
         background_(background),
@@ -27,6 +27,7 @@ class BaseCarouselActivity final : public Activity {
         showAuthor_(showAuthor),
         showProgress_(showProgress),
         showRating_(showRating),
+        fullHeight_(fullHeight),
         onApply_(std::move(onApply)),
         onBack_(std::move(onBack)) {
     if (recentStyle_ && style_ == HomeTheme::CarouselStyle::Centered) {
@@ -53,6 +54,7 @@ class BaseCarouselActivity final : public Activity {
   bool showAuthor_ = true;
   bool showProgress_ = true;
   bool showRating_ = true;
+  bool fullHeight_ = false;
   int contentTop_ = 0;
   int scrollOffset_ = 0;
   ApplyCallback onApply_;

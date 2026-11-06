@@ -6,6 +6,9 @@
  */
 
 #include <HalDisplay.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
+#include <freertos/task.h>
 
 #include <cstdint>
 #include <functional>

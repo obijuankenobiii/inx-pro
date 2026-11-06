@@ -312,7 +312,7 @@ bool removeTree(const std::string& path, int& removed) {
 
 Library::Library(GfxRenderer& renderer, MappedInputManager& mappedInput, std::string path,
                  PluginManager::LibraryMenuLink pluginMenu)
-    : Page("Library", renderer, mappedInput),
+    : UiPage("Library", renderer, mappedInput),
       path(cleanPath(std::move(path))),
       pluginMenu_(std::move(pluginMenu)),
       pluginMode_(!pluginMenu_.id.empty()),
@@ -329,7 +329,7 @@ Library::Library(GfxRenderer& renderer, MappedInputManager& mappedInput, std::st
             [this](const LibraryIndex::Book& group, const int limit) { return groupCovers(group, limit); }) {}
 
 void Library::onEnter() {
-  Page::onEnter();
+  UiPage::onEnter();
   switch (SETTINGS.libraryMode) {
     case SystemSetting::LIBRARY_LIST:
       view = View::List;
@@ -1322,11 +1322,8 @@ bool Library::handleSidebarTap() {
 
   const int tapX = static_cast<int>(tapNx * renderer.getScreenWidth());
   const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
-  const int hamburgerX = navigation::Menu::leftMargin - 10;
-  const int hamburgerY = navigation::Menu::topPadding - 10;
-  const int hamburgerSize = navigation::Menu::iconSize;
-  if (tapX >= hamburgerX && tapX < hamburgerX + hamburgerSize && tapY >= hamburgerY &&
-      tapY < hamburgerY + hamburgerSize) {
+  if (navigation::Menu::hamburgerHit(tapX, tapY)) {
+    storeOverlayFrame();
     sidebarOpen = true;
     sidebarScrollOffset_ = 0;
     updateRequired = true;
@@ -1339,6 +1336,7 @@ bool Library::handleSidebarTap() {
 
 bool Library::handleSidebarInput() {
   if (mappedInput.wasPressed(MappedInputManager::Button::Back) || mappedInput.wasTouchSwipeRight()) {
+    restoreOverlayFrameOnClose();
     sidebarOpen = false;
     updateRequired = true;
     return true;
@@ -1367,6 +1365,7 @@ bool Library::handleSidebarInput() {
   const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
   const int drawerWidth = std::min(320, renderer.getScreenWidth() * 3 / 4);
   if (tapX >= drawerWidth) {
+    restoreOverlayFrameOnClose();
     sidebarOpen = false;
     updateRequired = true;
     return true;
@@ -1374,6 +1373,7 @@ bool Library::handleSidebarInput() {
 
   const int item = Sidebar::hitTest(renderer, tapX, tapY, sidebarItemCount, sidebarScrollOffset_);
   if (item == 0) {
+    discardOverlayFrame();
     stateFilter = StateFilter::None;
     pluginMode_ = false;
     metadataGroupKey_.clear();
@@ -1413,6 +1413,7 @@ bool Library::handleSidebarInput() {
     sidebarOpen = false;
     updateRequired = true;
   } else if (item == 1 || item == 2 || item == 3) {
+    discardOverlayFrame();
     stateFilter = item == 1 ? StateFilter::Favorites
                             : (item == 2 ? StateFilter::Reading : StateFilter::Finished);
     SETTINGS.libraryViewMode = item == 1 ? SystemSetting::LIBRARY_VIEW_FAVORITES
@@ -1430,6 +1431,7 @@ bool Library::handleSidebarInput() {
     load();
     updateRequired = true;
   } else if (item >= 4 && item <= 6) {
+    discardOverlayFrame();
     metadataKind_ = item == 4 ? MetadataIndex::Kind::Authors
                               : (item == 5 ? MetadataIndex::Kind::Tags : MetadataIndex::Kind::Series);
     SETTINGS.libraryViewMode = item == 4 ? SystemSetting::LIBRARY_VIEW_AUTHORS
@@ -1455,6 +1457,7 @@ bool Library::handleSidebarInput() {
     load();
     updateRequired = true;
   } else if (hasPluginMenu && item == 7) {
+    discardOverlayFrame();
     pluginMenu_ = pluginMenu;
     pluginMode_ = true;
     stateFilter = StateFilter::Plugin;
@@ -1538,7 +1541,7 @@ bool Library::menuAction(const navigation::Menu::Action action) {
 }
 
 void Library::menu() {
-  Page::menu();
+  UiPage::menu();
   if (sortOpen) sortDropdown();
   if (filterOpen) filterPopup();
   if (popupBook >= 0 && popupBook < static_cast<int>(items.size())) popup();

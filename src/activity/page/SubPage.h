@@ -9,7 +9,7 @@
 
 #include "Page.h"
 
-class SubPage : public Page {
+class SubPage : public UiPage {
  public:
   SubPage(const char* name, GfxRenderer& renderer, MappedInputManager& mappedInput,
           std::function<void()> close);

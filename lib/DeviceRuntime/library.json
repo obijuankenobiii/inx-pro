@@ -1,0 +1,8 @@
+{
+  "name": "DeviceRuntime",
+  "version": "1.0.0",
+  "description": "Application lifecycle hooks for device-specific hardware behavior.",
+  "dependencies": {
+    "FrontlightManager": "symlink://freeink-sdk/libs/hardware/FrontlightManager"
+  }
+}

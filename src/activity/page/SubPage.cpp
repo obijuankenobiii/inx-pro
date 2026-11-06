@@ -28,6 +28,15 @@ bool SubPage::closeInput(GfxRenderer& renderer, MappedInputManager& mappedInput,
     return true;
   }
 
+  if (mappedInput.hasTouch()) {
+    float startX = 0.0f;
+    float startY = 0.0f;
+    if (mappedInput.wasTouchSwipeRightInScreen(renderer, startX, startY) && startX <= 0.30f) {
+      if (close) close();
+      return true;
+    }
+  }
+
   if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
     if (close) close();
     return true;
@@ -59,7 +68,7 @@ bool SubPage::closeInput(GfxRenderer& renderer, MappedInputManager& mappedInput,
 
 SubPage::SubPage(const char* name, GfxRenderer& renderer, MappedInputManager& mappedInput,
                  std::function<void()> close)
-    : Page(name, renderer, mappedInput), close(std::move(close)) {}
+    : UiPage(name, renderer, mappedInput), close(std::move(close)) {}
 
 void SubPage::menu() {
   title();
@@ -70,6 +79,15 @@ bool SubPage::closeInput(const bool closeOnSwipeUp) {
   if (closeOnSwipeUp && mappedInput.hasTouch() && mappedInput.wasTouchSwipeUp()) {
     dismiss();
     return true;
+  }
+
+  if (mappedInput.hasTouch()) {
+    float startX = 0.0f;
+    float startY = 0.0f;
+    if (mappedInput.wasTouchSwipeRightInScreen(renderer, startX, startY) && startX <= 0.30f) {
+      dismiss();
+      return true;
+    }
   }
 
   if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {

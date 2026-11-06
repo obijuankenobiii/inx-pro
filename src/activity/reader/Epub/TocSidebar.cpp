@@ -13,6 +13,7 @@
 #include "activity/page/components/global/Button.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
+#include "system/ScreenComponents.h"
 
 namespace {
 constexpr int padding = 20;
@@ -118,13 +119,29 @@ void TocSidebar::show(Epub* book, const int spineIndex) {
   visible = true;
 
   renderer.syncWriteBufferFromActive();
+  renderer.freeBwBufferChunks();
+  frameStored = renderer.storeBwBuffer();
   render();
 }
 
 void TocSidebar::hide() {
   if (!visible) return;
   visible = false;
+  lastDismissalRestored = false;
+  if (frameStored) {
+    if (renderer.copyStoredBwToFramebuffer()) {
+      renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+      lastDismissalRestored = true;
+    }
+    releaseStoredFrame();
+  }
   if (onDismiss) onDismiss();
+}
+
+void TocSidebar::releaseStoredFrame() {
+  if (!frameStored) return;
+  renderer.freeBwBufferChunks();
+  frameStored = false;
 }
 
 void TocSidebar::scrollBy(const int rows) {
@@ -152,7 +169,8 @@ void TocSidebar::select(const int tocIndex) {
 void TocSidebar::render() {
   if (!visible) return;
 
-  renderer.syncWriteBufferFromActive();
+  if (!frameStored || !renderer.copyStoredBwToFramebuffer()) renderer.syncWriteBufferFromActive();
+  ScreenComponents::drawWhiteOverlay(renderer);
   const int panelWidth = width();
   const int screenHeight = renderer.getScreenHeight();
   renderer.rectangle.fill(0, 0, panelWidth, screenHeight, false);

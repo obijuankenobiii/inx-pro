@@ -6,7 +6,7 @@ class Calendar final {
  public:
   explicit Calendar(GfxRenderer& renderer) : renderer_(renderer) {}
 
-  void render(int x, int y, int width, int height) const;
+  void render(int x, int y, int width, int height, bool compact = false) const;
   bool needsRefresh() const;
 
  private:

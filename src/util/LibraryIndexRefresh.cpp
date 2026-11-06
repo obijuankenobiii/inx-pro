@@ -44,7 +44,7 @@ void clearFrame() {
 
 }
 
-void LibraryIndexRefresh::start(GfxRenderer& renderer, Activity* currentScreen) {
+void LibraryIndexRefresh::start(GfxRenderer& renderer, Activity* currentScreen, const char* message) {
   if (running || popup) return;
 
   renderer.syncWriteBufferFromActive();
@@ -54,7 +54,7 @@ void LibraryIndexRefresh::start(GfxRenderer& renderer, Activity* currentScreen) 
     memcpy(frame, renderer.getFrameBuffer(), frameSize);
   }
 
-  layout = ScreenComponents::LoadingProgress::show(renderer, "Updating", 0);
+  layout = ScreenComponents::LoadingProgress::show(renderer, message ? message : "Updating", 0);
   displayedProgress = 0;
   running = true;
   popup = true;

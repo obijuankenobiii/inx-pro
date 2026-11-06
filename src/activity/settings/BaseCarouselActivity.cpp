@@ -26,7 +26,7 @@ void BaseCarouselActivity::render() {
   const int rowHeight = kRowHeight;
   const int font = systemFontId();
   const int width = renderer.getScreenWidth();
-  const int itemCount = recentStyle_ ? 9 : 6;
+  const int itemCount = recentStyle_ ? 10 : 7;
   const int visibleRows = std::max(1, (renderer.getScreenHeight() - contentTop) / rowHeight);
   scrollOffset_ = std::max(0, std::min(scrollOffset_, itemCount - visibleRows));
   const int lastItem = std::min(itemCount, scrollOffset_ + visibleRows);
@@ -67,6 +67,10 @@ void BaseCarouselActivity::render() {
         break;
       }
       case 5:
+        renderer.text.render(font, 20, textY, "Full height", true, EpdFontFamily::REGULAR);
+        Toggle::render(renderer, width - 20, rowY, rowHeight, fullHeight_);
+        break;
+      case 6:
         if (recentStyle_) {
           renderer.text.render(font, 20, textY, "Show title", true, EpdFontFamily::REGULAR);
           Toggle::render(renderer, width - 20, rowY, rowHeight, showTitle_);
@@ -75,15 +79,15 @@ void BaseCarouselActivity::render() {
           Toggle::render(renderer, width - 20, rowY, rowHeight, showProgress_);
         }
         break;
-      case 6:
+      case 7:
         renderer.text.render(font, 20, textY, "Show author", true, EpdFontFamily::REGULAR);
         Toggle::render(renderer, width - 20, rowY, rowHeight, showAuthor_);
         break;
-      case 7:
+      case 8:
         renderer.text.render(font, 20, textY, "Show rating", true, EpdFontFamily::REGULAR);
         Toggle::render(renderer, width - 20, rowY, rowHeight, showRating_);
         break;
-      case 8:
+      case 9:
         renderer.text.render(font, 20, textY, "Show progress", true, EpdFontFamily::REGULAR);
         Toggle::render(renderer, width - 20, rowY, rowHeight, showProgress_);
         break;
@@ -144,7 +148,7 @@ void BaseCarouselActivity::renderShadowStylePopup() {
 void BaseCarouselActivity::close() {
   if (onApply_) {
     onApply_(style_, background_, showLabel_, labelColor_, shadowStyle_, showTitle_, showAuthor_, showProgress_,
-             showRating_);
+             showRating_, fullHeight_);
   }
   if (onBack_) onBack_();
 }
@@ -210,7 +214,7 @@ void BaseCarouselActivity::handleTouch(const int x, const int y) {
   const int visibleRows = std::max(1, (renderer.getScreenHeight() - contentTop_) / kRowHeight);
   if (visibleIndex >= visibleRows) return;
   const int item = scrollOffset_ + visibleIndex;
-  if ((!recentStyle_ && item >= 6) || (recentStyle_ && item >= 9)) return;
+  if ((!recentStyle_ && item >= 7) || (recentStyle_ && item >= 10)) return;
 
   switch (item) {
     case 0:
@@ -229,19 +233,22 @@ void BaseCarouselActivity::handleTouch(const int x, const int y) {
       labelColorPopup_ = true;
       break;
     case 5:
+      fullHeight_ = !fullHeight_;
+      break;
+    case 6:
       if (recentStyle_) {
         showTitle_ = !showTitle_;
       } else {
         showProgress_ = !showProgress_;
       }
       break;
-    case 6:
+    case 7:
       showAuthor_ = !showAuthor_;
       break;
-    case 7:
+    case 8:
       showRating_ = !showRating_;
       break;
-    case 8:
+    case 9:
       showProgress_ = !showProgress_;
       break;
   }
@@ -331,9 +338,9 @@ void BaseCarouselActivity::loop() {
     return;
   }
 
-  if (SubPage::closeInput(renderer, mappedInput, [this] { close(); }, false)) return;
+  if (SubPage::closeInput(renderer, mappedInput, [this] { close(); })) return;
 
-  const int itemCount = recentStyle_ ? 9 : 6;
+  const int itemCount = recentStyle_ ? 10 : 7;
   const int visibleRows = std::max(1, (renderer.getScreenHeight() - contentTop_) / kRowHeight);
   const int maxScroll = std::max(0, itemCount - visibleRows);
   if (mappedInput.hasTouch() && mappedInput.wasTouchSwipeUpForRenderer(renderer)) {

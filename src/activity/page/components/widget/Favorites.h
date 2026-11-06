@@ -14,14 +14,17 @@ class Favorites final : public BaseCarousel {
   void render(int index, int x, int y, int width, int height, bool background = false,
               HomeTheme::CarouselStyle style = HomeTheme::CarouselStyle::Left, bool showLabel = true,
               HomeTheme::CarouselLabelColor labelColor = HomeTheme::CarouselLabelColor::Black,
-              HomeTheme::CarouselShadowStyle shadowStyle = HomeTheme::CarouselShadowStyle::None) const;
+              HomeTheme::CarouselShadowStyle shadowStyle = HomeTheme::CarouselShadowStyle::None,
+              bool fullHeight = false) const;
   void preview(int x, int y, int width, int height, bool background = false,
                HomeTheme::CarouselStyle style = HomeTheme::CarouselStyle::Left, bool showLabel = true,
                HomeTheme::CarouselLabelColor labelColor = HomeTheme::CarouselLabelColor::Black,
-               HomeTheme::CarouselShadowStyle shadowStyle = HomeTheme::CarouselShadowStyle::None) const;
+               HomeTheme::CarouselShadowStyle shadowStyle = HomeTheme::CarouselShadowStyle::None,
+               bool fullHeight = false) const;
   int hitTest(int index, int x, int y, int areaX, int areaY, int areaW, int areaH,
               HomeTheme::CarouselStyle style = HomeTheme::CarouselStyle::Left, bool showLabel = true,
-              HomeTheme::CarouselLabelColor labelColor = HomeTheme::CarouselLabelColor::Black) const;
+              HomeTheme::CarouselLabelColor labelColor = HomeTheme::CarouselLabelColor::Black,
+              bool fullHeight = false) const;
   void invalidate() const;
   int count() const;
   const std::string& pathAt(int index) const;
@@ -36,14 +39,16 @@ class Favorites final : public BaseCarousel {
 
   void load() const;
   void sourceDimensions(const BookState::Book& book, int& width, int& height) const;
-  int cardWidth(const BookState::Book& book, int width, int height) const;
-  CardBounds cardBounds(const BookState::Book& book, int cardX, int y, int width, int height) const;
+  int cardWidth(const BookState::Book& book, int width, int height, bool fullHeight) const;
+  CardBounds cardBounds(const BookState::Book& book, int cardX, int y, int width, int height, bool fullHeight) const;
   void renderCover(const BookState::Book& book, const CardBounds& bounds, bool cropToVisibleWidth,
                    HomeTheme::CarouselShadowStyle shadowStyle, float cropAnchorX = 0.0f) const;
   std::string thumbnailPath(const std::string& bookPath) const;
-  void renderCentered(int index, int x, int y, int width, int height, HomeTheme::CarouselShadowStyle shadowStyle) const;
-  void previewCentered(int x, int y, int width, int height, HomeTheme::CarouselShadowStyle shadowStyle) const;
-  int hitTestCentered(int index, int x, int y, int areaX, int areaY, int areaW, int areaH) const;
+  void renderCentered(int index, int x, int y, int width, int height, HomeTheme::CarouselShadowStyle shadowStyle,
+                      bool fullHeight) const;
+  void previewCentered(int x, int y, int width, int height, HomeTheme::CarouselShadowStyle shadowStyle,
+                       bool fullHeight) const;
+  int hitTestCentered(int index, int x, int y, int areaX, int areaY, int areaW, int areaH, bool fullHeight) const;
 
   mutable bool loaded_ = false;
   mutable std::vector<BookState::Book> books_;

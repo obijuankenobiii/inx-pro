@@ -2,7 +2,7 @@
 
 /**
  * @file Settings.h
- * @brief Settings page using the shared Page/navigation shell.
+ * @brief Settings page using the shared UiPage/navigation shell.
  */
 
 #include "Page.h"
@@ -18,9 +18,9 @@ enum class SettingsPanel : uint8_t { System, Reader, Presets };
 /**
  * The settings page owns the settings panels directly.  The old top-level
  * SettingsActivity wrapper is intentionally not used here; CategorySettingsActivity
- * and ReaderPresetsActivity are embedded content panels inside this Page.
+ * and ReaderPresetsActivity are embedded content panels inside this UiPage.
  */
-class Settings final : public Page {
+class Settings final : public UiPage {
  public:
   Settings(GfxRenderer& renderer, MappedInputManager& mappedInput);
 
