@@ -402,7 +402,7 @@ void ThemePickerActivity::renderMode() {
 }
 
 void ThemePickerActivity::renderList() {
-  const int contentTop = SubPage::header(renderer, sleepMode_ ? "Sleep themes" : "Home themes");
+  const int contentTop = SubPage::header(renderer, sleepMode_ ? "Sleep" : "Home");
   const int font = systemFontId();
   const int width = renderer.getScreenWidth();
   const int themeCount = sleepMode_ ? HomeTheme::sleepCount() : HomeTheme::count();
@@ -1575,13 +1575,7 @@ void ThemePickerActivity::handleTouch(const int x, const int y) {
         carouselShadowStyles_[widgetSlot_] = HomeTheme::CarouselShadowStyle::None;
       }
       widgetPopup_ = false;
-      if (supportsLibrarySettings(widgets_[widgetSlot_])) {
-        openLibrarySettings(widgetSlot_);
-      } else if (supportsDescriptionSettings(widgets_[widgetSlot_])) {
-        openDescriptionSettings(widgetSlot_);
-      } else {
-        render();
-      }
+      render();
       return;
     }
     const PreviewBounds preview = widgetPreviewBounds(renderer);
@@ -1969,13 +1963,7 @@ void ThemePickerActivity::loop() {
           carouselShadowStyles_[widgetSlot_] = HomeTheme::CarouselShadowStyle::None;
         }
         widgetPopup_ = false;
-        if (supportsLibrarySettings(widgets_[widgetSlot_])) {
-          openLibrarySettings(widgetSlot_);
-        } else if (supportsDescriptionSettings(widgets_[widgetSlot_])) {
-          openDescriptionSettings(widgetSlot_);
-        } else {
-          render();
-        }
+        render();
       }
       return;
     }
