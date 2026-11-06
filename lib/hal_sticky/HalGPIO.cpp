@@ -43,14 +43,16 @@ void HalGPIO::begin() {
 
   BoardConfig::holdPowerRails();
 
+#if FREEINK_DEVICE_STICKY
+  // Sticky's GT911 needs this unit-specific calibration. Other targets that
+  // reuse this HAL wrapper (Picco) must keep their BoardConfig profile intact.
   BoardConfig::ACTIVE.touch.swapXY = false;
-
   BoardConfig::ACTIVE.touch.flipX = false;
-
   BoardConfig::ACTIVE.touch.rawMinX = 0;
   BoardConfig::ACTIVE.touch.rawMaxX = 479;
   BoardConfig::ACTIVE.touch.rawMinY = 0;
   BoardConfig::ACTIVE.touch.rawMaxY = 799;
+#endif
 
   inputMgr.begin();
   INX_SERIAL.printf("[STICKY] touch controller ready=%d ranges=x:%u..%u y:%u..%u\n", inputMgr.hasTouch() ? 1 : 0,

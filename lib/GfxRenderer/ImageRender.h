@@ -12,7 +12,7 @@
 #include <functional>
 #include <string>
 
-class GfxRenderer;
+#include "GfxRenderer.h"
 struct JpegLevelCapture;
 
 class ImageRender {
@@ -28,6 +28,7 @@ class ImageRender {
     /** Keep fully transparent PNG pixels untouched when drawing over an existing framebuffer. */
     bool preserveTransparency = false;
     float cropAnchorX = 0.5f;
+    float cropAnchorY = 0.5f;
   };
 
   static ImageRender create(GfxRenderer& renderer, const std::string& path);
@@ -48,7 +49,8 @@ class ImageRender {
                         const std::function<void()>& overlay = {}) const;
 
   static void displayGrayscale(GfxRenderer& renderer, bool quality, bool preserveText,
-                               const std::function<void()>& drawPlane, bool fastQuality = false);
+                               const std::function<void()>& drawPlane, bool fastQuality = false,
+                               const GfxRenderer::DisplayRegion* window = nullptr);
 
  private:
   enum class Format { Bitmap, Jpeg, Png, Gif };

@@ -80,6 +80,24 @@ int roundedMetric(const float value) {
 // legacy FreeType converter, which renders at 150 DPI (pt * 150 / 72 px/em).
 constexpr float kReaderFontDpi = 150.0f;
 
+uint8_t quantizeReaderTextCoverage(const uint8_t coverage) {
+#if defined(FREEINK_DEVICE_MURPHY_M4)
+  // Murphy's SSD1677 medium-AA waveform renders the two edge tones lighter
+  // than the other reader panels. Lift the coverage only for this target so
+  // the anti-aliased edges retain their shape without changing X4 Pro or
+  // other devices.
+  constexpr uint8_t kMurphyTextCoverageBoost = 20;
+  const uint16_t boosted = std::min<uint16_t>(255u, static_cast<uint16_t>(coverage) + kMurphyTextCoverageBoost);
+  return static_cast<uint8_t>((boosted * 3u + 127u) / 255u);
+#else
+  // Map coverage to the nearest of the four panel tones. The old fixed
+  // thresholds plus a coverage boost made curved stems change tone too early,
+  // which produced lumpy edges and uneven bowls. Midpoint quantization keeps
+  // the average glyph coverage intact instead of systematically thickening it.
+  return static_cast<uint8_t>((static_cast<uint16_t>(coverage) * 3u + 127u) / 255u);
+#endif
+}
+
 float ttfScaleForPointSize(const stbtt_fontinfo* font, const uint16_t pointSize) {
   const float pixelsPerEm = static_cast<float>(pointSize) * kReaderFontDpi / 72.0f;
   return stbtt_ScaleForMappingEmToPixels(font, pixelsPerEm);
@@ -810,7 +828,7 @@ bool ExternalFont::ensureTtfBitmap(const size_t metaSlot) {
     const size_t count = std::min<size_t>(4, pixelCount - pixel);
     for (size_t i = 0; i < count; ++i) {
       const uint8_t coverage = m_ttfBitmapBuffer[pixel + i];
-      const uint8_t level = coverage >= 192 ? 3 : (coverage >= 128 ? 2 : (coverage >= 64 ? 1 : 0));
+      const uint8_t level = quantizeReaderTextCoverage(coverage);
       packed = static_cast<uint8_t>((packed << 2) | level);
     }
     if (count < 4) packed = static_cast<uint8_t>(packed << ((4 - count) * 2));

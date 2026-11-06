@@ -96,7 +96,7 @@ struct BookSettings {
   uint8_t fontFamily = SystemSetting::MONTSERRAT;         ///< Font family
   /** Preferred language package for this book. Empty means follow the system/default reader language. */
   char languageCode[33] = "";
-  uint8_t fontSize = SystemSetting::SMALL;                 ///< Legacy index for built-in/.bin fonts; actual 8-60pt for TTF/OTF
+  uint8_t fontSize = SystemSetting::SMALL;                 ///< Legacy index for built-in/.bin fonts; actual 6-45pt for TTF/OTF
   uint8_t lineHeight = 100;                                ///< Line height, % of natural (10-200)
   uint8_t textSpace = 100;                                 ///< Word spacing, % of natural (10-200)
   uint8_t paragraphAlignment = SystemSetting::FOLLOW_CSS;  ///< Paragraph alignment
@@ -108,7 +108,10 @@ struct BookSettings {
   uint8_t hyphenationEnabled = 1;     ///< Hyphenation enabled
   uint8_t bionicReadingEnabled = 0;   ///< Bionic Reading enabled
 
-  uint8_t screenMargin = 0;  ///< Screen margin in pixels
+  uint8_t marginTop = 0;     ///< Top screen margin in pixels
+  uint8_t marginLeft = 0;    ///< Left screen margin in pixels
+  uint8_t marginRight = 0;   ///< Right screen margin in pixels
+  uint8_t marginBottom = 0;  ///< Bottom screen margin in pixels
 
   uint8_t orientation = SystemSetting::PORTRAIT;  ///< Screen orientation
 
@@ -175,7 +178,9 @@ struct BookSettings {
   static constexpr size_t kSerializedSizeV4 = 22;
   static constexpr size_t kSerializedSizeV5 = 23;
   static constexpr size_t kSerializedSizeV6V7 = 24;
-  static constexpr size_t kSerializedSize = kSerializedSizeV6V7 + sizeof(languageCode);
+  static constexpr size_t kSerializedSizeV8 = kSerializedSizeV6V7 + sizeof(languageCode);
+  static constexpr size_t kSerializedSizeV9 = kSerializedSizeV6V7 + 3 + sizeof(languageCode);
+  static constexpr size_t kSerializedSize = kSerializedSizeV9;
 
   void markCustomSettings() {
     useCustomSettings = true;
@@ -206,6 +211,10 @@ struct BookSettings {
     textAntiAliasing = textAntiAliasing ? 1 : 0;
     hyphenationEnabled = hyphenationEnabled ? 1 : 0;
     bionicReadingEnabled = bionicReadingEnabled ? 1 : 0;
+    marginTop = std::min<uint8_t>(marginTop, 80);
+    marginLeft = std::min<uint8_t>(marginLeft, 80);
+    marginRight = std::min<uint8_t>(marginRight, 80);
+    marginBottom = std::min<uint8_t>(marginBottom, 80);
     if (orientation >= SystemSetting::ORIENTATION_COUNT) {
       orientation = SystemSetting::PORTRAIT;
     }
@@ -268,7 +277,10 @@ struct BookSettings {
     data[offset++] = extraParagraphSpacing;
     data[offset++] = paragraphAlignment;
     data[offset++] = hyphenationEnabled;
-    data[offset++] = screenMargin;
+    data[offset++] = marginTop;
+    data[offset++] = marginLeft;
+    data[offset++] = marginRight;
+    data[offset++] = marginBottom;
     data[offset++] = refreshFrequency;
     data[offset++] = longPressChapterSkip;
     data[offset++] = textAntiAliasing;
@@ -316,7 +328,17 @@ struct BookSettings {
     extraParagraphSpacing = data[offset++];
     paragraphAlignment = data[offset++];
     hyphenationEnabled = data[offset++];
-    screenMargin = data[offset++];
+    const bool hasIndividualMargins = bytesAvailable >= kSerializedSizeV9;
+    marginTop = data[offset++];
+    if (hasIndividualMargins) {
+      marginLeft = data[offset++];
+      marginRight = data[offset++];
+      marginBottom = data[offset++];
+    } else {
+      marginLeft = marginTop;
+      marginRight = marginTop;
+      marginBottom = marginTop;
+    }
     refreshFrequency = data[offset++];
     longPressChapterSkip = data[offset++];
     if (longPressChapterSkip > SystemSetting::LONG_PRESS_PAGE_SKIP_5) {
@@ -494,7 +516,10 @@ struct BookSettings {
     hyphenationEnabled = global.hyphenationEnabled;
     bionicReadingEnabled = global.bionicReadingEnabled;
     readingGuideLinesEnabled = global.readingGuideLinesEnabled;
-    screenMargin = global.screenMargin;
+    marginTop = global.marginTop;
+    marginLeft = global.marginLeft;
+    marginRight = global.marginRight;
+    marginBottom = global.marginBottom;
 
     switch (global.refreshFrequency) {
       case SystemSetting::REFRESH_1:
@@ -552,7 +577,10 @@ struct BookSettings {
     global.paragraphCssIndentEnabled = paragraphCssIndentEnabled;
     global.hyphenationEnabled = hyphenationEnabled;
     global.bionicReadingEnabled = bionicReadingEnabled;
-    global.screenMargin = screenMargin;
+    global.marginTop = marginTop;
+    global.marginLeft = marginLeft;
+    global.marginRight = marginRight;
+    global.marginBottom = marginBottom;
 
     switch (refreshFrequency) {
       case 1:
@@ -635,7 +663,8 @@ struct BookSettings {
            paragraphCssIndentEnabled == other.paragraphCssIndentEnabled &&
            extraParagraphSpacing == other.extraParagraphSpacing && textAntiAliasing == other.textAntiAliasing &&
            hyphenationEnabled == other.hyphenationEnabled && bionicReadingEnabled == other.bionicReadingEnabled &&
-           screenMargin == other.screenMargin && orientation == other.orientation &&
+           marginTop == other.marginTop && marginLeft == other.marginLeft && marginRight == other.marginRight &&
+           marginBottom == other.marginBottom && orientation == other.orientation &&
            longPressChapterSkip == other.longPressChapterSkip && refreshFrequency == other.refreshFrequency &&
            pageAutoTurnSeconds == other.pageAutoTurnSeconds && statusBarLeft == other.statusBarLeft &&
            statusBarMiddle == other.statusBarMiddle && statusBarRight == other.statusBarRight &&

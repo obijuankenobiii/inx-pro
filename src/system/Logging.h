@@ -6,3 +6,8 @@
 #define LOG_INF(tag, format, ...) \
   INX_SERIAL.printf("[%lu] [%s] " format "\n", static_cast<unsigned long>(millis()), tag, ##__VA_ARGS__)
 #endif
+
+#ifndef LOG_ERR
+#define LOG_ERR(tag, format, ...) \
+  INX_SERIAL.printf("[%lu] [%s][ERR] " format "\n", static_cast<unsigned long>(millis()), tag, ##__VA_ARGS__)
+#endif

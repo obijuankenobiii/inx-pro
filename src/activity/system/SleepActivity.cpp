@@ -12,7 +12,6 @@
 #include <Epub/Section.h>
 #include <GfxRenderer.h>
 #include <HalDisplay.h>
-#include <HalGPIO.h>
 #include <ImageRender.h>
 #include <PngRender.h>
 #include <SDCardManager.h>
@@ -37,7 +36,6 @@
 #include "system/FontManager.h"
 #include "system/Fonts.h"
 #include "system/ScreenComponents.h"
-#include <ClockRender.h>
 #include "util/StringUtils.h"
 
 namespace {
@@ -67,8 +65,6 @@ bool sleepImageQualityEnabled() {
   return !INX_GRAY_OVERLAY && SETTINGS.sleepImageQuality == SystemSetting::SLEEP_IMAGE_HIGH;
 }
 
-bool dateTimeSleepScreenAvailable() { return true; }
-
 ImageRenderMode sleepImageRenderMode() {
   return sleepTwoBitEnabled() ? ImageRenderMode::TwoBit : ImageRenderMode::OneBit;
 }
@@ -81,6 +77,14 @@ ImageRender::Options sleepImageOptions(const bool allowQuality = true) {
   options.quality = allowQuality && sleepImageQualityEnabled();
   options.fastQuality = false;
   return options;
+}
+
+void prepareSleepImageBuffer(GfxRenderer& renderer) {
+  // The display driver uses separate active and write buffers. Seed the write
+  // buffer from what is actually visible before clearing it, otherwise a
+  // sleep image/cache refresh can diff against the previous page's buffer.
+  renderer.syncWriteBufferFromActive();
+  renderer.clearScreen(0xFF);
 }
 
 void runSleepImageTwoBitPasses(GfxRenderer& renderer, const std::string& imagePath,
@@ -361,14 +365,12 @@ std::string resolveLastReadCoverPathForSleep(const std::string& path) {
 void SleepActivity::onEnter() {
   Activity::onEnter();
 
-  const bool renderDateTime =
-      SETTINGS.sleepScreen == SystemSetting::SLEEP_SCREEN_MODE::DATETIME && dateTimeSleepScreenAvailable();
-
-  if (SETTINGS.sleepScreen != SystemSetting::SLEEP_SCREEN_MODE::TRANSPARENT && !renderDateTime &&
-      SETTINGS.sleepScreen != SystemSetting::SLEEP_SCREEN_MODE::WIDGET) {
-    renderer.clearScreen(0Xff);
-    renderer.displayBuffer(HalDisplay::HALF_REFRESH);
-  }
+  const bool renderSleepImage = SETTINGS.sleepScreen == SystemSetting::SLEEP_SCREEN_MODE::CUSTOM ||
+                                SETTINGS.sleepScreen == SystemSetting::SLEEP_SCREEN_MODE::COVER;
+  // if (renderSleepImage) {
+  //   prepareSleepImageBuffer(renderer);
+  //   renderer.displayBuffer(HalDisplay::FULL_REFRESH);
+  // }
 
   switch (SETTINGS.sleepScreen) {
     case SystemSetting::SLEEP_SCREEN_MODE::TRANSPARENT:
@@ -382,13 +384,6 @@ void SleepActivity::onEnter() {
       break;
     case SystemSetting::SLEEP_SCREEN_MODE::COVER:
       renderCoverSleepScreen();
-      break;
-    case SystemSetting::SLEEP_SCREEN_MODE::DATETIME:
-      if (dateTimeSleepScreenAvailable()) {
-        renderDateTimeSleepScreen();
-      } else {
-        renderDefaultSleepScreen();
-      }
       break;
     case SystemSetting::SLEEP_SCREEN_MODE::WIDGET:
       renderWidgetSleepScreen();
@@ -413,7 +408,7 @@ void SleepActivity::renderCustomSleepScreen() const {
     }
 
     if (isSleepImagePathRaster(imagePath)) {
-      renderer.clearScreen();
+      prepareSleepImageBuffer(renderer);
       ImageRender::Options options = sleepImageOptions();
       if (ImageRender::create(renderer, imagePath)
               .render(0, 0, renderer.getScreenWidth(), renderer.getScreenHeight(), options)) {
@@ -506,7 +501,7 @@ void SleepActivity::renderCoverSleepScreen() const {
   const std::string coverPath = resolveLastReadCoverPathForSleep(APP_STATE.lastRead);
 
   if (!coverPath.empty() && isSleepImagePathRaster(coverPath)) {
-    renderer.clearScreen();
+    prepareSleepImageBuffer(renderer);
     ImageRender::Options options = sleepImageOptions();
     if (ImageRender::create(renderer, coverPath)
             .render(0, 0, renderer.getScreenWidth(), renderer.getScreenHeight(), options)) {
@@ -696,32 +691,6 @@ void SleepActivity::renderDefaultSleepScreen() const {
   if (SETTINGS.sleepScreen != SystemSetting::SLEEP_SCREEN_MODE::LIGHT) {
     renderer.invertScreen();
   }
-
-  renderer.displayBuffer(HalDisplay::HALF_REFRESH);
-}
-
-/**
- * @brief Renders a minimal date/time sleep screen using the Sticky RTC.
- */
-void SleepActivity::renderDateTimeSleepScreen() const {
-  bool hasClock = false;
-  ClockRender::DateTimeView view;
-#ifndef SIMULATOR
-  HalGPIO::DateTime dateTime;
-  hasClock = gpio.readDateTime(dateTime);
-  if (hasClock) {
-    view.year = dateTime.year;
-    view.month = dateTime.month;
-    view.day = dateTime.day;
-    view.hour = dateTime.hour;
-    view.minute = dateTime.minute;
-    view.weekday = dateTime.weekday;
-  }
-#endif
-
-  renderer.clearScreen(0xff);
-  ClockRender::render(renderer, SETTINGS.sleepClockStyle, view, hasClock, 0, 0, renderer.getScreenWidth(),
-                             renderer.getScreenHeight());
 
   renderer.displayBuffer(HalDisplay::HALF_REFRESH);
 }

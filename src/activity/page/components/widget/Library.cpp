@@ -65,7 +65,7 @@ bool renderCover(GfxRenderer& renderer, const std::string& path, const int x, co
   renderer.rectangle.fill(x, y, width, height, false, rounded);
   ImageRender::Options options;
   options.cropToFill = cropToFill;
-  options.cropAnchorX = cropToFill ? 0.0f : 0.5f;
+  options.cropAnchorX = 0.5f;
   options.useDisplayCache = true;
   options.asyncDisplayCache = true;
   options.roundedOutside = rounded ? BitmapRender::RoundedOutside::PaperOutside
@@ -134,7 +134,7 @@ void renderStack(GfxRenderer& renderer, const std::vector<std::string>& paths, c
     if (!renderCoverSlice(renderer, paths[1], x, y, layerStep, secondHeight, rounded))
       renderer.rectangle.render(x, y, layerStep, secondHeight, true, rounded);
   }
-  if (!paths.empty() && !renderCover(renderer, paths[0], frontX, frontY, frontWidth, frontHeight, rounded))
+  if (!paths.empty() && !renderCover(renderer, paths[0], frontX, frontY, frontWidth, frontHeight, rounded, true))
     renderer.rectangle.render(frontX, frontY, frontWidth, frontHeight, true, rounded);
 }
 
@@ -220,16 +220,17 @@ void LibraryWidget::renderStack(const std::vector<std::string>& paths, const int
 }
 
 void LibraryWidget::renderFolder(const int x, const int y, const int width, const int height, const char* folder,
-                                 const bool showLabel) const {
+                                 const bool showLabel, const bool compactThumbnail, const int innerPadding) const {
   if (width <= 0 || height <= 0) return;
-  constexpr int padding = 5;
+  const int padding = std::max(0, innerPadding);
   const std::string selectedFolder = folder && folder[0] == '/' ? folder : "/";
   const int labelFont = systemFontId();
   const int labelHeight = showLabel ? renderer_.text.getLineHeight(labelFont) : 0;
   constexpr int folderLabelGap = 10;
   const int labelSpacing = showLabel ? 4 + folderLabelGap : 0;
-  const int imageY = y + padding;
-  const int imageHeight = std::max(8, height - labelHeight - padding * 2 - labelSpacing);
+  const int fullImageHeight = std::max(8, height - labelHeight - padding * 2 - labelSpacing);
+  int imageY = y + padding;
+  int imageHeight = fullImageHeight;
   int labelX = x + padding;
   int labelWidth = std::max(8, width - padding * 2);
   std::vector<std::string> paths = covers(selectedFolder);
@@ -238,18 +239,30 @@ void LibraryWidget::renderFolder(const int x, const int y, const int width, cons
     if (!customImage.empty()) paths.push_back(customImage);
   }
   if (!paths.empty()) {
+    constexpr float thumbnailAspect = 2.0f / 3.0f;
+    const int availableWidth = std::max(12, width - padding * 2);
+    if (compactThumbnail) {
+      const int wrappedHeight = std::max(8, static_cast<int>(std::lround(availableWidth / thumbnailAspect)));
+      if (wrappedHeight < imageHeight) {
+        imageY += (imageHeight - wrappedHeight) / 2;
+        imageHeight = wrappedHeight;
+      }
+    }
     const int bookCount = folderBookCount(selectedFolder);
     if (paths.size() == 1 && bookCount <= 1) {
-      const int coverWidth = std::max(12, std::min(width - padding * 2, imageHeight * 2 / 3));
+      const int coverWidth = std::max(12, std::min(availableWidth,
+                                                    static_cast<int>(std::lround(imageHeight * thumbnailAspect))));
       const int coverX = x + (width - coverWidth) / 2;
       renderCover(renderer_, paths[0], coverX, imageY, coverWidth, imageHeight,
-                  SETTINGS.bitmapRoundedCorners != 0);
+                  SETTINGS.bitmapRoundedCorners != 0, true);
       labelX = coverX;
       labelWidth = coverWidth;
     } else {
       constexpr int layerStep = 7;
-      const int availableWidth = std::max(24, width - padding * 2);
-      const int frontWidth = std::max(12, std::min(availableWidth - layerStep * 3, imageHeight * 2 / 3));
+      const int stackAvailableWidth = std::max(24, width - padding * 2);
+      const int frontWidth = std::max(
+          12, std::min(stackAvailableWidth - layerStep * 3,
+                       static_cast<int>(std::lround(imageHeight * thumbnailAspect))));
       const int stackWidth = frontWidth + layerStep * 3;
       const int stackX = x + std::max(padding, (width - stackWidth) / 2);
       const int frontX = stackX + layerStep * 3;
@@ -271,8 +284,8 @@ void LibraryWidget::renderFolder(const int x, const int y, const int width, cons
 }
 
 void LibraryWidget::renderFolders(const int x, const int y, const int width, const int height,
-                                  const char (*folders)[128], const bool showLabel) const {
-  constexpr int padding = 10;
+                                  const char (*folders)[128], const bool showLabel, const bool oneByThree) const {
+  constexpr int padding = 20;
   const int contentX = x + padding;
   const int contentY = y + padding;
   const int contentWidth = std::max(8, width - padding * 2);
@@ -281,20 +294,21 @@ void LibraryWidget::renderFolders(const int x, const int y, const int width, con
   const int folderWidth = std::max(8, (contentWidth - columnGap) / kVisibleFolderCount);
   for (int index = 0; index < kVisibleFolderCount; ++index) {
     const char* folder = folders && folders[index][0] == '/' ? folders[index] : "/";
-    renderFolder(contentX + index * (folderWidth + columnGap), contentY, folderWidth, contentHeight, folder, showLabel);
+    renderFolder(contentX + index * (folderWidth + columnGap), contentY, folderWidth, contentHeight, folder, showLabel,
+                 !oneByThree, 0);
   }
 }
 
 void LibraryWidget::render(const int x, const int y, const int width, const int height, const char (*folders)[128],
-                           const bool background, const bool showLabel) const {
+                           const bool background, const bool showLabel, const bool oneByThree) const {
   if (width <= 0 || height <= 0) return;
   renderBackground(x, y, width, height, background);
-  renderFolders(x, y, width, height, folders, showLabel);
+  renderFolders(x, y, width, height, folders, showLabel, oneByThree);
 }
 
 void LibraryWidget::preview(const int x, const int y, const int width, const int height, const char (*folders)[128],
-                            const bool background, const bool showLabel) const {
-  render(x, y, width, height, folders, background, showLabel);
+                            const bool background, const bool showLabel, const bool oneByThree) const {
+  render(x, y, width, height, folders, background, showLabel, oneByThree);
 }
 
 bool LibraryWidget::hitTest(const int x, const int y, const int areaX, const int areaY, const int areaW,

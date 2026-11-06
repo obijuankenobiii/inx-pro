@@ -60,6 +60,15 @@ void HalDisplay::drawImage(const uint8_t* imageData, const uint16_t x, const uin
 
 void HalDisplay::displayBuffer(const HalDisplay::RefreshMode mode) { display.displayBuffer(convertRefreshMode(mode)); }
 
+void HalDisplay::displayWindow(const uint16_t x, const uint16_t y, const uint16_t w, const uint16_t h,
+                               const HalDisplay::RefreshMode mode) {
+  (void)x;
+  (void)y;
+  (void)w;
+  (void)h;
+  displayBuffer(mode);
+}
+
 void HalDisplay::displayBufferAsync(const HalDisplay::RefreshMode mode) {
   display.displayBufferAsync(convertRefreshMode(mode));
 }
@@ -98,10 +107,30 @@ void HalDisplay::displayGrayBuffer(const bool quality, const bool trackForRevert
   display.displayGrayBuffer(false, nullptr, false);
 }
 
+void HalDisplay::displayGrayBufferWindow(const uint16_t x, const uint16_t y, const uint16_t w, const uint16_t h,
+                                         const bool quality, const bool fastQuality) {
+  (void)x;
+  (void)y;
+  (void)w;
+  (void)h;
+  (void)fastQuality;
+  displayGrayBuffer(quality, false);
+}
+
+bool HalDisplay::supportsWindowedQuality() const { return false; }
+
 void HalDisplay::displayGrayBufferFastQuality() { display.displayGrayBuffer(false, nullptr, false); }
 
 // Nothing to precondition: there is no controller RAM or LUT state to seed.
 void HalDisplay::prepareQualityGrayscale() {}
+
+void HalDisplay::prepareQualityGrayscaleWindow(const uint16_t x, const uint16_t y, const uint16_t w,
+                                               const uint16_t h) {
+  (void)x;
+  (void)y;
+  (void)w;
+  (void)h;
+}
 
 uint16_t HalDisplay::getDisplayWidth() const { return display.getDisplayWidth(); }
 

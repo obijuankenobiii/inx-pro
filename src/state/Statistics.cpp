@@ -8,6 +8,7 @@
 #include <Arduino.h>
 #include <HalGPIO.h>
 #include <SDCardManager.h>
+#include <Serialization.h>
 
 #include <algorithm>
 #include <cstring>
@@ -28,6 +29,11 @@ constexpr uint8_t READING_HISTORY_BOOKS_VERSION = 1;
 constexpr size_t MAX_READING_HISTORY_BOOK_ENTRIES = 2048;
 constexpr char readingHistoryBooksFile[] = "/.system/reading_history_books.bin";
 constexpr char readingHistoryBooksTempFile[] = "/.system/reading_history_books.bin.tmp";
+constexpr uint32_t BOOK_LIST_METADATA_MAGIC = 0x424C5354;
+constexpr uint8_t BOOK_LIST_METADATA_VERSION = 1;
+constexpr uint32_t MAX_BOOK_LIST_METADATA_ENTRIES = 4096;
+constexpr char bookListMetadataFile[] = "/.system/book_list.bin";
+constexpr char bookListMetadataTempFile[] = "/.system/book_list.bin.tmp";
 
 GlobalReadingStats cachedGlobalStats;
 std::vector<ReadingHistoryEntry> readingHistory;
@@ -219,6 +225,77 @@ void saveReadingHistoryBooks() {
   } else {
     SdMan.remove(readingHistoryBooksTempFile);
   }
+}
+
+std::vector<BookListMetadata> loadBookListMetadata() {
+  std::vector<BookListMetadata> books;
+  FsFile file;
+  FileGuard guard(file);
+  if (!SdMan.openFileForRead("BOOKLIST", bookListMetadataFile, file)) {
+    return books;
+  }
+
+  uint32_t magic = 0;
+  uint8_t version = 0;
+  uint8_t reserved[3] = {};
+  uint32_t entryCount = 0;
+  if (file.read(&magic, sizeof(magic)) != sizeof(magic) ||
+      file.read(&version, sizeof(version)) != sizeof(version) ||
+      file.read(reserved, sizeof(reserved)) != sizeof(reserved) ||
+      file.read(&entryCount, sizeof(entryCount)) != sizeof(entryCount) ||
+      magic != BOOK_LIST_METADATA_MAGIC || version != BOOK_LIST_METADATA_VERSION ||
+      entryCount > MAX_BOOK_LIST_METADATA_ENTRIES) {
+    return books;
+  }
+
+  books.reserve(entryCount);
+  for (uint32_t index = 0; index < entryCount; ++index) {
+    BookListMetadata book;
+    serialization::readString(file, book.thumbnailPath);
+    serialization::readString(file, book.title);
+    serialization::readString(file, book.description);
+    serialization::readPod(file, book.progressPercent);
+    books.push_back(std::move(book));
+  }
+  return books;
+}
+
+bool saveBookListMetadata(const std::vector<BookListMetadata>& books) {
+  SdMan.mkdir(STATS_DIR);
+
+  FsFile file;
+  bool writeOk = false;
+  {
+    FileGuard guard(file);
+    if (SdMan.openFileForWrite("BOOKLIST", bookListMetadataTempFile, file)) {
+      const uint32_t entryCount = std::min<uint32_t>(books.size(), MAX_BOOK_LIST_METADATA_ENTRIES);
+      const uint32_t magic = BOOK_LIST_METADATA_MAGIC;
+      const uint8_t version = BOOK_LIST_METADATA_VERSION;
+      const uint8_t reserved[3] = {};
+      writeOk = file.write(&magic, sizeof(magic)) == sizeof(magic) &&
+                file.write(&version, sizeof(version)) == sizeof(version) &&
+                file.write(reserved, sizeof(reserved)) == sizeof(reserved) &&
+                file.write(&entryCount, sizeof(entryCount)) == sizeof(entryCount);
+      for (uint32_t index = 0; writeOk && index < entryCount; ++index) {
+        const BookListMetadata& book = books[index];
+        serialization::writeString(file, book.thumbnailPath);
+        serialization::writeString(file, book.title);
+        serialization::writeString(file, book.description);
+        serialization::writePod(file, book.progressPercent);
+      }
+    }
+  }
+
+  if (!writeOk) {
+    SdMan.remove(bookListMetadataTempFile);
+    return false;
+  }
+  SdMan.remove(bookListMetadataFile);
+  if (!SdMan.rename(bookListMetadataTempFile, bookListMetadataFile)) {
+    SdMan.remove(bookListMetadataTempFile);
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -584,6 +661,16 @@ void saveReadingHistory() {
     saveGlobalStats(cachedGlobalStats);
   }
   saveReadingHistoryBooks();
+}
+
+void clearReadingStatisticsState() {
+  cachedGlobalStats = GlobalReadingStats();
+  globalStatsLoaded = false;
+  readingHistory.clear();
+  readingHistoryDirty = false;
+  readingHistoryBooks.clear();
+  readingHistoryBooksLoaded = false;
+  readingHistoryBooksDirty = false;
 }
 
 const std::vector<ReadingHistoryEntry>& getReadingHistory() {

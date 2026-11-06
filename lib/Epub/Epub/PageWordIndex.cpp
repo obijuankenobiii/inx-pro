@@ -6,6 +6,7 @@
 
 #include <EpdFontFamily.h>
 #include <GfxRenderer.h>
+#include <RtlText.h>
 
 namespace {
 
@@ -36,18 +37,22 @@ int segmentWidth(const GfxRenderer& renderer, const int fontId, const std::strin
 int wordWidth(const GfxRenderer& renderer, const int fontId, const std::string& text,
               const EpdFontFamily::Style style, const uint8_t bionicPrefix, const bool smallCaps,
               const uint8_t verticalAlign) {
-  if (bionicPrefix == 0 || bionicPrefix >= text.size()) {
+  if (bionicPrefix == 0) {
     return segmentWidth(renderer, fontId, text, style, smallCaps, verticalAlign);
   }
-  return segmentWidth(renderer, fontId, text.substr(0, bionicPrefix), bionicStyle(style), smallCaps, verticalAlign) +
-         segmentWidth(renderer, fontId, text.substr(bionicPrefix), style, smallCaps, verticalAlign);
+  std::string prefix;
+  std::string suffix;
+  RtlText::splitBionicWord(text, true, prefix, suffix);
+  if (prefix.empty()) return segmentWidth(renderer, fontId, suffix, style, smallCaps, verticalAlign);
+  return segmentWidth(renderer, fontId, prefix, bionicStyle(style), smallCaps, verticalAlign) +
+         segmentWidth(renderer, fontId, suffix, style, smallCaps, verticalAlign);
 }
 
 void setWordGeometry(PageWordHit& hit, const GfxRenderer& renderer, const int fontId, const int baseY,
                      const std::string& text, const EpdFontFamily::Style style, const uint8_t bionicPrefix,
                      const bool smallCaps, const uint8_t verticalAlign) {
   const int lineHeight = renderer.text.getLineHeight(fontId);
-  hit.screenY = baseY;
+  hit.screenY = baseY - renderer.text.getFontTopInset(fontId, EpdFontFamily::REGULAR);
   hit.screenH = lineHeight;
   if (verticalAlign == TextBlock::SUPERSCRIPT) {
     hit.screenY -= std::max(1, lineHeight / 3);
@@ -156,9 +161,12 @@ void buildPageWordIndex(const Page& page, GfxRenderer& renderer, const int bodyF
           }
           h.screenX = dc->xPos + marginLeft;
           if (dc->isInlineFirstLine()) {
-            h.screenY = dc->yPos + marginTop + renderer.text.getFontAscenderSize(bodyFontId) -
+            const int bodyTopInset = renderer.text.getFontTopInset(bodyFontId, EpdFontFamily::REGULAR);
+            h.screenY = dc->yPos + marginTop - bodyTopInset + renderer.text.getFontAscenderSize(bodyFontId) -
                         renderer.text.getFontAscenderSize(df);
           } else {
+            // Multiline drop caps are top-aligned to the body line box in
+            // PageDropCap::render(). Keep the hit region at that same top.
             h.screenY = dc->yPos + marginTop + PageDropCap::VERTICAL_ADJUSTMENT;
           }
         h.screenW = std::max(1, renderer.text.getWidth(df, dct.c_str(), dc->getStyle()));

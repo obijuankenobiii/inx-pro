@@ -94,9 +94,13 @@ std::vector<SettingInfo> buildSystemSettings() {
   settings.reserve(40);
 
   settings.push_back(SettingInfo::Separator("Display ", GroupType::DEVICE_DISPLAY));
+  settings.push_back(SettingInfo::Toggle("Hidden Menu", &SystemSetting::hiddenMenu,
+                                         GroupType::DEVICE_DISPLAY));
   settings.push_back(SettingInfo::Enum(
       "Sleep Screen", &SystemSetting::sleepScreen,
-      {"Dark", "Light", "Custom", "Recent Book", "Transparent Cover", "None", "Date Time", "Widget"},
+      {"Dark", "Light", "Custom", "Recent Book", "Transparent Cover", "None", "Widget"},
+      {SystemSetting::DARK, SystemSetting::LIGHT, SystemSetting::CUSTOM, SystemSetting::COVER,
+       SystemSetting::TRANSPARENT, SystemSetting::BLANK, SystemSetting::WIDGET},
       GroupType::DEVICE_DISPLAY));
   settings.push_back(SettingInfo::Action("Choose sleep image", GroupType::DEVICE_DISPLAY));
   settings.push_back(SettingInfo::Enum("Hide Battery %", &SystemSetting::hideBatteryPercentage,
@@ -112,6 +116,7 @@ std::vector<SettingInfo> buildSystemSettings() {
   settings.push_back(SettingInfo::Action("Face", GroupType::CLOCK));
   settings.push_back(
       SettingInfo::Enum("Format", &SystemSetting::sleepClockTimeFormat, {"12 hour", "24 hour"}, GroupType::CLOCK));
+  settings.push_back(SettingInfo::Toggle("Hide", &SystemSetting::hideMenuClock, GroupType::CLOCK));
   settings.push_back(SettingInfo::Action("Sync", GroupType::CLOCK));
 
   settings.push_back(SettingInfo::Separator("Image", GroupType::IMAGE));
@@ -128,9 +133,9 @@ std::vector<SettingInfo> buildSystemSettings() {
 
   settings.push_back(SettingInfo::Separator("Device ", GroupType::DEVICE_ADVANCED));
   settings.push_back(SettingInfo::Enum("Time to Sleep", &SystemSetting::sleepTimeout,
-                                       {"1 min", "5 min", "10 min", "15 min", "30 min"},
+                                       {"1 min", "5 min", "10 min", "15 min", "30 min", "Never"},
                                        GroupType::DEVICE_ADVANCED));
-  settings.push_back(SettingInfo::Enum("Boot Mode", &SystemSetting::bootSetting, {"Recent Book", "Home Page"},
+  settings.push_back(SettingInfo::Enum("Boot Mode", &SystemSetting::bootSetting, {"Recent Book", "Home"},
                                        GroupType::DEVICE_ADVANCED));
   settings.push_back(SettingInfo::Action("Language", GroupType::DEVICE_ADVANCED));
 #if FREEINK_DEVICE_STICKY
@@ -144,6 +149,12 @@ std::vector<SettingInfo> buildSystemSettings() {
                                        {SystemSetting::SHORT_PWRBTN::SLEEP,
                                         SystemSetting::SHORT_PWRBTN::PAGE_REFRESH},
                                        GroupType::DEVICE_ADVANCED));
+  settings.push_back(SettingInfo::Toggle("Turn off statistics", &SystemSetting::disableStatistics,
+                                         GroupType::DEVICE_ADVANCED));
+#if FREEINK_DEVICE_PICCO
+  settings.push_back(SettingInfo::Enum("Toggle", &SystemSetting::piccoToggleMode, {"Light", "Power"},
+                                       GroupType::DEVICE_ADVANCED));
+#endif
 
   settings.push_back(SettingInfo::Separator("Actions", GroupType::DEVICE_ACTIONS));
   settings.push_back(SettingInfo::Action("Delete Cache", GroupType::DEVICE_ACTIONS));
@@ -157,10 +168,10 @@ const char* panelBackLabel(const SettingsPanel panel) {
 
 }
 
-Settings::Settings(GfxRenderer& renderer, MappedInputManager& mappedInput) : Page("Settings", renderer, mappedInput) {}
+Settings::Settings(GfxRenderer& renderer, MappedInputManager& mappedInput) : UiPage("Settings", renderer, mappedInput) {}
 
 void Settings::onEnter() {
-  Page::onEnter();
+  UiPage::onEnter();
   currentPanel = SettingsPanel::System;
   nextPanel = SettingsPanel::System;
   pending = Pending::None;
@@ -170,11 +181,11 @@ void Settings::onEnter() {
 
 void Settings::onExit() {
   closePanel();
-  Page::onExit();
+  UiPage::onExit();
 }
 
 void Settings::loop() {
-  if (!panelDetailOpen() && Page::menuInput()) return;
+  if (!panelDetailOpen() && UiPage::menuInput()) return;
 
   if (!panelDetailOpen() && panelTabsInput()) return;
 
@@ -365,7 +376,7 @@ void Settings::content() {
 void Settings::menu() {
   if (!panelDetailOpen() || (readerPanel && readerPanel->isPopupOpen()) ||
       (presetsPanel && presetsPanel->isPopupOpen())) {
-    Page::menu();
+    UiPage::menu();
   }
 }
 

@@ -109,6 +109,7 @@ bool ImageRender::renderDisplayCacheOnly(int x, int y, int width, int height, co
   ImageDisplayCacheOptions cacheOptions;
   cacheOptions.cropToFill = options.cropToFill;
   cacheOptions.cropAnchor = cacheCropAnchor(options.cropAnchorX);
+  cacheOptions.cropAnchorY = cacheCropAnchor(options.cropAnchorY);
   cacheOptions.mode = options.mode;
   cacheOptions.renderPlane = static_cast<uint8_t>(renderer_.getRenderMode());
   cacheOptions.roundedOutside = options.roundedOutside;
@@ -128,6 +129,7 @@ bool ImageRender::preloadDisplayCache(int x, int y, int width, int height, const
   ImageDisplayCacheOptions cacheOptions;
   cacheOptions.cropToFill = options.cropToFill;
   cacheOptions.cropAnchor = cacheCropAnchor(options.cropAnchorX);
+  cacheOptions.cropAnchorY = cacheCropAnchor(options.cropAnchorY);
   cacheOptions.mode = options.mode;
   cacheOptions.renderPlane = static_cast<uint8_t>(renderer_.getRenderMode());
   cacheOptions.roundedOutside = options.roundedOutside;
@@ -164,6 +166,7 @@ bool ImageRender::render(int x, int y, int width, int height, const Options& opt
   ImageDisplayCacheOptions cacheOptions;
   cacheOptions.cropToFill = effectiveOptions.cropToFill;
   cacheOptions.cropAnchor = cacheCropAnchor(effectiveOptions.cropAnchorX);
+  cacheOptions.cropAnchorY = cacheCropAnchor(effectiveOptions.cropAnchorY);
   cacheOptions.mode = effectiveOptions.mode;
   cacheOptions.renderPlane = static_cast<uint8_t>(renderer_.getRenderMode());
   cacheOptions.roundedOutside = effectiveOptions.roundedOutside;
@@ -188,19 +191,22 @@ bool ImageRender::render(int x, int y, int width, int height, const Options& opt
     } else if (format_ == Format::Jpeg) {
       JpegRender jpeg(renderer_);
       ok = jpeg.fromPath(path_, x, y, width, height, effectiveOptions.cropToFill, effectiveOptions.mode,
-                         effectiveOptions.quality, jpegCapture, effectiveOptions.cropAnchorX);
+                         effectiveOptions.quality, jpegCapture, effectiveOptions.cropAnchorX,
+                         effectiveOptions.cropAnchorY, effectiveOptions.fastQuality);
     } else if (format_ == Format::Gif) {
       FsFile gif;
       if (SdMan.openFileForRead("EHP", path_, gif)) {
         GifRender gif_(renderer_);
         ok = gif_.render(gif, x, y, width, height, effectiveOptions.cropToFill, effectiveOptions.mode,
-                         effectiveOptions.quality, jpegCapture, effectiveOptions.cropAnchorX);
+                         effectiveOptions.quality, jpegCapture, effectiveOptions.cropAnchorX,
+                         effectiveOptions.cropAnchorY);
         gif.close();
       }
     } else if (format_ == Format::Png) {
       PngRender png(renderer_);
       ok = png.fromPath(path_, x, y, width, height, effectiveOptions.cropToFill, effectiveOptions.mode,
-                        effectiveOptions.cropAnchorX, jpegCapture, effectiveOptions.preserveTransparency);
+                        effectiveOptions.cropAnchorX, jpegCapture, effectiveOptions.preserveTransparency,
+                        effectiveOptions.cropAnchorY);
     } else {
       FsFile file;
       if (!SdMan.openFileForRead("EHP", path_, file)) {
@@ -223,7 +229,7 @@ bool ImageRender::render(int x, int y, int width, int height, const Options& opt
           }
         }
         renderer_.bitmap.render(bitmap, x, y, width, height, cropX, cropY, effectiveOptions.roundedOutside,
-                                effectiveOptions.mode, effectiveOptions.cropAnchorX);
+                                effectiveOptions.mode, effectiveOptions.cropAnchorX, effectiveOptions.cropAnchorY);
       }
       file.close();
     }
@@ -253,6 +259,7 @@ bool ImageRender::displayCachedTwoBit(int x, int y, int width, int height, const
   ImageDisplayCacheOptions cacheOptions;
   cacheOptions.cropToFill = options.cropToFill;
   cacheOptions.cropAnchor = cacheCropAnchor(options.cropAnchorX);
+  cacheOptions.cropAnchorY = cacheCropAnchor(options.cropAnchorY);
   cacheOptions.mode = ImageRenderMode::TwoBit;
   cacheOptions.roundedOutside = options.roundedOutside;
   cacheOptions.quality = effectiveQuality;
@@ -270,6 +277,7 @@ bool ImageRender::hasCachedTwoBit(int x, int y, int width, int height, const Opt
   ImageDisplayCacheOptions cacheOptions;
   cacheOptions.cropToFill = options.cropToFill;
   cacheOptions.cropAnchor = cacheCropAnchor(options.cropAnchorX);
+  cacheOptions.cropAnchorY = cacheCropAnchor(options.cropAnchorY);
   cacheOptions.mode = ImageRenderMode::TwoBit;
   cacheOptions.roundedOutside = options.roundedOutside;
   cacheOptions.quality = effectiveQuality;
@@ -285,6 +293,7 @@ bool ImageRender::hasCachedGrayscale(int x, int y, int width, int height, const 
   ImageDisplayCacheOptions cacheOptions;
   cacheOptions.cropToFill = options.cropToFill;
   cacheOptions.cropAnchor = cacheCropAnchor(options.cropAnchorX);
+  cacheOptions.cropAnchorY = cacheCropAnchor(options.cropAnchorY);
   cacheOptions.roundedOutside = options.roundedOutside;
   cacheOptions.quality = effectiveQuality;
   return ImageDisplayCache::hasCombinedTwoBit(renderer_, path_, x, y, width, height, cacheOptions);
@@ -309,6 +318,10 @@ bool ImageRender::displayGrayscale(int x, int y, int width, int height, const Op
   }
 
   const bool effectiveQuality = quality && format_ != Format::Png;
+  // An overlay may draw outside the image rectangle (for example image-viewer
+  // controls), so keep the existing full-frame path whenever one is present.
+  const bool useWindowedQuality = effectiveQuality && !overlay && renderer_.supportsWindowedQuality();
+  const GfxRenderer::DisplayRegion imageRegion{x, y, width, height};
   Options opt = options;
   opt.mode = ImageRenderMode::TwoBit;
   opt.quality = effectiveQuality;
@@ -317,6 +330,7 @@ bool ImageRender::displayGrayscale(int x, int y, int width, int height, const Op
   ImageDisplayCacheOptions combinedCacheOptions;
   combinedCacheOptions.cropToFill = opt.cropToFill;
   combinedCacheOptions.cropAnchor = cacheCropAnchor(opt.cropAnchorX);
+  combinedCacheOptions.cropAnchorY = cacheCropAnchor(opt.cropAnchorY);
   combinedCacheOptions.roundedOutside = opt.roundedOutside;
   combinedCacheOptions.quality = effectiveQuality;
 
@@ -353,14 +367,15 @@ bool ImageRender::displayGrayscale(int x, int y, int width, int height, const Op
       renderer_.renderGrayscalePasses(
           effectiveQuality, /*preserveText=*/false,
           [&] {
-            renderer_.clearScreen(effectiveQuality ? 0xFF : 0x00);
+            if (useWindowedQuality) renderer_.clearRect(imageRegion, 0xFF);
+            else renderer_.clearScreen(effectiveQuality ? 0xFF : 0x00);
             render(x, y, width, height, renderOpt, &capture);
             captureCurrentPlane();
             if (overlay) {
               overlay();
             }
           },
-          opt.fastQuality);
+          opt.fastQuality, useWindowedQuality ? &imageRegion : nullptr);
       rendered = true;
     }
   }
@@ -369,14 +384,15 @@ bool ImageRender::displayGrayscale(int x, int y, int width, int height, const Op
     renderer_.renderGrayscalePasses(
         effectiveQuality, /*preserveText=*/false,
         [&] {
-          renderer_.clearScreen(effectiveQuality ? 0xFF : 0x00);
+          if (useWindowedQuality) renderer_.clearRect(imageRegion, 0xFF);
+          else renderer_.clearScreen(effectiveQuality ? 0xFF : 0x00);
           render(x, y, width, height, renderOpt);
           captureCurrentPlane();
           if (overlay) {
             overlay();
           }
         },
-        opt.fastQuality);
+        opt.fastQuality, useWindowedQuality ? &imageRegion : nullptr);
   }
 
   if (captureForCombinedCache) {
@@ -387,8 +403,9 @@ bool ImageRender::displayGrayscale(int x, int y, int width, int height, const Op
 }
 
 void ImageRender::displayGrayscale(GfxRenderer& renderer, const bool quality, const bool preserveText,
-                                   const std::function<void()>& drawPlane, const bool fastQuality) {
-  renderer.renderGrayscalePasses(quality, preserveText, drawPlane, fastQuality);
+                                   const std::function<void()>& drawPlane, const bool fastQuality,
+                                   const GfxRenderer::DisplayRegion* window) {
+  renderer.renderGrayscalePasses(quality, preserveText, drawPlane, fastQuality, window);
 }
 
 bool ImageRender::render(int x, int y, int width, int height) const { return render(x, y, width, height, Options()); }

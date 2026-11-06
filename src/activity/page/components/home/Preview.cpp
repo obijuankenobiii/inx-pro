@@ -38,8 +38,8 @@ bool preview(GfxRenderer& renderer, const std::string& cachePath, const int spin
   (void)right;
   (void)bottom;
 
-  const int x = left + settings.screenMargin;
-  const int y = std::max(top, top + settings.screenMargin -
+  const int x = left + settings.marginLeft;
+  const int y = std::max(top, top + settings.marginTop -
                                    renderer.text.getGlyphTopInset(font, 'H', EpdFontFamily::REGULAR));
   cached->render(renderer, font, FontManager::getNextFont(font), x, y, false, ImageRenderMode::OneBit);
   return true;

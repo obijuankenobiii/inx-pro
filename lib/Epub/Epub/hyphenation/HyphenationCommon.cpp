@@ -39,11 +39,29 @@ uint32_t toLowerCyrillicImpl(const uint32_t cp) {
   return cp;
 }
 
+uint32_t toLowerGreekImpl(const uint32_t cp) {
+  if ((cp >= 0x0391 && cp <= 0x03A1) || (cp >= 0x03A3 && cp <= 0x03AB)) {
+    return cp + 0x20;
+  }
+  switch (cp) {
+    case 0x0386: return 0x03AC;  // Ά -> ά
+    case 0x0388: return 0x03AD;  // Έ -> έ
+    case 0x0389: return 0x03AE;  // Ή -> ή
+    case 0x038A: return 0x03AF;  // Ί -> ί
+    case 0x038C: return 0x03CC;  // Ό -> ό
+    case 0x038E: return 0x03CD;  // Ύ -> ύ
+    case 0x038F: return 0x03CE;  // Ώ -> ώ
+    default: return cp;
+  }
+}
+
 }
 
 uint32_t toLowerLatin(const uint32_t cp) { return toLowerLatinImpl(cp); }
 
 uint32_t toLowerCyrillic(const uint32_t cp) { return toLowerCyrillicImpl(cp); }
+
+uint32_t toLowerGreek(const uint32_t cp) { return toLowerGreekImpl(cp); }
 
 bool isLatinLetter(const uint32_t cp) {
   if ((cp >= 'A' && cp <= 'Z') || (cp >= 'a' && cp <= 'z')) {
@@ -68,7 +86,11 @@ bool isLatinLetter(const uint32_t cp) {
 
 bool isCyrillicLetter(const uint32_t cp) { return (cp >= 0x0400 && cp <= 0x052F); }
 
-bool isAlphabetic(const uint32_t cp) { return isLatinLetter(cp) || isCyrillicLetter(cp); }
+bool isGreekLetter(const uint32_t cp) {
+  return (cp >= 0x0386 && cp <= 0x03FF && cp != 0x0387) || (cp >= 0x1F00 && cp <= 0x1FFF);
+}
+
+bool isAlphabetic(const uint32_t cp) { return isLatinLetter(cp) || isCyrillicLetter(cp) || isGreekLetter(cp); }
 
 bool isPunctuation(const uint32_t cp) {
   switch (cp) {
@@ -97,6 +119,8 @@ bool isPunctuation(const uint32_t cp) {
     case '/':
     case 0x203A:
     case 0x2026:
+    case 0x037E:  // Greek question mark
+    case 0x0387:  // Greek ano teleia
       return true;
     default:
       return false;

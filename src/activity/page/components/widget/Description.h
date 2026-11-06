@@ -25,13 +25,14 @@ class Description final : public BaseCarousel {
               bool showLabel = false, HomeTheme::CarouselLabelColor labelColor = HomeTheme::CarouselLabelColor::Black,
               HomeTheme::CarouselShadowStyle shadowStyle = HomeTheme::CarouselShadowStyle::None,
               bool showTitle = true, bool showAuthor = true, bool showProgress = true,
-              bool showRating = true) const;
+              bool showRating = true, bool compact = false, bool preview = false) const;
 
  private:
-  void ensureLines(int recentIndex, int width) const;
+  void ensureLines(int recentIndex, int width, int font, bool preview) const;
 
   mutable std::string cachedPath_;
   mutable int cachedWidth_ = -1;
+  mutable int cachedFont_ = -1;
   mutable int cachedRatingStars_ = 0;
   mutable std::vector<DescriptionWidgetLine> lines_;
 };

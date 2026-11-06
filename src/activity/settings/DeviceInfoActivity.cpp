@@ -6,6 +6,7 @@
 #include "DeviceInfoActivity.h"
 
 #include <esp_idf_version.h>
+#include <esp_mac.h>
 #include <esp_system.h>
 
 #include <GfxRenderer.h>
@@ -90,7 +91,16 @@ void DeviceInfoActivity::buildRows() {
   rows.push_back({"PSRAM", formatBytes(ESP.getPsramSize())});
   rows.push_back({"FREE HEAP", formatBytes(ESP.getFreeHeap())});
   rows.push_back({"ESP-IDF", esp_get_idf_version()});
-  rows.push_back({"MAC ADDRESS", std::string(WiFi.macAddress().c_str())});
+
+  // WiFi.macAddress() reads the STA netif, which only exists while Wi-Fi is running, so it is
+  // all zeros here. The base MAC in eFuse is always readable.
+  uint8_t mac[6] = {};
+  char macLine[18] = "Unavailable";
+  if (esp_read_mac(mac, ESP_MAC_WIFI_STA) == ESP_OK) {
+    snprintf(macLine, sizeof(macLine), "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4],
+             mac[5]);
+  }
+  rows.push_back({"MAC ADDRESS", macLine});
 }
 
 void DeviceInfoActivity::onEnter() {

@@ -365,7 +365,7 @@ bool Epub::readItemContentsToStream(const std::string& itemHref, Print& out, con
   EpubImagePrefetch::IoLock ioLock;
   if (itemHref.empty()) return false;
 
-  const std::string path = FsHelpers::normalisePath(itemHref);
+  const std::string path = FsHelpers::normalisePath(FsHelpers::decodeUriPath(itemHref));
 
   EPUB_PERF_LOG("[EBP] Zip Request: %s\n", path.c_str());
 
@@ -422,7 +422,7 @@ std::unique_ptr<Epub::ItemStream> Epub::openItemStream(const std::string& itemHr
   }
 
   EpubImagePrefetch::IoLock ioLock;
-  const std::string path = FsHelpers::normalisePath(itemHref);
+  const std::string path = FsHelpers::normalisePath(FsHelpers::decodeUriPath(itemHref));
   ZipFile& reader = zipForNestedOperation();
   std::unique_ptr<ZipFile::Stream> stream = reader.openStream(path.c_str());
   if (!stream) {
@@ -1248,7 +1248,8 @@ std::string Epub::getSmallThumbBmpPath() const { return cachePath + "/small_thum
  * @return true if the size was successfully retrieved, false otherwise
  */
 bool Epub::getItemSize(const std::string& href, size_t* size) const {
-  return zipForNestedOperation().getInflatedFileSize(FsHelpers::normalisePath(href).c_str(), size);
+  return zipForNestedOperation().getInflatedFileSize(
+      FsHelpers::normalisePath(FsHelpers::decodeUriPath(href)).c_str(), size);
 }
 
 bool Epub::probeImageDimensions(const std::string& itemHref, int* width, int* height) const {

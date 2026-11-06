@@ -33,7 +33,10 @@ class TxtReaderActivity final : public ActivityWithSubactivity {
   bool initialized = false;
 
   int cachedFontId = 0;
-  int cachedScreenMargin = 0;
+  int cachedMarginTop = 0;
+  int cachedMarginLeft = 0;
+  int cachedMarginRight = 0;
+  int cachedMarginBottom = 0;
   uint8_t cachedParagraphAlignment = SystemSetting::LEFT_ALIGN;
 
   static void taskTrampoline(void* param);

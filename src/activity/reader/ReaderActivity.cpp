@@ -19,7 +19,6 @@
 #include "TxtReaderActivity.h"
 #include "Xtc.h"
 #include "XtcReaderActivity.h"
-#include "system/FontManager.h"
 #include "system/ScreenComponents.h"
 #include "util/SdIoMutex.h"
 #include "util/StringUtils.h"
@@ -186,7 +185,9 @@ void ReaderActivity::onGoToEpubReader(std::unique_ptr<Epub> epub) {
   auto callback = onGoBack;
 
   exitActivity();
-  FontManager::unloadAllSDFonts();
+  // Keep the SD/PSRAM reader fonts resident while moving between Reader
+  // sessions. EpubActivity::onEnter() already reuses loaded entries; forcing
+  // an unload here turns every reopen into a full TTF reconstruction.
   enterNewActivity(new EpubActivity(
       renderer, mappedInput, std::move(epub),
       [callback, bookPath] {

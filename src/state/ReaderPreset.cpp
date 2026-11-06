@@ -43,7 +43,8 @@ void ReaderPresetStore::load() {
     return;
   }
 
-  const size_t recordSize = version >= 8   ? BookSettings::kSerializedSize
+  const size_t recordSize = version >= 9   ? BookSettings::kSerializedSize
+                            : version >= 8 ? BookSettings::kSerializedSizeV8
                             : version >= 6 ? BookSettings::kSerializedSizeV6V7
                             : version >= 5 ? BookSettings::kSerializedSizeV5
                             : version >= 4 ? BookSettings::kSerializedSizeV4

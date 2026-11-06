@@ -51,7 +51,6 @@ class ReaderPresetsActivity final : public ActivityWithSubactivity, public navig
   int systemHeaderRow() const { return 0; }
   bool isSystemSettingRow(int row) const;
   void changeSystemSetting(int row, int delta);
-  int addPresetRow() const;  ///< "+ Add new preset" row on the Presets page
   int presetRowsStart() const;
   int presetIndexForRow(int row) const;  ///< store index for a preset row, or -1 for the Add-new row
   bool isButtonMappingRow(int row) const;
@@ -62,8 +61,6 @@ class ReaderPresetsActivity final : public ActivityWithSubactivity, public navig
   void handleOverlayInput();
   void handleListInput();
   void finishSubActivity();
-  void clampSelectionToRowCount();
-
   void openGenericSelector(std::string title, std::vector<std::string> options, int currentIndex,
                            std::function<void(int)> onCommit);
   void handleActionSelectorInput();
@@ -79,7 +76,7 @@ class ReaderPresetsActivity final : public ActivityWithSubactivity, public navig
   const bool embedded_;
   const bool presetsOnly_;
 
-  static constexpr int kListItemHeight = Page::LIST_ITEM_HEIGHT;
+  static constexpr int kListItemHeight = UiPage::LIST_ITEM_HEIGHT;
   int selectedRow_ = -1;
   int scrollOffset_ = 0;
   int itemsPerPage_ = 1;

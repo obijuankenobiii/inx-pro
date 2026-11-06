@@ -1,6 +1,6 @@
 /**
  * @file TimeSyncActivity.cpp
- * @brief WiFi/NTP time synchronization for the Sticky RTC clock.
+ * @brief WiFi/NTP time synchronization for device clock implementations.
  */
 
 #include "TimeSyncActivity.h"
@@ -35,7 +35,7 @@
 #include "system/UiLayout.h"
 
 namespace {
-constexpr int NTP_TIMEOUT_MS = 8000;
+constexpr int NTP_TIMEOUT_MS = 20000;
 constexpr int HTTP_TIMEOUT_MS = 8000;
 constexpr int TIMEZONE_ROW_HEIGHT = UiLayout::LIST_ITEM_HEIGHT;
 constexpr int TIMEZONE_SIDE_MARGIN = 20;
@@ -595,12 +595,20 @@ void TimeSyncActivity::performSync() {
   esp_sntp_init();
 
   const uint32_t start = millis();
-  while (sntp_get_sync_status() != SNTP_SYNC_STATUS_COMPLETED && millis() - start < NTP_TIMEOUT_MS) {
+  time_t utcNow = time(nullptr);
+  while (utcNow < 1704067200 || sntp_get_sync_status() != SNTP_SYNC_STATUS_COMPLETED) {
+    // Some ESP-IDF builds update the system clock before the SNTP status flag
+    // is published. Accept a sane epoch as soon as it is available instead of
+    // reporting a false timeout while waiting for that flag.
+    utcNow = time(nullptr);
+    if (utcNow >= 1704067200) break;
+    if (millis() - start >= NTP_TIMEOUT_MS) break;
     vTaskDelay(pdMS_TO_TICKS(100));
   }
 
-  const time_t utcNow = time(nullptr);
   if (utcNow < 1704067200) {
+    INX_SERIAL.printf("[%lu] [NTP] failed status=%d epoch=%lld\n", millis(), static_cast<int>(sntp_get_sync_status()),
+                      static_cast<long long>(utcNow));
     state = State::FAILED;
     message = "NTP did not return time";
     wifiOff();
@@ -647,14 +655,32 @@ void TimeSyncActivity::performSync() {
   rtcDateTime.minute = dt.minute;
   rtcDateTime.second = dt.second;
   rtcDateTime.weekday = dt.weekday;
-  if (gpio.writeDateTime(rtcDateTime)) {
-    std::snprintf(buffer, sizeof(buffer), LanguageManager::translateText("%02u:%02u saved to RTC"), dt.hour,
-                  dt.minute);
-  } else
-#endif
+  if (!gpio.writeDateTime(rtcDateTime)) {
+    INX_SERIAL.printf("[%lu] [RTC] write failed after NTP sync\n", millis());
+    state = State::FAILED;
+    message = "RTC write failed";
+    wifiOff();
+    render();
+    return;
+  }
+  HalGPIO::DateTime storedDateTime;
+  if (!gpio.readDateTime(storedDateTime) || storedDateTime.year != rtcDateTime.year ||
+      storedDateTime.month != rtcDateTime.month || storedDateTime.day != rtcDateTime.day ||
+      storedDateTime.hour != rtcDateTime.hour || storedDateTime.minute != rtcDateTime.minute) {
+    INX_SERIAL.printf("[%lu] [RTC] read-back verification failed\n", millis());
+    state = State::FAILED;
+    message = "RTC verification failed";
+    wifiOff();
+    render();
+    return;
+  }
+  std::snprintf(buffer, sizeof(buffer), LanguageManager::translateText("%02u:%02u saved to RTC"), dt.hour,
+                dt.minute);
+#else
   {
     std::snprintf(buffer, sizeof(buffer), LanguageManager::translateText("%02u:%02u synced"), dt.hour, dt.minute);
   }
+#endif
   message = buffer;
   state = State::DONE;
   wifiOff();

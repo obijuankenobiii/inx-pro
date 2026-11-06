@@ -141,7 +141,11 @@ void EpubNavigation::regenerateThumbnail() {
 }
 
 void EpubNavigation::onDrawerDismissed() {
-  activity_.updateRequired = true;
+  // TocSidebar restores the cached reader frame before dismissing. Re-rendering
+  // the book here would defeat the drawer's partial-update path.
+  if (!tocSidebar_ || !tocSidebar_->lastDismissalRestoredFrame()) {
+    activity_.updateRequired = true;
+  }
   activity_.startPageTimer();
 }
 

@@ -78,7 +78,7 @@ bool stickyBusyWaitSlice(const int8_t busyPin, const uint8_t busyLevel) {
 
 StickyDisplay::StickyDisplay(const int8_t sclk, const int8_t mosi, const int8_t cs, const int8_t dc,
                              const int8_t rst, const int8_t busy)
-    : display(sclk, mosi, cs, dc, rst, busy) {}
+    : display(sclk, mosi, cs, dc, rst, busy), windowedGray(display, 120) {}
 
 void StickyDisplay::begin() {
   display.setBusyWaitSliceHook(stickyBusyWaitSlice);
@@ -110,6 +110,16 @@ void StickyDisplay::displayBuffer(const RefreshMode mode) {
   qualityReferenceScreenOn = false;
 }
 
+void StickyDisplay::displayWindow(const uint16_t x, const uint16_t y, const uint16_t w, const uint16_t h) {
+  finish();
+  display.displayWindow(x, y, w, h);
+#ifndef EINK_DISPLAY_SINGLE_BUFFER_MODE
+  if (display.frameBuffer != nullptr && display.frameBufferActive != nullptr)
+    memcpy(display.frameBufferActive, display.frameBuffer, display.getBufferSize());
+#endif
+  qualityReferenceScreenOn = false;
+}
+
 void StickyDisplay::displayBufferAsync(const RefreshMode mode) {
   finish();
   display.displayBufferAsync(mode);
@@ -130,7 +140,10 @@ void StickyDisplay::refreshDisplay(const RefreshMode mode, const bool turnOffScr
   qualityReferenceScreenOn = false;
 }
 
-void StickyDisplay::syncWriteBufferFromActive() const { display.syncWriteBufferFromActive(); }
+void StickyDisplay::syncWriteBufferFromActive() const {
+  const_cast<StickyDisplay*>(this)->finish();
+  display.syncWriteBufferFromActive();
+}
 
 void StickyDisplay::deepSleep() {
   finish();
@@ -141,17 +154,24 @@ uint8_t* StickyDisplay::getFrameBuffer() const { return display.getFrameBuffer()
 
 void StickyDisplay::copyGrayscaleBuffers(const uint8_t* lsbBuffer, const uint8_t* msbBuffer) {
   finish();
-  display.copyGrayscaleBuffers(lsbBuffer, msbBuffer);
+  if (windowedGray.isArmed()) {
+    windowedGray.copyLsb(lsbBuffer);
+    windowedGray.copyMsb(msbBuffer);
+  } else {
+    display.copyGrayscaleBuffers(lsbBuffer, msbBuffer);
+  }
 }
 
 void StickyDisplay::copyGrayscaleLsbBuffers(const uint8_t* lsbBuffer) {
   finish();
-  display.copyGrayscaleLsbBuffers(lsbBuffer);
+  if (windowedGray.isArmed()) windowedGray.copyLsb(lsbBuffer);
+  else display.copyGrayscaleLsbBuffers(lsbBuffer);
 }
 
 void StickyDisplay::copyGrayscaleMsbBuffers(const uint8_t* msbBuffer) {
   finish();
-  display.copyGrayscaleMsbBuffers(msbBuffer);
+  if (windowedGray.isArmed()) windowedGray.copyMsb(msbBuffer);
+  else display.copyGrayscaleMsbBuffers(msbBuffer);
 }
 
 void StickyDisplay::cleanupGrayscaleBuffers(const uint8_t* bwBuffer) {
@@ -191,6 +211,26 @@ void StickyDisplay::displayGrayBufferFastQuality() {
   bus.waitBusy("sticky_quality_gray_fast");
   markExternalQualityComplete(display);
   qualityReferenceScreenOn = false;
+}
+
+void StickyDisplay::displayGrayWindow(const uint16_t x, const uint16_t y, const uint16_t w, const uint16_t h,
+                                      const bool quality, const bool fastQuality) {
+  finish();
+  if (!quality) {
+    display.displayGrayBuffer(false, nullptr, false);
+  } else {
+    if (!windowedGray.displayWindow(x, y, w, h, fastQuality ? lut_x4_quality_fast : lut_x4_quality))
+      INX_SERIAL.printf("[STICKY][GRAY-WINDOW] rejected x=%u y=%u w=%u h=%u; full refresh suppressed\n", x, y, w, h);
+  }
+  markExternalQualityComplete(display);
+  qualityReferenceScreenOn = false;
+}
+
+bool StickyDisplay::supportsWindowedGray() const { return windowedGray.supports(); }
+
+void StickyDisplay::prepareGrayscaleWindow(const uint16_t x, const uint16_t y, const uint16_t w,
+                                           const uint16_t h) {
+  windowedGray.prepare(x, y, w, h);
 }
 
 void StickyDisplay::prepareQualityGrayscale() {

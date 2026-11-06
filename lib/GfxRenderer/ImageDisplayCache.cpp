@@ -33,8 +33,10 @@ constexpr size_t kIoBufferSize = 16384;
 constexpr size_t kAsyncCacheQueueLength = 6;
 constexpr size_t kRamCacheSlots = 64;
 constexpr size_t kRamCacheByteBudget = 512 * 1024;
-constexpr size_t kSourceSizeCacheSlots = 16;
-constexpr uint32_t kSourceSizeReuseMs = 5000;
+// Source files are immutable cache inputs for the lifetime of the firmware
+// process. Keep their sizes until the cache is explicitly rebuilt instead of
+// forcing an SD open every few seconds while looking up a display cache hit.
+constexpr size_t kSourceSizeCacheSlots = 64;
 
 struct CacheHeader {
   uint32_t magic;
@@ -67,6 +69,7 @@ struct VisibleRect {
 
 struct AsyncCacheJob {
   std::string cachePath;
+  uint32_t generation = 0;
   uint16_t width = 0;
   uint16_t height = 0;
   uint16_t rowBytes = 0;
@@ -118,6 +121,7 @@ struct CacheState {
 QueueHandle_t gAsyncCacheQueue = nullptr;
 SemaphoreHandle_t gAsyncCacheInitMutex = nullptr;
 CacheState* gCacheState = nullptr;
+uint32_t gCacheGeneration = 0;
 
 CacheState* cacheState() {
   if (gCacheState) {
@@ -165,17 +169,12 @@ uint32_t fnv1aAddUint32(uint32_t hash, const uint32_t value) {
 }
 
 uint32_t sourceSize(const std::string& path) {
-  const uint32_t now = millis();
   SourceSizeCacheEntry* target = nullptr;
   CacheState* state = cacheState();
   if (state) {
     for (SourceSizeCacheEntry& entry : state->sourceSizeCache) {
       if (entry.path == path) {
-        if (now - entry.readAt < kSourceSizeReuseMs) {
-          return entry.size;
-        }
-        target = &entry;
-        break;
+        return entry.size;
       }
       if (!target && entry.path.empty()) {
         target = &entry;
@@ -194,7 +193,7 @@ uint32_t sourceSize(const std::string& path) {
     if (target) {
       target->path = path;
       target->size = 0;
-      target->readAt = now;
+      target->readAt = millis();
     }
     return 0;
   }
@@ -203,7 +202,7 @@ uint32_t sourceSize(const std::string& path) {
   if (target) {
     target->path = path;
     target->size = size;
-    target->readAt = now;
+    target->readAt = millis();
   }
   return size;
 }
@@ -360,6 +359,9 @@ uint32_t cacheHash(const std::string& sourcePath, const int width, const int hei
   if (options.cropAnchor != 128) {
     hash = fnv1aAdd(hash, options.cropAnchor);
   }
+  if (options.cropAnchorY != 128) {
+    hash = fnv1aAdd(hash, options.cropAnchorY);
+  }
   hash = fnv1aAdd(hash, static_cast<uint8_t>(options.mode));
   hash = fnv1aAdd(hash, options.renderPlane);
   hash = fnv1aAdd(hash, static_cast<uint8_t>(options.roundedOutside));
@@ -383,6 +385,9 @@ uint32_t cacheHashCombined(const std::string& sourcePath, const int width, const
   hash = fnv1aAdd(hash, options.cropToFill ? 1 : 0);
   if (options.cropAnchor != 128) {
     hash = fnv1aAdd(hash, options.cropAnchor);
+  }
+  if (options.cropAnchorY != 128) {
+    hash = fnv1aAdd(hash, options.cropAnchorY);
   }
   hash = fnv1aAdd(hash, static_cast<uint8_t>(options.roundedOutside));
   hash = fnv1aAdd(hash, options.quality ? 1 : 0);
@@ -439,7 +444,8 @@ bool ensureCacheDir(const std::string& path) {
 
 bool writePackedCacheFile(const AsyncCacheJob& job) {
   SdIoMutex::Lock ioLock;
-  if (job.cachePath.empty() || !job.rows || job.width == 0 || job.height == 0 || job.rowBytes == 0) {
+  if (job.generation != gCacheGeneration || job.cachePath.empty() || !job.rows || job.width == 0 || job.height == 0 ||
+      job.rowBytes == 0) {
     return false;
   }
   if (!ensureCacheDir(job.cachePath)) {
@@ -696,6 +702,15 @@ bool ImageDisplayCache::displayTwoBitIfAvailable(GfxRenderer& renderer, const st
                                                  const ImageDisplayCacheOptions& options, const bool quality,
                                                  const bool fastQuality) {
   SdIoMutex::Lock ioLock;
+  const unsigned long hqStartedAt = millis();
+  unsigned long hqCacheCheckMs = 0;
+  unsigned long hqPrepareMs = 0;
+  unsigned long hqLsbRenderMs = 0;
+  unsigned long hqLsbCopyMs = 0;
+  unsigned long hqMsbRenderMs = 0;
+  unsigned long hqMsbCopyMs = 0;
+  unsigned long hqDisplayMs = 0;
+  unsigned long hqCleanupMs = 0;
   ImageDisplayCacheOptions lsbOptions = options;
   lsbOptions.mode = ImageRenderMode::TwoBit;
   lsbOptions.renderPlane = static_cast<uint8_t>(quality ? GfxRenderer::GRAY2_LSB : GfxRenderer::GRAYSCALE_LSB);
@@ -708,40 +723,63 @@ bool ImageDisplayCache::displayTwoBitIfAvailable(GfxRenderer& renderer, const st
 
   const std::string lsbPath = pathFor(renderer, sourcePath, x, y, width, height, lsbOptions);
   const std::string msbPath = pathFor(renderer, sourcePath, x, y, width, height, msbOptions);
+  hqCacheCheckMs = millis() - hqStartedAt;
   if (lsbPath.empty() || msbPath.empty() || !cachePathAvailable(lsbPath) || !cachePathAvailable(msbPath)) {
     return false;
   }
 
   const bool useFastQuality = quality && fastQuality;
+  const bool useWindow = quality && renderer.supportsWindowedQuality();
+  const GfxRenderer::DisplayRegion window{x, y, width, height};
 
   if (quality) {
-    renderer.prepareQualityGrayscale();
+    if (useWindow) renderer.prepareQualityGrayscaleWindow(window);
+    else renderer.prepareQualityGrayscale();
   }
+  hqPrepareMs = millis() - hqStartedAt - hqCacheCheckMs;
 
-  renderer.clearScreen(quality ? 0xFF : 0x00);
+  if (useWindow) renderer.clearRect(window, 0xFF);
+  else renderer.clearScreen(quality ? 0xFF : 0x00);
   renderer.setRenderMode(quality ? GfxRenderer::GRAY2_LSB : GfxRenderer::GRAYSCALE_LSB);
   if (!renderIfAvailable(renderer, sourcePath, x, y, width, height, lsbOptions)) {
     renderer.setRenderMode(GfxRenderer::BW);
     return false;
   }
+  hqLsbRenderMs = millis() - hqStartedAt - hqCacheCheckMs - hqPrepareMs;
   renderer.copyGrayscaleLsbBuffers();
+  hqLsbCopyMs = millis() - hqStartedAt - hqCacheCheckMs - hqPrepareMs - hqLsbRenderMs;
 
-  renderer.clearScreen(quality ? 0xFF : 0x00);
+  if (useWindow) renderer.clearRect(window, 0xFF);
+  else renderer.clearScreen(quality ? 0xFF : 0x00);
   renderer.setRenderMode(quality ? GfxRenderer::GRAY2_MSB : GfxRenderer::GRAYSCALE_MSB);
   if (!renderIfAvailable(renderer, sourcePath, x, y, width, height, msbOptions)) {
     renderer.setRenderMode(GfxRenderer::BW);
     return false;
   }
+  hqMsbRenderMs = millis() - hqStartedAt - hqCacheCheckMs - hqPrepareMs - hqLsbRenderMs - hqLsbCopyMs;
   renderer.copyGrayscaleMsbBuffers();
+  hqMsbCopyMs = millis() - hqStartedAt - hqCacheCheckMs - hqPrepareMs - hqLsbRenderMs - hqLsbCopyMs - hqMsbRenderMs;
 
-  if (useFastQuality) {
+  if (useWindow) {
+    renderer.displayGrayBufferWindow(window, true, useFastQuality);
+  } else if (useFastQuality) {
     renderer.displayGrayBufferFastQuality();
   } else {
     renderer.displayGrayBuffer(quality);
   }
+  hqDisplayMs = millis() - hqStartedAt - hqCacheCheckMs - hqPrepareMs - hqLsbRenderMs - hqLsbCopyMs - hqMsbRenderMs - hqMsbCopyMs;
   renderer.setRenderMode(GfxRenderer::BW);
-  renderer.clearScreen(0xFF);
+  if (useWindow) renderer.syncWriteBufferFromActive();
+  else renderer.clearScreen(0xFF);
   renderer.cleanupGrayscaleWithFrameBuffer();
+  hqCleanupMs = millis() - hqStartedAt - hqCacheCheckMs - hqPrepareMs - hqLsbRenderMs - hqLsbCopyMs - hqMsbRenderMs - hqMsbCopyMs - hqDisplayMs;
+
+  if (quality) {
+    INX_SERIAL.printf(
+        "[PICCO][HQ-TIMING] cached two-bit window=%d fast=%d cache=%lu ms prepare=%lu ms lsb_render=%lu ms lsb_copy=%lu ms msb_render=%lu ms msb_copy=%lu ms display=%lu ms cleanup=%lu ms total=%lu ms\n",
+        useWindow ? 1 : 0, useFastQuality ? 1 : 0, hqCacheCheckMs, hqPrepareMs, hqLsbRenderMs, hqLsbCopyMs,
+        hqMsbRenderMs, hqMsbCopyMs, hqDisplayMs, hqCleanupMs, millis() - hqStartedAt);
+  }
 
   return true;
 }
@@ -778,6 +816,15 @@ bool ImageDisplayCache::renderCombinedTwoBit(GfxRenderer& renderer, const std::s
                                              const ImageDisplayCacheOptions& options, const bool quality,
                                              const bool fastQuality) {
   SdIoMutex::Lock ioLock;
+  const unsigned long hqStartedAt = millis();
+  unsigned long hqFileReadMs = 0;
+  unsigned long hqPrepareMs = 0;
+  unsigned long hqLsbDrawMs = 0;
+  unsigned long hqLsbCopyMs = 0;
+  unsigned long hqMsbDrawMs = 0;
+  unsigned long hqMsbCopyMs = 0;
+  unsigned long hqDisplayMs = 0;
+  unsigned long hqCleanupMs = 0;
   VisibleRect visible;
   if (!visibleBounds(renderer, x, y, width, height, visible)) {
     return false;
@@ -844,35 +891,58 @@ bool ImageDisplayCache::renderCombinedTwoBit(GfxRenderer& renderer, const std::s
     return false;
   }
   file.close();
+  hqFileReadMs = millis() - hqStartedAt;
 
+  const bool useWindow = quality && renderer.supportsWindowedQuality();
+  const GfxRenderer::DisplayRegion window{x, y, width, height};
   if (quality) {
-    renderer.prepareQualityGrayscale();
+    if (useWindow) renderer.prepareQualityGrayscaleWindow(window);
+    else renderer.prepareQualityGrayscale();
   }
+  hqPrepareMs = millis() - hqStartedAt - hqFileReadMs;
 
-  renderer.clearScreen(quality ? 0xFF : 0x00);
+  if (useWindow) renderer.clearRect(window, 0xFF);
+  else renderer.clearScreen(quality ? 0xFF : 0x00);
   renderer.setRenderMode(quality ? GfxRenderer::GRAY2_LSB : GfxRenderer::GRAYSCALE_LSB);
   for (int row = 0; row < visible.height; ++row) {
     renderer.drawPackedRow1bpp(visible.x, visible.y + row, visible.width,
                                lsbRows.get() + static_cast<size_t>(row) * header.rowBytes);
   }
+  hqLsbDrawMs = millis() - hqStartedAt - hqFileReadMs - hqPrepareMs;
   renderer.copyGrayscaleLsbBuffers();
+  hqLsbCopyMs = millis() - hqStartedAt - hqFileReadMs - hqPrepareMs - hqLsbDrawMs;
 
-  renderer.clearScreen(quality ? 0xFF : 0x00);
+  if (useWindow) renderer.clearRect(window, 0xFF);
+  else renderer.clearScreen(quality ? 0xFF : 0x00);
   renderer.setRenderMode(quality ? GfxRenderer::GRAY2_MSB : GfxRenderer::GRAYSCALE_MSB);
   for (int row = 0; row < visible.height; ++row) {
     renderer.drawPackedRow1bpp(visible.x, visible.y + row, visible.width,
                                msbRows.get() + static_cast<size_t>(row) * header.rowBytes);
   }
+  hqMsbDrawMs = millis() - hqStartedAt - hqFileReadMs - hqPrepareMs - hqLsbDrawMs - hqLsbCopyMs;
   renderer.copyGrayscaleMsbBuffers();
+  hqMsbCopyMs = millis() - hqStartedAt - hqFileReadMs - hqPrepareMs - hqLsbDrawMs - hqLsbCopyMs - hqMsbDrawMs;
 
-  if (quality && fastQuality) {
+  if (useWindow) {
+    renderer.displayGrayBufferWindow(window, true, quality && fastQuality);
+  } else if (quality && fastQuality) {
     renderer.displayGrayBufferFastQuality();
   } else {
     renderer.displayGrayBuffer(quality);
   }
+  hqDisplayMs = millis() - hqStartedAt - hqFileReadMs - hqPrepareMs - hqLsbDrawMs - hqLsbCopyMs - hqMsbDrawMs - hqMsbCopyMs;
   renderer.setRenderMode(GfxRenderer::BW);
-  renderer.clearScreen(0xFF);
+  if (useWindow) renderer.syncWriteBufferFromActive();
+  else renderer.clearScreen(0xFF);
   renderer.cleanupGrayscaleWithFrameBuffer();
+  hqCleanupMs = millis() - hqStartedAt - hqFileReadMs - hqPrepareMs - hqLsbDrawMs - hqLsbCopyMs - hqMsbDrawMs - hqMsbCopyMs - hqDisplayMs;
+
+  if (quality) {
+    INX_SERIAL.printf(
+        "[PICCO][HQ-TIMING] combined window=%d fast=%d file_read=%lu ms prepare=%lu ms lsb_draw=%lu ms lsb_copy=%lu ms msb_draw=%lu ms msb_copy=%lu ms display=%lu ms cleanup=%lu ms total=%lu ms\n",
+        useWindow ? 1 : 0, fastQuality && quality ? 1 : 0, hqFileReadMs, hqPrepareMs, hqLsbDrawMs, hqLsbCopyMs,
+        hqMsbDrawMs, hqMsbCopyMs, hqDisplayMs, hqCleanupMs, millis() - hqStartedAt);
+  }
 
   return true;
 }
@@ -1131,6 +1201,7 @@ bool ImageDisplayCache::storeAsync(GfxRenderer& renderer, const std::string& sou
     return false;
   }
   job->cachePath = cachePath;
+  job->generation = gCacheGeneration;
   job->width = static_cast<uint16_t>(visible.width);
   job->height = static_cast<uint16_t>(visible.height);
   job->rowBytes = static_cast<uint16_t>(rowBytes);
@@ -1152,6 +1223,26 @@ bool ImageDisplayCache::storeAsync(GfxRenderer& renderer, const std::string& sou
     return false;
   }
   return true;
+}
+
+void ImageDisplayCache::invalidate() {
+  SdIoMutex::Lock ioLock;
+  ++gCacheGeneration;
+
+  if (gAsyncCacheQueue) {
+    AsyncCacheJob* job = nullptr;
+    while (xQueueReceive(gAsyncCacheQueue, &job, 0) == pdTRUE) {
+      if (!job) continue;
+      freeCacheRows(job->rows);
+      delete job;
+    }
+  }
+
+  CacheState* state = cacheState();
+  if (!state || !lockRamCache()) return;
+  for (RamCacheEntry& entry : state->ramCache) clearRamEntry(*state, entry);
+  for (SourceSizeCacheEntry& entry : state->sourceSizeCache) entry = SourceSizeCacheEntry{};
+  unlockRamCache();
 }
 
 void ImageDisplayCache::flushDeferredWrites(const uint8_t maximumJobs) {

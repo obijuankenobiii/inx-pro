@@ -2,7 +2,7 @@
 
 Reimagined. Improved. Simplified.
 
-Inx Pro is a community firmware for Seeed Studio's reTerminal Sticky and Xteink X4 Pro e-paper reader, with experimental support for the LilyGo T5 S3 E-Paper Pro / Pro Lite. It is focused on a cleaner reading experience, better EPUB support, native image rendering, SD-card fonts, and practical device tools.
+Inx Pro is a community firmware for several ESP32-S3 e-paper readers. It supports Seeed Studio's reTerminal Sticky, Xteink X4 Pro, Murphy M4, BOOX/Onyx Picco, and LilyGo T5 S3 E-Paper Pro / Pro Lite. It is focused on a cleaner reading experience, better EPUB support, native image rendering, SD-card fonts, and practical device tools.
 
 *This project was a fork of CrossPoint and is no longer pulling changes from it*
 
@@ -22,6 +22,17 @@ Inx Pro is a community firmware for Seeed Studio's reTerminal Sticky and Xteink 
 - Install reader fonts from the SD card instead of baking large fonts into firmware.
 - Connect to Wi-Fi, Calibre, OPDS catalogs, KOReader sync, and the local web file manager.
 - Tune reader layout, buttons, fonts, status bar, refresh behavior, image quality, and display options.
+
+## Supported Devices
+
+| Device | PlatformIO environment | Status |
+| --- | --- | --- |
+| Seeed reTerminal Sticky | `sticky` | Supported |
+| Xteink X4 Pro | `x4pro` | Supported |
+| Murphy M4 | `murphy_m4` | Supported |
+| BOOX / Onyx Picco | `picco` | Supported |
+| BOOX / Onyx Picco recovery layout | `picco-recovery` | Recovery image |
+| LilyGo T5 S3 E-Paper Pro / Pro Lite | `t5s3` | Experimental |
 
 ## Main Features
 
@@ -344,17 +355,27 @@ write the backup back with `esptool.py --chip esp32s3 --port /dev/ttyACM0 write_
 On the device, **BOOT** is the power button (hold to sleep, press to wake), the second user button is mapped to
 **Down**, and the touch key below the screen is **Back**. Everything else is touch.
 
-### Web Flash
+### Firmware installation links
 
-For a complete browser-based installation, use the target's `firmware.factory.bin` image with the [Inx Pro web flasher](https://github.com/obijuankenobiii/inx-web). The factory image is intended for a blank or recovery flash because it includes the bootloader, partition table, OTA metadata, and application.
+Use the appropriate external installation page for the device. For Picco, use the recovery-compatible firmware image when restoring or replacing the complete installation:
 
-For an OTA update from an already-running Inx Pro installation, use the target's `firmware.bin` release asset instead.
+- [BOOX / Onyx Picco firmware and recovery images](https://www.booxtiles.com/firmware)
+- [Seeed reTerminal Sticky official firmware](https://www.seeedstudio.com/sticky/playground/official-firmware/)
+- [Xteink X4 Pro, Murphy M4, and LilyGo T5 S3 installation](https://crosspointreader.com/install)
 
-Tagged GitHub releases publish two device-specific images:
+For an OTA update from an already-running Inx Pro installation, use the target's `firmware.bin` release asset. For a blank or recovery flash, use the target's merged factory image when one is published; it includes the bootloader, partition table, OTA metadata, and application.
+
+Tagged GitHub releases publish images for the supported targets:
 
 ```text
-sticky.bin  <- Sticky firmware.factory.bin (complete factory/browser-flasher image)
-x4pro.bin   <- X4 Pro firmware.bin (application/OTA image)
+sticky.bin                    <- Sticky application image
+sticky-merged.bin            <- Sticky complete factory image
+x4pro.bin                     <- X4 Pro application image
+murphy_m4.bin                <- Murphy M4 application image
+picco.bin                     <- Picco application image
+picco-recovery.bin           <- Picco recovery-layout application image
+picco-recovery-merged.bin    <- Picco recovery-layout complete image
+t5s3.bin                      <- LilyGo T5 S3 application image
 ```
 
 To return the Sticky to official firmware, use the recovery or boot-partition instructions in Seeed's [reTerminal Sticky documentation](https://www.seeedstudio.com/sticky/docs/).

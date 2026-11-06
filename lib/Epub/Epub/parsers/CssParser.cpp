@@ -1319,10 +1319,18 @@ int CssParser::getBorderEdgePx(const std::string& edgePropName, const std::strin
       if (tok == "thin") return 1;
       if (tok == "medium") return 2;
       if (tok == "thick") return 3;
-      const int px = parseCssLength(tok, viewportWidth, viewportHeight, true);
-      if (px > 0) {
-        return px;
+
+      // Border shorthands may put a color before the width, e.g.
+      // `rgb(227, 227, 227) solid 1px`. Do not let parseCssLength() read
+      // the color's first numeric component as a 227px border.
+      if (tok.find_first_of("(),") != std::string::npos || tok[0] == '#' || tok == "none" || tok == "hidden" ||
+          tok == "solid" || tok == "dotted" || tok == "dashed" || tok == "double" || tok == "groove" ||
+          tok == "ridge" || tok == "inset" || tok == "outset" ||
+          (tok[0] != '.' && tok[0] != '+' && tok[0] != '-' &&
+           (tok[0] < '0' || tok[0] > '9'))) {
+        continue;
       }
+      return std::max(0, parseCssLength(tok, viewportWidth, viewportHeight, true));
     }
     return 0;
   };
@@ -1975,7 +1983,9 @@ bool CssParser::isDisplayInlineBlock(const std::string& elementTagLower, const s
   raw = trimCssWs(raw);
   std::transform(raw.begin(), raw.end(), raw.begin(),
                  [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-  return raw == "inline-block";
+  // Table-like bordered blocks are shrink-to-content boxes too. This is
+  // intentionally based only on the CSS display value, not EPUB class names.
+  return raw == "inline-block" || raw == "inline-table" || raw == "table";
 }
 
 bool CssParser::isDisplayNone(const std::string& elementTagLower, const std::string& className, const std::string& id,

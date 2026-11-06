@@ -229,7 +229,7 @@ class CategorySettingsActivity final : public ActivityWithSubactivity, public na
   void render();
   /** Rebuilds the flattened menu item list based on current group expansion state. */
   void setupMenu();
-  /** Applies a delta change to the currently selected menu item. */
+  /** Applies a delta change to a menu item during touch activation. */
   void applyChange(int delta);
   /** Opens the value/enum picker overlay for the currently selected item. */
   void openSelectorForSelected();
@@ -291,9 +291,9 @@ class CategorySettingsActivity final : public ActivityWithSubactivity, public na
         embedded(embedded) {
     tabSelectorIndex = 2;
     const int contentTop =
-        navigation::Menu::height + 20 + Page::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra;
-    const int contentBottom = renderer.getScreenHeight() - navigation::Menu::bottomHeight - 10;
-    itemsPerPage = (contentBottom - contentTop) / Page::LIST_ITEM_HEIGHT;
+        navigation::Menu::height + 20 + UiPage::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra;
+    const int contentBottom = renderer.getScreenHeight() - navigation::Menu::bottomInset() - 10;
+    itemsPerPage = (contentBottom - contentTop) / UiPage::LIST_ITEM_HEIGHT;
     if (itemsPerPage < 1) itemsPerPage = 1;
 
     groupExpanded_.fill(false);

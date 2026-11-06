@@ -19,7 +19,7 @@
 #include "views/Library/List.h"
 #include "views/Library/Thumb.h"
 
-class Library final : public Page {
+class Library final : public UiPage {
  public:
   Library(GfxRenderer& renderer, MappedInputManager& mappedInput, std::string path = "/",
           PluginManager::LibraryMenuLink pluginMenu = {});

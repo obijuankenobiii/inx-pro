@@ -44,6 +44,13 @@ class GfxRenderer {
 
   enum ImageOrientation { None, Rotate90CW, Rotate180, Rotate270CW };
 
+  struct DisplayRegion {
+    int x;
+    int y;
+    int width;
+    int height;
+  };
+
  private:
   static constexpr size_t BW_BUFFER_CHUNK_SIZE = 8000;
 
@@ -75,6 +82,8 @@ class GfxRenderer {
   friend class TextRender;
 
   void rotateCoordinates(int x, int y, int* rotatedX, int* rotatedY) const;
+  bool mapDisplayRegion(const DisplayRegion& region, uint16_t* x, uint16_t* y, uint16_t* width,
+                        uint16_t* height) const;
 
  public:
   explicit GfxRenderer(HalDisplay& halDisplay);
@@ -109,6 +118,9 @@ class GfxRenderer {
   uint16_t getPanelWidth() const { return panelWidth; }
   uint16_t getPanelHeight() const { return panelHeight; }
   void displayBuffer(const HalDisplay::RefreshMode refreshMode = HalDisplay::FAST_REFRESH) const;
+  /** Refreshes only a logical-coordinate rectangle, expanded to panel byte boundaries. */
+  void displayWindow(const DisplayRegion& region,
+                     HalDisplay::RefreshMode refreshMode = HalDisplay::FAST_REFRESH) const;
   /** Starts a panel refresh and returns while the waveform is running. */
   void displayBufferAsync(const HalDisplay::RefreshMode refreshMode = HalDisplay::FAST_REFRESH) const;
   /** Synchronizes the writable framebuffer from the currently displayed frame for partial redraws. */
@@ -116,7 +128,10 @@ class GfxRenderer {
   /** True while the panel is still running a refresh started by displayBufferAsync(). */
   bool isRefreshBusy() const;
   void invertScreen() const;
+  void invertRect(const DisplayRegion& region) const;
   void clearScreen(uint8_t color = 0xFF) const;
+  /** Clears only a logical-coordinate rectangle, preserving pixels outside it. */
+  void clearRect(const DisplayRegion& region, uint8_t color = 0xFF) const;
   void begin();
 
   /** Solid ink/paper, or Gray (50% checkerboard dither in BW, similar to light fills in list UIs). */
@@ -146,9 +161,12 @@ class GfxRenderer {
   void copyGrayscaleMsbBuffers() const;
   void displayGrayBuffer(bool quality = false, bool trackForRevert = true) const;
   void displayGrayBufferFastQuality() const;
+  void displayGrayBufferWindow(const DisplayRegion& region, bool quality = true, bool fastQuality = false) const;
+  bool supportsWindowedQuality() const;
   void displayGrayscaleBase(HalDisplay::RefreshMode fallback = HalDisplay::HALF_REFRESH,
                             bool turnOffScreen = false) const;
   void prepareQualityGrayscale() const;
+  void prepareQualityGrayscaleWindow(const DisplayRegion& region) const;
   bool storeBwBuffer();
   void restoreBwBuffer();
   bool copyStoredBwToFramebuffer() const;
@@ -157,7 +175,7 @@ class GfxRenderer {
   void cleanupGrayscaleWithFrameBuffer() const;
 
   void renderGrayscalePasses(bool quality, bool preserveText, const std::function<void()>& drawPlane,
-                             bool fastQuality = false);
+                             bool fastQuality = false, const DisplayRegion* window = nullptr);
   /** Drop BW shadow chunks, grayscale HAL state, and force BW mode (call when leaving image-heavy readers). */
   void resetTransientReaderState();
 

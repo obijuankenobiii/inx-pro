@@ -2,6 +2,8 @@
 
 #include <EInkDisplay.h>
 
+#include "../hal_ssd1677_window/Ssd1677WindowedGray.h"
+
 class StickyDisplay {
  public:
   using RefreshMode = EInkDisplay::RefreshMode;
@@ -19,6 +21,7 @@ class StickyDisplay {
   void drawImage(const uint8_t* imageData, uint16_t x, uint16_t y, uint16_t w, uint16_t h, bool fromProgmem) const;
 
   void displayBuffer(RefreshMode mode);
+  void displayWindow(uint16_t x, uint16_t y, uint16_t w, uint16_t h);
   void displayBufferAsync(RefreshMode mode);
   bool refreshBusy();
   void refreshDisplay(RefreshMode mode, bool turnOffScreen);
@@ -32,7 +35,10 @@ class StickyDisplay {
   void cleanupGrayscaleBuffers(const uint8_t* bwBuffer);
   void displayGrayBuffer(bool quality);
   void displayGrayBufferFastQuality();
+  void displayGrayWindow(uint16_t x, uint16_t y, uint16_t w, uint16_t h, bool quality, bool fastQuality);
+  bool supportsWindowedGray() const;
   void prepareQualityGrayscale();
+  void prepareGrayscaleWindow(uint16_t x, uint16_t y, uint16_t w, uint16_t h);
 
   uint16_t getDisplayWidth() const;
   uint16_t getDisplayHeight() const;
@@ -43,5 +49,6 @@ class StickyDisplay {
   void finish();
 
   EInkDisplay display;
+  Ssd1677WindowedGray windowedGray;
   bool qualityReferenceScreenOn = false;
 };

@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <memory>
 #include <new>
 
 #include <esp_heap_caps.h>
@@ -105,6 +106,7 @@ struct RenderContext {
   Atkinson1BitDitherer* oneBitDitherer;
   JpegLevelCapture* capture;
   bool preserveTransparency;
+  uint8_t* packedOneBitRow;
 };
 
 bool readBE32(FsFile& file, uint32_t& value) {
@@ -521,6 +523,9 @@ void drawQuantizedPixel(const RenderContext& ctx, const int x, const int y, cons
 bool drawGrayRow(RenderContext& ctx, const uint8_t* grayRow, const uint8_t* alphaRow, int width, int rowIndex) {
   if (!grayRow || width <= 0 || width != ctx.width) return false;
   const int screenY = ctx.y + rowIndex;
+  const bool packOneBit = ctx.mode == ImageRenderMode::OneBit && !ctx.preserveTransparency &&
+                          ctx.packedOneBitRow != nullptr;
+  if (packOneBit) memset(ctx.packedOneBitRow, 0, (static_cast<size_t>(width) + 7u) / 8u);
   for (int step = 0; step < width; step++) {
     const int ox = step;
     const bool transparent = ctx.preserveTransparency && alphaRow && alphaRow[ox] == 0;
@@ -556,11 +561,15 @@ bool drawGrayRow(RenderContext& ctx, const uint8_t* grayRow, const uint8_t* alph
       const bool opaqueWhite = ctx.preserveTransparency && alphaRow && alphaRow[ox] == 255 && q == 255;
       if (opaqueWhite) {
         ctx.renderer->drawPixel(ctx.x + ox, screenY, false);
+      } else if (packOneBit) {
+        if (q == 0) ctx.packedOneBitRow[ox / 8] |= static_cast<uint8_t>(0x80u >> (ox & 7));
       } else {
         drawQuantizedPixel(ctx, ctx.x + ox, screenY, q);
       }
     }
   }
+
+  if (packOneBit) ctx.renderer->drawPackedRow1bpp(ctx.x, screenY, width, ctx.packedOneBitRow);
 
   if (ctx.mode == ImageRenderMode::TwoBit) {
     ctx.twoBitDitherer->nextRow();
@@ -819,7 +828,7 @@ bool decodeAndRender(FsFile& pngFile, RenderContext& renderCtx, int outW, int ou
 
 bool PngRender::render(FsFile& pngFile, int x, int y, int targetWidth, int targetHeight, bool cropToFill,
                        const ImageRenderMode mode, const float cropAnchorX, JpegLevelCapture* capture,
-                       const bool preserveTransparency) const {
+                       const bool preserveTransparency, const float cropAnchorY) const {
   if (!pngFile || targetWidth <= 0 || targetHeight <= 0) return false;
 
   int sourceW = 0;
@@ -838,9 +847,10 @@ bool PngRender::render(FsFile& pngFile, int x, int y, int targetWidth, int targe
     const float scale = std::max(sx, sy);
     srcW = std::max(1, static_cast<int>(targetWidth / scale));
     srcH = std::max(1, static_cast<int>(targetHeight / scale));
-    const float anchor = std::max(0.0f, std::min(1.0f, cropAnchorX));
-    srcX = std::max(0, static_cast<int>((sourceW - srcW) * anchor));
-    srcY = std::max(0, (sourceH - srcH) / 2);
+    const float anchorX = std::max(0.0f, std::min(1.0f, cropAnchorX));
+    const float anchorY = std::max(0.0f, std::min(1.0f, cropAnchorY));
+    srcX = std::max(0, static_cast<int>((sourceW - srcW) * anchorX));
+    srcY = std::max(0, static_cast<int>((sourceH - srcH) * anchorY));
   } else {
     const float sx = static_cast<float>(targetWidth) / static_cast<float>(sourceW);
     const float sy = static_cast<float>(targetHeight) / static_cast<float>(sourceH);
@@ -853,13 +863,17 @@ bool PngRender::render(FsFile& pngFile, int x, int y, int targetWidth, int targe
   const int drawY = y + (targetHeight - outH) / 2;
   FourToneImageDitherer* twoBitDitherer = nullptr;
   Atkinson1BitDitherer* oneBitDitherer = nullptr;
+  std::unique_ptr<uint8_t[]> packedOneBitRow;
   if (mode == ImageRenderMode::TwoBit) {
     twoBitDitherer = new (std::nothrow) FourToneImageDitherer(outW);
   } else {
     oneBitDitherer = new (std::nothrow) Atkinson1BitDitherer(outW);
+    if (!preserveTransparency) {
+      packedOneBitRow.reset(new (std::nothrow) uint8_t[(static_cast<size_t>(outW) + 7u) / 8u]);
+    }
   }
   if ((mode == ImageRenderMode::TwoBit && (!twoBitDitherer || !twoBitDitherer->ok())) ||
-      (mode == ImageRenderMode::OneBit && !oneBitDitherer)) {
+      (mode == ImageRenderMode::OneBit && (!oneBitDitherer || (!preserveTransparency && !packedOneBitRow)))) {
     delete twoBitDitherer;
     delete oneBitDitherer;
     return false;
@@ -891,7 +905,8 @@ bool PngRender::render(FsFile& pngFile, int x, int y, int targetWidth, int targe
                        .twoBitDitherer = twoBitDitherer,
                        .oneBitDitherer = oneBitDitherer,
                        .capture = capture,
-                       .preserveTransparency = preserveTransparency};
+                       .preserveTransparency = preserveTransparency,
+                       .packedOneBitRow = packedOneBitRow.get()};
   const bool ok = decodeAndRender(pngFile, ctx, outW, outH, srcX, srcY, srcW, srcH);
   delete twoBitDitherer;
   delete oneBitDitherer;
@@ -900,11 +915,11 @@ bool PngRender::render(FsFile& pngFile, int x, int y, int targetWidth, int targe
 
 bool PngRender::fromPath(const std::string& path, int x, int y, int targetWidth, int targetHeight, bool cropToFill,
                          const ImageRenderMode mode, const float cropAnchorX, JpegLevelCapture* capture,
-                         const bool preserveTransparency) const {
+                         const bool preserveTransparency, const float cropAnchorY) const {
   FsFile file;
   if (!SdMan.openFileForRead("PNG", path, file)) return false;
   const bool ok = render(file, x, y, targetWidth, targetHeight, cropToFill, mode, cropAnchorX, capture,
-                         preserveTransparency);
+                         preserveTransparency, cropAnchorY);
   file.close();
   return ok;
 }

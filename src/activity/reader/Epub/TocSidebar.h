@@ -22,6 +22,7 @@ class TocSidebar {
   void show(Epub* epub, int spineIndex);
   void hide();
   bool isVisible() const { return visible; }
+  bool lastDismissalRestoredFrame() const { return lastDismissalRestored; }
   void render();
   void handleInput(MappedInputManager& input);
 
@@ -37,6 +38,7 @@ class TocSidebar {
   void scrollBy(int rows);
   void select(int tocIndex);
   ButtonBounds syncButtonBounds() const;
+  void releaseStoredFrame();
 
   GfxRenderer& renderer;
   Epub* epub = nullptr;
@@ -44,6 +46,8 @@ class TocSidebar {
   Dismiss onDismiss;
   Sync onSync;
   bool visible = false;
+  bool frameStored = false;
+  bool lastDismissalRestored = false;
   int scroll = 0;
   int currentTocIndex = -1;
   std::vector<uint8_t> levels;

@@ -83,7 +83,7 @@ Search::Search(GfxRenderer& renderer, MappedInputManager& mappedInput, std::func
               }) {}
 
 void Search::onEnter() {
-  Page::onEnter();
+  UiPage::onEnter();
   query.clear();
   results.clear();
   scroll = 0;

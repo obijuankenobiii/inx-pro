@@ -30,10 +30,10 @@ void BaseCarousel::renderShadow(GfxRenderer& renderer, const int x, const int y,
 
 BaseCarousel::ContentArea BaseCarousel::contentArea(const int y, const int height, const bool showLabel) const {
   if (!showLabel) return {y, height};
-  constexpr int labelGap = 10;
-  const int labelHeight = renderer_.text.getLineHeight(systemFontId());
-  const int reserved = labelHeight + labelGap;
-  return {y + reserved, std::max(24, height - reserved)};
+  // The widget title is drawn in the top band. Keep thumbnails and content
+  // below that band instead of letting their top edge cover the label.
+  constexpr int labelBandHeight = 24;
+  return {y + labelBandHeight, std::max(1, height - labelBandHeight)};
 }
 
 void BaseCarousel::renderLabel(const int x, const int y, const char* label,

@@ -67,11 +67,12 @@ void titleLines(const GfxRenderer& renderer, const std::string& value, const int
   second = renderer.text.truncate(font, value.substr(best).c_str(), width, EpdFontFamily::BOLD);
 }
 
-void thumbnailDimensions(const int width, const int height, int& thumbnailWidth, int& thumbnailHeight) {
+void thumbnailDimensions(const int width, const int height, int& thumbnailWidth, int& thumbnailHeight,
+                         const bool fullHeight) {
   const bool wideLayout = width >= 360;
   const int maxHeight = wideLayout ? 300 : 230;
   const int maxWidth = wideLayout ? 200 : 154;
-  thumbnailHeight = std::min(maxHeight, std::max(40, height - 32));
+  thumbnailHeight = std::min(maxHeight, std::max(40, height - (fullHeight ? 10 : 32)));
   thumbnailWidth = std::min(maxWidth, std::max(40, thumbnailHeight * 2 / 3));
 }
 
@@ -88,9 +89,9 @@ void renderThumbnail(GfxRenderer& renderer, const RecentBook& book, const int x,
     if (SETTINGS.bitmapRoundedCorners == 0) {
       options.roundedOutside = BitmapRender::RoundedOutside::None;
     } else if (SETTINGS.bitmapRoundedCorners == 2) {
-      options.roundedOutside = BitmapRender::RoundedOutside::SubtleSparseInkAlignedOutside;
+      options.roundedOutside = BitmapRender::RoundedOutside::SubtlePaperOutside;
     } else {
-      options.roundedOutside = BitmapRender::RoundedOutside::SparseInkAlignedOutside;
+      options.roundedOutside = BitmapRender::RoundedOutside::PaperOutside;
     }
     if (ImageRender::create(renderer, path).render(x, y, width, height, options)) return;
   }
@@ -117,7 +118,7 @@ void Recent::render(const int x, const int y, const int width, const int height,
                     const HomeTheme::CarouselStyle style, const bool showLabel,
                     const HomeTheme::CarouselLabelColor labelColor,
                     const HomeTheme::CarouselShadowStyle shadowStyle, const bool showTitle, const bool showAuthor,
-                    const bool showProgress, const bool showRating) const {
+                    const bool showProgress, const bool showRating, const bool fullHeight) const {
   if (width <= 0 || height <= 0) return;
   renderBackground(x, y, width, height, background);
   const ContentArea content = contentArea(y, height, showLabel);
@@ -129,7 +130,7 @@ void Recent::render(const int x, const int y, const int width, const int height,
   constexpr int innerPadding = 20;
   int thumbnailWidth = 0;
   int thumbnailHeight = 0;
-  thumbnailDimensions(width, content.height, thumbnailWidth, thumbnailHeight);
+  thumbnailDimensions(width, content.height, thumbnailWidth, thumbnailHeight, fullHeight);
   const bool rightAligned = style == HomeTheme::CarouselStyle::Right;
   const int thumbnailX = rightAligned ? x + width - innerPadding - thumbnailWidth : x + innerPadding;
   const int thumbnailY = content.y + (content.height - thumbnailHeight) / 2;
@@ -202,7 +203,7 @@ void Recent::preview(const int x, const int y, const int width, const int height
                      const HomeTheme::CarouselStyle style, const bool showLabel,
                      const HomeTheme::CarouselLabelColor labelColor,
                      const HomeTheme::CarouselShadowStyle shadowStyle, const bool showTitle, const bool showAuthor,
-                     const bool showProgress, const bool showRating) const {
+                     const bool showProgress, const bool showRating, const bool fullHeight) const {
   if (width <= 0 || height <= 0) return;
   renderBackground(x, y, width, height, background);
   const ContentArea content = contentArea(y, height, showLabel);
@@ -210,7 +211,7 @@ void Recent::preview(const int x, const int y, const int width, const int height
   constexpr int innerPadding = 20;
   int thumbnailWidth = 0;
   int thumbnailHeight = 0;
-  thumbnailDimensions(width, content.height, thumbnailWidth, thumbnailHeight);
+  thumbnailDimensions(width, content.height, thumbnailWidth, thumbnailHeight, fullHeight);
   const bool rightAligned = style == HomeTheme::CarouselStyle::Right;
   const int thumbnailX = rightAligned ? x + width - innerPadding - thumbnailWidth : x + innerPadding;
   const int thumbnailY = content.y + (content.height - thumbnailHeight) / 2;

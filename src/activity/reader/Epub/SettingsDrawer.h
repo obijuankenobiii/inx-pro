@@ -85,19 +85,22 @@ class SettingsDrawer {
    * @brief Renders the drawer inside a fixed sub-region instead of the default full-screen overlay.
    *
    * Used by the preset editor to place the settings list in the bottom half of the screen. While an
-   * embedded region is set, the drawer does NOT push its own display refresh —
-   * the host composites the rest of the screen and pushes once via the invalidate callback.
+   * embedded region is set, the host callback composites the rest of the screen and the
+   * drawer commits the combined framebuffer once after that callback returns.
    */
   void setEmbeddedRegion(int x, int y, int w, int h);
 
   /** Largest height <= maxHeight that fits a whole number of menu rows (no dead space below the list). */
   int snapEmbeddedHeight(int maxHeight) const;
 
-  /** Host callback invoked (instead of displayBuffer) whenever the embedded drawer needs the screen pushed. */
+  /** Host callback invoked whenever the embedded drawer needs the rest of the screen redrawn. */
   void setEmbeddedInvalidate(std::function<void()> cb) { onEmbeddedInvalidate_ = std::move(cb); }
 
   /** True while an embedded region is active. */
   bool isEmbedded() const { return embedded_; }
+
+  /** True while the independent margin editor owns drawer input. */
+  bool isMarginEditorOpen() const { return marginEditorOpen_; }
 
   /** True when reader touch actions are enabled. */
   bool isTouchEnabled() const { return touchEnabled_; }
@@ -138,7 +141,7 @@ class SettingsDrawer {
     Alignment,              ///< Paragraph alignment
     ExtraParagraphSpacing,  ///< Additional spacing between paragraphs
     ParagraphCssIndent,     ///< CSS `text-indent` on/off (labeled "Indent" in UI)
-    ScreenMargin,           ///< Screen margin size
+    Margins,                ///< Independent top/left/right/bottom margins
     ReadingOrientation,     ///< Screen orientation
 
     Hyphenation,        ///< Hyphenation toggle
@@ -206,6 +209,10 @@ class SettingsDrawer {
   bool selectorFrameRestored_ = false;
   GroupType selectorGroup_ = GroupType::FONT;
 
+  bool marginEditorOpen_ = false;
+  int marginEditorSelected_ = 0;
+  uint32_t suppressBackReleaseUntil_ = 0;
+
   std::array<bool, kGroupCount> groupExpanded_{};  ///< Expansion state for each group, no heap nodes.
   GroupType selectedGroup_ = GroupType::FONT;      ///< Active tab while editing a reader preset.
   std::vector<MenuEntry> menuItems;                ///< Current menu items
@@ -239,6 +246,12 @@ class SettingsDrawer {
   void drawTabs();
 
   void drawMenuItemRow(int visibleRow, int menuIndex);
+  void drawMarginPreview(int x, int y, int width, int height);
+  void drawMarginEditor();
+  bool handleMarginEditorInput(MappedInputManager& input);
+  void openMarginEditor();
+  void closeMarginEditor();
+  void applyMarginChange(int delta);
 
   bool isDropdownItem(MenuItem item) const;
   bool selectorOpensUpward() const;

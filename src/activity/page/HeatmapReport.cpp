@@ -97,7 +97,7 @@ void HeatmapReport::renderBookTotals(const int y, const uint32_t dateKey) const 
 
 void HeatmapReport::content() {
   heatmap_.render(0, kHeatmapTop, renderer.getScreenWidth(), kHeatmapHeight, view_, false,
-                  HomeTheme::CarouselLabelColor::Black);
+                  HomeTheme::CarouselLabelColor::Black, true);
 
   const int headingY = kHeatmapTop + kHeatmapHeight + 8;
   renderer.text.render(kBodyFont, kReportPadding, headingY, "Books read", true, EpdFontFamily::BOLD);
@@ -117,7 +117,7 @@ void HeatmapReport::loop() {
       const int x = static_cast<int>(tapX * renderer.getScreenWidth());
       const int y = static_cast<int>(tapY * renderer.getScreenHeight());
       const uint32_t dateKey = heatmap_.hitTestDateKey(x, y, 0, kHeatmapTop, renderer.getScreenWidth(),
-                                                        kHeatmapHeight, view_, false);
+                                                        kHeatmapHeight, view_, false, true);
       if (dateKey != 0) {
         selectedDateKey_ = dateKey;
         updateRequired = true;

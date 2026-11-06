@@ -59,7 +59,7 @@ class ReaderSetting {
   uint8_t orientation = 0;  ///< SystemSetting::PORTRAIT
 
   uint8_t fontFamily = SystemSetting::MONTSERRAT;
-  uint8_t fontSize = SystemSetting::SMALL;  ///< Legacy index for built-in/.bin fonts; actual 8-60pt for TTF/OTF
+  uint8_t fontSize = SystemSetting::SMALL;  ///< Legacy index for built-in/.bin fonts; actual 6-45pt for TTF/OTF
   uint8_t lineHeight = 100;                 ///< Reader line height, % of natural (10-200)
   uint8_t textSpace = 100;                  ///< Reader word spacing, % of natural (10-200)
   uint8_t paragraphAlignment = 4;           ///< SystemSetting::FOLLOW_CSS
@@ -73,7 +73,10 @@ class ReaderSetting {
    *  speed-reading aid), 2 = Notebook (horizontal ruled lines like notebook paper). */
   uint8_t readingGuideLinesEnabled = 0;
 
-  uint8_t screenMargin = 0;  ///< Screen margin in pixels
+  uint8_t marginTop = 0;     ///< Top screen margin in pixels
+  uint8_t marginLeft = 0;    ///< Left screen margin in pixels
+  uint8_t marginRight = 0;   ///< Right screen margin in pixels
+  uint8_t marginBottom = 0;  ///< Bottom screen margin in pixels
 
   /**
    * @brief Page auto-turn interval in seconds

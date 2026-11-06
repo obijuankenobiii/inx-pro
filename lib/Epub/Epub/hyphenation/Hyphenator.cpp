@@ -241,9 +241,11 @@ std::vector<Hyphenator::BreakInfo> Hyphenator::breakOffsets(const std::string& w
   } else if (customHyphenationData) {
     const SerializedHyphenationPatterns patterns{customHyphenationData, customHyphenationSize};
     const std::string primary = primaryLanguage(customHyphenationLanguage);
-    const LiangWordConfig config = (primary == "ru")
+    const bool isGreek = primary == "el" || primary == "gre" || primary == "ell";
+    const LiangWordConfig config = primary == "ru"
                                        ? LiangWordConfig(isCyrillicLetter, toLowerCyrillic)
-                                       : LiangWordConfig(isLatinLetter, toLowerLatin);
+                                       : isGreek ? LiangWordConfig(isGreekLetter, toLowerGreek)
+                                                 : LiangWordConfig(isLatinLetter, toLowerLatin);
     indexes = liangBreakIndexes(cps, patterns, config);
   } else if (hyphenator) {
     indexes = hyphenator->breakIndexes(cps);

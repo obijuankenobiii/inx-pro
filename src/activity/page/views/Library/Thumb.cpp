@@ -363,7 +363,7 @@ void Thumb::getThumbnailSize(GfxRenderer& renderer, int& width, int& height) {
   constexpr int gridMargin = 0;
   const int availableWidth = renderer.getScreenWidth() - sideMargin * 2;
   const int availableHeight = renderer.getScreenHeight() - navigation::Menu::height -
-                              navigation::Menu::bottomHeight - gridMargin * 2;
+                              navigation::Menu::bottomInset() - gridMargin * 2;
   const int cellWidth = (availableWidth - gap * (childColumns - 1)) / childColumns;
   const int cellHeight = (availableHeight - rowGap * (childRows - 1)) / childRows;
   width = std::max(40, cellWidth);
@@ -560,7 +560,7 @@ void Thumb::calculate() {
   // margin to give each thumbnail a little more height.
   constexpr int gridMargin = 0;
   const int availableWidth = renderer.getScreenWidth() - sideMargin * 2;
-  const int availableHeight = renderer.getScreenHeight() - top() - navigation::Menu::bottomHeight - gridMargin * 2;
+  const int availableHeight = renderer.getScreenHeight() - top() - navigation::Menu::bottomInset() - gridMargin * 2;
   const int width = std::max(40, (availableWidth - gap * (childColumns - 1)) / childColumns);
   const int height = std::max(40, (availableHeight - rowGap * (childRows - 1)) / childRows);
   const int gridWidth = width * childColumns + gap * (childColumns - 1);

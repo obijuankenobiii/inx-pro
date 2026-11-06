@@ -433,7 +433,7 @@ class Page {
    * @return false if there are no images.
    */
   bool getImageBoundingBox(const GfxRenderer& renderer, int xOffset, int yOffset, int16_t& outX, int16_t& outY,
-                           int16_t& outW, int16_t& outH) const;
+                           int16_t& outW, int16_t& outH, bool onlyGrayscale = false) const;
 
   /** Returns the image path and its already-rendered screen rectangle at a screen point. */
   bool imageAt(const GfxRenderer& renderer, int x, int y, int xOffset, int yOffset, std::string& path,

@@ -15,6 +15,8 @@ namespace {
 
 constexpr const char* kMonths[] = {"",       "January", "February", "March",    "April",  "May",      "June",
                                    "July",   "August",  "September", "October",  "November", "December"};
+constexpr const char* kShortMonths[] = {"",    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
 constexpr const char* kWeekdays[] = {"M", "T", "W", "T", "F", "S", "S"};
 
 int daysInMonth(const int year, const int month) {
@@ -57,7 +59,7 @@ bool Calendar::readDate(int& year, int& month, int& day, int& weekday) const {
 #endif
 }
 
-void Calendar::render(const int x, const int y, const int width, const int height) const {
+void Calendar::render(const int x, const int y, const int width, const int height, const bool compact) const {
   int year = 0;
   int month = 0;
   int day = 0;
@@ -73,28 +75,53 @@ void Calendar::render(const int x, const int y, const int width, const int heigh
   const int headerFont = MONTSERRAT_14_FONT_ID;
   renderer_.rectangle.fill(x, y, width, height, false);
 
-  const int paddingX = 0;
+  const int paddingX = compact ? 20 : 0;
   const bool isBottomRow = y > navigation::Menu::height;
-  const int paddingTop = (height < 300 ? 6 : 5) + (isBottomRow ? 10 : 0);
-  const int paddingBottom = height < 300 ? 6 : 5;
+  const int paddingTop = compact ? 8 : (height < 300 ? 6 : 5) + (isBottomRow ? 10 : 0);
+  const int paddingBottom = compact ? 20 : (height < 300 ? 6 : 5);
   const int contentX = x + paddingX;
   const int contentWidth = std::max(1, width - paddingX * 2);
-  const int gridX = contentX;
-  const int columnGap = width < 260 ? 3 : 6;
-  const int cellWidth = std::max(1, (contentWidth - columnGap * 6) / 7);
-  const int headerHeight = renderer_.text.getLineHeight(headerFont);
-  const int headerY = y + paddingTop;
-  char header[32];
-  std::snprintf(header, sizeof(header), "%s %d", month >= 1 && month <= 12 ? kMonths[month] : "Calendar", year);
-  const int headerX = gridX + 20;
-  renderer_.text.render(headerFont, headerX, headerY, header, true, EpdFontFamily::BOLD);
-
-  const int gridY = headerY + headerHeight + (width < 260 ? 6 : 10);
-  const int lineHeight = renderer_.text.getLineHeight(font) + 3;
-  const int datesY = gridY + lineHeight + (width < 260 ? 6 : 10);
+  int gridX = contentX;
+  int gridWidth = contentWidth;
+  int columnGap = width < 260 ? 3 : 6;
+  int gridY = 0;
+  int lineHeight = renderer_.text.getLineHeight(font) + 3;
+  if (compact) {
+    const int yearFont = MONTSERRAT_16_FONT_ID;
+    const int monthFont = MONTSERRAT_16_FONT_ID;
+    const int yearLineHeight = renderer_.text.getLineHeight(yearFont);
+    const int monthLineHeight = renderer_.text.getLineHeight(monthFont);
+    const int columnSpacing = std::min(16, std::max(8, width / 24));
+    const int leftColumnWidth = std::min(140, std::max(96, contentWidth / 3));
+    gridX = contentX + leftColumnWidth + columnSpacing;
+    gridWidth = std::max(1, contentWidth - leftColumnWidth - columnSpacing);
+    columnGap = gridWidth < 280 ? 3 : 5;
+    const int headerBlockHeight = yearLineHeight + 2 + monthLineHeight;
+    const int availableHeight = std::max(1, height - paddingTop - paddingBottom);
+    const int headerY = y + paddingTop + std::max(0, (availableHeight - headerBlockHeight) / 2);
+    char yearText[8];
+    std::snprintf(yearText, sizeof(yearText), "%d", year);
+    renderer_.text.renderGray(yearFont, contentX, headerY, yearText, true, EpdFontFamily::REGULAR);
+    const char* monthName = month >= 1 && month <= 12 ? kShortMonths[month] : "Cal";
+    const std::string monthText = renderer_.text.truncate(monthFont, monthName, leftColumnWidth,
+                                                          EpdFontFamily::BOLD);
+    renderer_.text.render(monthFont, contentX, headerY + yearLineHeight + 2, monthText.c_str(), true,
+                          EpdFontFamily::BOLD);
+    gridY = y + paddingTop;
+    lineHeight = renderer_.text.getLineHeight(font) + 2;
+  } else {
+    const int headerY = y + paddingTop;
+    const int headerHeight = renderer_.text.getLineHeight(headerFont);
+    char header[32];
+    std::snprintf(header, sizeof(header), "%s %d", month >= 1 && month <= 12 ? kMonths[month] : "Calendar", year);
+    renderer_.text.render(headerFont, gridX + 20, headerY, header, true, EpdFontFamily::BOLD);
+    gridY = headerY + headerHeight + (width < 260 ? 6 : 10);
+  }
+  const int cellWidth = std::max(1, (gridWidth - columnGap * 6) / 7);
+  const int datesY = gridY + lineHeight + (compact ? 4 : (width < 260 ? 6 : 10));
   const int datesBottom = y + height - paddingBottom;
   const int datesHeight = std::max(1, datesBottom - datesY);
-  int rowGap = height < 300 ? 2 : 5;
+  int rowGap = compact ? 4 : (height < 300 ? 2 : 5);
   if (datesHeight < lineHeight * 6 + rowGap * 5) {
     rowGap = std::max(0, (datesHeight - lineHeight * 6) / 5);
   }
@@ -117,8 +144,9 @@ void Calendar::render(const int x, const int y, const int width, const int heigh
     const int textWidth = renderer_.text.getWidth(font, dayText);
     const int textX = cellX + (cellWidth - textWidth) / 2;
     if (number == day) {
-      const int circleDiameter =
-          std::min(cellWidth + columnGap - 1, cellHeight + rowGap - 1) + 5;
+      const int circleDiameter = compact
+                                     ? std::min(cellWidth, cellHeight)
+                                     : std::min(cellWidth + columnGap - 1, cellHeight + rowGap - 1) + 5;
       const int radius = std::max(2, circleDiameter / 2);
       renderer_.circle.render(cellX + cellWidth / 2, cellY + cellHeight / 2, radius, true);
       renderer_.text.render(font, textX, textY, dayText, false);

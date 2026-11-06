@@ -31,6 +31,7 @@ class HalDisplay {
                  bool fromProgmem = false) const;
 
   void displayBuffer(RefreshMode mode = RefreshMode::FAST_REFRESH);
+  void displayWindow(uint16_t x, uint16_t y, uint16_t w, uint16_t h, RefreshMode mode = RefreshMode::FAST_REFRESH);
   /** Starts a panel refresh and returns while the waveform is running. */
   void displayBufferAsync(RefreshMode mode = RefreshMode::FAST_REFRESH);
   /** True while an async panel refresh is still running. */
@@ -49,9 +50,16 @@ class HalDisplay {
   void cleanupGrayscaleBuffers(const uint8_t* bwBuffer);
 
   void displayGrayBuffer(bool quality = false, bool trackForRevert = true);
+  void displayGrayBufferWindow(uint16_t x, uint16_t y, uint16_t w, uint16_t h, bool quality = false,
+                               bool fastQuality = false);
+  bool supportsWindowedQuality() const;
   void displayGrayBufferFastQuality();
   void displayGrayscaleBase(RefreshMode fallback = HALF_REFRESH, bool turnOffScreen = false);
   void prepareQualityGrayscale();
+  void prepareQualityGrayscaleWindow(uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
+    prepareQualityGrayscale();
+    display.prepareGrayscaleWindow(x, y, w, h);
+  }
 
   uint16_t getDisplayWidth() const;
   uint16_t getDisplayHeight() const;

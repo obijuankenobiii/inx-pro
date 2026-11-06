@@ -1,6 +1,9 @@
 #pragma once
 
-#if INX_HAS_FRONTLIGHT
+#include <cmath>
+
+#if INX_HAS_FRONTLIGHT || FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO || \
+    FREEINK_DEVICE_LILYGO
 #include <FrontlightManager.h>
 
 #include <algorithm>
@@ -33,6 +36,23 @@ extern FrontlightManager frontlight;
 
 namespace frontlight_ui {
 
+/** Toggle the frontlight without extending the vendored FrontlightManager API. */
+inline void toggle() {
+  if (frontlight.brightness() > 0) {
+    frontlight.off();
+  } else {
+    frontlight.on();
+  }
+}
+
+#if FREEINK_DEVICE_MURPHY_M4
+// FrontlightManager converts its public percentage through this curve before
+// writing the 10-bit PWM. Undo that curve at the UI boundary so the drawer
+// position represents actual light output instead of applying a second dimming
+// curve on Murphy.
+constexpr float kMurphyFrontlightGamma = 1.6554f;
+#endif
+
 constexpr int kMinLitPercent = INX_FRONTLIGHT_MIN_PERCENT;
 
 /** One step of a 0-100 control. Fine near the bottom, coarse where 1% is imperceptible. */
@@ -52,11 +72,16 @@ inline int stepBrightness(const int current, const bool up) {
   return up ? kMinLitPercent : 0;
 }
 
-/** Slider position (0..1 along the track) -> brightness percent, square-law weighted so the
- *  left third of the track covers roughly the bottom 11% of the lit range. */
+/** Slider position (0..1 along the track) -> brightness percent. */
 inline int percentFromFraction(const float fraction) {
   const float f = fraction < 0.0f ? 0.0f : (fraction > 1.0f ? 1.0f : fraction);
-#if INX_FRONTLIGHT_MIN_PERCENT > 1
+#if FREEINK_DEVICE_PICCO
+  return static_cast<int>(100.0f * f + 0.5f);
+#elif FREEINK_DEVICE_MURPHY_M4
+  if (f <= 0.0f) return 0;
+  const int pct = static_cast<int>(100.0f * std::pow(f, 1.0f / kMurphyFrontlightGamma) + 0.5f);
+  return (pct == 0) ? 1 : pct;
+#elif INX_FRONTLIGHT_MIN_PERCENT > 1
   if (f <= 0.02f) return 0;
   return kMinLitPercent + static_cast<int>(static_cast<float>(100 - kMinLitPercent) * f * f + 0.5f);
 #else
@@ -68,6 +93,12 @@ inline int percentFromFraction(const float fraction) {
 /** Inverse of percentFromFraction(), for drawing the marker. */
 inline float fractionFromPercent(const int percent) {
   const int p = percent < 0 ? 0 : (percent > 100 ? 100 : percent);
+#if FREEINK_DEVICE_PICCO
+  return static_cast<float>(p) / 100.0f;
+#elif FREEINK_DEVICE_MURPHY_M4
+  if (p == 0) return 0.0f;
+  return std::pow(static_cast<float>(p) / 100.0f, kMurphyFrontlightGamma);
+#else
   if (p <= 0) return 0.0f;
 #if INX_FRONTLIGHT_MIN_PERCENT > 1
   const float target =
@@ -79,6 +110,7 @@ inline float fractionFromPercent(const int percent) {
   float f = target;
   for (int i = 0; i < 12; ++i) f = 0.5f * (f + target / f);
   return f;
+#endif
 }
 
 /** Write the live brightness/temperature back to NVS. */
