@@ -51,7 +51,6 @@ class ReaderPresetsActivity final : public ActivityWithSubactivity, public navig
   int systemHeaderRow() const { return 0; }
   bool isSystemSettingRow(int row) const;
   void changeSystemSetting(int row, int delta);
-  int addPresetRow() const;  ///< "+ Add new preset" row on the Presets page
   int presetRowsStart() const;
   int presetIndexForRow(int row) const;  ///< store index for a preset row, or -1 for the Add-new row
   bool isButtonMappingRow(int row) const;
@@ -62,8 +61,6 @@ class ReaderPresetsActivity final : public ActivityWithSubactivity, public navig
   void handleOverlayInput();
   void handleListInput();
   void finishSubActivity();
-  void clampSelectionToRowCount();
-
   void openGenericSelector(std::string title, std::vector<std::string> options, int currentIndex,
                            std::function<void(int)> onCommit);
   void handleActionSelectorInput();

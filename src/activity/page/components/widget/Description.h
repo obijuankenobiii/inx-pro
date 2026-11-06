@@ -25,10 +25,10 @@ class Description final : public BaseCarousel {
               bool showLabel = false, HomeTheme::CarouselLabelColor labelColor = HomeTheme::CarouselLabelColor::Black,
               HomeTheme::CarouselShadowStyle shadowStyle = HomeTheme::CarouselShadowStyle::None,
               bool showTitle = true, bool showAuthor = true, bool showProgress = true,
-              bool showRating = true, bool compact = false) const;
+              bool showRating = true, bool compact = false, bool preview = false) const;
 
  private:
-  void ensureLines(int recentIndex, int width, int font) const;
+  void ensureLines(int recentIndex, int width, int font, bool preview) const;
 
   mutable std::string cachedPath_;
   mutable int cachedWidth_ = -1;

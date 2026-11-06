@@ -46,22 +46,6 @@ constexpr uint8_t kSelectorModeSetting = 0;
 constexpr uint8_t kSelectorModeSleepImage = 1;
 constexpr const char* kSleepImageRefreshValue = "__refresh";
 
-struct SettingsTabLayout {
-  int systemX;
-  int dividerX;
-  int readerX;
-  int systemW;
-  int readerW;
-};
-
-SettingsTabLayout settingsTabLayout(const GfxRenderer& renderer) {
-  const int font = systemFontId();
-  const int systemW = renderer.text.getWidth(font, "System", EpdFontFamily::BOLD);
-  const int readerW = renderer.text.getWidth(font, "Reader", EpdFontFamily::BOLD);
-  const int dividerX = renderer.getScreenWidth() / 2;
-  return {20, dividerX, dividerX + 20, systemW, readerW};
-}
-
 bool isSupportedSleepImageFile(const std::string& filename) {
   return StringUtils::checkFileExtension(filename, ".bmp") || StringUtils::checkFileExtension(filename, ".jpg") ||
          StringUtils::checkFileExtension(filename, ".jpeg");
@@ -228,7 +212,6 @@ bool CategorySettingsActivity::groupInput() {
   const int rowHeight = UiPage::LIST_ITEM_HEIGHT;
   const int listTop = navigation::Menu::height + 20;
   const int visible = std::max(1, (renderer.getScreenHeight() - listTop - 10) / rowHeight);
-  const int maxScroll = std::max(0, static_cast<int>(rows.size()) - visible);
 
   if (mappedInput.hasTouch() && mappedInput.wasTouchSwipeUp()) {
     closeGroup();
@@ -272,47 +255,6 @@ bool CategorySettingsActivity::groupInput() {
       return true;
     }
   }
-
-  if (mappedInput.wasPressed(MappedInputManager::Button::Up)) {
-    int position = -1;
-    for (int i = 0; i < static_cast<int>(rows.size()); ++i) {
-      if (rows[static_cast<size_t>(i)] == selectedIndex) position = i;
-    }
-    position = position <= 0 ? static_cast<int>(rows.size()) - 1 : position - 1;
-    if (!rows.empty()) {
-      selectedIndex = rows[static_cast<size_t>(position)];
-      detailScroll = std::max(0, std::min(maxScroll, position - visible + 1));
-      updateRequired = true;
-    }
-    return true;
-  }
-  if (mappedInput.wasPressed(MappedInputManager::Button::Down)) {
-    int position = -1;
-    for (int i = 0; i < static_cast<int>(rows.size()); ++i) {
-      if (rows[static_cast<size_t>(i)] == selectedIndex) position = i;
-    }
-    position = position < 0 || position + 1 >= static_cast<int>(rows.size()) ? 0 : position + 1;
-    if (!rows.empty()) {
-      selectedIndex = rows[static_cast<size_t>(position)];
-      detailScroll = std::max(0, std::min(maxScroll, position - visible + 1));
-      updateRequired = true;
-    }
-    return true;
-  }
-  if (mappedInput.wasPressed(MappedInputManager::Button::Confirm) && selectedIndex >= 0) {
-    const MenuEntry& selected = menuItems[static_cast<size_t>(selectedIndex)];
-    if (selected.type == SettingType::TOGGLE) {
-      selected.change(0);
-      selectedIndex = -1;
-    } else if (selected.type == SettingType::ENUM || selected.type == SettingType::VALUE) {
-      openSelectorForSelected();
-      selectedIndex = -1;
-    } else if (selected.type == SettingType::ACTION) {
-      selected.change(0);
-      selectedIndex = -1;
-    }
-    return true;
-  }
   return false;
 }
 
@@ -331,12 +273,10 @@ void CategorySettingsActivity::renderGroupPage() {
   detailScroll = std::max(0, std::min(detailScroll, maxScroll));
 
   const char* title = "Settings";
-  for (const MenuEntry& entry : menuItems) {
-    if (entry.type == SettingType::SEPARATOR && entry.group == detailGroup && entry.name) {
-      title = entry.name;
-      break;
-    }
-  }
+  const auto titleEntry = std::find_if(menuItems.begin(), menuItems.end(), [this](const MenuEntry& entry) {
+    return entry.type == SettingType::SEPARATOR && entry.group == detailGroup && entry.name;
+  });
+  if (titleEntry != menuItems.end()) title = titleEntry->name;
   renderer.text.render(titleFont, 20, 20, title, true, EpdFontFamily::BOLD);
   renderer.bitmap.icon(Close, pageWidth - 60, 20, 40, 40);
 
@@ -344,25 +284,21 @@ void CategorySettingsActivity::renderGroupPage() {
     const int index = rows[static_cast<size_t>(detailScroll + i)];
     const MenuEntry& entry = menuItems[static_cast<size_t>(index)];
     const int itemY = listTop + i * rowHeight;
-    const bool selected = index == selectedIndex;
-    if (selected) {
-      renderer.rectangle.fill(0, itemY, pageWidth, rowHeight, static_cast<int>(GfxRenderer::FillTone::Ink));
-    }
     const int textY = itemY + (rowHeight - renderer.text.getLineHeight(itemFont)) / 2;
-    renderer.text.render(itemFont, 20, textY, entry.name ? entry.name : "", !selected, EpdFontFamily::REGULAR);
+    renderer.text.render(itemFont, 20, textY, entry.name ? entry.name : "", true, EpdFontFamily::REGULAR);
     if (entry.type == SettingType::TOGGLE && entry.valuePtr) {
-      ReaderFontSettingsDraw::drawToggleCheckbox(renderer, pageWidth - 24, itemY, rowHeight, selected,
+      ReaderFontSettingsDraw::drawToggleCheckbox(renderer, pageWidth - 24, itemY, rowHeight, false,
                                                   SETTINGS.*(entry.valuePtr) != 0);
     } else {
       const char* value = entry.getValueText ? entry.getValueText() : "";
       if (value && value[0] != '\0') {
         const int valueWidth = renderer.text.getWidth(itemFont, value);
-        renderer.text.render(itemFont, pageWidth - valueWidth - 30, textY, value, !selected,
+        renderer.text.render(itemFont, pageWidth - valueWidth - 30, textY, value, true,
                              EpdFontFamily::REGULAR);
       }
     }
     if (i + 1 < visible && detailScroll + i + 1 < static_cast<int>(rows.size())) {
-      renderer.line.render(0, itemY + rowHeight - 1, pageWidth, itemY + rowHeight - 1, !selected,
+      renderer.line.render(0, itemY + rowHeight - 1, pageWidth, itemY + rowHeight - 1, true,
                            LineRender::Style::Dotted);
     }
   }
@@ -956,11 +892,9 @@ void CategorySettingsActivity::loop() {
     return;
   }
 
-  const bool upPressed = mappedInput.wasPressed(itemPrevButton());
-  const bool downPressed = mappedInput.wasPressed(itemNextButton());
   const bool leftPressed = mappedInput.wasPressed(tabPrevButton());
   const bool rightPressed = mappedInput.wasPressed(tabNextButton());
-  bool confirmPressed = mappedInput.wasPressed(MappedInputManager::Button::Confirm);
+  bool confirmPressed = false;
   const bool backPressed = mappedInput.wasPressed(MappedInputManager::Button::Back);
   bool touchItem = false;
 
@@ -1063,29 +997,7 @@ void CategorySettingsActivity::loop() {
 
   bool needRedraw = false;
 
-  if (upPressed) {
-    const int totalItems = static_cast<int>(menuItems.size());
-    if (totalItems > 0) {
-      selectedIndex = (selectedIndex - 1 + totalItems) % totalItems;
-      const int maxScroll = std::max(0, totalItems - itemsPerPage);
-      if (selectedIndex < scrollOffset) scrollOffset = selectedIndex;
-      if (selectedIndex >= scrollOffset + itemsPerPage) scrollOffset = std::min(selectedIndex - itemsPerPage + 1, maxScroll);
-      scrollOffset = std::max(0, std::min(scrollOffset, maxScroll));
-      needRedraw = true;
-    }
-  } else if (downPressed) {
-    const int totalItems = static_cast<int>(menuItems.size());
-    if (totalItems > 0) {
-      selectedIndex = (selectedIndex + 1) % totalItems;
-      int maxScroll = std::max(0, totalItems - itemsPerPage);
-      if (selectedIndex < scrollOffset) scrollOffset = selectedIndex;
-      if (selectedIndex > scrollOffset + itemsPerPage - 1) {
-        scrollOffset = std::min(selectedIndex - itemsPerPage + 1, maxScroll);
-      }
-      scrollOffset = std::max(0, std::min(scrollOffset, maxScroll));
-      needRedraw = true;
-    }
-  } else if (confirmPressed) {
+  if (confirmPressed) {
     if (selectedIndex >= 0 && selectedIndex < (int)menuItems.size()) {
       const auto& selected = menuItems[selectedIndex];
       if (selected.type == SettingType::SEPARATOR) {
@@ -1191,7 +1103,6 @@ void CategorySettingsActivity::renderSelectorOverlay() {
     return;
   }
 
-  const int pageHeight = renderer.getScreenHeight();
   const int contentTop = navigation::Menu::height + 20 + UiPage::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra;
   const PopUpBounds box = PopUp::bounds(renderer, static_cast<int>(selectorOptions.size()), contentTop);
   const int maxScroll = std::max(0, static_cast<int>(selectorOptions.size()) - box.rows);
@@ -1251,24 +1162,18 @@ void CategorySettingsActivity::render() {
     }
 
     int itemY = startY + (visibleCount * itemHeight);
-    bool isSelected = (index == selectedIndex);
     const bool hasNextItem = index + 1 < static_cast<int>(menuItems.size());
 
     if (entry.type == SettingType::SEPARATOR) {
-      if (isSelected) {
-        renderer.rectangle.fill(0, itemY, pageWidth, itemHeight, static_cast<int>(GfxRenderer::FillTone::Ink));
-      }
-
       int textX = 20;
       int textY = itemY + (itemHeight - renderer.text.getLineHeight(systemFontId())) / 2;
-      renderer.text.render(systemFontId(), textX, textY, entry.name, !isSelected);
+      renderer.text.render(systemFontId(), textX, textY, entry.name, true);
 
       const char* indicator = entry.getValueText();
       if (indicator && indicator[0] != '\0') {
         int indicatorW = renderer.text.getWidth(systemFontId(), indicator);
         const int indicatorY = itemY + (itemHeight - renderer.text.getLineHeight(systemFontId())) / 2;
-        renderer.text.render(systemFontId(), pageWidth - indicatorW - 30, indicatorY, indicator,
-                             !isSelected);
+        renderer.text.render(systemFontId(), pageWidth - indicatorW - 30, indicatorY, indicator, true);
       }
 
       if (hasNextItem) {
@@ -1279,24 +1184,20 @@ void CategorySettingsActivity::render() {
       continue;
     }
 
-    if (isSelected) {
-      renderer.rectangle.fill(0, itemY, pageWidth, itemHeight, static_cast<int>(GfxRenderer::FillTone::Ink));
-    }
-
     int textX = entry.group == GroupType::NONE ? 20 : 28;
     int textY = itemY + (itemHeight - renderer.text.getLineHeight(systemFontId())) / 2;
 
-    renderer.text.render(systemFontId(), textX, textY, entry.name, !isSelected);
+    renderer.text.render(systemFontId(), textX, textY, entry.name, true);
 
     const bool useCheckbox = (entry.type == SettingType::TOGGLE && entry.valuePtr);
     if (useCheckbox) {
-      ReaderFontSettingsDraw::drawToggleCheckbox(renderer, pageWidth - 24, itemY, itemHeight, isSelected,
+      ReaderFontSettingsDraw::drawToggleCheckbox(renderer, pageWidth - 24, itemY, itemHeight, false,
                                                  SETTINGS.*(entry.valuePtr) != 0);
     } else if (entry.type == SettingType::ENUM && entry.name && strcmp(entry.name, "Font Family") == 0) {
       const char* val = entry.getValueText();
       if (val && val[0] != '\0') {
-        ReaderFontSettingsDraw::drawFontFamilyRowValue(renderer, READER_SETTINGS.fontFamily, pageWidth - 24, itemY, itemHeight,
-                                                       isSelected, val);
+        ReaderFontSettingsDraw::drawFontFamilyRowValue(renderer, READER_SETTINGS.fontFamily, pageWidth - 24, itemY,
+                                                       itemHeight, false, val);
       }
     } else if (entry.type == SettingType::ENUM && entry.name && strcmp(entry.name, "Font Size") == 0) {
       const int valueAreaLeft = std::max(textX + 88, pageWidth * 38 / 100);
@@ -1306,7 +1207,7 @@ void CategorySettingsActivity::render() {
       if (val && val[0] != '\0') {
         int valW = renderer.text.getWidth(systemFontId(), val);
         const int valY = itemY + (itemHeight - renderer.text.getLineHeight(systemFontId())) / 2;
-        renderer.text.render(systemFontId(), pageWidth - valW - 30, valY, val, !isSelected);
+        renderer.text.render(systemFontId(), pageWidth - valW - 30, valY, val, true);
       }
     }
 

@@ -403,7 +403,7 @@ void ThemePickerActivity::renderMode() {
 }
 
 void ThemePickerActivity::renderList() {
-  SubPage::header(renderer, sleepMode_ ? "Sleep" : "Home");
+  SubPage::header(renderer, sleepMode_ ? "Theme | Sleep" : "Theme | Home");
   const int contentTop = navigation::Menu::height;
   const int font = systemFontId();
   const int width = renderer.getScreenWidth();
@@ -715,7 +715,8 @@ void ThemePickerActivity::renderWidgetPreview(const HomeTheme::Widget widget, co
                                               const bool recentShowTitle, const bool recentShowAuthor,
                                               const bool recentShowProgress, const bool recentShowRating,
                                               const bool carouselShowProgress, const bool carouselFullHeight,
-                                              const bool statisticsSummary, const bool streakCompact) {
+                                              const bool statisticsSummary, const bool streakCompact,
+                                              const bool stackedHeatmapPreview) {
   if (width <= 0 || height <= 0) return;
 
   switch (widget) {
@@ -772,7 +773,7 @@ void ThemePickerActivity::renderWidgetPreview(const HomeTheme::Widget widget, co
       break;
     case HomeTheme::Widget::Heatmap:
       heatmap_.preview(x, y, width, height, HomeTheme::HeatmapView::Monthly, false, labelColor,
-                       layout_ == HomeTheme::Layout::OneByTwo);
+                       stackedHeatmapPreview || layout_ == HomeTheme::Layout::OneByTwo);
       break;
     case HomeTheme::Widget::Library:
       drawLibraryPreviewPlaceholders(renderer, x, y, width, height, background, showLabel,
@@ -781,22 +782,18 @@ void ThemePickerActivity::renderWidgetPreview(const HomeTheme::Widget widget, co
     case HomeTheme::Widget::Description:
       description_.render(0, x, y, width, height, background, showLabel, labelColor, shadowStyle,
                           descriptionShowTitle, descriptionShowAuthor, descriptionShowProgress,
-                          descriptionShowRating, layout_ == HomeTheme::Layout::OneByThree);
+                          descriptionShowRating, layout_ == HomeTheme::Layout::OneByThree, true);
       break;
     case HomeTheme::Widget::Empty:
     default:
       renderer.rectangle.fill(x, y, width, height, false);
       {
         const int labelFont = systemFontId();
-        const int plusFont = MONTSERRAT_16_FONT_ID;
-        const int gap = 6;
-        const int labelWidth = renderer.text.getWidth(labelFont, "Add widget");
-        const int plusWidth = renderer.text.getWidth(plusFont, "+");
-        const int startX = x + std::max(0, (width - labelWidth - gap - plusWidth) / 2);
+        const char* label = "Empty";
+        const int labelWidth = renderer.text.getWidth(labelFont, label);
         const int labelY = y + (height - renderer.text.getLineHeight(labelFont)) / 2;
-        const int plusY = y + (height - renderer.text.getLineHeight(plusFont)) / 2;
-        renderer.text.render(labelFont, startX, labelY, "Add widget", true, EpdFontFamily::REGULAR);
-        renderer.text.render(plusFont, startX + labelWidth + gap, plusY, "+", true, EpdFontFamily::BOLD);
+        renderer.text.render(labelFont, x + std::max(0, (width - labelWidth) / 2), labelY, label, true,
+                             EpdFontFamily::REGULAR);
       }
       break;
   }
@@ -804,7 +801,7 @@ void ThemePickerActivity::renderWidgetPreview(const HomeTheme::Widget widget, co
 
 void ThemePickerActivity::renderWidgetPopup() {
   const int options = widgetOptionCount(layout_, editingSleep_);
-  SubPage::header(renderer, "Choose widget");
+  SubPage::header(renderer, "Widgets");
   const WidgetGridBounds box = widgetGridBounds(renderer);
   const int font = systemFontId();
 
@@ -827,7 +824,7 @@ void ThemePickerActivity::renderWidgetPopup() {
                         HomeTheme::defaultCarouselStyle(widget), false,
                         HomeTheme::CarouselLabelColor::Black, HomeTheme::CarouselShadowStyle::None,
                         HomeTheme::HeatmapView::Monthly, libraryFolders_[widgetSlot_], true, true, true, true,
-                        true, true, true, true, true, false, true, false);
+                        true, true, true, true, true, false, true, false, true);
 
     const std::string label = HomeTheme::widgetLabel(widget);
     const std::string shown = renderer.text.truncate(font, label.c_str(), box.cellWidth - 16);
@@ -1363,9 +1360,19 @@ void ThemePickerActivity::pageWidgetPopup(const int delta) {
   const int options = widgetOptionCount(layout_, editingSleep_);
   if (options <= 0) return;
   const int maxPageStart = ((options - 1) / kWidgetGridPageSize) * kWidgetGridPageSize;
-  widgetPopupScroll_ = std::max(0, std::min(widgetPopupScroll_ + delta * kWidgetGridPageSize, maxPageStart));
-  popupSelected_ = std::max(widgetPopupScroll_,
-                            std::min(popupSelected_, std::min(options - 1, widgetPopupScroll_ + kWidgetGridPageSize - 1)));
+  const int nextPage = widgetPopupScroll_ + delta * kWidgetGridPageSize;
+  if (nextPage > maxPageStart) {
+    widgetPopupScroll_ = 0;
+    popupSelected_ = 0;
+  } else if (nextPage < 0) {
+    widgetPopupScroll_ = maxPageStart;
+    popupSelected_ = options - 1;
+  } else {
+    widgetPopupScroll_ = nextPage;
+    popupSelected_ = std::max(widgetPopupScroll_,
+                              std::min(popupSelected_,
+                                       std::min(options - 1, widgetPopupScroll_ + kWidgetGridPageSize - 1)));
+  }
 }
 
 void ThemePickerActivity::cycleOneByOneWidget(const int delta) {

@@ -32,9 +32,47 @@ constexpr int listGap = 30;
 
 void SyncActivity::onEnter() {
   UiPage::onEnter();
-  selectedIndex = 0;
-  selectedVisible = false;
   SETTINGS.runHalfRefreshOnLoadIfEnabled(renderer, SystemSetting::RefreshOnLoadPage::Sync);
+}
+
+void SyncActivity::activateItem(const int index) {
+  if (index < 0 || index >= menuItemCount) return;
+
+  NetworkMode mode = NetworkMode::JOIN_NETWORK;
+  if (index == 1) mode = NetworkMode::CONNECT_CALIBRE;
+  if (index == 2) mode = NetworkMode::CREATE_HOTSPOT;
+  if (index == 3) mode = NetworkMode::OPDS_BROWSER;
+
+  if (index == 4) {
+    enter(new KOReaderSettingsActivity(renderer, mappedInput, [this] {
+      exit();
+      updateRequired = true;
+    }));
+    return;
+  }
+  if (index == 5) {
+    enter(new OtaUpdateActivity(renderer, mappedInput, [this] {
+      exit();
+      updateRequired = true;
+    }));
+    return;
+  }
+  if (index == 6) {
+    enter(new DictionaryPickerActivity(renderer, mappedInput, [this] {
+      exit();
+      updateRequired = true;
+    }));
+    return;
+  }
+  if (index == 7) {
+    enter(new DeviceInfoActivity(renderer, mappedInput, [this] {
+      exit();
+      updateRequired = true;
+    }));
+    return;
+  }
+
+  if (onModeSelected) onModeSelected(mode);
 }
 
 void SyncActivity::loop() {
@@ -57,10 +95,6 @@ void SyncActivity::loop() {
     return;
   }
 
-  bool confirmPressed = mappedInput.wasPressed(MappedInputManager::Button::Confirm);
-  const bool upPressed = mappedInput.wasPressed(MappedInputManager::Button::Up);
-  const bool downPressed = mappedInput.wasPressed(MappedInputManager::Button::Down);
-
   if (mappedInput.hasTouch()) {
     float tapNx = 0.0f;
     float tapNy = 0.0f;
@@ -72,67 +106,13 @@ void SyncActivity::loop() {
       const int tappedIndex = (tapY - listStartY) / listItemHeight;
 
       if (tapY >= listStartY && tapY < contentBottom && tappedIndex >= 0 && tappedIndex < menuItemCount) {
-        selectedIndex = tappedIndex;
-        selectedVisible = true;
-        confirmPressed = true;
-        INX_SERIAL.printf("[STICKY][TOUCH] DEVICE_ROW index=%d label=%s\n", selectedIndex, menuItems[selectedIndex]);
+        INX_SERIAL.printf("[DEVICE][TOUCH] row=%d label=%s\n", tappedIndex, menuItems[tappedIndex]);
+        activateItem(tappedIndex);
+        return;
       } else if (routeMenuAction(navigation::Menu::handleTap(tapX, tapY))) {
         return;
       }
     }
-  }
-
-  if (confirmPressed) {
-    NetworkMode mode = NetworkMode::JOIN_NETWORK;
-    if (selectedIndex == 1) mode = NetworkMode::CONNECT_CALIBRE;
-    if (selectedIndex == 2) mode = NetworkMode::CREATE_HOTSPOT;
-    if (selectedIndex == 3) mode = NetworkMode::OPDS_BROWSER;
-
-    if (selectedIndex == 4) {
-      enter(new KOReaderSettingsActivity(renderer, mappedInput, [this] {
-        exit();
-        selectedVisible = false;
-        updateRequired = true;
-      }));
-      return;
-    }
-    if (selectedIndex == 5) {
-      enter(new OtaUpdateActivity(renderer, mappedInput, [this] {
-        exit();
-        selectedVisible = false;
-        updateRequired = true;
-      }));
-      return;
-    }
-    if (selectedIndex == 6) {
-      enter(new DictionaryPickerActivity(renderer, mappedInput, [this] {
-        exit();
-        selectedVisible = false;
-        updateRequired = true;
-      }));
-      return;
-    }
-    if (selectedIndex == 7) {
-      enter(new DeviceInfoActivity(renderer, mappedInput, [this] {
-        exit();
-        updateRequired = true;
-      }));
-      return;
-    }
-
-    if (onModeSelected) onModeSelected(mode);
-    return;
-  }
-
-  if (upPressed) {
-    selectedIndex = (selectedIndex + menuItemCount - 1) % menuItemCount;
-    selectedVisible = true;
-    updateRequired = true;
-  }
-  if (downPressed) {
-    selectedIndex = (selectedIndex + 1) % menuItemCount;
-    selectedVisible = true;
-    updateRequired = true;
   }
 
   renderPage();
@@ -149,16 +129,11 @@ void SyncActivity::content() {
     const int itemY = listStartY + index * listItemHeight;
     if (itemY >= contentBottom || itemY + listItemHeight <= listStartY) continue;
 
-    const bool selected = selectedVisible && index == selectedIndex;
-    if (selected) {
-      renderer.rectangle.fill(0, itemY, screenWidth, listItemHeight, static_cast<int>(GfxRenderer::FillTone::Ink));
-    }
-
     const int titleY = itemY +
                        (listItemHeight - renderer.text.getLineHeight(systemFontId())) / 2;
-    renderer.text.render(systemFontId(), 20, titleY, menuItems[index], !selected);
+    renderer.text.render(systemFontId(), 20, titleY, menuItems[index], true);
     const int caretWidth = renderer.text.getWidth(systemFontId(), "›");
-    renderer.text.render(systemFontId(), screenWidth - caretWidth - 30, titleY, "›", !selected);
+    renderer.text.render(systemFontId(), screenWidth - caretWidth - 30, titleY, "›", true);
 
     if (index + 1 < menuItemCount) {
       renderer.line.render(0, itemY + listItemHeight - 1, screenWidth, itemY + listItemHeight - 1, true,

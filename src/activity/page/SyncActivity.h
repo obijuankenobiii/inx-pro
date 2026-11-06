@@ -25,13 +25,12 @@ class SyncActivity final : public UiPage {
   void loop() override;
 
  private:
-  int selectedIndex = 0;
-  bool selectedVisible = false;
   std::unique_ptr<Activity> subActivity;
 
   const std::function<void(NetworkMode)> onModeSelected;
 
   void content() override;
+  void activateItem(int index);
   void enter(Activity* activity);
   void exit();
 };

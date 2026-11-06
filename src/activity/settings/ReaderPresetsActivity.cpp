@@ -50,22 +50,6 @@ void drawScrollBar(const GfxRenderer& renderer, const int x, const int y, const 
   renderer.rectangle.fill(x, thumbY, width, thumbHeight, static_cast<int>(GfxRenderer::FillTone::Ink), true);
 }
 
-struct SettingsTabLayout {
-  int systemX;
-  int dividerX;
-  int readerX;
-  int systemW;
-  int readerW;
-};
-
-SettingsTabLayout settingsTabLayout(const GfxRenderer& renderer) {
-  const int font = systemFontId();
-  const int systemW = renderer.text.getWidth(font, "System", EpdFontFamily::BOLD);
-  const int readerW = renderer.text.getWidth(font, "Reader", EpdFontFamily::BOLD);
-  const int dividerX = renderer.getScreenWidth() / 2;
-  return {20, dividerX, dividerX + 20, systemW, readerW};
-}
-
 const char* overlayOptionFor(const int presetIndex, const int optionIndex) {
   if (presetIndex == 0) {
     static constexpr const char* kDefaultOptions[] = {"Edit", "Cancel"};
@@ -191,8 +175,6 @@ void ReaderPresetsActivity::changeSystemSetting(const int row, const int delta) 
   READER_SETTINGS.saveToFile();
 }
 
-int ReaderPresetsActivity::addPresetRow() const { return -1; }
-
 int ReaderPresetsActivity::presetRowsStart() const { return 0; }
 
 int ReaderPresetsActivity::rowCount() const {
@@ -243,7 +225,9 @@ void ReaderPresetsActivity::render() {
   for (int i = 0; i < itemsPerPage_ && (i + scrollOffset_) < rows; i++) {
     const int rowIndex = i + scrollOffset_;
     const int itemY = (presetsOnly_ ? presetListTop : listTop) + i * listItemHeight_;
-    const bool isSelected = !presetsOnly_ && (rowIndex == selectedRow_);
+    // Reader settings are touch-activated; rows do not have a persistent
+    // hardware-selection state or inverted active-row appearance.
+    constexpr bool isSelected = false;
     const bool hasNextItem = i + 1 < itemsPerPage_ && rowIndex + 1 < rows;
     const int textY = itemY + (listItemHeight_ - renderer.text.getLineHeight(systemFontId())) / 2;
 
@@ -306,20 +290,6 @@ void ReaderPresetsActivity::render() {
       const char* label = "Font Manager";
       renderer.text.render(systemFontId(), 20, textY, label, isSelected ? 0 : 1);
       renderOpenNavigationIcon(renderer, screenW, itemY, listItemHeight_, isSelected);
-      if (hasNextItem) {
-        renderer.line.render(0, itemY + listItemHeight_ - 1, screenW, itemY + listItemHeight_ - 1, true,
-                             LineRender::Style::Dotted);
-      }
-      continue;
-    }
-
-    if (!presetsOnly_ && rowIndex == addPresetRow()) {
-      renderer.rectangle.fill(0, itemY, screenW, listItemHeight_, static_cast<int>(GfxRenderer::FillTone::Paper));
-      const int buttonWidth = Button::width(renderer, kAddPresetButtonLabel, systemFontId());
-      const ButtonBounds button{screenW - kRowValueRightInset - buttonWidth, itemY - kAddPresetButtonRaise,
-                                buttonWidth, listItemHeight_};
-      Button::render(renderer, button, kAddPresetButtonLabel, false, systemFontId());
-
       if (hasNextItem) {
         renderer.line.render(0, itemY + listItemHeight_ - 1, screenW, itemY + listItemHeight_ - 1, true,
                              LineRender::Style::Dotted);
@@ -558,17 +528,11 @@ void ReaderPresetsActivity::activateSelectedRow() {
     return;
   }
   if (presetsOnly_) {
-    if (selectedRow_ == addPresetRow()) {
-      openEditor(-1);
-      return;
-    }
-    if (selectedRow_ >= presetRowsStart()) {
-      overlayPresetIndex_ = presetIndexForRow(selectedRow_);
-      overlaySel_ = -1;
-      overlayOpen_ = true;
-      renderOverlay();
-      return;
-    }
+    overlayPresetIndex_ = presetIndexForRow(selectedRow_);
+    overlaySel_ = -1;
+    overlayOpen_ = true;
+    renderOverlay();
+    return;
   }
   if (isSystemSettingRow(selectedRow_)) {
     const int systemLocalRow = systemSettingLocalRow(selectedRow_);
@@ -590,21 +554,10 @@ void ReaderPresetsActivity::activateSelectedRow() {
     enterNewActivity(new FontManagerActivity(renderer, mappedInput, [this]() { subFinished_ = true; }));
     return;
   }
-  if (selectedRow_ == addPresetRow()) {
-    openEditor(-1);
-    return;
-  }
   overlayPresetIndex_ = presetIndexForRow(selectedRow_);
   overlaySel_ = -1;
   overlayOpen_ = true;
   renderOverlay();
-}
-
-void ReaderPresetsActivity::clampSelectionToRowCount() {
-  const int rows = rowCount();
-  if (selectedRow_ >= rows) {
-    selectedRow_ = std::max(0, rows - 1);
-  }
 }
 
 void ReaderPresetsActivity::handleOverlayInput() {
@@ -664,30 +617,6 @@ void ReaderPresetsActivity::handleListInput() {
       onHardwareBack_();
     } else {
       onGoBack_();
-    }
-    return;
-  }
-
-  const bool previousPressed = mappedInput.wasPressed(readerSettingsItemPrevButton());
-  const bool nextPressed = mappedInput.wasPressed(readerSettingsItemNextButton());
-  if (previousPressed || nextPressed) {
-    const int rows = rowCount();
-    if (rows > 0) {
-      if (presetsOnly_) {
-        const int maxScroll = std::max(0, rows - itemsPerPage_);
-        const int pageSize = std::max(1, itemsPerPage_);
-        if (previousPressed) {
-          scrollOffset_ = std::max(0, scrollOffset_ - pageSize);
-        } else {
-          scrollOffset_ = std::min(maxScroll, scrollOffset_ + pageSize);
-        }
-      } else {
-        selectedRow_ = previousPressed ? (selectedRow_ - 1 + rows) % rows : (selectedRow_ + 1) % rows;
-        if (selectedRow_ < scrollOffset_) scrollOffset_ = selectedRow_;
-        if (selectedRow_ >= scrollOffset_ + itemsPerPage_) scrollOffset_ = selectedRow_ - itemsPerPage_ + 1;
-        scrollOffset_ = std::max(0, std::min(scrollOffset_, std::max(0, rows - itemsPerPage_)));
-      }
-      render();
     }
     return;
   }

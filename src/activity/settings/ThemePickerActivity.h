@@ -124,7 +124,8 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
                            bool descriptionShowProgress, bool descriptionShowRating,
                            bool recentShowTitle, bool recentShowAuthor,
                            bool recentShowProgress, bool recentShowRating, bool carouselShowProgress,
-                           bool carouselFullHeight, bool statisticsSummary, bool streakCompact);
+                           bool carouselFullHeight, bool statisticsSummary, bool streakCompact,
+                           bool stackedHeatmapPreview = false);
   void renderDividerBorder(HomeTheme::Border border, int x, int y, int width);
   void renderBorder(HomeTheme::Border border, int x, int y, int width, int height);
   void handleTouch(int x, int y);

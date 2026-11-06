@@ -229,7 +229,7 @@ class CategorySettingsActivity final : public ActivityWithSubactivity, public na
   void render();
   /** Rebuilds the flattened menu item list based on current group expansion state. */
   void setupMenu();
-  /** Applies a delta change to the currently selected menu item. */
+  /** Applies a delta change to a menu item during touch activation. */
   void applyChange(int delta);
   /** Opens the value/enum picker overlay for the currently selected item. */
   void openSelectorForSelected();

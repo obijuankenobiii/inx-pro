@@ -210,11 +210,13 @@ std::vector<DescriptionWidgetLine> wrapDescription(const GfxRenderer& renderer, 
 
 }  // namespace
 
-void Description::ensureLines(const int recentIndex, const int width, const int font) const {
+void Description::ensureLines(const int recentIndex, const int width, const int font, const bool preview) const {
   const auto& books = RECENT_BOOKS.getBooks();
-  const std::string path = recentIndex >= 0 && recentIndex < static_cast<int>(books.size())
+  const std::string path = preview
+                               ? "__widget_preview__"
+                               : (recentIndex >= 0 && recentIndex < static_cast<int>(books.size())
                                ? books[static_cast<size_t>(recentIndex)].path
-                               : std::string();
+                               : std::string());
   if (path == cachedPath_ && width == cachedWidth_ && font == cachedFont_) return;
 
   cachedPath_ = path;
@@ -224,7 +226,12 @@ void Description::ensureLines(const int recentIndex, const int width, const int 
   cachedRatingStars_ = 0;
 
   std::string raw;
-  if (!path.empty()) {
+  if (preview) {
+    raw = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor "
+          "incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud "
+          "exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.";
+    cachedRatingStars_ = 4;
+  } else if (!path.empty()) {
     const RecentBook& book = books[static_cast<size_t>(recentIndex)];
     BookMetadataCache metadata(metadataCachePath(book));
     if (metadata.load()) {
@@ -240,19 +247,20 @@ void Description::render(const int recentIndex, const int x, const int y, const 
                          const HomeTheme::CarouselLabelColor labelColor,
                          const HomeTheme::CarouselShadowStyle shadowStyle, const bool showTitle,
                          const bool showAuthor, const bool showProgress, const bool showRating,
-                         const bool compact) const {
+                         const bool compact, const bool preview) const {
   if (width <= 0 || height <= 0) return;
   renderBackground(x, y, width, height, background);
   const ContentArea content = contentArea(y, height, showLabel);
 
   const auto& books = RECENT_BOOKS.getBooks();
-  if (recentIndex < 0 || recentIndex >= static_cast<int>(books.size())) {
+  if (!preview && (recentIndex < 0 || recentIndex >= static_cast<int>(books.size()))) {
     renderer_.text.centered(systemFontId(), content.y + content.height / 2, "No recent");
     (void)shadowStyle;
     return;
   }
 
-  const RecentBook& book = books[static_cast<size_t>(recentIndex)];
+  const RecentBook previewBook("", "", "Lorem Ipsum", "Author Name", 0.62f);
+  const RecentBook& book = preview ? previewBook : books[static_cast<size_t>(recentIndex)];
   constexpr int marginX = 20;
   constexpr int bottomPadding = 20;
   const int marginTop = compact ? 12 : 20;
@@ -260,7 +268,7 @@ void Description::render(const int recentIndex, const int x, const int y, const 
   const int authorFont = compact ? MONTSERRAT_10_FONT_ID : MONTSERRAT_12_FONT_ID;
   const int descriptionFont = compact ? MONTSERRAT_10_FONT_ID : MONTSERRAT_12_FONT_ID;
   const int textWidth = std::max(1, width - marginX * 2);
-  ensureLines(recentIndex, textWidth, descriptionFont);
+  ensureLines(recentIndex, textWidth, descriptionFont, preview);
   int textBottom = content.y + marginTop;
   if (showTitle) {
     const std::string title = renderer_.text.truncate(titleFont, bookTitle(book).c_str(), textWidth,
