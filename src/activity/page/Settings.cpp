@@ -133,7 +133,7 @@ std::vector<SettingInfo> buildSystemSettings() {
 
   settings.push_back(SettingInfo::Separator("Device ", GroupType::DEVICE_ADVANCED));
   settings.push_back(SettingInfo::Enum("Time to Sleep", &SystemSetting::sleepTimeout,
-                                       {"1 min", "5 min", "10 min", "15 min", "30 min"},
+                                       {"1 min", "5 min", "10 min", "15 min", "30 min", "Never"},
                                        GroupType::DEVICE_ADVANCED));
   settings.push_back(SettingInfo::Enum("Boot Mode", &SystemSetting::bootSetting, {"Recent Book", "Home"},
                                        GroupType::DEVICE_ADVANCED));

@@ -491,7 +491,7 @@ void ThemePickerActivity::renderThemeActionPopup() {
 }
 
 void ThemePickerActivity::renderWidgetPicker() {
-  SubPage::header(renderer, "Choose widget");
+  SubPage::header(renderer, "Layout Builder");
   const PreviewBounds preview = widgetPreviewBounds(renderer);
   const int previewX = preview.x;
   const int previewY = preview.y;
@@ -527,7 +527,7 @@ void ThemePickerActivity::renderWidgetPicker() {
                         recentTitles_[firstSlot] != 0, recentAuthors_[firstSlot] != 0,
                         recentProgress_[firstSlot] != 0, recentRatings_[firstSlot] != 0,
                         carouselProgress_[firstSlot] != 0, carouselFullHeight_[firstSlot] != 0,
-                        statisticsSummary_[firstSlot] != 0, streakCompact_[firstSlot] != 0);
+                        statisticsSummary_[firstSlot] != 0, streakCompact_[firstSlot] != 0, false, true);
   } else {
     // Keep the established 1 x 2 preview path: two storage slots map directly
     // to the two visible rows.
@@ -541,7 +541,8 @@ void ThemePickerActivity::renderWidgetPicker() {
                           descriptionProgress_[slot] != 0, descriptionRatings_[slot] != 0,
                           recentTitles_[slot] != 0, recentAuthors_[slot] != 0,
                           recentProgress_[slot] != 0, recentRatings_[slot] != 0, carouselProgress_[slot] != 0,
-                          carouselFullHeight_[slot] != 0, statisticsSummary_[slot] != 0, streakCompact_[slot] != 0);
+                          carouselFullHeight_[slot] != 0, statisticsSummary_[slot] != 0, streakCompact_[slot] != 0,
+                          false, true);
     }
   }
 
@@ -725,7 +726,7 @@ void ThemePickerActivity::renderWidgetPreview(const HomeTheme::Widget widget, co
                                               const bool recentShowProgress, const bool recentShowRating,
                                               const bool carouselShowProgress, const bool carouselFullHeight,
                                               const bool statisticsSummary, const bool streakCompact,
-                                              const bool stackedHeatmapPreview) {
+                                              const bool stackedHeatmapPreview, const bool showEmptyAddLabel) {
   if (width <= 0 || height <= 0) return;
 
   switch (widget) {
@@ -798,7 +799,7 @@ void ThemePickerActivity::renderWidgetPreview(const HomeTheme::Widget widget, co
       renderer.rectangle.fill(x, y, width, height, false);
       {
         const int labelFont = systemFontId();
-        const char* label = "Empty";
+        const char* label = showEmptyAddLabel ? "Add widget +" : "Empty";
         const int labelWidth = renderer.text.getWidth(labelFont, label);
         const int labelY = y + (height - renderer.text.getLineHeight(labelFont)) / 2;
         renderer.text.render(labelFont, x + std::max(0, (width - labelWidth) / 2), labelY, label, true,
@@ -810,7 +811,7 @@ void ThemePickerActivity::renderWidgetPreview(const HomeTheme::Widget widget, co
 
 void ThemePickerActivity::renderWidgetPopup() {
   const int options = widgetOptionCount(layout_, editingSleep_);
-  SubPage::header(renderer, "Widgets");
+  SubPage::header(renderer, "Choose widget");
   const WidgetGridBounds box = widgetGridBounds(renderer);
   const int font = systemFontId();
 
@@ -989,12 +990,12 @@ void ThemePickerActivity::initializeNewThemeEditor() {
     heatmapViews_[i] = HomeTheme::HeatmapView::Weekly;
     setDefaultLibraryFolders(libraryFolders_[i]);
   }
-  if (layout_ == HomeTheme::Layout::OneByOne) {
+  if (editingSleep_) {
+    widgets_[0] = HomeTheme::Widget::Clock;
+    if (HomeTheme::slotCount(layout_) > 1) widgets_[1] = HomeTheme::Widget::Streaks;
+  } else if (layout_ == HomeTheme::Layout::OneByOne) {
     widgets_[0] = HomeTheme::Widget::RecentGrid;
     widgets_[1] = HomeTheme::Widget::Flow;
-  } else if (editingSleep_ && layout_ == HomeTheme::Layout::OneByTwo) {
-    widgets_[0] = HomeTheme::Widget::Clock;
-    widgets_[1] = HomeTheme::Widget::Calendar;
   } else {
     widgets_[0] = HomeTheme::Widget::Carousel;
     widgets_[1] = HomeTheme::Widget::Description;
@@ -1014,7 +1015,14 @@ void ThemePickerActivity::applySelectedLayout() {
   } else {
     const HomeTheme::Layout previousLayout = layout_;
     layout_ = nextLayout;
-    if (layout_ == HomeTheme::Layout::OneByOne) {
+    if (editingSleep_) {
+      for (int slot = 0; slot < 4; ++slot) {
+        widgets_[slot] = HomeTheme::Widget::Empty;
+        borders_[slot] = HomeTheme::Border::None;
+      }
+      widgets_[0] = HomeTheme::Widget::Clock;
+      if (HomeTheme::slotCount(layout_) > 1) widgets_[1] = HomeTheme::Widget::Streaks;
+    } else if (layout_ == HomeTheme::Layout::OneByOne) {
       widgets_[0] = HomeTheme::Widget::RecentGrid;
       widgets_[1] = HomeTheme::Widget::Flow;
       borders_[0] = HomeTheme::Border::None;

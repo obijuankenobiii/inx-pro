@@ -449,7 +449,8 @@ void loop() {
     lastActivityTime = millis();
   }
 
-  if (millis() - lastActivityTime >= SETTINGS.getSleepTimeoutMs()) {
+  if (SETTINGS.sleepTimeout != SystemSetting::SLEEP_NEVER &&
+      millis() - lastActivityTime >= SETTINGS.getSleepTimeoutMs()) {
     enterDeepSleep();
     return;
   }

@@ -208,6 +208,7 @@ class SystemSetting {
     SLEEP_10_MIN = 2,  ///< 10 minute timeout
     SLEEP_15_MIN = 3,  ///< 15 minute timeout
     SLEEP_30_MIN = 4,  ///< 30 minute timeout
+    SLEEP_NEVER = 5,   ///< Disable automatic sleep
     SLEEP_TIMEOUT_COUNT
   };
 
@@ -381,7 +382,7 @@ class SystemSetting {
   /** Active SD language package code; empty selects the built-in English UI. */
   char languageCode[33] = "";
 
-  uint8_t sleepTimeout = SLEEP_10_MIN;  ///< Sleep timeout
+  uint8_t sleepTimeout = SLEEP_10_MIN;  ///< Sleep timeout; SLEEP_NEVER disables automatic sleep
 
   char opdsServerUrl[128] = "";  ///< OPDS server URL
   char opdsUsername[64] = "";    ///< OPDS username
