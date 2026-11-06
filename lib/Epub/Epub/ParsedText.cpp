@@ -193,6 +193,7 @@ std::vector<size_t> computeGreedyLineBreaksWithDropIndent(const int pageWidth, c
 void ParsedText::addWord(std::string word, const EpdFontFamily::Style fontStyle, const bool smallCaps,
                          const bool underline, const bool joinPrevious, const uint8_t verticalAlign,
                          const int16_t xOffset, std::string footnoteTarget) {
+  utf8NormalizeReaderText(word);
   if (word.empty()) return;
 
   const uint8_t bionicPrefixBytesValue = bionicReadingEnabled ? bionicPrefixLengthBytes(word) : 0;
