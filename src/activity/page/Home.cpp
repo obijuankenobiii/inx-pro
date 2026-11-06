@@ -104,7 +104,7 @@ void Home::onEnter() {
 
 void Home::menu() {
   Page::menu();
-#if FREEINK_DEVICE_X4PRO
+#if INX_HAS_FRONTLIGHT
   if (!isLightDrawerOpen()) drawBattery(renderer);
 #else
   drawBattery(renderer);

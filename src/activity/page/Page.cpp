@@ -43,7 +43,7 @@ bool Page::menuInput() {
     return true;
   }
 
-#if FREEINK_DEVICE_X4PRO
+#if INX_HAS_FRONTLIGHT
   if (mappedInput.isTouchPressed() || isLightDrawerSliderDragging()) {
     const navigation::Menu::Action action = navigation::Menu::handleInput(mappedInput);
     if (action != navigation::Menu::Action::None) {

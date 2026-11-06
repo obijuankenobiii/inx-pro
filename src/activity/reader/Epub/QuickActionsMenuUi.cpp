@@ -26,7 +26,7 @@ constexpr int kRowHeight = UiLayout::LIST_ITEM_HEIGHT - 4;
 constexpr int kOverlayHeaderHeight = UiLayout::LIST_ITEM_HEIGHT - 4;
 
 bool isSupportedReaderAction(const int action) {
-#if FREEINK_DEVICE_X4PRO
+#if INX_HAS_FRONTLIGHT
   return true;
 #else
   return action != SystemSetting::BTN_ACTION_TOGGLE_LIGHT;

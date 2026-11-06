@@ -7,7 +7,7 @@
 
 class GfxRenderer;
 #include "system/MappedInputManager.h"
-#if FREEINK_DEVICE_X4PRO
+#if INX_HAS_FRONTLIGHT
 #include "LightDrawer.h"
 #endif
 
@@ -35,7 +35,7 @@ class Menu {
   virtual bool showRefresh() const { return true; }
 
   bool isOpen() const { return open; }
-#if FREEINK_DEVICE_X4PRO
+#if INX_HAS_FRONTLIGHT
   bool isLightDrawerOpen() const { return lightDrawer.isOpen(); }
   bool isLightDrawerSliderDragging() const { return lightDrawer.isSliderDragging(); }
 #endif
@@ -72,7 +72,7 @@ class Menu {
   mutable int openingY = -1;
   mutable int selected = 0;
   mutable bool selectedVisible = false;
-#if FREEINK_DEVICE_X4PRO
+#if INX_HAS_FRONTLIGHT
   mutable LightDrawer lightDrawer;
 #endif
 

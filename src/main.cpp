@@ -66,7 +66,7 @@ MappedInputManager input(gpio);
 GfxRenderer renderer(display);
 GfxRenderer& render = renderer;
 
-#if FREEINK_DEVICE_X4PRO
+#if INX_HAS_FRONTLIGHT
 FrontlightManager frontlight;
 #endif
 
@@ -153,7 +153,7 @@ void switchTo(Args&&... args) {
     currentActivity = nullptr;
   }
 
-#if FREEINK_DEVICE_X4PRO
+#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_LILYGO
   input.discardPendingTouchTap();
   input.discardPendingSwipe();
   input.ignoreCurrentTouch();
@@ -366,6 +366,8 @@ void setup() {
 
 #if FREEINK_DEVICE_X4PRO
   freeink::applyXteinkDisplayController();
+#endif
+#if INX_HAS_FRONTLIGHT
   frontlight.begin();
 #endif
 

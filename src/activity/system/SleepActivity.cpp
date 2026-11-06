@@ -55,7 +55,17 @@ bool sleepTwoBitEnabled() {
          SETTINGS.sleepScreenCoverFilter == SystemSetting::SLEEP_SCREEN_COVER_FILTER::NO_FILTER;
 }
 
-bool sleepImageQualityEnabled() { return SETTINGS.sleepImageQuality == SystemSetting::SLEEP_IMAGE_HIGH; }
+// INX_GRAY_OVERLAY boards (T5 S3) draw grey as an overlay on the last B/W push, and black
+// comes only from that push. The quality path skips it, so black pixels stayed white and a
+// cover came out nearly blank. The overlay driver ignores the quality flag anyway, so High
+// renders as Medium there.
+#ifndef INX_GRAY_OVERLAY
+#define INX_GRAY_OVERLAY 0
+#endif
+
+bool sleepImageQualityEnabled() {
+  return !INX_GRAY_OVERLAY && SETTINGS.sleepImageQuality == SystemSetting::SLEEP_IMAGE_HIGH;
+}
 
 bool dateTimeSleepScreenAvailable() { return true; }
 

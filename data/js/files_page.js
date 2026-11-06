@@ -538,16 +538,35 @@ async function uploadFolderThumbnail(path) {
   input.click();
 }
 
-function openCoverModal() {
+// Sleep images are sized to the device's portrait screen (540x960 on the T5 S3, 480x800 on
+// the others). /api/status reports it; fall back to 480x800 if that request fails.
+let sleepImageSizePromise = null;
+function sleepImageSize() {
+  if (!sleepImageSizePromise) {
+    sleepImageSizePromise = fetch("/api/status")
+      .then((res) => (res.ok ? res.json() : {}))
+      .then((status) => ({
+        width: status.screenWidth > 0 ? status.screenWidth : 480,
+        height: status.screenHeight > 0 ? status.screenHeight : 800,
+      }))
+      .catch(() => ({ width: 480, height: 800 }));
+  }
+  return sleepImageSizePromise;
+}
+
+async function openCoverModal() {
   const input = document.getElementById("cover-input");
   input.value = "";
   input.accept = "image/png,image/jpeg,image/bmp,.png,.jpg,.jpeg,.bmp";
   const copy = document.querySelector("#cover-modal .modal-copy");
   if (copy) copy.textContent = "Images are resized for the display and saved in /sleep. PNG transparency is preserved.";
   const options = document.querySelector("#cover-modal .cover-options");
-  if (options) options.textContent = "Maximum 480 × 800 · PNG transparency preserved · JPG/BMP converted to JPEG";
   document.getElementById("cover-error").textContent = "";
   openModal("cover-modal");
+  const size = await sleepImageSize();
+  if (options)
+    options.textContent =
+      "Maximum " + size.width + " × " + size.height + " · PNG transparency preserved · JPG/BMP converted to JPEG";
 }
 
 async function uploadCovers() {
@@ -562,6 +581,7 @@ async function uploadCovers() {
   button.disabled = true;
   closeModal("cover-modal");
   setUploadStatus("Preparing cover art", "0/" + files.length, 0, true);
+  const size = await sleepImageSize();
   let completed = 0;
   for (let index = 0; index < files.length; index++) {
     const file = files[index];
@@ -569,7 +589,7 @@ async function uploadCovers() {
     try {
       const preservePng = file.type === "image/png" || /\.png$/i.test(file.name);
       const mimeType = preservePng ? "image/png" : "image/jpeg";
-      const image = await imageToRaster(file, 480, 800, false, mimeType, preservePng ? undefined : 1);
+      const image = await imageToRaster(file, size.width, size.height, false, mimeType, preservePng ? undefined : 1);
       const outputName = file.name.replace(/\.[^.]+$/, "") + (preservePng ? ".png" : ".jpg");
       await uploadBlobToPath(image, outputName, "/sleep");
       completed++;

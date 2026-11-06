@@ -820,8 +820,9 @@ void LocalServer::handleStatus() const {
   doc["device"] = BoardConfig::ACTIVE.name;
   doc["displayWidth"] = BoardConfig::ACTIVE.displayWidth;
   doc["displayHeight"] = BoardConfig::ACTIVE.displayHeight;
-  doc["screenWidth"] = 480;
-  doc["screenHeight"] = 800;
+  // Portrait UI size: the panels are landscape-native, so width and height swap.
+  doc["screenWidth"] = BoardConfig::ACTIVE.displayHeight;
+  doc["screenHeight"] = BoardConfig::ACTIVE.displayWidth;
 
   String json;
   serializeJson(doc, json);

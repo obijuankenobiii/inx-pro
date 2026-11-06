@@ -91,13 +91,13 @@ class MappedInputManager {
   void discardPendingTouchTap() const { pendingTouchTap_ = false; }
   /** Discards a latched swipe before an activity transition, so the gesture that ended one
    *  activity is not handled again by the next one. */
-#if FREEINK_DEVICE_X4PRO
+#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_LILYGO
   void discardPendingSwipe() const { gpio.discardTouchSwipe(); }
 #else
   void discardPendingSwipe() const {}
 #endif
   /** Swallow a touch still held across an activity transition, including its release. */
-#if FREEINK_DEVICE_X4PRO
+#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_LILYGO
   void ignoreCurrentTouch() const { gpio.ignoreCurrentTouchUntilRelease(); }
 #else
   void ignoreCurrentTouch() const {}

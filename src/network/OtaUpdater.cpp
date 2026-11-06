@@ -261,6 +261,8 @@ OtaUpdater::OtaUpdaterError OtaUpdater::checkForUpdateWorker() {
   constexpr const char* expectedAssetName =
 #if FREEINK_DEVICE_STICKY
       "sticky.bin";
+#elif FREEINK_DEVICE_LILYGO
+      "t5s3.bin";
 #else
       "x4pro.bin";
 #endif

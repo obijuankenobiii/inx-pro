@@ -1584,7 +1584,7 @@ void EpubActivity::loop() {
     return;
   }
 
-#if FREEINK_DEVICE_X4PRO
+#if INX_HAS_FRONTLIGHT
   if (!READER_SETTINGS.disableLightControl && frontlight_ui::handleEdgeSwipe(mappedInput, renderer)) {
     return;
   }

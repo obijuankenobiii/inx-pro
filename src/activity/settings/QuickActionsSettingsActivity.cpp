@@ -48,7 +48,7 @@ void drawScrollBar(const GfxRenderer& renderer, const int x, const int y, const 
 }
 
 bool isSupportedReaderAction(const int action) {
-#if FREEINK_DEVICE_X4PRO
+#if INX_HAS_FRONTLIGHT
   return true;
 #else
   return action != SystemSetting::BTN_ACTION_TOGGLE_LIGHT;

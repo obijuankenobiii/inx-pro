@@ -23,9 +23,10 @@ Import("env")
 # Reset sequence to use before connecting. `default-reset` drives DTR/RTS as if a USB-UART
 # bridge had EN/GPIO0 wired to them. The X4 Pro has no bridge — the port is the S3's native
 # USB — so that does nothing and esptool reports "No serial data received". `usb-reset` is
-# the in-band sequence for native USB and is what this board needs.
+# the in-band sequence for native USB and is what this board needs. The LilyGo T5 S3's USB-C
+# is the same native USB-Serial-JTAG port, so it uses `usb-reset` too.
 def _resetMode(env):
-    return "usb-reset" if env["PIOENV"] == "x4pro" else "default-reset"
+    return "usb-reset" if env["PIOENV"] in ("x4pro", "t5s3") else "default-reset"
 
 
 def _esptool(env, args, label):

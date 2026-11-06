@@ -1,6 +1,6 @@
 #include "LightDrawer.h"
 
-#if FREEINK_DEVICE_X4PRO
+#if INX_HAS_FRONTLIGHT
 
 #include <Arduino.h>
 #include <GfxRenderer.h>
@@ -19,7 +19,6 @@
 
 namespace navigation {
 namespace {
-constexpr int lightDrawerHeight = 330;
 constexpr int lightButtonSize = 40;
 constexpr int lightButtonY = 30;
 constexpr int lightButtonRightMargin = 20;
@@ -36,6 +35,11 @@ constexpr int lightBrightnessLabelY = 120;
 constexpr int lightBrightnessY = 176;
 constexpr int lightTemperatureLabelY = 220;
 constexpr int lightTemperatureY = 266;
+
+// Single-channel boards (the T5 S3) have no colour temperature to set, so the drawer ends
+// below the brightness slider, with the same bottom gap.
+bool hasTemperatureSlider() { return frontlight.hasColorTemperature(); }
+int lightDrawerHeight() { return hasTemperatureSlider() ? 330 : 240; }
 
 int lightValueFromTrack(const int tapX, const bool brightness) {
   const int clamped = std::max(lightTrackX, std::min(lightTrackX + lightTrackWidth, tapX));
@@ -190,9 +194,9 @@ void LightDrawer::render() const {
   const int width = drawerRenderer.getScreenWidth();
   const int screenHeight = drawerRenderer.getScreenHeight();
 
-  drawerRenderer.rectangle.fill(0, 0, width, lightDrawerHeight,
+  drawerRenderer.rectangle.fill(0, 0, width, lightDrawerHeight(),
                                 static_cast<int>(GfxRenderer::FillTone::Paper));
-  drawerRenderer.rectangle.render(0, 0, width, lightDrawerHeight, true);
+  drawerRenderer.rectangle.render(0, 0, width, lightDrawerHeight(), true);
   drawerRenderer.text.render(MONTSERRAT_16_FONT_ID, 20, 30, "Light", true, EpdFontFamily::BOLD);
 
   const bool on = frontlight.brightness() > 0;
@@ -206,6 +210,7 @@ void LightDrawer::render() const {
 
   drawerRenderer.text.render(MONTSERRAT_10_FONT_ID, 20, lightBrightnessLabelY, "Brightness", true);
   drawLightTrack(drawerRenderer, lightBrightnessY, frontlight.brightness());
+  if (!hasTemperatureSlider()) return;
   drawerRenderer.text.render(MONTSERRAT_10_FONT_ID, 20, lightTemperatureLabelY, "Cool", true);
   const int warmWidth = drawerRenderer.text.getWidth(MONTSERRAT_10_FONT_ID, "Warm");
   drawerRenderer.text.render(MONTSERRAT_10_FONT_ID, width - 40 - warmWidth, lightTemperatureLabelY, "Warm",
@@ -257,11 +262,16 @@ LightDrawer::Action LightDrawer::handleInput(MappedInputManager& input) const {
     if (input.wasTouchPressedInScreen(drawerRenderer, nx, ny)) {
       const int x = static_cast<int>(nx * drawerRenderer.getScreenWidth());
       const int y = static_cast<int>(ny * drawerRenderer.getScreenHeight());
-      const bool inBrightnessTrack = y >= lightBrightnessY - 24 && y <= lightBrightnessY + 24 &&
+      // A press on a caret is a step, handled on release by handleTap(). The caret touch
+      // boxes overlap the track's ends, and starting a drag there would jump the value to
+      // the clamped track end: 100% from the right caret, 0% from the left.
+      const bool onCaret = isInCaret(x, y, lightBrightnessY, false) || isInCaret(x, y, lightBrightnessY, true) ||
+                           isInCaret(x, y, lightTemperatureY, false) || isInCaret(x, y, lightTemperatureY, true);
+      const bool inBrightnessTrack = !onCaret && y >= lightBrightnessY - 24 && y <= lightBrightnessY + 24 &&
                                      x >= lightTrackX - lightKnobRadius &&
                                      x <= lightTrackX + lightTrackWidth + lightKnobRadius;
-      const bool inTemperatureTrack = y >= lightTemperatureY - 24 && y <= lightTemperatureY + 24 &&
-                                      x >= lightTrackX - lightKnobRadius &&
+      const bool inTemperatureTrack = !onCaret && hasTemperatureSlider() && y >= lightTemperatureY - 24 &&
+                                      y <= lightTemperatureY + 24 && x >= lightTrackX - lightKnobRadius &&
                                       x <= lightTrackX + lightTrackWidth + lightKnobRadius;
       if (inBrightnessTrack || inTemperatureTrack) {
         sliderControl = inBrightnessTrack ? 0 : 1;
@@ -315,7 +325,7 @@ LightDrawer::Action LightDrawer::handleInput(MappedInputManager& input) const {
 LightDrawer::Action LightDrawer::handleTap(const int tapX, const int tapY) const {
   const int lightButtonX = drawerRenderer.getScreenWidth() - lightButtonRightMargin - lightButtonSize;
   const int darkModeButtonX = lightButtonX - lightButtonGap - lightButtonSize;
-  if (tapX < 0 || tapX >= drawerRenderer.getScreenWidth() || tapY < 0 || tapY >= lightDrawerHeight) {
+  if (tapX < 0 || tapX >= drawerRenderer.getScreenWidth() || tapY < 0 || tapY >= lightDrawerHeight()) {
     open = false;
     return Action::Closed;
   }
@@ -346,9 +356,11 @@ LightDrawer::Action LightDrawer::handleTap(const int tapX, const int tapY) const
     return Action::Opened;
   }
 
+  if (!hasTemperatureSlider()) return Action::Opened;
+
   if (isInCaret(tapX, tapY, lightTemperatureY, false) || isInCaret(tapX, tapY, lightTemperatureY, true)) {
     const bool increase = isInCaret(tapX, tapY, lightTemperatureY, true);
-    const int next = frontlight_ui::stepBrightness(frontlight.colorTemperature(), increase);
+    const int next = frontlight_ui::stepPercent(frontlight.colorTemperature(), increase);
     frontlight.setColorTemperature(static_cast<uint8_t>(next));
     saveLightPreferences();
     return Action::Opened;

@@ -131,7 +131,7 @@ namespace navigation {
 
 Menu::Menu(GfxRenderer& renderer)
     : menuRenderer(renderer)
-#if FREEINK_DEVICE_X4PRO
+#if INX_HAS_FRONTLIGHT
       , lightDrawer(renderer)
 #endif
 {}
@@ -205,7 +205,7 @@ void Menu::render() const {
   navigation();
   bottom();
   popup();
-#if FREEINK_DEVICE_X4PRO
+#if INX_HAS_FRONTLIGHT
   lightDrawer.render();
 #endif
 }
@@ -286,7 +286,7 @@ Menu::Action Menu::choose() const {
 }
 
 Menu::Action Menu::handleInput(MappedInputManager& input) const {
-#if FREEINK_DEVICE_X4PRO
+#if INX_HAS_FRONTLIGHT
   const LightDrawer::Action lightAction = lightDrawer.handleInput(input);
   if (lightAction == LightDrawer::Action::Opened) {
     open = false;
@@ -332,7 +332,7 @@ Menu::Action Menu::handleInput(MappedInputManager& input) const {
 }
 
 Menu::Action Menu::handleTap(const int tapX, const int tapY) const {
-#if FREEINK_DEVICE_X4PRO
+#if INX_HAS_FRONTLIGHT
   if (lightDrawer.isOpen()) {
     switch (lightDrawer.handleTap(tapX, tapY)) {
       case LightDrawer::Action::Opened:

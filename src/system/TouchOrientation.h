@@ -17,6 +17,7 @@
  * build_src_filter in platformio.ini:
  *     Sticky  -> TouchOrientationSticky.cpp
  *     X4 Pro  -> TouchOrientationX4Pro.cpp
+ *     T5 S3   -> TouchOrientationT5S3.cpp
  * so neither device can perturb the other and there is no runtime or preprocessor
  * branching on the hot path.
  */

@@ -18,7 +18,7 @@
 #include "state/Session.h"
 #include "state/SystemSetting.h"
 #include "system/LanguageManager.h"
-#if FREEINK_DEVICE_X4PRO
+#if INX_HAS_FRONTLIGHT
 #include "system/Frontlight.h"
 #include "system/FrontlightPreferences.h"
 #endif
@@ -47,7 +47,7 @@ void BootActivity::onEnter() {
     renderer.setDarkMode(SETTINGS.darkMode != 0);
     READER_SETTINGS.loadFromFile();
     OPDS_STORE.loadOrMigrate({"Default", SETTINGS.opdsServerUrl, SETTINGS.opdsUsername, SETTINGS.opdsPassword});
-#if FREEINK_DEVICE_X4PRO
+#if INX_HAS_FRONTLIGHT
     frontlight_preferences::Settings lightSettings;
     if (frontlight_preferences::load(lightSettings)) {
       frontlight.setColorTemperature(lightSettings.warmPercent);
