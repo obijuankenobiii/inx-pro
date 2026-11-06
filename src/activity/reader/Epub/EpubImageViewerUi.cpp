@@ -411,26 +411,26 @@ bool EpubImageViewerUi::rotateAt(EpubActivity& activity, const int tapX, const i
 }
 
 void EpubImageViewerUi::mapTouch(EpubActivity& activity, const float nx, const float ny, int& x, int& y) const {
-  const int rawX = std::clamp(static_cast<int>(nx * HalDisplay::DISPLAY_HEIGHT), 0,
-                              static_cast<int>(HalDisplay::DISPLAY_HEIGHT) - 1);
-  const int rawY = std::clamp(static_cast<int>(ny * HalDisplay::DISPLAY_WIDTH), 0,
-                              static_cast<int>(HalDisplay::DISPLAY_WIDTH) - 1);
+  const int panelWidth = activity.renderer.getPanelWidth();
+  const int panelHeight = activity.renderer.getPanelHeight();
+  const int rawX = std::clamp(static_cast<int>(nx * panelHeight), 0, panelHeight - 1);
+  const int rawY = std::clamp(static_cast<int>(ny * panelWidth), 0, panelWidth - 1);
   switch (activity.renderer.getOrientation()) {
     case GfxRenderer::Portrait:
       x = rawX;
       y = rawY;
       break;
     case GfxRenderer::LandscapeClockwise:
-      x = HalDisplay::DISPLAY_WIDTH - 1 - rawY;
+      x = panelWidth - 1 - rawY;
       y = rawX;
       break;
     case GfxRenderer::PortraitInverted:
-      x = HalDisplay::DISPLAY_HEIGHT - 1 - rawX;
-      y = HalDisplay::DISPLAY_WIDTH - 1 - rawY;
+      x = panelHeight - 1 - rawX;
+      y = panelWidth - 1 - rawY;
       break;
     case GfxRenderer::LandscapeCounterClockwise:
       x = rawY;
-      y = HalDisplay::DISPLAY_HEIGHT - 1 - rawX;
+      y = panelHeight - 1 - rawX;
       break;
   }
 }

@@ -48,11 +48,18 @@ jobs:
           test -s "${GITHUB_WORKSPACE}/.pio/build/x4pro/firmware.bin"
           cp "${GITHUB_WORKSPACE}/.pio/build/x4pro/firmware.bin" "${GITHUB_WORKSPACE}/release/x4pro.bin"
 
+      - name: Build T5 S3
+        run: |
+          pio run -e t5s3
+          test -s "${GITHUB_WORKSPACE}/.pio/build/t5s3/firmware.bin"
+          cp "${GITHUB_WORKSPACE}/.pio/build/t5s3/firmware.bin" "${GITHUB_WORKSPACE}/release/t5s3.bin"
+
       - name: Prepare release images
         run: |
           test -s "${GITHUB_WORKSPACE}/release/sticky.bin"
           test -s "${GITHUB_WORKSPACE}/release/sticky-merged.bin"
           test -s "${GITHUB_WORKSPACE}/release/x4pro.bin"
+          test -s "${GITHUB_WORKSPACE}/release/t5s3.bin"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -62,6 +69,7 @@ jobs:
             release/sticky.bin
             release/sticky-merged.bin
             release/x4pro.bin
+            release/t5s3.bin
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
@@ -71,3 +79,4 @@ jobs:
             release/sticky.bin
             release/sticky-merged.bin
             release/x4pro.bin
+            release/t5s3.bin

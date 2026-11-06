@@ -138,7 +138,7 @@ void Home::onEnter() {
 
 void Home::menu() {
   UiPage::menu();
-#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
+#if INX_HAS_FRONTLIGHT || FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
   if (!isLightDrawerOpen()) drawHomeClockAndBattery(renderer);
 #else
   drawHomeClockAndBattery(renderer);

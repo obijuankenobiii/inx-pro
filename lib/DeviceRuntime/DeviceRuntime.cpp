@@ -13,7 +13,7 @@
 #include <XteinkDetect.h>
 #endif
 
-#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
+#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO || FREEINK_DEVICE_LILYGO
 FrontlightManager frontlight;
 #endif
 
@@ -24,7 +24,7 @@ void initialize(HalGPIO& gpio) {
   freeink::applyXteinkDisplayController();
 #endif
 
-#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
+#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO || FREEINK_DEVICE_LILYGO
   frontlight.begin();
 #endif
 
@@ -43,7 +43,7 @@ void beforeActivitySwitch(HalDisplay& display, GfxRenderer& renderer, MappedInpu
   renderer.syncWriteBufferFromActive();
 #endif
 
-#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4
+#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_LILYGO || FREEINK_DEVICE_PICCO
   input.discardPendingTouchTap();
   input.discardPendingSwipe();
   input.ignoreCurrentTouch();

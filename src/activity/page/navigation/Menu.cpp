@@ -226,7 +226,7 @@ namespace navigation {
 
 Menu::Menu(GfxRenderer& renderer)
     : menuRenderer(renderer)
-#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
+#if INX_HAS_FRONTLIGHT || FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
       , lightDrawer(renderer)
 #endif
 {}
@@ -308,7 +308,7 @@ void Menu::render() const {
   navigation();
   bottom();
   popup();
-#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
+#if INX_HAS_FRONTLIGHT || FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
   lightDrawer.render();
 #endif
 }
@@ -425,7 +425,7 @@ Menu::Action Menu::choose() const {
 }
 
 Menu::Action Menu::handleInput(MappedInputManager& input) const {
-#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
+#if INX_HAS_FRONTLIGHT || FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
   const LightDrawer::Action lightAction = lightDrawer.handleInput(input);
   if (lightAction == LightDrawer::Action::Opened) {
     open = false;
@@ -506,7 +506,7 @@ Menu::Action Menu::handleInput(MappedInputManager& input) const {
 }
 
 Menu::Action Menu::handleTap(const int tapX, const int tapY) const {
-#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
+#if INX_HAS_FRONTLIGHT || FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
   if (lightDrawer.isOpen()) {
     switch (lightDrawer.handleTap(tapX, tapY)) {
       case LightDrawer::Action::Opened:

@@ -11,7 +11,7 @@
 #include "EpubActivity.h"
 #include "EpubNavigation.h"
 #include "state/SystemSetting.h"
-#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
+#if INX_HAS_FRONTLIGHT || FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
 #include "system/Frontlight.h"
 #endif
 
@@ -148,7 +148,7 @@ void ReaderButtonBindings::dispatch(EpubActivity& act, const uint8_t action) {
       act.goToPercentUi_.enter(act);
       break;
     case SystemSetting::BTN_ACTION_TOGGLE_LIGHT:
-#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
+#if INX_HAS_FRONTLIGHT || FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
       if (frontlight.present()) {
         if (frontlight.brightness() > 0) {
           frontlight.off();

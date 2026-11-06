@@ -39,7 +39,7 @@ const char* buttonLabel(const int row) {
 const char* pageTurnLabel(const uint8_t mode) { return mode == ReaderSetting::PAGE_TURN_SWIPE ? "Swipe" : "Tap"; }
 
 bool isSupportedReaderAction(const int action) {
-#if FREEINK_DEVICE_X4PRO
+#if INX_HAS_FRONTLIGHT
   return true;
 #else
   return action != SystemSetting::BTN_ACTION_TOGGLE_LIGHT;

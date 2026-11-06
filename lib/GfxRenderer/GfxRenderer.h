@@ -23,6 +23,19 @@
 #include "TextRender.h"
 #include "UiRender.h"
 
+#ifndef INX_VIEWABLE_MARGIN_TOP
+#define INX_VIEWABLE_MARGIN_TOP 9
+#endif
+#ifndef INX_VIEWABLE_MARGIN_RIGHT
+#define INX_VIEWABLE_MARGIN_RIGHT 3
+#endif
+#ifndef INX_VIEWABLE_MARGIN_BOTTOM
+#define INX_VIEWABLE_MARGIN_BOTTOM 3
+#endif
+#ifndef INX_VIEWABLE_MARGIN_LEFT
+#define INX_VIEWABLE_MARGIN_LEFT 3
+#endif
+
 class GfxRenderer {
  public:
   enum RenderMode { BW, GRAYSCALE_LSB, GRAYSCALE_MSB, GRAY2_LSB, GRAY2_MSB };
@@ -76,10 +89,13 @@ class GfxRenderer {
   explicit GfxRenderer(HalDisplay& halDisplay);
   ~GfxRenderer();
 
-  static constexpr int VIEWABLE_MARGIN_TOP = 9;
-  static constexpr int VIEWABLE_MARGIN_RIGHT = 3;
-  static constexpr int VIEWABLE_MARGIN_BOTTOM = 3;
-  static constexpr int VIEWABLE_MARGIN_LEFT = 3;
+  // Panel safe area in portrait pixels, before the user's screen margin. The defaults suit the
+  // Sticky and X4 Pro; an env can override them with -DINX_VIEWABLE_MARGIN_* (the T5 S3's case
+  // covers more of its panel edge).
+  static constexpr int VIEWABLE_MARGIN_TOP = INX_VIEWABLE_MARGIN_TOP;
+  static constexpr int VIEWABLE_MARGIN_RIGHT = INX_VIEWABLE_MARGIN_RIGHT;
+  static constexpr int VIEWABLE_MARGIN_BOTTOM = INX_VIEWABLE_MARGIN_BOTTOM;
+  static constexpr int VIEWABLE_MARGIN_LEFT = INX_VIEWABLE_MARGIN_LEFT;
 
   void insertFont(int fontId, EpdFontFamily font);
   void insertStreamingFont(int fontId, std::unique_ptr<ExternalFont> streamingFont, const EpdFontFamily& font);
@@ -98,6 +114,9 @@ class GfxRenderer {
 
   int getScreenWidth() const;
   int getScreenHeight() const;
+  /** Native (unrotated) panel dimensions, as reported by the display at begin(). */
+  uint16_t getPanelWidth() const { return panelWidth; }
+  uint16_t getPanelHeight() const { return panelHeight; }
   void displayBuffer(const HalDisplay::RefreshMode refreshMode = HalDisplay::FAST_REFRESH) const;
   /** Refreshes only a logical-coordinate rectangle, expanded to panel byte boundaries. */
   void displayWindow(const DisplayRegion& region,

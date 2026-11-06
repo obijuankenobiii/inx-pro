@@ -1631,7 +1631,7 @@ void EpubActivity::loop() {
     return;
   }
 
-#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
+#if INX_HAS_FRONTLIGHT || FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
   if (!READER_SETTINGS.disableLightControl && frontlight_ui::handleEdgeSwipe(mappedInput, renderer)) {
     return;
   }

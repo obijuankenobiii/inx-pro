@@ -2,7 +2,7 @@
 
 Reimagined. Improved. Simplified.
 
-Inx Pro is a community firmware for Seeed Studio's reTerminal Sticky and Xteink X4 Pro e-paper reader. It is focused on a cleaner reading experience, better EPUB support, native image rendering, SD-card fonts, and practical device tools.
+Inx Pro is a community firmware for Seeed Studio's reTerminal Sticky and Xteink X4 Pro e-paper reader, with experimental support for the LilyGo T5 S3 E-Paper Pro / Pro Lite. It is focused on a cleaner reading experience, better EPUB support, native image rendering, SD-card fonts, and practical device tools.
 
 *This project was a fork of CrossPoint and is no longer pulling changes from it*
 
@@ -319,6 +319,31 @@ The merged factory image is also written to:
 
 The X4 Pro may briefly disappear and re-enumerate during reset. If the port changes, run `pio device list` and use the newly enumerated port.
 
+### LilyGo T5 S3 E-Paper Pro / Pro Lite (experimental)
+
+Support for the 4.7" 960×540 T5 S3 is new. It has been tested on the Pro Lite; the Pro (with LoRa and GPS) has not
+been tried yet. Expect layout rough edges, since the UI was designed for 800×480.
+
+The board's USB-C port is the ESP32-S3's native USB-Serial-JTAG, commonly `/dev/ttyACM0` on Linux or
+`/dev/cu.usbmodemXXXX` on macOS. Back up the stock firmware before the first flash:
+
+```sh
+esptool.py --chip esp32s3 --port /dev/ttyACM0 read_flash 0 0x1000000 t5s3-stock.bin
+```
+
+Then build and flash:
+
+```sh
+pio run -e t5s3
+pio run -e t5s3 -t upload --upload-port /dev/ttyACM0
+```
+
+If the upload cannot connect, hold **BOOT**, tap **RST**, release **BOOT** and retry. To restore the stock firmware,
+write the backup back with `esptool.py --chip esp32s3 --port /dev/ttyACM0 write_flash 0 t5s3-stock.bin`.
+
+On the device, **BOOT** is the power button (hold to sleep, press to wake), the second user button is mapped to
+**Down**, and the touch key below the screen is **Back**. Everything else is touch.
+
 ### Web Flash
 
 For a complete browser-based installation, use the target's `firmware.factory.bin` image with the [Inx Pro web flasher](https://github.com/obijuankenobiii/inx-web). The factory image is intended for a blank or recovery flash because it includes the bootloader, partition table, OTA metadata, and application.
@@ -350,6 +375,8 @@ To return the Sticky to official firmware, use the recovery or boot-partition in
 pio run -e sticky
 # or
 pio run -e x4pro
+# or
+pio run -e t5s3
 ```
 
 ### Flash

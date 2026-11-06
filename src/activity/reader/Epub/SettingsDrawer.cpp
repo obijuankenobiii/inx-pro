@@ -23,7 +23,9 @@
 #include "images/AlignJustify.h"
 #include "images/AlignLeft.h"
 #include "images/AlignRight.h"
-#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
+#if INX_HAS_FRONTLIGHT || FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO || \
+    FREEINK_DEVICE_LILYGO
+#include <BoardConfig.h>
 #include "images/Temp.h"
 #include "images/LightOff.h"
 #include "images/LightOn.h"
@@ -64,18 +66,21 @@ constexpr int embeddedTabVerticalPadding = 14;
 constexpr int selectorRows = 5;
 constexpr int selectorRowHeight = LIST_ITEM_HEIGHT;
 constexpr int standaloneRows = 5;
-constexpr int kBottomControlHeight = 140;
-#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
-constexpr int kFrontlightRowHeight = kBottomControlHeight / 2;
+// One row per frontlight slider: brightness, plus colour temperature on warm/cool boards.
+#if INX_HAS_FRONTLIGHT && !FREEINK_CAP_WARMLIGHT
+#define FRONTLIGHT_ROWS 1
+#else
+#define FRONTLIGHT_ROWS 2
+#endif
+constexpr int kBottomControlHeight = 70 * FRONTLIGHT_ROWS;
+constexpr int kFrontlightRowHeight = kBottomControlHeight / FRONTLIGHT_ROWS;
 constexpr int kFrontlightCaretSize = 30;
 constexpr int kFrontlightCaretGap = 8;
-constexpr int kFrontlightCaretTouchPadding = 10;
 constexpr int kFrontlightIconSize = 40;
 constexpr int kFrontlightTrackHeight = 4;
 constexpr int kFrontlightKnobRadius = 15;
 constexpr int kFrontlightKnobBorder = 2;
 constexpr int kFrontlightControlPadding = 20;
-#endif
 
 uint8_t* allocateSelectorFrame(const size_t size) {
 #if defined(ARDUINO_ARCH_ESP32)
@@ -1053,7 +1058,8 @@ bool SettingsDrawer::handleMarginEditorInput(MappedInputManager& input) {
   return true;
 }
 
-#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
+#if INX_HAS_FRONTLIGHT || FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO || \
+    FREEINK_DEVICE_LILYGO
 namespace {
 int frontlightPercentFromTrack(const int x, const int left, const int width, const bool brightness) {
   const int clamped = std::max(left, std::min(left + width, x));
@@ -1061,27 +1067,23 @@ int frontlightPercentFromTrack(const int x, const int left, const int width, con
   if (brightness) return frontlight_ui::percentFromFraction(fraction);
   return static_cast<int>(fraction * 100.0f + 0.5f);
 }
-
-bool frontlightPointInCaret(const int x, const int y, const int caretX, const int centerY) {
-  return x >= caretX - kFrontlightCaretTouchPadding &&
-         x < caretX + kFrontlightCaretSize + kFrontlightCaretTouchPadding &&
-         y >= centerY - kFrontlightCaretSize / 2 - kFrontlightCaretTouchPadding &&
-         y < centerY + kFrontlightCaretSize / 2 + kFrontlightCaretTouchPadding;
-}
 }
 #endif
 
 void SettingsDrawer::drawFrontlightBar() {
-#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
+#if INX_HAS_FRONTLIGHT || FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO || \
+    FREEINK_DEVICE_LILYGO
   if (embedded_ || !frontlight.present()) return;
 
   const int barY = renderer.getScreenHeight() - kBottomControlHeight;
   renderer.rectangle.fill(drawerX, barY, drawerWidth, kBottomControlHeight, false);
   renderer.line.render(drawerX, barY, drawerX + drawerWidth, barY, true);
+#if FRONTLIGHT_ROWS > 1
   renderer.line.render(drawerX, barY + kFrontlightRowHeight, drawerX + drawerWidth,
                        barY + kFrontlightRowHeight, true, LineRender::Style::Dotted);
+#endif
 
-  for (int control = 0; control < 2; ++control) {
+  for (int control = 0; control < FRONTLIGHT_ROWS; ++control) {
     const int controlX = drawerX;
     const int controlRight = drawerX + drawerWidth;
     const int centerY = barY + control * kFrontlightRowHeight + kFrontlightRowHeight / 2;
@@ -1123,7 +1125,8 @@ void SettingsDrawer::drawFrontlightBar() {
 }
 
 bool SettingsDrawer::handleFrontlightInput(MappedInputManager& input, const uint32_t currentTime) {
-#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
+#if INX_HAS_FRONTLIGHT || FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO || \
+    FREEINK_DEVICE_LILYGO
   if (embedded_ || !frontlight.present()) return false;
 
   const int barY = renderer.getScreenHeight() - kBottomControlHeight;
@@ -1186,15 +1189,22 @@ bool SettingsDrawer::handleFrontlightInput(MappedInputManager& input, const uint
     const int x = static_cast<int>(nx * renderer.getScreenWidth());
     const int y = static_cast<int>(ny * renderer.getScreenHeight());
     if (x >= drawerX && x < drawerX + drawerWidth && y >= barY && y < barBottom) {
+#if FRONTLIGHT_ROWS > 1
       frontlightDragControl_ = y < barY + kFrontlightRowHeight ? 0 : 1;
-      const int centerY = barY + frontlightDragControl_ * kFrontlightRowHeight + kFrontlightRowHeight / 2;
+#else
+      frontlightDragControl_ = 0;
+#endif
       const int iconX = drawerX + kFrontlightControlPadding;
       const int trackLeft = iconX + kFrontlightIconSize + kFrontlightCaretGap + kFrontlightCaretSize +
                             kFrontlightCaretGap;
       const int trackRight = drawerX + drawerWidth - kFrontlightControlPadding - kFrontlightCaretSize -
                              kFrontlightCaretGap;
-      const int leftCaretX = trackLeft - kFrontlightCaretGap - kFrontlightCaretSize;
-      const int rightCaretX = trackRight + kFrontlightCaretGap;
+      // Everything beside the track is an arrow, at any height in the row. A box around the
+      // arrow icon missed taps at the screen's bottom edge, where the brightness row sits on
+      // boards without a temperature row, and the press fell through to a drag clamped to
+      // the track end: 0% from the left arrow, 100% from the right.
+      const bool leftArrow = x >= iconX + kFrontlightIconSize && x < trackLeft - kFrontlightCaretGap / 2;
+      const bool rightArrow = x > trackRight + kFrontlightCaretGap / 2;
       if (frontlightDragControl_ == 0 && x >= iconX && x < iconX + kFrontlightIconSize) {
         if (frontlight.brightness() > 0) {
           frontlight.off();
@@ -1207,11 +1217,11 @@ bool SettingsDrawer::handleFrontlightInput(MappedInputManager& input, const uint
         renderWithRefresh(HalDisplay::FAST_REFRESH);
         return true;
       }
-      if (frontlightPointInCaret(x, y, leftCaretX, centerY) ||
-          frontlightPointInCaret(x, y, rightCaretX, centerY)) {
-        const bool increase = frontlightPointInCaret(x, y, rightCaretX, centerY);
+      if (leftArrow || rightArrow) {
+        const bool increase = rightArrow;
         const int current = frontlightDragControl_ == 0 ? frontlight.brightness() : frontlight.colorTemperature();
-        const int next = frontlight_ui::stepBrightness(current, increase);
+        const int next = frontlightDragControl_ == 0 ? frontlight_ui::stepBrightness(current, increase)
+                                                     : frontlight_ui::stepPercent(current, increase);
         if (frontlightDragControl_ == 0) {
           frontlight.setBrightness(static_cast<uint8_t>(next));
         } else {
