@@ -94,9 +94,13 @@ std::vector<SettingInfo> buildSystemSettings() {
   settings.reserve(40);
 
   settings.push_back(SettingInfo::Separator("Display ", GroupType::DEVICE_DISPLAY));
+  settings.push_back(SettingInfo::Toggle("Hidden Menu", &SystemSetting::hiddenMenu,
+                                         GroupType::DEVICE_DISPLAY));
   settings.push_back(SettingInfo::Enum(
       "Sleep Screen", &SystemSetting::sleepScreen,
-      {"Dark", "Light", "Custom", "Recent Book", "Transparent Cover", "None", "Date Time", "Widget"},
+      {"Dark", "Light", "Custom", "Recent Book", "Transparent Cover", "None", "Widget"},
+      {SystemSetting::DARK, SystemSetting::LIGHT, SystemSetting::CUSTOM, SystemSetting::COVER,
+       SystemSetting::TRANSPARENT, SystemSetting::BLANK, SystemSetting::WIDGET},
       GroupType::DEVICE_DISPLAY));
   settings.push_back(SettingInfo::Action("Choose sleep image", GroupType::DEVICE_DISPLAY));
   settings.push_back(SettingInfo::Enum("Hide Battery %", &SystemSetting::hideBatteryPercentage,

@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "activity/page/SubPage.h"
+#include "activity/page/components/global/Button.h"
 #include "activity/page/components/global/PopUp.h"
 #include "activity/page/components/global/Toggle.h"
 #include "activity/settings/BaseCarouselActivity.h"
@@ -15,6 +16,9 @@
 #include "activity/settings/BaseLibraryActivity.h"
 #include "activity/settings/BaseDescriptionActivity.h"
 #include "activity/settings/BaseTemperatureActivity.h"
+#include "activity/util/KeyboardEntryActivity.h"
+#include "images/LibraryFilterLeft.h"
+#include "images/LibraryFilterRight.h"
 #include "images/ThemeBorder.h"
 #include "images/Setting.h"
 #include "state/HomeTheme.h"
@@ -26,11 +30,8 @@
 namespace {
 
 constexpr int kRowHeight = UiPage::LIST_ITEM_HEIGHT;
-constexpr int kTop = FREEINK_DEVICE_X4PRO ? 80 : 75;
-constexpr int kPreviewTop = 130;
-constexpr int kLayoutTabTop = 78;
-constexpr int kLayoutButtonSize = 42;
-constexpr int kLayoutButtonGap = 0;
+constexpr int kContentTop = FREEINK_DEVICE_X4PRO ? 80 : 75;
+constexpr int kThemeListGap = 20;
 
 struct PreviewBounds {
   int x;
@@ -40,11 +41,33 @@ struct PreviewBounds {
 };
 
 PreviewBounds widgetPreviewBounds(const GfxRenderer& renderer) {
-  // The home preview is a full-width surface. Keep the requested lower
-  // position, but do not preserve the old home aspect ratio here: doing so
-  // shrinks the preview horizontally when the available height is reduced.
-  const int previewHeight = std::max(1, renderer.getScreenHeight() - kPreviewTop - 20);
-  return {0, kPreviewTop, renderer.getScreenWidth(), previewHeight};
+  const int previewHeight = std::max(1, renderer.getScreenHeight() - kContentTop - 20);
+  return {0, kContentTop, renderer.getScreenWidth(), previewHeight};
+}
+
+int layoutIndex(const HomeTheme::Layout layout) {
+  switch (layout) {
+    case HomeTheme::Layout::OneByOne:
+      return 0;
+    case HomeTheme::Layout::OneByTwo:
+      return 1;
+    case HomeTheme::Layout::OneByThree:
+      return 2;
+    default:
+      return 1;
+  }
+}
+
+HomeTheme::Layout layoutAtIndex(const int index) {
+  switch (index) {
+    case 0:
+      return HomeTheme::Layout::OneByOne;
+    case 2:
+      return HomeTheme::Layout::OneByThree;
+    case 1:
+    default:
+      return HomeTheme::Layout::OneByTwo;
+  }
 }
 
 bool supportsCarouselSettings(const HomeTheme::Widget widget) {
@@ -65,6 +88,10 @@ bool supportsDescriptionSettings(const HomeTheme::Widget widget) {
 
 bool supportsStatisticsSettings(const HomeTheme::Widget widget) {
   return widget == HomeTheme::Widget::Statistics;
+}
+
+bool supportsStreaksSettings(const HomeTheme::Widget widget) {
+  return widget == HomeTheme::Widget::Streaks;
 }
 
 #if FREEINK_DEVICE_STICKY
@@ -103,12 +130,19 @@ void setDefaultLibraryFolders(char (&folders)[3][128]) {
 int widgetOptionCount(const HomeTheme::Layout layout, const bool sleepTheme) {
   if (layout == HomeTheme::Layout::Classic) return 1;
   if (layout == HomeTheme::Layout::OneByOne && !sleepTheme) return 3;
+  if (sleepTheme) {
 #if FREEINK_DEVICE_STICKY
-  const int count = sleepTheme ? 5 : 18;
+    return 8;
 #else
-  const int count = sleepTheme ? 3 : 16;
+    return 6;
 #endif
-  return count - (layout == HomeTheme::Layout::OneByOne || sleepTheme ? 0 : 3);
+  }
+#if FREEINK_DEVICE_STICKY
+  const int count = 19;
+#else
+  const int count = 17;
+#endif
+  return count - (layout == HomeTheme::Layout::OneByOne ? 0 : 3);
 }
 
 HomeTheme::Widget widgetOptionAt(const HomeTheme::Layout layout, const bool sleepTheme, const int index) {
@@ -140,6 +174,7 @@ HomeTheme::Widget widgetOptionAt(const HomeTheme::Layout layout, const bool slee
     HomeTheme::Widget::Heatmap,
     HomeTheme::Widget::Library,
     HomeTheme::Widget::Statistics,
+    HomeTheme::Widget::Streaks,
   };
   if (layout == HomeTheme::Layout::OneByOne && !sleepTheme) {
     if (index < 0 || index >= static_cast<int>(sizeof(oneByOneOptions) / sizeof(oneByOneOptions[0]))) {
@@ -155,6 +190,9 @@ HomeTheme::Widget widgetOptionAt(const HomeTheme::Layout layout, const bool slee
       HomeTheme::Widget::Temperature,
       HomeTheme::Widget::Humidity,
 #endif
+      HomeTheme::Widget::Heatmap,
+      HomeTheme::Widget::Statistics,
+      HomeTheme::Widget::Streaks,
   };
   const HomeTheme::Widget* options = sleepTheme ? sleepOptions : homeOptions;
   const int optionCount = sleepTheme ? static_cast<int>(sizeof(sleepOptions) / sizeof(sleepOptions[0]))
@@ -215,12 +253,48 @@ bool inside(const int x, const int y, const int left, const int top, const int w
   return x >= left && x < left + width && y >= top && y < top + height;
 }
 
+constexpr int kWidgetGridColumns = 1;
+constexpr int kWidgetGridRows = 2;
+constexpr int kWidgetGridPageSize = kWidgetGridColumns * kWidgetGridRows;
+
+struct WidgetGridBounds {
+  int x;
+  int y;
+  int width;
+  int height;
+  int header;
+  int gridX;
+  int gridY;
+  int cellWidth;
+  int cellHeight;
+};
+
+WidgetGridBounds widgetGridBounds(const GfxRenderer& renderer) {
+  constexpr int padding = 20;
+  constexpr int gap = 12;
+  const int screenWidth = renderer.getScreenWidth();
+  const int screenHeight = renderer.getScreenHeight();
+  const int width = screenWidth;
+  const int height = screenHeight;
+  const int header = (FREEINK_DEVICE_X4PRO ? 20 : 15) + 40 + 20;
+  const int x = 0;
+  const int y = 0;
+  const int gridX = x;
+  const int gridY = y + header + padding;
+  const int gridWidth = std::max(kWidgetGridColumns, width - 16);
+  const int gridHeight = std::max(kWidgetGridRows, height - header - padding * 2);
+  const int horizontalGap = kWidgetGridColumns > 1 ? gap : 0;
+  const int cellWidth = std::max(1, (gridWidth - horizontalGap) / kWidgetGridColumns);
+  const int cellHeight = std::max(1, (gridHeight - gap) / kWidgetGridRows);
+  return {x, y, width, height, header, gridX, gridY, cellWidth, cellHeight};
+}
+
 void drawLibraryPreviewPlaceholders(GfxRenderer& renderer, const int x, const int y, const int width, const int height,
-                                    const bool background, const bool showLabel) {
+                                    const bool background, const bool showLabel, const bool oneByThree) {
   constexpr int padding = 20;
   constexpr int gap = 20;
   constexpr int layerStep = 7;
-  constexpr int count = 2;
+  constexpr int count = LibraryWidget::kVisibleFolderCount;
   if (background) {
     for (int py = (y + 1) & ~1; py < y + height; py += 2) {
       for (int px = (x + 1) & ~1; px < x + width; px += 2) renderer.drawPixel(px, py, true);
@@ -236,16 +310,18 @@ void drawLibraryPreviewPlaceholders(GfxRenderer& renderer, const int x, const in
   const int labelFont = systemFontId();
   const int labelHeight = showLabel ? renderer.text.getLineHeight(labelFont) : 0;
   const int labelSpacing = showLabel ? 14 : 0;
-  const int imageHeight = std::max(8, contentHeight - labelHeight - 10 - labelSpacing);
+  const int availableImageHeight = std::max(8, contentHeight - labelHeight - 10 - labelSpacing);
+  const int imageHeight = std::max(8, availableImageHeight * 2 / 3);
+  const int cellInset = oneByThree ? 0 : 5;
   for (int index = 0; index < count; ++index) {
     const int cellX = contentX + index * (cellWidth + gap);
-    const int availableWidth = std::max(24, cellWidth - 10);
+    const int availableWidth = std::max(24, cellWidth - cellInset * 2);
     const int frontWidth = std::max(12, std::min(availableWidth - layerStep * 3, imageHeight * 2 / 3));
     const int frontHeight = imageHeight;
     const int stackWidth = frontWidth + layerStep * 3;
-    const int stackX = cellX + std::max(5, (cellWidth - stackWidth) / 2);
+    const int stackX = cellX + std::max(cellInset, (cellWidth - stackWidth) / 2);
     const int frontX = stackX + layerStep * 3;
-    const int frontY = contentY + 5;
+    const int frontY = contentY + cellInset + (availableImageHeight - imageHeight) / 2;
     const int backingHeight = std::max(8, imageHeight - 18);
     const int thirdHeight = std::max(8, imageHeight - 12);
     const int secondHeight = std::max(8, imageHeight - 6);
@@ -274,14 +350,11 @@ void drawLibraryPreviewPlaceholders(GfxRenderer& renderer, const int x, const in
 void ThemePickerActivity::onEnter() {
   ActivityWithSubactivity::onEnter();
   HomeTheme::load();
-  selected_ = openSleepTheme_ ? HomeTheme::count() : HomeTheme::activeIndex();
-  screen_ = Screen::List;
-  hiddenMenuFocused_ = false;
-  if (openSleepTheme_) {
-    editTheme();
-  } else {
-    render();
-  }
+  sleepMode_ = openSleepTheme_;
+  selected_ = sleepMode_ ? HomeTheme::sleepActiveIndex() : HomeTheme::activeIndex();
+  listCursor_ = selected_ + 1;
+  screen_ = sleepMode_ ? Screen::List : Screen::Mode;
+  render();
 }
 
 void ThemePickerActivity::close() {
@@ -290,9 +363,13 @@ void ThemePickerActivity::close() {
 
 void ThemePickerActivity::render() {
   renderer.clearScreen();
-  if (screen_ == Screen::List) {
+  if (screen_ == Screen::Mode) {
+    renderMode();
+  } else if (screen_ == Screen::List) {
     renderList();
-  } else {
+  } else if (screen_ == Screen::Layouts) {
+    renderLayoutPicker();
+  } else if (!widgetPopup_) {
     renderWidgetPicker();
   }
   if (widgetPopup_) {
@@ -301,76 +378,108 @@ void ThemePickerActivity::render() {
   if (borderPopup_) {
     renderBorderPopup();
   }
+  if (themeActionPopup_) {
+    renderThemeActionPopup();
+  }
   renderer.displayBuffer();
 }
 
-void ThemePickerActivity::renderList() {
+void ThemePickerActivity::renderMode() {
   const int contentTop = SubPage::header(renderer, "Theme");
   const int font = systemFontId();
   const int width = renderer.getScreenWidth();
-  const int themeCount = HomeTheme::count() + 1;
-  const int hiddenMenuY = contentTop;
-  const bool hiddenMenuSelected = hiddenMenuFocused_;
-  if (hiddenMenuSelected) {
-    renderer.rectangle.fill(0, hiddenMenuY, width, kRowHeight, static_cast<int>(GfxRenderer::FillTone::Ink));
-  } else {
-    renderer.rectangle.fill(0, hiddenMenuY, width, kRowHeight,
-                            static_cast<int>(GfxRenderer::FillTone::Paper));
+  const char* labels[] = {"Home", "Sleep"};
+  for (int index = 0; index < 2; ++index) {
+    const int y = contentTop + index * kRowHeight;
+    renderer.rectangle.fill(0, y, width, kRowHeight, static_cast<int>(GfxRenderer::FillTone::Paper));
+    renderer.text.render(font, 20, y + (kRowHeight - renderer.text.getLineHeight(font)) / 2, labels[index], true,
+                         EpdFontFamily::REGULAR);
+    if (index == 0) {
+      renderer.line.render(0, y + kRowHeight - 1, width, y + kRowHeight - 1, true,
+                           LineRender::Style::Dotted);
+    }
   }
-  const int hiddenMenuTextY = hiddenMenuY + (kRowHeight - renderer.text.getLineHeight(font)) / 2;
-  renderer.text.render(font, 20, hiddenMenuTextY, "Hidden Menu", !hiddenMenuSelected, EpdFontFamily::REGULAR);
-  Toggle::render(renderer, width - 24, hiddenMenuY, kRowHeight, SETTINGS.hiddenMenu != 0, hiddenMenuSelected);
-  renderer.line.render(0, hiddenMenuY + kRowHeight - 1, width, hiddenMenuY + kRowHeight - 1,
-                       !hiddenMenuSelected, LineRender::Style::Dotted);
+}
 
+void ThemePickerActivity::renderList() {
+  const int contentTop = SubPage::header(renderer, sleepMode_ ? "Sleep themes" : "Home themes");
+  const int font = systemFontId();
+  const int width = renderer.getScreenWidth();
+  const int themeCount = sleepMode_ ? HomeTheme::sleepCount() : HomeTheme::count();
+  const int newY = contentTop;
+  renderer.rectangle.fill(0, newY, width, kRowHeight, static_cast<int>(GfxRenderer::FillTone::Paper));
+  constexpr const char* newThemeLabel = "New theme";
+  const int buttonWidth = Button::width(renderer, newThemeLabel, font);
+  const ButtonBounds button{width - 20 - buttonWidth, newY, buttonWidth, Button::height};
+  Button::render(renderer, button, newThemeLabel, false, font);
+
+  const int themeListTop = contentTop + kRowHeight + kThemeListGap;
   for (int i = 0; i < themeCount; ++i) {
-    const int y = contentTop + (i + 1) * kRowHeight;
-    const bool sleepTheme = i == HomeTheme::count();
-    const HomeTheme::Theme& theme = sleepTheme ? HomeTheme::sleep() : HomeTheme::at(i);
-    renderer.rectangle.fill(0, y, width, kRowHeight,
-                            static_cast<int>(GfxRenderer::FillTone::Paper));
+    const int y = themeListTop + i * kRowHeight;
+    const HomeTheme::Theme& theme = sleepMode_ ? HomeTheme::sleepAt(i) : HomeTheme::at(i);
+    renderer.rectangle.fill(0, y, width, kRowHeight, static_cast<int>(GfxRenderer::FillTone::Paper));
     renderer.text.render(font, 20, y + (kRowHeight - renderer.text.getLineHeight(font)) / 2,
                          theme.name, true, EpdFontFamily::REGULAR);
     const char* layout = HomeTheme::layoutLabel(theme.layout);
-    renderer.text.render(font, width - renderer.text.getWidth(font, layout) - 24,
-                         y + (kRowHeight - renderer.text.getLineHeight(font)) / 2, layout, true,
-                         EpdFontFamily::REGULAR);
+    const int layoutX = width - renderer.text.getWidth(font, layout) - 84;
+    renderer.text.render(font, layoutX, y + (kRowHeight - renderer.text.getLineHeight(font)) / 2, layout,
+                         true, EpdFontFamily::REGULAR);
+    const int activeIndex = sleepMode_ ? HomeTheme::sleepActiveIndex() : HomeTheme::activeIndex();
+    Toggle::render(renderer, width - 24, y, kRowHeight, activeIndex == i, false);
     if (i + 1 < themeCount) {
       renderer.line.render(0, y + kRowHeight - 1, width, y + kRowHeight - 1, true,
                            LineRender::Style::Dotted);
     }
   }
+}
 
+void ThemePickerActivity::renderLayoutPicker() {
+  const int contentTop = SubPage::header(renderer, "Choose layout");
+  const int font = systemFontId();
+  const int width = renderer.getScreenWidth();
+  const int availableHeight = std::max(1, renderer.getScreenHeight() - contentTop);
+  const int sectionHeight = availableHeight / 3;
+  const int previewWidth = std::min(150, width / 3);
+  for (int index = 0; index < 3; ++index) {
+    const int y = contentTop + index * sectionHeight;
+    const int previewHeight = std::max(40, sectionHeight - 28);
+    const int previewX = 20;
+    const int previewY = y + (sectionHeight - previewHeight) / 2;
+    const int rows = index + 1;
+    const int gap = 6;
+    const int rowHeight = (previewHeight - gap * (rows - 1)) / rows;
+    renderer.rectangle.fill(0, y, width, sectionHeight, static_cast<int>(GfxRenderer::FillTone::Paper));
+    for (int row = 0; row < rows; ++row) {
+      const int boxY = previewY + row * (rowHeight + gap);
+      renderer.rectangle.fill(previewX, boxY, previewWidth, rowHeight,
+                              static_cast<int>(GfxRenderer::FillTone::Paper));
+      renderer.rectangle.render(previewX, boxY, previewWidth, rowHeight, true);
+    }
+    const char* label = HomeTheme::layoutLabel(layoutAtIndex(index));
+    const int labelWidth = renderer.text.getWidth(font, label);
+    renderer.text.render(font, width - labelWidth - 20,
+                         y + (sectionHeight - renderer.text.getLineHeight(font)) / 2, label, true,
+                         EpdFontFamily::REGULAR);
+    if (index < 2) {
+      renderer.line.render(0, y + sectionHeight - 1, width, y + sectionHeight - 1, true,
+                           LineRender::Style::Dotted);
+    }
+  }
+}
+
+void ThemePickerActivity::renderThemeActionPopup() {
+  static const char* const labels[] = {"Rename", "Edit", "Delete"};
+  std::vector<std::string> values;
+  for (const char* label : labels) values.emplace_back(label);
+  const PopUpBounds box = PopUp::bounds(renderer, static_cast<int>(values.size()));
+  PopUp::background(renderer, box);
+  PopUp::title(renderer, box, "Theme");
+  PopUp::list(renderer, box, values, themeActionSelected_, 0);
+  PopUp::border(renderer, box);
 }
 
 void ThemePickerActivity::renderWidgetPicker() {
   SubPage::header(renderer, "Choose widget");
-  const int right = renderer.getScreenWidth() - 20;
-  const int rightButtonX = right - kLayoutButtonSize;
-  const int middleButtonX = rightButtonX - kLayoutButtonGap - kLayoutButtonSize;
-  const int leftButtonX = middleButtonX - kLayoutButtonGap - kLayoutButtonSize;
-  const auto drawLayoutButton = [&](const int x, const HomeTheme::Layout layout, const bool active) {
-    renderer.rectangle.fill(x, kLayoutTabTop, kLayoutButtonSize, kLayoutButtonSize,
-                            active ? static_cast<int>(GfxRenderer::FillTone::Ink)
-                                   : static_cast<int>(GfxRenderer::FillTone::Paper));
-    renderer.rectangle.render(x, kLayoutTabTop, kLayoutButtonSize, kLayoutButtonSize, true);
-    const int innerX = x + 8;
-    const int innerY = kLayoutTabTop + 8;
-    const int innerW = kLayoutButtonSize - 16;
-    const int innerH = kLayoutButtonSize - 16;
-    constexpr int rowGap = 2;
-    const int rows = layoutRows(layout);
-    const int rowHeight = (innerH - rowGap * (rows - 1)) / rows;
-    for (int row = 0; row < rows; ++row) {
-      const int rowY = innerY + row * (rowHeight + rowGap);
-      renderer.rectangle.fill(innerX, rowY, innerW, rowHeight,
-                              static_cast<int>(GfxRenderer::FillTone::Paper));
-      renderer.rectangle.render(innerX, rowY, innerW, rowHeight, true);
-    }
-  };
-  drawLayoutButton(leftButtonX, HomeTheme::Layout::OneByOne, layout_ == HomeTheme::Layout::OneByOne);
-  drawLayoutButton(middleButtonX, HomeTheme::Layout::OneByTwo, layout_ == HomeTheme::Layout::OneByTwo);
-  drawLayoutButton(rightButtonX, HomeTheme::Layout::OneByThree, layout_ == HomeTheme::Layout::OneByThree);
   const PreviewBounds preview = widgetPreviewBounds(renderer);
   const int previewX = preview.x;
   const int previewY = preview.y;
@@ -386,9 +495,14 @@ void ThemePickerActivity::renderWidgetPicker() {
   const int rows = layoutRows(layout_);
   const int cellW = layoutW / columns;
   const int cellH = layoutH / rows;
+  const int widgetPageCount = layout_ == HomeTheme::Layout::OneByOne ? oneByOneWidgetCount(widgets_) : 0;
+  const int widgetPage = widgetPageCount <= 0 ? 0 : std::min(widgetPageCount - 1, std::max(0, widgetPageIndex_));
   const int firstSlot = layout_ == HomeTheme::Layout::OneByOne
-                            ? oneByOneSlotAtPage(widgets_, widgetSlot_)
+                            ? oneByOneSlotAtPage(widgets_, widgetPage)
                             : 0;
+  const int pageCount = layout_ == HomeTheme::Layout::OneByOne ? widgetOptionCount(layout_, editingSleep_) : 0;
+  const int page = pageCount <= 0 ? 0 : std::min(pageCount - 1,
+                                                  std::max(0, widgetOptionIndex(layout_, editingSleep_, widgets_[firstSlot])));
   const int lastSlot = layout_ == HomeTheme::Layout::OneByOne ? firstSlot + 1 : HomeTheme::slotCount(layout_);
   if (layout_ == HomeTheme::Layout::OneByOne) {
     // firstSlot is a persistent storage slot. It is never a screen row.
@@ -401,7 +515,7 @@ void ThemePickerActivity::renderWidgetPicker() {
                         recentTitles_[firstSlot] != 0, recentAuthors_[firstSlot] != 0,
                         recentProgress_[firstSlot] != 0, recentRatings_[firstSlot] != 0,
                         carouselProgress_[firstSlot] != 0, carouselFullHeight_[firstSlot] != 0,
-                        statisticsSummary_[firstSlot] != 0);
+                        statisticsSummary_[firstSlot] != 0, streakCompact_[firstSlot] != 0);
   } else {
     // Keep the established 1 x 2 preview path: two storage slots map directly
     // to the two visible rows.
@@ -415,7 +529,43 @@ void ThemePickerActivity::renderWidgetPicker() {
                           descriptionProgress_[slot] != 0, descriptionRatings_[slot] != 0,
                           recentTitles_[slot] != 0, recentAuthors_[slot] != 0,
                           recentProgress_[slot] != 0, recentRatings_[slot] != 0, carouselProgress_[slot] != 0,
-                          carouselFullHeight_[slot] != 0, statisticsSummary_[slot] != 0);
+                          carouselFullHeight_[slot] != 0, statisticsSummary_[slot] != 0, streakCompact_[slot] != 0);
+    }
+  }
+
+  if (layout_ == HomeTheme::Layout::OneByOne) {
+    if (pageCount > 1) {
+      constexpr int containerRadius = 22;
+      constexpr int iconSize = 26;
+      constexpr int edgeMargin = 10;
+      const int centerY = layoutY + layoutH / 2;
+      const auto drawCaret = [&](const int centerX, const uint8_t* icon) {
+        renderer.circle.render(centerX, centerY, containerRadius, true);
+        renderer.circle.render(centerX, centerY, containerRadius - 2, false);
+        renderer.bitmap.icon(icon, centerX - iconSize / 2, centerY - iconSize / 2, iconSize, iconSize);
+      };
+      if (page > 0) drawCaret(edgeMargin + containerRadius, LibraryFilterLeft);
+      if (page + 1 < pageCount) {
+        drawCaret(renderer.getScreenWidth() - edgeMargin - containerRadius, LibraryFilterRight);
+      }
+
+      constexpr int bottomMargin = 12;
+      constexpr int dotRadius = 6;
+      constexpr int dotGap = 10;
+      const int totalWidth = pageCount * dotRadius * 2 + (pageCount - 1) * dotGap;
+      const int left = (renderer.getScreenWidth() - totalWidth) / 2;
+      const int centerYBottom = layoutY + layoutH - bottomMargin - dotRadius;
+      int cursorX = left;
+      for (int index = 0; index < pageCount; ++index) {
+        if (index == page) {
+          renderer.circle.render(cursorX + dotRadius, centerYBottom, dotRadius, true);
+        } else {
+          renderer.circle.render(cursorX + dotRadius, centerYBottom, dotRadius, true);
+          renderer.circle.render(cursorX + dotRadius, centerYBottom, dotRadius - 2, false);
+        }
+        cursorX += dotRadius * 2;
+        if (index + 1 < pageCount) cursorX += dotGap;
+      }
     }
   }
 
@@ -472,6 +622,12 @@ void ThemePickerActivity::renderWidgetPicker() {
       renderer.bitmap.icon(Setting, settings.x, settings.y, settings.size, settings.size);
     }
     if (supportsStatisticsSettings(widgets_[slot])) {
+      const CarouselSettingsBounds settings = carouselSettingsBounds(cellX, cellY, cellW, cellH);
+      renderer.rectangle.fill(settings.x - 4, settings.y - 4, settings.size + 8, settings.size + 8, false);
+      renderer.rectangle.render(settings.x - 4, settings.y - 4, settings.size + 8, settings.size + 8, true);
+      renderer.bitmap.icon(Setting, settings.x, settings.y, settings.size, settings.size);
+    }
+    if (supportsStreaksSettings(widgets_[slot])) {
       const CarouselSettingsBounds settings = carouselSettingsBounds(cellX, cellY, cellW, cellH);
       renderer.rectangle.fill(settings.x - 4, settings.y - 4, settings.size + 8, settings.size + 8, false);
       renderer.rectangle.render(settings.x - 4, settings.y - 4, settings.size + 8, settings.size + 8, true);
@@ -556,7 +712,7 @@ void ThemePickerActivity::renderWidgetPreview(const HomeTheme::Widget widget, co
                                               const bool recentShowTitle, const bool recentShowAuthor,
                                               const bool recentShowProgress, const bool recentShowRating,
                                               const bool carouselShowProgress, const bool carouselFullHeight,
-                                              const bool statisticsSummary) {
+                                              const bool statisticsSummary, const bool streakCompact) {
   if (width <= 0 || height <= 0) return;
 
   switch (widget) {
@@ -604,6 +760,9 @@ void ThemePickerActivity::renderWidgetPreview(const HomeTheme::Widget widget, co
       weeklyStatistics_.preview(x, y, width, height, layout_ == HomeTheme::Layout::OneByThree,
                                 style == HomeTheme::CarouselStyle::Left, statisticsSummary);
       break;
+    case HomeTheme::Widget::Streaks:
+      streaks_.preview(x, y, width, height, layout_ == HomeTheme::Layout::OneByTwo && !streakCompact);
+      break;
     case HomeTheme::Widget::Favorites:
       favorites_.preview(x, y, width, height, background, style, showLabel, labelColor, shadowStyle,
                          carouselFullHeight);
@@ -613,7 +772,8 @@ void ThemePickerActivity::renderWidgetPreview(const HomeTheme::Widget widget, co
                        layout_ == HomeTheme::Layout::OneByTwo);
       break;
     case HomeTheme::Widget::Library:
-      drawLibraryPreviewPlaceholders(renderer, x, y, width, height, background, showLabel);
+      drawLibraryPreviewPlaceholders(renderer, x, y, width, height, background, showLabel,
+                                     layout_ == HomeTheme::Layout::OneByThree);
       break;
     case HomeTheme::Widget::Description:
       description_.render(0, x, y, width, height, background, showLabel, labelColor, shadowStyle,
@@ -641,29 +801,60 @@ void ThemePickerActivity::renderWidgetPreview(const HomeTheme::Widget widget, co
 
 void ThemePickerActivity::renderWidgetPopup() {
   const int options = widgetOptionCount(layout_, editingSleep_);
-  std::vector<std::string> values;
-  values.reserve(static_cast<size_t>(options));
-  for (int i = 0; i < options; ++i) {
-    values.emplace_back(HomeTheme::widgetLabel(widgetOptionAt(layout_, editingSleep_, i)));
-  }
-  const PopUpBounds box = PopUp::bounds(renderer, options);
-  PopUp::background(renderer, box);
-  PopUp::title(renderer, box, "Choose widget");
-  PopUp::list(renderer, box, values, popupSelected_, widgetPopupScroll_);
-  PopUp::border(renderer, box);
+  SubPage::header(renderer, "Choose widget");
+  const WidgetGridBounds box = widgetGridBounds(renderer);
+  const int font = systemFontId();
 
-  // The popup's white overlay hides the editor preview. Keep the Vertical
-  // Bookshelf preview visible while that option is highlighted so it can be
-  // identified before confirming the selection.
-  if (widgetOptionAt(layout_, editingSleep_, popupSelected_) == HomeTheme::Widget::VerticalBookshelf) {
-    constexpr int margin = 20;
-    constexpr int gap = 12;
-    const int previewX = margin;
-    const int previewY = box.y + box.height + gap;
-    const int previewW = renderer.getScreenWidth() - margin * 2;
-    const int previewH = renderer.getScreenHeight() - previewY - margin;
-    if (previewW > 0 && previewH > 0) {
-      verticalBookshelf_.preview(renderer, previewX, previewY, previewW, previewH);
+  const int previewLabelHeight = renderer.text.getLineHeight(font);
+  const int pageEnd = std::min(options, widgetPopupScroll_ + kWidgetGridPageSize);
+  for (int index = widgetPopupScroll_; index < pageEnd; ++index) {
+    const int pageIndex = index - widgetPopupScroll_;
+    const int row = pageIndex / kWidgetGridColumns;
+    const int column = pageIndex % kWidgetGridColumns;
+    const int cellX = box.gridX + column * (box.cellWidth + 12);
+    const int cellY = box.gridY + row * (box.cellHeight + 12);
+    renderer.rectangle.fill(cellX, cellY, box.cellWidth, box.cellHeight, false);
+
+    const int previewX = cellX + 10;
+    const int previewY = cellY + 8;
+    const int previewW = std::max(8, box.cellWidth - 20);
+    const int previewH = std::max(8, box.cellHeight - previewLabelHeight - 18);
+    const HomeTheme::Widget widget = widgetOptionAt(layout_, editingSleep_, index);
+    renderWidgetPreview(widget, previewX, previewY, previewW, previewH, false,
+                        HomeTheme::defaultCarouselStyle(widget), false,
+                        HomeTheme::CarouselLabelColor::Black, HomeTheme::CarouselShadowStyle::None,
+                        HomeTheme::HeatmapView::Monthly, libraryFolders_[widgetSlot_], true, true, true, true,
+                        true, true, true, true, true, false, true, false);
+
+    const std::string label = HomeTheme::widgetLabel(widget);
+    const std::string shown = renderer.text.truncate(font, label.c_str(), box.cellWidth - 16);
+    const int labelY = cellY + box.cellHeight - previewLabelHeight - 7;
+    const int labelWidth = renderer.text.getWidth(font, shown.c_str());
+    renderer.text.render(font, cellX + (box.cellWidth - labelWidth) / 2, labelY, shown.c_str(), true,
+                         EpdFontFamily::REGULAR);
+    if (index + kWidgetGridColumns < pageEnd) {
+      renderer.line.render(cellX, cellY + box.cellHeight + 6, cellX + box.cellWidth, cellY + box.cellHeight + 6,
+                           true, LineRender::Style::Dotted);
+    }
+  }
+
+  const int totalRows = (options + kWidgetGridColumns - 1) / kWidgetGridColumns;
+  const int visibleRows = kWidgetGridRows;
+  const int pageCount = std::max(1, (totalRows + visibleRows - 1) / visibleRows);
+  const int activePage = std::min(pageCount - 1, widgetPopupScroll_ / kWidgetGridPageSize);
+  constexpr int radius = 6;
+  constexpr int gap = 12;
+  const int indicatorHeight = pageCount * radius * 2 + (pageCount - 1) * gap;
+  constexpr int indicatorRightPadding = 20;
+  const int indicatorX = box.x + box.width - indicatorRightPadding;
+  const int indicatorTop = std::max(box.gridY, (box.gridY + box.cellHeight * visibleRows - indicatorHeight) / 2);
+  for (int page = 0; page < pageCount; ++page) {
+    const int centerY = indicatorTop + radius + page * (radius * 2 + gap);
+    if (page == activePage) {
+      renderer.circle.render(indicatorX, centerY, radius, true);
+    } else {
+      renderer.circle.render(indicatorX, centerY, radius, true);
+      renderer.circle.render(indicatorX, centerY, radius - 2, false);
     }
   }
 }
@@ -680,10 +871,8 @@ void ThemePickerActivity::renderBorderPopup() {
 }
 
 void ThemePickerActivity::editTheme() {
-  hiddenMenuFocused_ = false;
-  editingSleep_ = selected_ == HomeTheme::count();
-  const HomeTheme::Theme& theme = editingSleep_ ? HomeTheme::sleep() : HomeTheme::at(selected_);
-  if (!editingSleep_) HomeTheme::activate(selected_);
+  editingSleep_ = sleepMode_;
+  const HomeTheme::Theme& theme = editingSleep_ ? HomeTheme::sleepAt(selected_) : HomeTheme::at(selected_);
   layout_ = theme.layout;
   for (int i = 0; i < 4; ++i) {
     widgets_[i] = theme.widgets[i];
@@ -702,6 +891,7 @@ void ThemePickerActivity::editTheme() {
     carouselProgress_[i] = theme.carouselProgress[i];
     carouselFullHeight_[i] = theme.carouselFullHeight[i];
     statisticsSummary_[i] = theme.statisticsSummary[i];
+    streakCompact_[i] = theme.streakCompact[i];
     carouselLabelColors_[i] = theme.carouselLabelColors[i];
     carouselShadowStyles_[i] = theme.carouselShadowStyles[i];
     heatmapViews_[i] = theme.heatmapViews[i];
@@ -744,6 +934,7 @@ void ThemePickerActivity::editTheme() {
     for (uint8_t& value : carouselProgress_) value = 1;
     for (uint8_t& value : carouselFullHeight_) value = 0;
     for (uint8_t& value : statisticsSummary_) value = 1;
+    for (uint8_t& value : streakCompact_) value = 0;
     for (HomeTheme::CarouselLabelColor& color : carouselLabelColors_) color = HomeTheme::CarouselLabelColor::Black;
     for (HomeTheme::CarouselShadowStyle& style : carouselShadowStyles_) {
       style = HomeTheme::CarouselShadowStyle::None;
@@ -751,14 +942,173 @@ void ThemePickerActivity::editTheme() {
     for (HomeTheme::HeatmapView& view : heatmapViews_) view = HomeTheme::HeatmapView::Weekly;
   }
   widgetSlot_ = 0;
+  widgetPageIndex_ = 0;
   editingExisting_ = true;
+  creatingTheme_ = false;
+  layoutSelection_ = layoutIndex(layout_);
+  screen_ = Screen::Layouts;
+  render();
+}
+
+void ThemePickerActivity::beginEditTheme() { editTheme(); }
+
+void ThemePickerActivity::initializeNewThemeEditor() {
+  for (int i = 0; i < 4; ++i) {
+    widgets_[i] = HomeTheme::Widget::Empty;
+    borders_[i] = HomeTheme::Border::None;
+    backgrounds_[i] = 0;
+    carouselStyles_[i] = HomeTheme::CarouselStyle::Centered;
+    carouselLabels_[i] = 0;
+    carouselLabelColors_[i] = HomeTheme::CarouselLabelColor::Black;
+    carouselShadowStyles_[i] = HomeTheme::CarouselShadowStyle::None;
+    descriptionTitles_[i] = 1;
+    descriptionAuthors_[i] = 1;
+    descriptionProgress_[i] = 1;
+    descriptionRatings_[i] = 1;
+    recentTitles_[i] = 1;
+    recentAuthors_[i] = 1;
+    recentProgress_[i] = 1;
+    recentRatings_[i] = 1;
+    carouselProgress_[i] = 1;
+    carouselFullHeight_[i] = 0;
+    statisticsSummary_[i] = 1;
+    streakCompact_[i] = 0;
+    heatmapViews_[i] = HomeTheme::HeatmapView::Weekly;
+    setDefaultLibraryFolders(libraryFolders_[i]);
+  }
+  if (layout_ == HomeTheme::Layout::OneByOne) {
+    widgets_[0] = HomeTheme::Widget::RecentGrid;
+    widgets_[1] = HomeTheme::Widget::Flow;
+  } else if (editingSleep_ && layout_ == HomeTheme::Layout::OneByTwo) {
+    widgets_[0] = HomeTheme::Widget::Clock;
+    widgets_[1] = HomeTheme::Widget::Calendar;
+  } else {
+    widgets_[0] = HomeTheme::Widget::Carousel;
+    widgets_[1] = HomeTheme::Widget::Description;
+    carouselStyles_[0] = HomeTheme::CarouselStyle::Left;
+    backgrounds_[0] = 1;
+    carouselShadowStyles_[0] = HomeTheme::CarouselShadowStyle::Gray;
+    carouselProgress_[0] = 1;
+    if (layout_ == HomeTheme::Layout::OneByThree) widgets_[2] = HomeTheme::Widget::Empty;
+  }
+}
+
+void ThemePickerActivity::applySelectedLayout() {
+  const HomeTheme::Layout nextLayout = layoutAtIndex(layoutSelection_);
+  if (creatingTheme_) {
+    layout_ = nextLayout;
+    initializeNewThemeEditor();
+  } else {
+    const HomeTheme::Layout previousLayout = layout_;
+    layout_ = nextLayout;
+    if (layout_ == HomeTheme::Layout::OneByOne) {
+      widgets_[0] = HomeTheme::Widget::RecentGrid;
+      widgets_[1] = HomeTheme::Widget::Flow;
+      borders_[0] = HomeTheme::Border::None;
+      borders_[1] = HomeTheme::Border::None;
+      for (int slot = 2; slot < 4; ++slot) {
+        widgets_[slot] = HomeTheme::Widget::Empty;
+        borders_[slot] = HomeTheme::Border::None;
+      }
+    } else if (previousLayout == HomeTheme::Layout::OneByOne) {
+      widgets_[0] = HomeTheme::Widget::Carousel;
+      widgets_[1] = HomeTheme::Widget::Description;
+      widgets_[2] = HomeTheme::Widget::Empty;
+      widgets_[3] = HomeTheme::Widget::Empty;
+      borders_[2] = HomeTheme::Border::None;
+      borders_[3] = HomeTheme::Border::None;
+    }
+    const int slots = HomeTheme::slotCount(layout_);
+    for (int slot = slots; slot < 4; ++slot) {
+      widgets_[slot] = HomeTheme::Widget::Empty;
+      borders_[slot] = HomeTheme::Border::None;
+    }
+  }
+  widgetSlot_ = 0;
+  widgetPageIndex_ = 0;
+  widgetPopup_ = false;
+  borderPopup_ = false;
   screen_ = Screen::Widgets;
   render();
 }
 
+void ThemePickerActivity::beginNewTheme() {
+  creatingTheme_ = true;
+  editingExisting_ = false;
+  editingSleep_ = sleepMode_;
+  selected_ = sleepMode_ ? HomeTheme::sleepCount() : HomeTheme::count();
+  layout_ = HomeTheme::Layout::OneByTwo;
+  layoutSelection_ = layoutIndex(layout_);
+  screen_ = Screen::Layouts;
+  render();
+}
+
+void ThemePickerActivity::returnToThemeList() {
+  saveEditorState();
+  screen_ = Screen::List;
+  widgetPopup_ = false;
+  borderPopup_ = false;
+  themeActionPopup_ = false;
+  const int themeCount = sleepMode_ ? HomeTheme::sleepCount() : HomeTheme::count();
+  listCursor_ = creatingTheme_ ? themeCount : selected_ + 1;
+  creatingTheme_ = false;
+  render();
+}
+
+void ThemePickerActivity::renameSelectedTheme() {
+  const bool sleepTheme = sleepMode_;
+  const std::string current = sleepTheme ? HomeTheme::sleepAt(selected_).name : HomeTheme::at(selected_).name;
+  enterNewActivity(new KeyboardEntryActivity(
+      renderer, mappedInput, "Rename theme", current, 10, 31, false,
+      [this, sleepTheme](const std::string& value) {
+        exitActivity();
+        if (!value.empty()) {
+          if (sleepTheme) {
+            HomeTheme::renameSleep(selected_, value.c_str());
+          } else {
+            HomeTheme::rename(selected_, value.c_str());
+          }
+        }
+        themeActionPopup_ = false;
+        render();
+      },
+      [this] {
+        exitActivity();
+        render();
+      }));
+}
+
+void ThemePickerActivity::handleThemeAction(const int action) {
+  themeActionSelected_ = action;
+  if (action == 0) {
+    themeActionPopup_ = false;
+    renameSelectedTheme();
+    return;
+  }
+  if (action == 1) {
+    themeActionPopup_ = false;
+    beginEditTheme();
+    return;
+  }
+  if (action == 2) {
+    themeActionPopup_ = false;
+    const bool removed = sleepMode_ ? HomeTheme::removeSleep(selected_) : HomeTheme::remove(selected_);
+    if (removed) {
+      const int count = sleepMode_ ? HomeTheme::sleepCount() : HomeTheme::count();
+      selected_ = std::min(selected_, count - 1);
+      listCursor_ = selected_ + 1;
+    }
+    render();
+  }
+}
+
+void ThemePickerActivity::moveThemeActionSelection(const int delta) {
+  themeActionSelected_ = (themeActionSelected_ + 3 + delta) % 3;
+}
+
 void ThemePickerActivity::promoteSelectedOneByOneWidget() {
-  if (layout_ != HomeTheme::Layout::OneByOne || widgetSlot_ <= 0) return;
-  const int selectedSlot = oneByOneSlotAtPage(widgets_, widgetSlot_);
+  if (layout_ != HomeTheme::Layout::OneByOne || widgetPageIndex_ <= 0) return;
+  const int selectedSlot = oneByOneSlotAtPage(widgets_, widgetPageIndex_);
   if (selectedSlot <= 0 || selectedSlot >= 4) return;
   std::swap(widgets_[0], widgets_[selectedSlot]);
   std::swap(borders_[0], borders_[selectedSlot]);
@@ -776,6 +1126,7 @@ void ThemePickerActivity::promoteSelectedOneByOneWidget() {
   std::swap(carouselProgress_[0], carouselProgress_[selectedSlot]);
   std::swap(carouselFullHeight_[0], carouselFullHeight_[selectedSlot]);
   std::swap(statisticsSummary_[0], statisticsSummary_[selectedSlot]);
+  std::swap(streakCompact_[0], streakCompact_[selectedSlot]);
   std::swap(carouselLabelColors_[0], carouselLabelColors_[selectedSlot]);
   std::swap(carouselShadowStyles_[0], carouselShadowStyles_[selectedSlot]);
   std::swap(heatmapViews_[0], heatmapViews_[selectedSlot]);
@@ -783,18 +1134,20 @@ void ThemePickerActivity::promoteSelectedOneByOneWidget() {
     std::swap(libraryFolders_[0][folder], libraryFolders_[selectedSlot][folder]);
   }
   widgetSlot_ = 0;
+  widgetPageIndex_ = 0;
 }
 
 void ThemePickerActivity::saveEditorState() {
   if (screen_ == Screen::Widgets && editingExisting_ && !widgetPopup_ && !borderPopup_) {
     promoteSelectedOneByOneWidget();
     if (editingSleep_) {
-      HomeTheme::updateSleep(layout_, widgets_, borders_, backgrounds_, carouselStyles_, carouselLabels_,
+      HomeTheme::updateSleepAt(selected_, layout_, widgets_, borders_, backgrounds_, carouselStyles_, carouselLabels_,
                              carouselLabelColors_, carouselShadowStyles_, heatmapViews_, descriptionTitles_,
                              descriptionAuthors_, descriptionProgress_, descriptionRatings_,
                              recentTitles_, recentAuthors_, recentProgress_,
                              recentRatings_, carouselProgress_, carouselFullHeight_, statisticsSummary_, libraryFolders_,
                              HomeTheme::slotCount(layout_));
+      HomeTheme::updateStreakCompact(selected_, true, streakCompact_);
     } else {
         HomeTheme::update(selected_, layout_, widgets_, borders_, backgrounds_, carouselStyles_, carouselLabels_,
                         carouselLabelColors_, carouselShadowStyles_, heatmapViews_, descriptionTitles_,
@@ -802,21 +1155,56 @@ void ThemePickerActivity::saveEditorState() {
                         recentTitles_, recentAuthors_, recentProgress_,
                         recentRatings_, carouselProgress_, carouselFullHeight_, statisticsSummary_, libraryFolders_,
                         HomeTheme::slotCount(layout_));
+      HomeTheme::updateStreakCompact(selected_, false, streakCompact_);
     }
   }
 }
 
 void ThemePickerActivity::saveEditorAndClose() {
-  saveEditorState();
-  close();
+  if (screen_ != Screen::Widgets || widgetPopup_ || borderPopup_) return;
+  promoteSelectedOneByOneWidget();
+  if (creatingTheme_) {
+    const int index = editingSleep_
+                          ? HomeTheme::addSleep(layout_, widgets_, borders_, backgrounds_, carouselStyles_, carouselLabels_,
+                                                carouselLabelColors_, carouselShadowStyles_, heatmapViews_,
+                                                descriptionTitles_, descriptionAuthors_, descriptionProgress_,
+                                                descriptionRatings_, recentTitles_, recentAuthors_, recentProgress_,
+                                                recentRatings_, carouselProgress_, carouselFullHeight_,
+                                                statisticsSummary_, libraryFolders_, HomeTheme::slotCount(layout_))
+                          : HomeTheme::add(layout_, widgets_, borders_, backgrounds_, carouselStyles_, carouselLabels_,
+                                     carouselLabelColors_, carouselShadowStyles_, heatmapViews_, descriptionTitles_,
+                                     descriptionAuthors_, descriptionProgress_, descriptionRatings_, recentTitles_,
+                                     recentAuthors_, recentProgress_, recentRatings_, carouselProgress_,
+                                     carouselFullHeight_, statisticsSummary_, libraryFolders_,
+                                     HomeTheme::slotCount(layout_));
+    if (index >= 0) {
+      selected_ = index;
+      HomeTheme::updateStreakCompact(selected_, editingSleep_, streakCompact_);
+    }
+  } else if (editingSleep_) {
+    HomeTheme::updateSleepAt(selected_, layout_, widgets_, borders_, backgrounds_, carouselStyles_, carouselLabels_,
+                           carouselLabelColors_, carouselShadowStyles_, heatmapViews_, descriptionTitles_,
+                           descriptionAuthors_, descriptionProgress_, descriptionRatings_, recentTitles_,
+                           recentAuthors_, recentProgress_, recentRatings_, carouselProgress_, carouselFullHeight_,
+                           statisticsSummary_, libraryFolders_, HomeTheme::slotCount(layout_));
+    HomeTheme::updateStreakCompact(selected_, true, streakCompact_);
+  } else {
+    HomeTheme::update(selected_, layout_, widgets_, borders_, backgrounds_, carouselStyles_, carouselLabels_,
+                     carouselLabelColors_, carouselShadowStyles_, heatmapViews_, descriptionTitles_,
+                     descriptionAuthors_, descriptionProgress_, descriptionRatings_, recentTitles_, recentAuthors_,
+                     recentProgress_, recentRatings_, carouselProgress_, carouselFullHeight_, statisticsSummary_,
+                     libraryFolders_, HomeTheme::slotCount(layout_));
+    HomeTheme::updateStreakCompact(selected_, false, streakCompact_);
+  }
+  returnToThemeList();
 }
 
 void ThemePickerActivity::openWidgetPopup(const int slot) {
   widgetSlot_ = slot;
   popupSelected_ = widgetOptionIndex(layout_, editingSleep_, widgets_[slot]);
   const int options = widgetOptionCount(layout_, editingSleep_);
-  const int visibleRows = std::min(PopUp::maxRows, options);
-  widgetPopupScroll_ = std::max(0, std::min(popupSelected_ - visibleRows + 1, options - visibleRows));
+  const int pageStart = (popupSelected_ / kWidgetGridPageSize) * kWidgetGridPageSize;
+  widgetPopupScroll_ = std::max(0, std::min(pageStart, std::max(0, options - 1)));
   widgetPopup_ = true;
   render();
 }
@@ -891,6 +1279,18 @@ void ThemePickerActivity::openStatisticsSettings(const int slot) {
       [] {}));
 }
 
+void ThemePickerActivity::openStreaksSettings(const int slot) {
+  widgetSlot_ = slot;
+  streaksSettingsFinished_ = false;
+  enterNewActivity(new BaseStreaksActivity(
+      renderer, mappedInput, layout_ == HomeTheme::Layout::OneByThree || streakCompact_[slot] != 0,
+      [this, slot](const bool compact) {
+        streakCompact_[slot] = compact ? 1 : 0;
+        streaksSettingsFinished_ = true;
+      },
+      [] {}));
+}
+
 void ThemePickerActivity::openTemperatureSettings(const int slot) {
   (void)slot;
   temperatureSettingsFinished_ = false;
@@ -953,29 +1353,21 @@ void ThemePickerActivity::moveWidgetPopupSelection(const int delta) {
   const int options = widgetOptionCount(layout_, editingSleep_);
   if (options <= 0) return;
   popupSelected_ = (popupSelected_ + options + delta) % options;
-  const int visibleRows = std::min(PopUp::maxRows, options);
-  const int maxScroll = std::max(0, options - visibleRows);
-  if (popupSelected_ < widgetPopupScroll_) widgetPopupScroll_ = popupSelected_;
-  if (popupSelected_ >= widgetPopupScroll_ + visibleRows) {
-    widgetPopupScroll_ = popupSelected_ - visibleRows + 1;
-  }
-  widgetPopupScroll_ = std::max(0, std::min(widgetPopupScroll_, maxScroll));
+  widgetPopupScroll_ = (popupSelected_ / kWidgetGridPageSize) * kWidgetGridPageSize;
 }
 
 void ThemePickerActivity::pageWidgetPopup(const int delta) {
   const int options = widgetOptionCount(layout_, editingSleep_);
-  const int visibleRows = std::min(PopUp::maxRows, options);
-  const int maxScroll = std::max(0, options - visibleRows);
-  widgetPopupScroll_ = std::max(0, std::min(widgetPopupScroll_ + delta * visibleRows, maxScroll));
-  if (popupSelected_ < widgetPopupScroll_) popupSelected_ = widgetPopupScroll_;
-  if (popupSelected_ >= widgetPopupScroll_ + visibleRows) {
-    popupSelected_ = widgetPopupScroll_ + visibleRows - 1;
-  }
+  if (options <= 0) return;
+  const int maxPageStart = ((options - 1) / kWidgetGridPageSize) * kWidgetGridPageSize;
+  widgetPopupScroll_ = std::max(0, std::min(widgetPopupScroll_ + delta * kWidgetGridPageSize, maxPageStart));
+  popupSelected_ = std::max(widgetPopupScroll_,
+                            std::min(popupSelected_, std::min(options - 1, widgetPopupScroll_ + kWidgetGridPageSize - 1)));
 }
 
 void ThemePickerActivity::cycleOneByOneWidget(const int delta) {
   if (layout_ != HomeTheme::Layout::OneByOne || editingSleep_) return;
-  const int slot = oneByOneSlotAtPage(widgets_, widgetSlot_);
+  const int slot = oneByOneSlotAtPage(widgets_, widgetPageIndex_);
   const int options = widgetOptionCount(HomeTheme::Layout::OneByOne, false);
   if (options <= 0) return;
 
@@ -1007,6 +1399,7 @@ void ThemePickerActivity::switchLayout(const HomeTheme::Layout layout) {
     layout_ = layout;
   }
   widgetSlot_ = 0;
+  widgetPageIndex_ = 0;
   widgetPopup_ = false;
   borderPopup_ = false;
   saveEditorState();
@@ -1014,38 +1407,68 @@ void ThemePickerActivity::switchLayout(const HomeTheme::Layout layout) {
 }
 
 void ThemePickerActivity::handleTouch(const int x, const int y) {
-  if (screen_ == Screen::List) {
-    const int themeCount = HomeTheme::count() + 1;
-    if (y >= kTop && y < kTop + kRowHeight) {
-      SETTINGS.hiddenMenu = SETTINGS.hiddenMenu == 0 ? 1 : 0;
-      SETTINGS.saveToFile();
-      hiddenMenuFocused_ = false;
+  if (screen_ == Screen::Mode) {
+    const int top = kContentTop;
+    if (y >= top && y < top + 2 * kRowHeight) {
+      sleepMode_ = y >= top + kRowHeight;
+      selected_ = sleepMode_ ? HomeTheme::sleepActiveIndex() : HomeTheme::activeIndex();
+      listCursor_ = selected_ + 1;
+      screen_ = Screen::List;
       render();
+    }
+    return;
+  }
+  if (screen_ == Screen::List) {
+    const int contentTop = kContentTop;
+    if (themeActionPopup_) {
+      const PopUpBounds box = PopUp::bounds(renderer, 3);
+      if (!inside(x, y, box.x, box.y, box.width, box.height)) {
+        themeActionPopup_ = false;
+        render();
+        return;
+      }
+      const int optionY = y - box.y - box.header;
+      if (optionY < 0 || optionY >= box.rows * box.row) return;
+      handleThemeAction(std::min(2, optionY / box.row));
       return;
     }
-    if (y >= kTop + kRowHeight && y < kTop + (themeCount + 1) * kRowHeight) {
-      selected_ = (y - kTop) / kRowHeight - 1;
-      hiddenMenuFocused_ = false;
-      editTheme();
+    if (y >= contentTop && y < contentTop + kRowHeight) {
+      beginNewTheme();
       return;
     }
+    const int themeListTop = contentTop + kRowHeight + kThemeListGap;
+    const int themeCount = sleepMode_ ? HomeTheme::sleepCount() : HomeTheme::count();
+    if (y >= themeListTop && y < themeListTop + themeCount * kRowHeight) {
+      const int index = (y - themeListTop) / kRowHeight;
+      if (index < 0 || index >= themeCount) return;
+      selected_ = index;
+      listCursor_ = index + 1;
+      const int toggleLeft = renderer.getScreenWidth() - 84;
+      if (x >= toggleLeft) {
+        if (sleepMode_) {
+          HomeTheme::activateSleep(index);
+        } else {
+          HomeTheme::activate(index);
+        }
+        render();
+      } else {
+        themeActionSelected_ = 0;
+        themeActionPopup_ = true;
+        render();
+      }
+      return;
+    }
+    return;
+  }
+  if (screen_ == Screen::Layouts) {
+    const int availableHeight = std::max(1, renderer.getScreenHeight() - kContentTop);
+    const int sectionHeight = std::max(1, availableHeight / 3);
+    if (y >= kContentTop && y < kContentTop + availableHeight) {
+      layoutSelection_ = std::min(2, std::max(0, (y - kContentTop) / sectionHeight));
+      applySelectedLayout();
+    }
+    return;
   } else {
-    const int right = renderer.getScreenWidth() - 20;
-    const int rightButtonX = right - kLayoutButtonSize;
-    const int middleButtonX = rightButtonX - kLayoutButtonGap - kLayoutButtonSize;
-    const int leftButtonX = middleButtonX - kLayoutButtonGap - kLayoutButtonSize;
-    if (inside(x, y, leftButtonX, kLayoutTabTop, kLayoutButtonSize, kLayoutButtonSize)) {
-      switchLayout(HomeTheme::Layout::OneByOne);
-      return;
-    }
-    if (inside(x, y, middleButtonX, kLayoutTabTop, kLayoutButtonSize, kLayoutButtonSize)) {
-      switchLayout(HomeTheme::Layout::OneByTwo);
-      return;
-    }
-    if (inside(x, y, rightButtonX, kLayoutTabTop, kLayoutButtonSize, kLayoutButtonSize)) {
-      switchLayout(HomeTheme::Layout::OneByThree);
-      return;
-    }
     if (borderPopup_) {
       const PopUpBounds box = PopUp::bounds(renderer, 4);
       if (!inside(x, y, box.x, box.y, box.width, box.height)) {
@@ -1064,22 +1487,31 @@ void ThemePickerActivity::handleTouch(const int x, const int y) {
     }
     if (widgetPopup_) {
       const int options = widgetOptionCount(layout_, editingSleep_);
-      const PopUpBounds box = PopUp::bounds(renderer, options);
+      const WidgetGridBounds box = widgetGridBounds(renderer);
       if (!inside(x, y, box.x, box.y, box.width, box.height)) {
         widgetPopup_ = false;
         render();
         return;
       }
-      const int optionY = y - box.y - box.header;
-      if (optionY < 0 || optionY >= box.rows * box.row) return;
-      popupSelected_ = widgetPopupScroll_ + optionY / box.row;
+      const int column = (x - box.gridX) / (box.cellWidth + 12);
+      const int row = (y - box.gridY) / (box.cellHeight + 12);
+      if (column < 0 || column >= kWidgetGridColumns || row < 0 || row >= kWidgetGridRows) return;
+      const int cellX = box.gridX + column * (box.cellWidth + 12);
+      const int cellY = box.gridY + row * (box.cellHeight + 12);
+      if (!inside(x, y, cellX, cellY, box.cellWidth, box.cellHeight)) return;
+      popupSelected_ = widgetPopupScroll_ + row * kWidgetGridColumns + column;
       if (popupSelected_ >= options) return;
       const bool wasLibrary = widgets_[widgetSlot_] == HomeTheme::Widget::Library;
       const bool wasDescription = widgets_[widgetSlot_] == HomeTheme::Widget::Description;
       const bool wasRecent = widgets_[widgetSlot_] == HomeTheme::Widget::Recent;
       const bool wasCarousel = widgets_[widgetSlot_] == HomeTheme::Widget::Carousel;
+      const bool wasStreaks = widgets_[widgetSlot_] == HomeTheme::Widget::Streaks;
       widgets_[widgetSlot_] = widgetOptionAt(layout_, editingSleep_, popupSelected_);
       if (widgets_[widgetSlot_] == HomeTheme::Widget::Empty) borders_[widgetSlot_] = HomeTheme::Border::None;
+      if (layout_ == HomeTheme::Layout::OneByOne) {
+        const int itemCount = oneByOneWidgetCount(widgets_);
+        widgetPageIndex_ = itemCount <= 0 ? 0 : std::min(widgetPageIndex_, itemCount - 1);
+      }
       if (supportsDescriptionSettings(widgets_[widgetSlot_])) {
         if (!wasDescription) {
           backgrounds_[widgetSlot_] = 0;
@@ -1113,6 +1545,7 @@ void ThemePickerActivity::handleTouch(const int x, const int y) {
           recentRatings_[widgetSlot_] = 1;
         }
         if (widgets_[widgetSlot_] == HomeTheme::Widget::Carousel && !wasCarousel) {
+          backgrounds_[widgetSlot_] = 0;
           carouselStyles_[widgetSlot_] = HomeTheme::CarouselStyle::Left;
           carouselLabels_[widgetSlot_] = 0;
           carouselShadowStyles_[widgetSlot_] = HomeTheme::CarouselShadowStyle::Gray;
@@ -1122,6 +1555,15 @@ void ThemePickerActivity::handleTouch(const int x, const int y) {
         heatmapViews_[widgetSlot_] = HomeTheme::HeatmapView::Weekly;
         carouselLabels_[widgetSlot_] = 1;
         carouselLabelColors_[widgetSlot_] = HomeTheme::CarouselLabelColor::Black;
+      } else if (supportsStreaksSettings(widgets_[widgetSlot_])) {
+        if (!wasStreaks) {
+          backgrounds_[widgetSlot_] = 0;
+          streakCompact_[widgetSlot_] = 0;
+        }
+        carouselLabels_[widgetSlot_] = 0;
+        carouselStyles_[widgetSlot_] = HomeTheme::CarouselStyle::Centered;
+        carouselLabelColors_[widgetSlot_] = HomeTheme::CarouselLabelColor::Black;
+        carouselShadowStyles_[widgetSlot_] = HomeTheme::CarouselShadowStyle::None;
       } else {
         carouselStyles_[widgetSlot_] = HomeTheme::CarouselStyle::Centered;
         carouselLabels_[widgetSlot_] = 0;
@@ -1147,11 +1589,30 @@ void ThemePickerActivity::handleTouch(const int x, const int y) {
     const int cellW = previewW / columns;
     const int rows = layoutRows(layout_);
     const int cellH = previewH / rows;
+    const int widgetPageCount = layout_ == HomeTheme::Layout::OneByOne ? oneByOneWidgetCount(widgets_) : 0;
+    const int widgetPage = widgetPageCount <= 0 ? 0 : std::min(widgetPageCount - 1, std::max(0, widgetPageIndex_));
     const int firstSlot = layout_ == HomeTheme::Layout::OneByOne
-                              ? oneByOneSlotAtPage(widgets_, widgetSlot_)
+                              ? oneByOneSlotAtPage(widgets_, widgetPage)
                               : 0;
     const int lastSlot = layout_ == HomeTheme::Layout::OneByOne ? firstSlot + 1 : HomeTheme::slotCount(layout_);
-    if (layout_ == HomeTheme::Layout::OneByOne) return;
+    if (layout_ == HomeTheme::Layout::OneByOne) {
+      constexpr int containerRadius = 22;
+      constexpr int edgeMargin = 10;
+      const int centerY = previewY + previewH / 2;
+      const int leftCenterX = edgeMargin + containerRadius;
+      const int rightCenterX = renderer.getScreenWidth() - edgeMargin - containerRadius;
+      const int optionCount = widgetOptionCount(layout_, editingSleep_);
+      const int optionPage = optionCount <= 0 ? 0 : widgetOptionIndex(layout_, editingSleep_, widgets_[firstSlot]);
+      if (optionPage > 0 && inside(x, y, leftCenterX - containerRadius, centerY - containerRadius,
+                             containerRadius * 2, containerRadius * 2)) {
+        cycleOneByOneWidget(-1);
+      } else if (optionPage + 1 < optionCount &&
+                 inside(x, y, rightCenterX - containerRadius, centerY - containerRadius,
+                        containerRadius * 2, containerRadius * 2)) {
+        cycleOneByOneWidget(1);
+      }
+      return;
+    }
     for (int slot = firstSlot; slot < lastSlot; ++slot) {
       const int cellX = previewX + (slot % columns) * cellW;
       const int cellY = previewY + (slot / columns) * cellH;
@@ -1196,6 +1657,13 @@ void ThemePickerActivity::handleTouch(const int x, const int y) {
         const CarouselSettingsBounds settings = carouselSettingsBounds(cellX, cellY, cellW, cellH);
         if (inside(x, y, settings.x - 8, settings.y - 8, settings.size + 16, settings.size + 16)) {
           openStatisticsSettings(slot);
+          return;
+        }
+      }
+      if (supportsStreaksSettings(widgets_[slot])) {
+        const CarouselSettingsBounds settings = carouselSettingsBounds(cellX, cellY, cellW, cellH);
+        if (inside(x, y, settings.x - 8, settings.y - 8, settings.size + 16, settings.size + 16)) {
+          openStreaksSettings(slot);
           return;
         }
       }
@@ -1259,6 +1727,11 @@ void ThemePickerActivity::loop() {
       statisticsSettingsFinished_ = false;
       render();
     }
+    if (streaksSettingsFinished_) {
+      exitActivity();
+      streaksSettingsFinished_ = false;
+      render();
+    }
     return;
   }
   if (screen_ == Screen::Widgets && widgetPopup_ && mappedInput.hasTouch()) {
@@ -1289,7 +1762,22 @@ void ThemePickerActivity::loop() {
       }
     }
   }
-  if (!widgetPopup_ && !borderPopup_ && SubPage::closeInput(renderer, mappedInput, [this] { saveEditorAndClose(); })) {
+  if (!borderPopup_ && SubPage::closeInput(renderer, mappedInput, [this] {
+        if (widgetPopup_) {
+          widgetPopup_ = false;
+          render();
+        } else if (themeActionPopup_) {
+          themeActionPopup_ = false;
+          render();
+        } else if (screen_ == Screen::Widgets) {
+          saveEditorAndClose();
+        } else if (screen_ == Screen::Layouts) {
+          screen_ = Screen::List;
+          render();
+        } else {
+          close();
+        }
+      })) {
     return;
   }
   if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
@@ -1300,6 +1788,11 @@ void ThemePickerActivity::loop() {
     }
     if (borderPopup_) {
       borderPopup_ = false;
+      render();
+      return;
+    }
+    if (themeActionPopup_) {
+      themeActionPopup_ = false;
       render();
       return;
     }
@@ -1315,37 +1808,61 @@ void ThemePickerActivity::loop() {
       return;
     }
   }
-  if (screen_ == Screen::List) {
-    const int themeCount = HomeTheme::count() + 1;
-    if (mappedInput.wasPressed(MappedInputManager::Button::Up)) {
-      if (hiddenMenuFocused_) {
-        selected_ = themeCount - 1;
-        hiddenMenuFocused_ = false;
-      } else if (selected_ == 0) {
-        hiddenMenuFocused_ = true;
-      } else {
-        --selected_;
-      }
-      render();
-    } else if (mappedInput.wasPressed(MappedInputManager::Button::Down)) {
-      if (hiddenMenuFocused_) {
-        selected_ = 0;
-        hiddenMenuFocused_ = false;
-      } else if (selected_ + 1 >= themeCount) {
-        hiddenMenuFocused_ = true;
-      } else {
-        ++selected_;
-      }
+  if (screen_ == Screen::Mode) {
+    if (mappedInput.wasPressed(MappedInputManager::Button::Up) ||
+        mappedInput.wasPressed(MappedInputManager::Button::Down)) {
+      sleepMode_ = !sleepMode_;
       render();
     } else if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
-      if (hiddenMenuFocused_) {
-        SETTINGS.hiddenMenu = SETTINGS.hiddenMenu == 0 ? 1 : 0;
-        SETTINGS.saveToFile();
-        hiddenMenuFocused_ = false;
+      selected_ = sleepMode_ ? HomeTheme::sleepActiveIndex() : HomeTheme::activeIndex();
+      listCursor_ = selected_ + 1;
+      screen_ = Screen::List;
+      render();
+    }
+    return;
+  }
+  if (screen_ == Screen::List) {
+    if (themeActionPopup_) {
+      if (mappedInput.wasPressed(MappedInputManager::Button::Up)) {
+        moveThemeActionSelection(-1);
         render();
-      } else {
-        editTheme();
+      } else if (mappedInput.wasPressed(MappedInputManager::Button::Down)) {
+        moveThemeActionSelection(1);
+        render();
+      } else if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
+        handleThemeAction(themeActionSelected_);
       }
+      return;
+    }
+    const int themeCount = sleepMode_ ? HomeTheme::sleepCount() : HomeTheme::count();
+    const int maxCursor = themeCount;
+    if (mappedInput.wasPressed(MappedInputManager::Button::Up)) {
+      listCursor_ = std::max(0, listCursor_ - 1);
+      render();
+    } else if (mappedInput.wasPressed(MappedInputManager::Button::Down)) {
+      listCursor_ = std::min(maxCursor, listCursor_ + 1);
+      render();
+    } else if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
+      if (listCursor_ == 0) {
+        beginNewTheme();
+      } else {
+        selected_ = listCursor_ - 1;
+        themeActionSelected_ = 0;
+        themeActionPopup_ = true;
+        render();
+      }
+    }
+    return;
+  }
+  if (screen_ == Screen::Layouts) {
+    if (mappedInput.wasPressed(MappedInputManager::Button::Up)) {
+      layoutSelection_ = std::max(0, layoutSelection_ - 1);
+      render();
+    } else if (mappedInput.wasPressed(MappedInputManager::Button::Down)) {
+      layoutSelection_ = std::min(2, layoutSelection_ + 1);
+      render();
+    } else if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
+      applySelectedLayout();
     }
     return;
   }
@@ -1378,8 +1895,13 @@ void ThemePickerActivity::loop() {
         const bool wasDescription = widgets_[widgetSlot_] == HomeTheme::Widget::Description;
         const bool wasRecent = widgets_[widgetSlot_] == HomeTheme::Widget::Recent;
         const bool wasCarousel = widgets_[widgetSlot_] == HomeTheme::Widget::Carousel;
+        const bool wasStreaks = widgets_[widgetSlot_] == HomeTheme::Widget::Streaks;
         widgets_[widgetSlot_] = widgetOptionAt(layout_, editingSleep_, popupSelected_);
         if (widgets_[widgetSlot_] == HomeTheme::Widget::Empty) borders_[widgetSlot_] = HomeTheme::Border::None;
+        if (layout_ == HomeTheme::Layout::OneByOne) {
+          const int itemCount = oneByOneWidgetCount(widgets_);
+          widgetPageIndex_ = itemCount <= 0 ? 0 : std::min(widgetPageIndex_, itemCount - 1);
+        }
         if (supportsDescriptionSettings(widgets_[widgetSlot_])) {
           if (!wasDescription) {
             backgrounds_[widgetSlot_] = 0;
@@ -1413,12 +1935,25 @@ void ThemePickerActivity::loop() {
             recentRatings_[widgetSlot_] = 1;
           }
           if (widgets_[widgetSlot_] == HomeTheme::Widget::Carousel && !wasCarousel) {
+            backgrounds_[widgetSlot_] = 0;
+            carouselStyles_[widgetSlot_] = HomeTheme::CarouselStyle::Left;
+            carouselLabels_[widgetSlot_] = 0;
+            carouselShadowStyles_[widgetSlot_] = HomeTheme::CarouselShadowStyle::Gray;
             carouselProgress_[widgetSlot_] = 1;
           }
         } else if (supportsHeatmapSettings(widgets_[widgetSlot_])) {
           heatmapViews_[widgetSlot_] = HomeTheme::HeatmapView::Weekly;
           carouselLabels_[widgetSlot_] = 1;
           carouselLabelColors_[widgetSlot_] = HomeTheme::CarouselLabelColor::Black;
+        } else if (supportsStreaksSettings(widgets_[widgetSlot_])) {
+          if (!wasStreaks) {
+            backgrounds_[widgetSlot_] = 0;
+            streakCompact_[widgetSlot_] = 0;
+          }
+          carouselLabels_[widgetSlot_] = 0;
+          carouselStyles_[widgetSlot_] = HomeTheme::CarouselStyle::Centered;
+          carouselLabelColors_[widgetSlot_] = HomeTheme::CarouselLabelColor::Black;
+          carouselShadowStyles_[widgetSlot_] = HomeTheme::CarouselShadowStyle::None;
         } else {
           carouselStyles_[widgetSlot_] = HomeTheme::CarouselStyle::Centered;
           carouselLabels_[widgetSlot_] = 0;
@@ -1437,19 +1972,23 @@ void ThemePickerActivity::loop() {
       return;
     }
     if (mappedInput.wasPressed(MappedInputManager::Button::Up)) {
-      widgetSlot_ = layout_ == HomeTheme::Layout::OneByOne
-                        ? std::max(0, widgetSlot_ - 1)
-                        : std::max(0, widgetSlot_ - 1);
+      if (layout_ == HomeTheme::Layout::OneByOne) {
+        widgetPageIndex_ = std::max(0, widgetPageIndex_ - 1);
+      } else {
+        widgetSlot_ = std::max(0, widgetSlot_ - 1);
+      }
       render();
     } else if (mappedInput.wasPressed(MappedInputManager::Button::Down)) {
-      widgetSlot_ = layout_ == HomeTheme::Layout::OneByOne
-                        ? std::min(std::max(0, oneByOneWidgetCount(widgets_) - 1), widgetSlot_ + 1)
-                        : std::min(HomeTheme::slotCount(layout_) - 1, widgetSlot_ + 1);
+      if (layout_ == HomeTheme::Layout::OneByOne) {
+        widgetPageIndex_ = std::min(std::max(0, oneByOneWidgetCount(widgets_) - 1), widgetPageIndex_ + 1);
+      } else {
+        widgetSlot_ = std::min(HomeTheme::slotCount(layout_) - 1, widgetSlot_ + 1);
+      }
       render();
     } else if (mappedInput.wasPressed(MappedInputManager::Button::Left)) {
-      openWidgetPopup(layout_ == HomeTheme::Layout::OneByOne ? oneByOneSlotAtPage(widgets_, widgetSlot_) : widgetSlot_);
+      openWidgetPopup(layout_ == HomeTheme::Layout::OneByOne ? oneByOneSlotAtPage(widgets_, widgetPageIndex_) : widgetSlot_);
     } else if (mappedInput.wasPressed(MappedInputManager::Button::Right)) {
-      openWidgetPopup(layout_ == HomeTheme::Layout::OneByOne ? oneByOneSlotAtPage(widgets_, widgetSlot_) : widgetSlot_);
+      openWidgetPopup(layout_ == HomeTheme::Layout::OneByOne ? oneByOneSlotAtPage(widgets_, widgetPageIndex_) : widgetSlot_);
     } else if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
       saveEditorAndClose();
     }

@@ -578,6 +578,9 @@ bool SystemSetting::loadFromFile() {
     libraryViewMode = LIBRARY_VIEW_FOLDERS;
   }
   if (piccoToggleMode >= PICCO_TOGGLE_MODE_COUNT) piccoToggleMode = PICCO_TOGGLE_LIGHT;
+  // Date/time was replaced by the configurable Sleep theme. Keep old settings
+  // files compatible, but migrate the legacy value to the widget screen.
+  if (sleepScreen == SLEEP_SCREEN_MODE::DATETIME_LEGACY) sleepScreen = SLEEP_SCREEN_MODE::WIDGET;
 
   INX_SERIAL.printf("[%lu] [CPS] Settings loaded (version %u, %u items)\n", millis(), version, settingsRead);
 

@@ -33,7 +33,7 @@ class SystemSetting {
     COVER = 3,        ///< Book cover
     TRANSPARENT = 4,  ///< Transparent
     BLANK = 5,        ///< Blank screen
-    DATETIME = 6,     ///< Minimal date and time
+    DATETIME_LEGACY = 6,  ///< Removed; migrate old settings to the widget sleep screen
     WIDGET = 7,       ///< Configurable sleep widgets
     SLEEP_SCREEN_MODE_COUNT
   };

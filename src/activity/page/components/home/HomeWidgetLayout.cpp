@@ -27,6 +27,7 @@ HomeWidgetLayout::HomeWidgetLayout(GfxRenderer& renderer)
       humidity_(renderer),
       todaysReading_(renderer),
       weeklyStatistics_(renderer),
+      streaks_(renderer),
       favorites_(renderer),
       heatmap_(renderer),
       library_(renderer),
@@ -80,6 +81,7 @@ bool HomeWidgetLayout::needsRefresh(const HomeTheme::Theme& theme) const {
     if (theme.widgets[slot] == HomeTheme::Widget::TodaysReading && todaysReading_.needsRefresh()) return true;
     if (theme.widgets[slot] == HomeTheme::Widget::Heatmap && heatmap_.needsRefresh(HomeTheme::HeatmapView::Monthly))
       return true;
+    if (theme.widgets[slot] == HomeTheme::Widget::Streaks && streaks_.needsRefresh()) return true;
   }
   return false;
 }
@@ -290,6 +292,13 @@ void HomeWidgetLayout::renderSlot(const HomeTheme::Theme& theme, const int slot,
                                theme.carouselStyles[slot] == HomeTheme::CarouselStyle::Left,
                                theme.statisticsSummary[slot] != 0);
       break;
+    case HomeTheme::Widget::Streaks:
+      {
+        const bool compact = theme.layout == HomeTheme::Layout::OneByThree || theme.streakCompact[slot] != 0;
+        streaks_.render(bounds.x, bounds.y, bounds.width, bounds.height,
+                        theme.layout == HomeTheme::Layout::OneByTwo && !compact);
+      }
+      break;
     case HomeTheme::Widget::Favorites:
       favorites_.render(favoriteIndex, bounds.x, bounds.y, bounds.width, bounds.height, theme.backgrounds[slot] != 0,
                         theme.carouselStyles[slot], theme.carouselLabels[slot] != 0, theme.carouselLabelColors[slot],
@@ -301,7 +310,8 @@ void HomeWidgetLayout::renderSlot(const HomeTheme::Theme& theme, const int slot,
       break;
     case HomeTheme::Widget::Library:
       library_.render(bounds.x, bounds.y, bounds.width, bounds.height, theme.libraryFolders[slot],
-                      theme.backgrounds[slot] != 0, theme.carouselLabels[slot] != 0);
+                      theme.backgrounds[slot] != 0, theme.carouselLabels[slot] != 0,
+                      theme.layout == HomeTheme::Layout::OneByThree);
       break;
     case HomeTheme::Widget::Description:
       description_.render(descriptionRecentIndex, bounds.x, bounds.y, bounds.width, bounds.height,

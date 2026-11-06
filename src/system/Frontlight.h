@@ -25,6 +25,15 @@ extern FrontlightManager frontlight;
  */
 namespace frontlight_ui {
 
+/** Toggle the frontlight without extending the vendored FrontlightManager API. */
+inline void toggle() {
+  if (frontlight.brightness() > 0) {
+    frontlight.off();
+  } else {
+    frontlight.on();
+  }
+}
+
 #if FREEINK_DEVICE_MURPHY_M4
 // FrontlightManager converts its public percentage through this curve before
 // writing the 10-bit PWM. Undo that curve at the UI boundary so the drawer

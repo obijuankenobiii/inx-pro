@@ -68,6 +68,7 @@ class HalGPIO {
 
  private:
   InputManager inputMgr;
+  unsigned long nextTouchRetryMs = 0;
   uint8_t touchPressedEvents = 0;
   uint8_t touchReleasedEvents = 0;
   TouchSwipe touchSwipeDirection = TouchSwipe::None;

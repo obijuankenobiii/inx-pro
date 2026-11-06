@@ -3,6 +3,7 @@
 #undef private
 
 #include "PiccoSsd2677WindowedGray.h"
+#include "PiccoLuts.h"
 
 #include <BoardConfig.h>
 #include <esp_heap_caps.h>
@@ -13,7 +14,6 @@
 #define private public
 #include "../../freeink-sdk/libs/display/FreeInkDisplay/src/driver/Ssd2677Driver.h"
 #undef private
-#include "../../freeink-sdk/libs/display/FreeInkDisplay/src/lut/Ssd2677Luts.h"
 
 namespace {
 constexpr uint8_t kPanelWindow = 0x83;
@@ -162,7 +162,7 @@ void PiccoSsd2677WindowedGray::uploadImageLut(const bool fastQuality) {
   // The dedicated image LUT is required for the two-plane HQ image encoding.
   // Do not substitute the menu or overlay-AA waveforms here.
   _display._bus.cmd(kLut);
-  _display._bus.data(lut_picco_se0400_image, kLutLength);
+  _display._bus.data(picco_se0400_image_lut, kLutLength);
 }
 
 void PiccoSsd2677WindowedGray::finishDriverState() {

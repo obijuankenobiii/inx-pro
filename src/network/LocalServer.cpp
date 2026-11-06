@@ -2150,9 +2150,8 @@ void LocalServer::handleSettingsPage() const {
 void LocalServer::handleSettingsGet() const {
   JsonDocument doc;
   const bool clockAvailable = clockSettingsAvailable();
-  const uint8_t sleepScreen = (!clockAvailable && SETTINGS.sleepScreen == SystemSetting::DATETIME)
-                                  ? SystemSetting::LIGHT
-                                  : SETTINGS.sleepScreen;
+  const uint8_t sleepScreen = SETTINGS.sleepScreen == SystemSetting::DATETIME_LEGACY ? SystemSetting::WIDGET
+                                                                                : SETTINGS.sleepScreen;
 
   doc["clockAvailable"] = clockAvailable;
   doc["flickPageTurnAvailable"] =
@@ -2323,7 +2322,8 @@ void LocalServer::handleSettingsUpdate() const {
 
     if (strcmp(key, "sleepScreen") == 0) {
       uint8_t v = static_cast<uint8_t>(value);
-      if (v >= SystemSetting::SLEEP_SCREEN_MODE_COUNT || (!clockAvailable && v == SystemSetting::DATETIME)) {
+      if (v == SystemSetting::DATETIME_LEGACY) v = SystemSetting::WIDGET;
+      if (v >= SystemSetting::SLEEP_SCREEN_MODE_COUNT) {
         v = SystemSetting::LIGHT;
       }
       SETTINGS.sleepScreen = v;

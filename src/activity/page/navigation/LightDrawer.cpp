@@ -365,7 +365,7 @@ LightDrawer::Action LightDrawer::handleTap(const int tapX, const int tapY) const
 
   if (tapX >= lightButtonX && tapX < lightButtonX + lightButtonSize && tapY >= lightButtonY &&
       tapY < lightButtonY + lightButtonSize) {
-    frontlight.toggle();
+    frontlight_ui::toggle();
     saveLightPreferences();
     return Action::Opened;
   }

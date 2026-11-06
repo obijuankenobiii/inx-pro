@@ -44,6 +44,7 @@ void HalGPIO::begin() {
   // install the service here because ESP32-S3 performs that registration on
   // ipc0 and can overflow the tiny IPC task stack during early boot.
   inputMgr.begin();
+  nextTouchRetryMs = millis() + 1000;
   INX_SERIAL.printf("[PICCO] input ready touch=%d ranges=x:%u..%u y:%u..%u\n", inputMgr.hasTouch() ? 1 : 0,
                     BoardConfig::ACTIVE.touch.rawMinX, BoardConfig::ACTIVE.touch.rawMaxX,
                     BoardConfig::ACTIVE.touch.rawMinY, BoardConfig::ACTIVE.touch.rawMaxY);
@@ -51,6 +52,7 @@ void HalGPIO::begin() {
 
 void HalGPIO::reinitializeTouch() {
   inputMgr.begin();
+  nextTouchRetryMs = millis() + 1000;
   lastTouchPressed = false;
   touchGestureActive = false;
   INX_SERIAL.printf("[PICCO] touch reinitialized after frontlight: enabled=%d\n", inputMgr.hasTouch() ? 1 : 0);
@@ -119,6 +121,19 @@ void HalGPIO::serviceTouchGestures() {
 }
 
 void HalGPIO::update() {
+  if (!inputMgr.hasTouch()) {
+    const unsigned long now = millis();
+    if (now >= nextTouchRetryMs) {
+      nextTouchRetryMs = now + 1000;
+      INX_SERIAL.println("[PICCO][TOUCH] controller not ready; retrying initialization");
+      inputMgr.begin();
+      if (inputMgr.hasTouch()) {
+        lastTouchPressed = false;
+        touchGestureActive = false;
+        INX_SERIAL.println("[PICCO][TOUCH] initialization recovered");
+      }
+    }
+  }
   inputMgr.update();
   const bool touchPressed = inputMgr.isTouchPressed();
   if (touchPressed != lastTouchPressed) {

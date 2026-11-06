@@ -123,9 +123,6 @@ for root, _, files in os.walk(SRC_DIR):
                 # the firmware API in lockstep without maintaining a second
                 # copy of the page.
                 html_content = html_content.replace(
-                    'sleepScreen:["Dark","Light","Custom","Recent Book","Transparent Cover","None","Date Time"]',
-                    'sleepScreen:["Dark","Light","Custom","Recent Book","Transparent Cover","None","Date Time","Widgets"]')
-                html_content = html_content.replace(
                     'sleepScreenCoverFilter:["None","Contrast","Inverted"]',
                     'sleepScreenCoverFilter:["None","Grayscale","Inverted"]')
                 html_content = html_content.replace(
@@ -155,9 +152,6 @@ for root, _, files in os.walk(SRC_DIR):
                 html_content = html_content.replace(
                     '"bionicReadingEnabled","textAntiAliasing"]',
                     '"bionicReadingEnabled","textAntiAliasing","readerSmartRefreshOnImages"]')
-                html_content = html_content.replace(
-                    'const e="sleepScreen"!==a||clockAvailable()?options[a]:options[a].slice(0,6),s=optionValues[a]||e.map(function(e,t){return t})',
-                    'const e="sleepScreen"!==a||clockAvailable()?options[a]:options[a].filter(function(e,t){return 6!==t}),s=optionValues[a]||("sleepScreen"===a&&!clockAvailable()?e.map(function(e,t){return t>=6?t+1:t}):e.map(function(e,t){return t}))')
 
             if file == "FontManagerPage.html":
                 html_content = html_content.replace(

@@ -60,9 +60,11 @@ constexpr float kPi = 3.14159265f;
 
 constexpr int kCalendarGap = 5;
 
-constexpr int kStatsContentTop = navigation::Menu::height + 20;
-constexpr int kCalendarContentTop = navigation::Menu::height + 10;
-constexpr int kWeeklyChartTop = navigation::Menu::height + 12;
+constexpr int kStatsHeaderBottom = (FREEINK_DEVICE_X4PRO ? 20 : 15) + 40 + 20;
+constexpr int kStatsContentTop = kStatsHeaderBottom + 10;
+constexpr int kCalendarContentTop = kStatsHeaderBottom;
+constexpr int kWeeklyChartTop = kStatsHeaderBottom + 2;
+constexpr int kStatsContentBottomPadding = 12;
 constexpr int kBooksPerPage = 5;
 constexpr int kBooksRowHeight = 132;
 
@@ -133,11 +135,11 @@ ButtonBounds nextButton(const GfxRenderer& renderer) {
 }
 
 ButtonBounds statisticsRefreshButton(const GfxRenderer& renderer) {
-  constexpr int kButtonSize = 56;
+  constexpr int kButtonSize = 66;
   constexpr int kRightMargin = 0;
   constexpr int kBottomMargin = 0;
   return {renderer.getScreenWidth() - kRightMargin - kButtonSize,
-          renderer.getScreenHeight() - navigation::Menu::bottomInset() - kBottomMargin - kButtonSize,
+          renderer.getScreenHeight() - kBottomMargin - kButtonSize,
           kButtonSize, kButtonSize};
 }
 
@@ -149,8 +151,8 @@ struct SingleBookLayout {
 };
 
 SingleBookLayout singleBookLayout(const GfxRenderer& renderer) {
-  const int areaY = navigation::Menu::height;
-  const int areaH = std::max(0, renderer.getScreenHeight() - areaY - navigation::Menu::bottomInset());
+  const int areaY = kStatsContentTop;
+  const int areaH = std::max(0, renderer.getScreenHeight() - areaY - kStatsContentBottomPadding);
   const int baseH = areaH / 3;
   const int topH = std::max(1, (baseH * 90) / 100);
   const int transferredH = baseH - topH;

@@ -48,9 +48,10 @@ constexpr int hiddenDrawerIndicatorWidth = 96;
 constexpr int hiddenDrawerIndicatorHeight = 6;
 constexpr int hiddenDrawerIndicatorTopMargin = 8;
 #if FREEINK_DEVICE_X4PRO
-// Match the light drawer's edge-only gesture: its top edge band is 15%, so
-// the hidden drawer accepts only the mirrored bottom 15% band.
-constexpr float hiddenDrawerSwipeStartNy = 0.85f;
+// The X4 Pro digitizer reports the initial contact a little inside the edge.
+// Use a larger bottom activation band so the Home page does not consume a
+// valid hidden-menu swipe as widget/page navigation.
+constexpr float hiddenDrawerSwipeStartNy = 0.75f;
 #else
 constexpr float hiddenDrawerSwipeStartNy = 0.85f;
 #endif

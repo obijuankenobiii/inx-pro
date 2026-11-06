@@ -185,7 +185,7 @@ namespace {
 
 constexpr int kLoadProgSideMargin = 20;
 constexpr int kLoadProgInnerPad = 12;
-constexpr int kLoadProgBarH = 10;
+constexpr int kLoadProgBarH = 6;
 constexpr int kLoadProgGapLabelToBar = 10;
 
 void paintLoadingProgressBarRow(const GfxRenderer& renderer, const ScreenComponents::LoadingProgressLayout& L,

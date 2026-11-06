@@ -17,6 +17,7 @@
 #include "../widget/Temperature.h"
 #include "../widget/TodaysReading.h"
 #include "../widget/WeeklyStatistics.h"
+#include "../widget/Streaks.h"
 #include "state/HomeTheme.h"
 
 class GfxRenderer;
@@ -106,6 +107,7 @@ class HomeWidgetLayout final {
   Humidity humidity_;
   TodaysReading todaysReading_;
   WeeklyStatistics weeklyStatistics_;
+  Streaks streaks_;
   Favorites favorites_;
   Heatmap heatmap_;
   LibraryWidget library_;

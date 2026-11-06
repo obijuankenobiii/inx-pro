@@ -561,8 +561,12 @@ void ReaderPresetEditorActivity::loop() {
     return;
   }
 
-  const bool swipeUp = mappedInput.wasTouchSwipeUp() || mappedInput.wasTouchSwipeUpForRenderer(renderer);
-  if (swipeUp) {
+  float swipeStartNx = 0.0f;
+  float swipeStartNy = 0.0f;
+  const bool swipeUpFromBottomEdge =
+      mappedInput.hasTouch() && mappedInput.wasTouchSwipeUpInScreen(renderer, swipeStartNx, swipeStartNy) &&
+      swipeStartNy >= 0.85f;
+  if (swipeUpFromBottomEdge) {
     // Treat swipe-up like the editor's Back button. Existing presets save on
     // exit; new presets show the existing Save/Discard prompt.
     beginExit();

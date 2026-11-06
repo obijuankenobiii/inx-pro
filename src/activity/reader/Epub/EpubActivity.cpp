@@ -1640,9 +1640,9 @@ void EpubActivity::loop() {
   float backGestureStartX = 0.0f;
   float backGestureStartY = 0.0f;
   if (mappedInput.wasTouchSwipeRightInScreen(renderer, backGestureStartX, backGestureStartY) &&
-      backGestureStartX <= 0.30f) {
+      backGestureStartX <= 0.30f && !settingsDrawerVisible) {
     pauseReadingStats();
-    onGoBack();
+    openTableOfContents();
     return;
   }
 

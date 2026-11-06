@@ -262,10 +262,8 @@ void drawBookBody(GfxRenderer& renderer, const RecentBook& book, const int x, co
     renderer.rectangle.fill(x, y, width, height, static_cast<int>(GfxRenderer::FillTone::Paper));
     renderer.rectangle.render(x, y, width, height, true);
     if (narrowSpine) {
-      for (int stripeY = y + 8; stripeY < y + height - 4; stripeY += 12) {
-        renderer.rectangle.fill(x + 3, stripeY, std::max(1, width - 6), 3,
-                                static_cast<int>(GfxRenderer::FillTone::Gray));
-      }
+      // Keep preview spines plain; the shelf structure and book outline
+      // already provide the visual separation between the books.
     } else {
       renderer.rectangle.fill(x + 3, y + 3, std::max(1, width - 6), std::max(1, height / 3),
                               static_cast<int>(GfxRenderer::FillTone::Gray));

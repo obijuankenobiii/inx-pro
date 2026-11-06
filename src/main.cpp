@@ -10,9 +10,6 @@
 #include <HalGPIO.h>
 #include <SDCardManager.h>
 #include <SPI.h>
-#if FREEINK_DEVICE_X4PRO
-#include <XteinkDetect.h>
-#endif
 #ifndef SIMULATOR
 #include <esp_system.h>
 #endif
@@ -44,10 +41,10 @@
 #include "activity/system/SleepActivity.h"
 #include "activity/util/KeyboardEntryActivity.h"
 #include "activity/util/FullScreenMessageActivity.h"
+#include "DeviceRuntime.h"
 #include "state/ReaderSetting.h"
 #include "state/SystemSetting.h"
 #include "system/FontManager.h"
-#include "system/Frontlight.h"
 #include "system/Fonts.h"
 #include "system/ScreenComponents.h"
 #include "system/MappedInputManager.h"
@@ -66,10 +63,6 @@ MappedInputManager input(gpio);
 GfxRenderer renderer(display);
 GfxRenderer& render = renderer;
 
-#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
-FrontlightManager frontlight;
-#endif
-
 Activity* currentActivity = nullptr;
 bool sdCardAvailable = false;
 bool activityLoopRunning = false;
@@ -80,6 +73,12 @@ constexpr float kHomeSwipeLeftEdge = 0.05f;
 
 bool isHomeActivity(const Activity* activity) {
   return activity && std::strcmp(activity->getName(), "Home") == 0;
+}
+
+bool isBookReaderActivity(const Activity* activity) {
+  // ReaderActivity owns the EPUB/TXT/PDF/XTC subactivities. Let those
+  // activities consume horizontal swipes for TOC/page navigation.
+  return activity && std::strcmp(activity->getName(), "Reader") == 0;
 }
 }  // namespace
 
@@ -129,41 +128,6 @@ void logButtonEdges() {
   }
 }
 
-#if FREEINK_DEVICE_PICCO
-void applyPiccoPhysicalLightSwitch() {
-  static bool synchronized = false;
-  static uint8_t lastMode = 0xff;
-  if (!gpio.hasToggleSwitch()) return;
-  const bool modeChanged = lastMode != SETTINGS.piccoToggleMode;
-  const bool switchChanged = gpio.wasToggleSwitchChanged();
-
-  if (SETTINGS.piccoToggleMode == SystemSetting::PICCO_TOGGLE_POWER) {
-    if (!gpio.isToggleSwitchOn()) {
-      INX_SERIAL.println("[INPUT][POWER-SWITCH] off -> deep sleep");
-      enterDeepSleep();
-      return;
-    }
-    if (!synchronized || modeChanged || switchChanged) {
-      INX_SERIAL.println("[INPUT][POWER-SWITCH] on");
-    }
-    synchronized = true;
-    lastMode = SETTINGS.piccoToggleMode;
-    return;
-  }
-
-  if (synchronized && !switchChanged && !modeChanged) return;
-
-  if (gpio.isToggleSwitchOn()) {
-    frontlight.on();
-  } else {
-    frontlight.off();
-  }
-  frontlight_ui::persist();
-  INX_SERIAL.printf("[INPUT][LIGHT-SWITCH] %s\n", gpio.isToggleSwitchOn() ? "on" : "off");
-  synchronized = true;
-  lastMode = SETTINGS.piccoToggleMode;
-}
-#endif
 }
 
 template <typename T>
@@ -208,13 +172,7 @@ void switchTo(Args&&... args) {
   }
 
   ScreenComponents::resetPageHeaderBackButton();
-#if FREEINK_DEVICE_MURPHY_M4
-  // Murphy renders pages with the SDK's dual-buffer async path.  Finish the
-  // outgoing refresh before the new activity copies the displayed frame into
-  // its write buffer; otherwise a back swipe can repaint from the old frame.
-  display.finishPendingRefresh();
-  renderer.syncWriteBufferFromActive();
-#endif
+  DeviceRuntime::beforeActivitySwitch(display, renderer, input);
   if (currentActivity) {
     currentActivity->onExit();
 #ifdef SIMULATOR
@@ -226,12 +184,6 @@ void switchTo(Args&&... args) {
 #endif
     currentActivity = nullptr;
   }
-
-#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4
-  input.discardPendingTouchTap();
-  input.discardPendingSwipe();
-  input.ignoreCurrentTouch();
-#endif
 
   currentActivity = new T(std::forward<Args>(args)...);
 #ifdef SIMULATOR
@@ -401,12 +353,7 @@ void enterDeepSleep() {
   switchTo<SleepActivity>(render, input);
   display.deepSleep();
   SdMan.shutdown();
-#if FREEINK_DEVICE_PICCO
-  gpio.startDeepSleep(SETTINGS.piccoToggleMode == SystemSetting::PICCO_TOGGLE_POWER && gpio.hasToggleSwitch() &&
-                      !gpio.isToggleSwitchOn());
-#else
-  gpio.startDeepSleep();
-#endif
+  DeviceRuntime::startDeepSleep(gpio);
 }
 
 void setupDisplayAndFonts() {
@@ -431,9 +378,7 @@ bool handleGlobalPowerRefresh() {
     return false;
   }
 
-  renderer.syncWriteBufferFromActive();
-  renderer.displayBuffer(FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 ? HalDisplay::FULL_REFRESH
-                                                                           : HalDisplay::HALF_REFRESH);
+  DeviceRuntime::refreshAfterPowerButton(display, renderer);
   return true;
 }
 
@@ -443,19 +388,7 @@ bool handleGlobalPowerRefresh() {
 void setup() {
   t1 = millis();
   gpio.begin();
-
-#if FREEINK_DEVICE_X4PRO
-  freeink::applyXteinkDisplayController();
-#endif
-#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
-  frontlight.begin();
-#endif
-#if FREEINK_DEVICE_PICCO
-  // FrontlightManager and the Picco TMA525C share SDA7/SCL8. The frontlight
-  // probe reinitializes Wire, so restore the touch controller and its bus
-  // timeout before the first input update.
-  gpio.reinitializeTouch();
-#endif
+  DeviceRuntime::initialize(gpio);
 
   sdCardAvailable = SdMan.begin();
 
@@ -542,7 +475,7 @@ void loop() {
   // A right swipe that starts at the logical left edge is a global escape
   // gesture. Keep it edge-only so ordinary horizontal content swipes remain
   // available everywhere, including Home's carousel.
-  if (!isHomeActivity(currentActivity)) {
+  if (!isHomeActivity(currentActivity) && !isBookReaderActivity(currentActivity)) {
     float swipeStartX = 0.0f;
     float swipeStartY = 0.0f;
     if (input.wasTouchSwipeRightInScreen(renderer, swipeStartX, swipeStartY) &&
@@ -562,11 +495,9 @@ void loop() {
     activityLoopRunning = false;
   }
 
-#if FREEINK_DEVICE_PICCO
-  // Run after BootActivity has loaded the saved brightness, so the physical
-  // switch's initial position takes precedence over the saved light state.
-  applyPiccoPhysicalLightSwitch();
-#endif
+  // Run after BootActivity has loaded the saved brightness, so a physical
+  // switch can take precedence over the saved light state.
+  DeviceRuntime::poll(gpio, enterDeepSleep);
 
   if (deferredActivitySwitch) {
     auto action = std::move(deferredActivitySwitch);
@@ -580,10 +511,6 @@ void loop() {
   }
 
   if (currentActivity && currentActivity->skipLoopDelay()) {
-    // Server activities stay continuously ready while polling sockets. A bare
-    // yield() can keep loopTask running and starve IDLE0, which trips the task
-    // watchdog during sustained Wi-Fi transfers. Block briefly so idle and
-    // network system tasks get scheduled.
     delay(1);
   } else {
     delay(10);

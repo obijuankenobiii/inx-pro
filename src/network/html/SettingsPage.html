@@ -159,7 +159,7 @@
     let pendingChanges = {};
     let wifiNetworks = [];
     const enumOptions = {
-      sleepScreen: {labels: ['Dark', 'Light', 'Custom', 'Recent Book', 'Transparent Cover', 'None', 'Date Time', 'Widget']},
+      sleepScreen: {labels: ['Dark', 'Light', 'Custom', 'Recent Book', 'Transparent Cover', 'None', 'Widget'], values: [0, 1, 2, 3, 4, 5, 7]},
       hideBatteryPercentage: {labels: ['Never', 'In Reader', 'Always']},
       keyboardLayout: {labels: ['QWERTY', 'Numpad']},
       systemTextSize: {labels: ['Small', 'Medium', 'Large']},
@@ -224,8 +224,6 @@
     }
     function populateSettings() {
       Object.entries(enumOptions).forEach(([id, config]) => populateSelect(id, config.labels, config.values));
-      const sleepScreen = document.getElementById('sleepScreen');
-      if (sleepScreen && !settingsData.clockAvailable) [...sleepScreen.options].find(option => option.value === '6')?.remove();
       populateRange('pageAutoTurnSeconds', Array.from({length: 19}, (_, index) => index * 10), value => value ? value + ' sec' : 'Off');
       populateRange('dailyReadingGoalMinutes', [0, ...Array.from({length: 24}, (_, index) => (index + 1) * 5)], value => value ? value + ' min' : 'Off');
       boolFields.forEach(id => {

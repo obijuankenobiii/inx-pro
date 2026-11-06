@@ -6,6 +6,7 @@
 #include "activity/ActivityWithSubactivity.h"
 #include "activity/settings/BaseDescriptionActivity.h"
 #include "activity/settings/BaseStatisticsActivity.h"
+#include "activity/settings/BaseStreaksActivity.h"
 #include "activity/page/components/widget/Calendar.h"
 #include "activity/page/components/widget/Carousel.h"
 #include "activity/page/components/widget/Clock.h"
@@ -23,6 +24,7 @@
 #include "activity/page/components/widget/Library.h"
 #include "activity/page/components/widget/Description.h"
 #include "activity/page/components/widget/WeeklyStatistics.h"
+#include "activity/page/components/widget/Streaks.h"
 #include "state/HomeTheme.h"
 
 class ThemePickerActivity final : public ActivityWithSubactivity {
@@ -33,19 +35,22 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
         shortcutList_(renderer), clock_(renderer), calendar_(renderer), recent_(renderer), temperature_(renderer),
         humidity_(renderer), todaysReading_(renderer),
         favorites_(renderer), heatmap_(renderer), library_(renderer), description_(renderer), recentGrid_(renderer),
-        flow_(renderer), weeklyStatistics_(renderer),
+        flow_(renderer), weeklyStatistics_(renderer), streaks_(renderer),
         onBack_(std::move(onBack)), openSleepTheme_(openSleepTheme) {}
 
   void onEnter() override;
   void loop() override;
 
  private:
-  enum class Screen { List, Widgets };
+  enum class Screen { Mode, List, Layouts, Widgets };
 
-  Screen screen_ = Screen::List;
+  Screen screen_ = Screen::Mode;
   int selected_ = 0;
+  int listCursor_ = 0;
+  int layoutSelection_ = 1;
   HomeTheme::Layout layout_ = HomeTheme::Layout::OneByTwo;
   int widgetSlot_ = 0;
+  int widgetPageIndex_ = 0;
   HomeTheme::Widget widgets_[4] = {};
   HomeTheme::Border borders_[4] = {};
   uint8_t backgrounds_[4] = {};
@@ -62,25 +67,30 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
   uint8_t carouselProgress_[4] = {};
   uint8_t carouselFullHeight_[4] = {};
   uint8_t statisticsSummary_[4] = {};
+  uint8_t streakCompact_[4] = {};
   HomeTheme::CarouselLabelColor carouselLabelColors_[4] = {};
   HomeTheme::CarouselShadowStyle carouselShadowStyles_[4] = {};
   HomeTheme::HeatmapView heatmapViews_[4] = {};
   char libraryFolders_[4][3][128] = {};
   bool editingExisting_ = false;
+  bool creatingTheme_ = false;
   bool editingSleep_ = false;
-  bool hiddenMenuFocused_ = false;
+  bool sleepMode_ = false;
   bool openSleepTheme_ = false;
   bool widgetPopup_ = false;
   bool borderPopup_ = false;
+  bool themeActionPopup_ = false;
   bool carouselSettingsFinished_ = false;
   bool heatmapSettingsFinished_ = false;
   bool temperatureSettingsFinished_ = false;
   bool librarySettingsFinished_ = false;
   bool descriptionSettingsFinished_ = false;
   bool statisticsSettingsFinished_ = false;
+  bool streaksSettingsFinished_ = false;
   int popupSelected_ = 0;
   int widgetPopupScroll_ = 0;
   int borderPopupSelected_ = 0;
+  int themeActionSelected_ = 0;
   Carousel carousel_;
   Shortcut shortcut_;
   ShortcutList shortcutList_;
@@ -98,11 +108,15 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
   LibraryWidget library_;
   Description description_;
   WeeklyStatistics weeklyStatistics_;
+  Streaks streaks_;
   std::function<void()> onBack_;
 
   void render();
+  void renderMode();
   void renderList();
+  void renderLayoutPicker();
   void renderWidgetPicker();
+  void renderThemeActionPopup();
   void renderWidgetPreview(HomeTheme::Widget widget, int x, int y, int width, int height, bool background,
                            HomeTheme::CarouselStyle style, bool showLabel, HomeTheme::CarouselLabelColor labelColor,
                            HomeTheme::CarouselShadowStyle shadowStyle, HomeTheme::HeatmapView heatmapView,
@@ -110,10 +124,17 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
                            bool descriptionShowProgress, bool descriptionShowRating,
                            bool recentShowTitle, bool recentShowAuthor,
                            bool recentShowProgress, bool recentShowRating, bool carouselShowProgress,
-                           bool carouselFullHeight, bool statisticsSummary);
+                           bool carouselFullHeight, bool statisticsSummary, bool streakCompact);
   void renderDividerBorder(HomeTheme::Border border, int x, int y, int width);
   void renderBorder(HomeTheme::Border border, int x, int y, int width, int height);
   void handleTouch(int x, int y);
+  void beginNewTheme();
+  void beginEditTheme();
+  void initializeNewThemeEditor();
+  void applySelectedLayout();
+  void returnToThemeList();
+  void renameSelectedTheme();
+  void handleThemeAction(int action);
   void editTheme();
   void promoteSelectedOneByOneWidget();
   void saveEditorState();
@@ -127,9 +148,11 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
   void openLibrarySettings(int slot);
   void openDescriptionSettings(int slot);
   void openStatisticsSettings(int slot);
+  void openStreaksSettings(int slot);
   void renderBorderPopup();
   void moveWidgetPopupSelection(int delta);
   void pageWidgetPopup(int delta);
+  void moveThemeActionSelection(int delta);
   void cycleOneByOneWidget(int delta);
   void close();
   void switchLayout(HomeTheme::Layout layout);
