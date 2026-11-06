@@ -403,14 +403,23 @@ void ThemePickerActivity::renderMode() {
 }
 
 void ThemePickerActivity::renderList() {
-  SubPage::header(renderer, sleepMode_ ? "Theme | Sleep" : "Theme | Home");
+  SubPage::header(renderer, "Theme");
+  constexpr int titleFont = MONTSERRAT_16_FONT_ID;
+  constexpr int subtitleFont = MONTSERRAT_12_FONT_ID;
+  constexpr int headerTop = navigation::Menu::topPadding;
+  constexpr int headerIconSize = navigation::Menu::iconSize;
+  const char* subtitle = sleepMode_ ? "Sleep" : "Home";
+  const int titleWidth = renderer.text.getWidth(titleFont, "Theme", EpdFontFamily::BOLD);
+  const int subtitleY = headerTop + (headerIconSize - renderer.text.getLineHeight(subtitleFont)) / 2;
+  renderer.text.renderGray(subtitleFont, navigation::Menu::leftMargin + titleWidth + 10, subtitleY, subtitle, true,
+                           EpdFontFamily::BOLD);
   const int contentTop = navigation::Menu::height;
   const int font = systemFontId();
   const int width = renderer.getScreenWidth();
   const int themeCount = sleepMode_ ? HomeTheme::sleepCount() : HomeTheme::count();
   const int newY = contentTop;
   renderer.rectangle.fill(0, newY, width, kRowHeight, static_cast<int>(GfxRenderer::FillTone::Paper));
-  constexpr const char* newThemeLabel = "New theme";
+  constexpr const char* newThemeLabel = "New theme +";
   const int buttonWidth = Button::width(renderer, newThemeLabel, font);
   const ButtonBounds button{width - 20 - buttonWidth, newY, buttonWidth, Button::height};
   Button::render(renderer, button, newThemeLabel, false, font);
@@ -826,12 +835,16 @@ void ThemePickerActivity::renderWidgetPopup() {
                         HomeTheme::HeatmapView::Monthly, libraryFolders_[widgetSlot_], true, true, true, true,
                         true, true, true, true, true, false, true, false, true);
 
-    const std::string label = HomeTheme::widgetLabel(widget);
-    const std::string shown = renderer.text.truncate(font, label.c_str(), box.cellWidth - 16);
-    const int labelY = cellY + box.cellHeight - previewLabelHeight - 7;
-    const int labelWidth = renderer.text.getWidth(font, shown.c_str());
-    renderer.text.render(font, cellX + (box.cellWidth - labelWidth) / 2, labelY, shown.c_str(), true,
-                         EpdFontFamily::REGULAR);
+    // Empty already has its label inside the placeholder preview. Do not
+    // repeat it beneath the cell like the other widget options.
+    if (widget != HomeTheme::Widget::Empty) {
+      const std::string label = HomeTheme::widgetLabel(widget);
+      const std::string shown = renderer.text.truncate(font, label.c_str(), box.cellWidth - 16);
+      const int labelY = cellY + box.cellHeight - previewLabelHeight - 7;
+      const int labelWidth = renderer.text.getWidth(font, shown.c_str());
+      renderer.text.render(font, cellX + (box.cellWidth - labelWidth) / 2, labelY, shown.c_str(), true,
+                           EpdFontFamily::REGULAR);
+    }
     if (index + kWidgetGridColumns < pageEnd) {
       renderer.line.render(cellX, cellY + box.cellHeight + 6, cellX + box.cellWidth, cellY + box.cellHeight + 6,
                            true, LineRender::Style::Dotted);
