@@ -40,7 +40,7 @@ struct PreviewBounds {
 };
 
 PreviewBounds widgetPreviewBounds(const GfxRenderer& renderer) {
-  const int contentTop = SubPage::headerContentTop();
+  const int contentTop = navigation::Menu::height;
   const int previewHeight = std::max(1, renderer.getScreenHeight() - contentTop - 20);
   return {0, contentTop, renderer.getScreenWidth(), previewHeight};
 }
@@ -385,7 +385,8 @@ void ThemePickerActivity::render() {
 }
 
 void ThemePickerActivity::renderMode() {
-  const int contentTop = SubPage::header(renderer, "Theme");
+  SubPage::header(renderer, "Theme");
+  const int contentTop = navigation::Menu::height;
   const int font = systemFontId();
   const int width = renderer.getScreenWidth();
   const char* labels[] = {"Home", "Sleep"};
@@ -402,7 +403,8 @@ void ThemePickerActivity::renderMode() {
 }
 
 void ThemePickerActivity::renderList() {
-  const int contentTop = SubPage::header(renderer, sleepMode_ ? "Sleep" : "Home");
+  SubPage::header(renderer, sleepMode_ ? "Sleep" : "Home");
+  const int contentTop = navigation::Menu::height;
   const int font = systemFontId();
   const int width = renderer.getScreenWidth();
   const int themeCount = sleepMode_ ? HomeTheme::sleepCount() : HomeTheme::count();
@@ -434,7 +436,8 @@ void ThemePickerActivity::renderList() {
 }
 
 void ThemePickerActivity::renderLayoutPicker() {
-  const int contentTop = SubPage::header(renderer, "Choose layout");
+  SubPage::header(renderer, "Choose layout");
+  const int contentTop = navigation::Menu::height;
   const int font = systemFontId();
   const int width = renderer.getScreenWidth();
   const int availableHeight = std::max(1, renderer.getScreenHeight() - contentTop);
@@ -1408,7 +1411,7 @@ void ThemePickerActivity::switchLayout(const HomeTheme::Layout layout) {
 
 void ThemePickerActivity::handleTouch(const int x, const int y) {
   if (screen_ == Screen::Mode) {
-    const int top = SubPage::headerContentTop();
+    const int top = navigation::Menu::height;
     if (y >= top && y < top + 2 * kRowHeight) {
       sleepMode_ = y >= top + kRowHeight;
       selected_ = sleepMode_ ? HomeTheme::sleepActiveIndex() : HomeTheme::activeIndex();
@@ -1419,7 +1422,7 @@ void ThemePickerActivity::handleTouch(const int x, const int y) {
     return;
   }
   if (screen_ == Screen::List) {
-    const int contentTop = SubPage::headerContentTop();
+    const int contentTop = navigation::Menu::height;
     if (themeActionPopup_) {
       const PopUpBounds box = PopUp::bounds(renderer, 3);
       if (!inside(x, y, box.x, box.y, box.width, box.height)) {
@@ -1461,7 +1464,7 @@ void ThemePickerActivity::handleTouch(const int x, const int y) {
     return;
   }
   if (screen_ == Screen::Layouts) {
-    const int contentTop = SubPage::headerContentTop();
+    const int contentTop = navigation::Menu::height;
     const int availableHeight = std::max(1, renderer.getScreenHeight() - contentTop);
     const int sectionHeight = std::max(1, availableHeight / 3);
     if (y >= contentTop && y < contentTop + availableHeight) {

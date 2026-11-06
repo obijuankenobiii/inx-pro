@@ -19,8 +19,6 @@ class SubPage : public UiPage {
 
   /** Draws the shared sub-page title and top-right close button. */
   static int header(const GfxRenderer& renderer, const char* name);
-  /** Returns the first content row below the shared header. */
-  static int headerContentTop();
   /** Handles the shared close button, Back button, and swipe-up gesture. */
   static bool closeInput(GfxRenderer& renderer, MappedInputManager& mappedInput,
                          const std::function<void()>& close, bool closeOnSwipeUp = true);
