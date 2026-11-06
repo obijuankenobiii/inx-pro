@@ -30,7 +30,6 @@
 namespace {
 
 constexpr int kRowHeight = UiPage::LIST_ITEM_HEIGHT;
-constexpr int kContentTop = FREEINK_DEVICE_X4PRO ? 80 : 75;
 constexpr int kThemeListGap = 20;
 
 struct PreviewBounds {
@@ -41,8 +40,9 @@ struct PreviewBounds {
 };
 
 PreviewBounds widgetPreviewBounds(const GfxRenderer& renderer) {
-  const int previewHeight = std::max(1, renderer.getScreenHeight() - kContentTop - 20);
-  return {0, kContentTop, renderer.getScreenWidth(), previewHeight};
+  const int contentTop = SubPage::headerContentTop();
+  const int previewHeight = std::max(1, renderer.getScreenHeight() - contentTop - 20);
+  return {0, contentTop, renderer.getScreenWidth(), previewHeight};
 }
 
 int layoutIndex(const HomeTheme::Layout layout) {
@@ -1408,7 +1408,7 @@ void ThemePickerActivity::switchLayout(const HomeTheme::Layout layout) {
 
 void ThemePickerActivity::handleTouch(const int x, const int y) {
   if (screen_ == Screen::Mode) {
-    const int top = kContentTop;
+    const int top = SubPage::headerContentTop();
     if (y >= top && y < top + 2 * kRowHeight) {
       sleepMode_ = y >= top + kRowHeight;
       selected_ = sleepMode_ ? HomeTheme::sleepActiveIndex() : HomeTheme::activeIndex();
@@ -1419,7 +1419,7 @@ void ThemePickerActivity::handleTouch(const int x, const int y) {
     return;
   }
   if (screen_ == Screen::List) {
-    const int contentTop = kContentTop;
+    const int contentTop = SubPage::headerContentTop();
     if (themeActionPopup_) {
       const PopUpBounds box = PopUp::bounds(renderer, 3);
       if (!inside(x, y, box.x, box.y, box.width, box.height)) {
@@ -1461,10 +1461,11 @@ void ThemePickerActivity::handleTouch(const int x, const int y) {
     return;
   }
   if (screen_ == Screen::Layouts) {
-    const int availableHeight = std::max(1, renderer.getScreenHeight() - kContentTop);
+    const int contentTop = SubPage::headerContentTop();
+    const int availableHeight = std::max(1, renderer.getScreenHeight() - contentTop);
     const int sectionHeight = std::max(1, availableHeight / 3);
-    if (y >= kContentTop && y < kContentTop + availableHeight) {
-      layoutSelection_ = std::min(2, std::max(0, (y - kContentTop) / sectionHeight));
+    if (y >= contentTop && y < contentTop + availableHeight) {
+      layoutSelection_ = std::min(2, std::max(0, (y - contentTop) / sectionHeight));
       applySelectedLayout();
     }
     return;

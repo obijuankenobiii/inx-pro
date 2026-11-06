@@ -11,6 +11,13 @@
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
 
+int SubPage::headerContentTop() {
+  constexpr int top = FREEINK_DEVICE_X4PRO ? 20 : 15;
+  constexpr int size = 40;
+  constexpr int bottomPadding = 20;
+  return top + size + bottomPadding;
+}
+
 int SubPage::header(const GfxRenderer& renderer, const char* name) {
   constexpr int top = FREEINK_DEVICE_X4PRO ? 20 : 15;
   constexpr int size = 40;
@@ -18,7 +25,7 @@ int SubPage::header(const GfxRenderer& renderer, const char* name) {
   const int textY = top + (size - renderer.text.getLineHeight(font)) / 2;
   renderer.text.render(font, 20, textY, name ? name : "", true, EpdFontFamily::BOLD);
   renderer.bitmap.icon(Close, renderer.getScreenWidth() - 60, top, size, size);
-  return top + size + 20;
+  return headerContentTop();
 }
 
 bool SubPage::closeInput(GfxRenderer& renderer, MappedInputManager& mappedInput,
