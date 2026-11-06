@@ -1539,6 +1539,10 @@ void ThemePickerActivity::handleTouch(const int x, const int y) {
         carouselLabelColors_[widgetSlot_] = HomeTheme::CarouselLabelColor::Black;
         carouselShadowStyles_[widgetSlot_] = HomeTheme::CarouselShadowStyle::None;
         if (widgets_[widgetSlot_] == HomeTheme::Widget::Recent && !wasRecent) {
+          backgrounds_[widgetSlot_] = 0;
+          carouselStyles_[widgetSlot_] = HomeTheme::CarouselStyle::Left;
+          carouselLabels_[widgetSlot_] = 0;
+          carouselShadowStyles_[widgetSlot_] = HomeTheme::CarouselShadowStyle::Gray;
           recentTitles_[widgetSlot_] = 1;
           recentAuthors_[widgetSlot_] = 1;
           recentProgress_[widgetSlot_] = 1;
@@ -1929,6 +1933,10 @@ void ThemePickerActivity::loop() {
           carouselLabelColors_[widgetSlot_] = HomeTheme::CarouselLabelColor::Black;
           carouselShadowStyles_[widgetSlot_] = HomeTheme::CarouselShadowStyle::None;
           if (widgets_[widgetSlot_] == HomeTheme::Widget::Recent && !wasRecent) {
+            backgrounds_[widgetSlot_] = 0;
+            carouselStyles_[widgetSlot_] = HomeTheme::CarouselStyle::Left;
+            carouselLabels_[widgetSlot_] = 0;
+            carouselShadowStyles_[widgetSlot_] = HomeTheme::CarouselShadowStyle::Gray;
             recentTitles_[widgetSlot_] = 1;
             recentAuthors_[widgetSlot_] = 1;
             recentProgress_[widgetSlot_] = 1;
