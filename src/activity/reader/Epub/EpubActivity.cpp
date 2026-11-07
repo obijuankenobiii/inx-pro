@@ -1631,6 +1631,25 @@ void EpubActivity::loop() {
     return;
   }
 
+  // Opening the in-book settings drawer remains available even when reader
+  // touch actions are disabled. The drawer itself owns input while visible.
+  if (mappedInput.wasTouchSwipeDownForRenderer(renderer)) {
+    pauseReadingStats();
+    toggleSettingsDrawer();
+    lastAutoPageTurnTime = millis();
+    return;
+  }
+
+  if (mappedInput.wasTouchSwipeUpForRenderer(renderer)) {
+    pauseReadingStats();
+    vTaskDelay(pdMS_TO_TICKS(100));
+    onGoBack();
+    return;
+  }
+
+  const bool readerTouchEnabled = readerTouchEnabled_;
+
+  if (readerTouchEnabled) {
 #if INX_HAS_FRONTLIGHT || FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
   if (!READER_SETTINGS.disableLightControl && frontlight_ui::handleEdgeSwipe(mappedInput, renderer)) {
     return;
@@ -1646,61 +1665,44 @@ void EpubActivity::loop() {
     return;
   }
 
-  if (mappedInput.wasTouchSwipeUpForRenderer(renderer)) {
-    pauseReadingStats();
-    vTaskDelay(pdMS_TO_TICKS(100));
-    onGoBack();
+  if (annUi_.handlePreEntryTouchGesture(*this)) {
     return;
   }
 
-  if (mappedInput.wasTouchSwipeDownForRenderer(renderer)) {
-    pauseReadingStats();
-    toggleSettingsDrawer();
-    lastAutoPageTurnTime = millis();
-    return;
-  }
-
-  const bool readerTouchEnabled = !settingsDrawer || settingsDrawer->isTouchEnabled();
-
-  if (readerTouchEnabled && annUi_.handlePreEntryTouchGesture(*this)) {
-    return;
-  }
-
-  if (readerTouchEnabled) {
-    if (READER_SETTINGS.pageTurnMode == ReaderSetting::PAGE_TURN_SWIPE) {
-      if (mappedInput.wasTouchSwipeLeftForRenderer(renderer)) {
-        endPageTimer();
-        pageTurn(true);
-        lastAutoPageTurnTime = millis();
-        return;
-      }
-      if (mappedInput.wasTouchSwipeRightForRenderer(renderer)) {
-        endPageTimer();
-        pageTurn(false);
-        lastAutoPageTurnTime = millis();
-        return;
-      }
-    } else if (mappedInput.wasTouchSwipeRightForRenderer(renderer)) {
-      pauseReadingStats();
-      openTableOfContents();
+  if (READER_SETTINGS.pageTurnMode == ReaderSetting::PAGE_TURN_SWIPE) {
+    if (mappedInput.wasTouchSwipeLeftForRenderer(renderer)) {
+      endPageTimer();
+      pageTurn(true);
+      lastAutoPageTurnTime = millis();
       return;
     }
-  }
-
-  if (readerTouchEnabled && handlePageNoteTouch()) {
+    if (mappedInput.wasTouchSwipeRightForRenderer(renderer)) {
+      endPageTimer();
+      pageTurn(false);
+      lastAutoPageTurnTime = millis();
+      return;
+    }
+  } else if (mappedInput.wasTouchSwipeRightForRenderer(renderer)) {
+    pauseReadingStats();
+    openTableOfContents();
     return;
   }
 
-  if (readerTouchEnabled && handleTopRightTap()) {
+  if (handlePageNoteTouch()) {
     return;
   }
 
-  if (readerTouchEnabled && handleImageTouch()) {
+  if (handleTopRightTap()) {
     return;
   }
 
-  if (readerTouchEnabled && handleWordTouch()) {
+  if (handleImageTouch()) {
     return;
+  }
+
+  if (handleWordTouch()) {
+    return;
+  }
   }
 
   if (btnBindings_.handleInput(*this)) {
@@ -1778,6 +1780,11 @@ void EpubActivity::toggleSettingsDrawer() {
         updateRequired = true;
       }
       onBookSettingsLiveLayoutSync();
+    });
+    settingsDrawer->setTouchEnabled(readerTouchEnabled_);
+    settingsDrawer->setTouchEnabledChanged([this](bool enabled) {
+      readerTouchEnabled_ = enabled;
+      saveReaderTouchSetting();
     });
   }
 
@@ -2096,15 +2103,10 @@ bool EpubActivity::presentPreparedForwardPage() {
           ? ((FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4) ? HalDisplay::FULL_REFRESH
                                                                   : HalDisplay::HALF_REFRESH)
           : static_cast<HalDisplay::RefreshMode>(presented.refreshMode);
-#if FREEINK_DEVICE_PICCO
-  // Picco's absolute SSD2677 image pass contains the complete page. Avoid a
-  // redundant B/W waveform before the four-tone image waveform.
-  if (!presented.highQuality) {
-    renderer.displayBufferAsync(turnRefresh);
-  }
-#else
+  // Commit the prepared B/W page before any HQ image pass. The grayscale
+  // window updates only the image region; embedded text must already be the
+  // current page on the panel and in frameBufferActive.
   renderer.displayBufferAsync(turnRefresh);
-#endif
 
   if (!finishPreparedPageGrayscale(presented)) {
     invalidatePreparedPage();
@@ -2750,6 +2752,7 @@ void EpubActivity::loadBookSettings() {
   if (epub) {
     FontManager::scanSDFonts("/fonts");
     bool loaded = bookSettings.loadFromFile(epub->getCachePath());
+    loadReaderTouchSetting();
     if (!loaded) {
       READER_PRESETS.applyToBook(READER_PRESETS.defaultPresetIndex(), bookSettings);
       // A newly opened book inherits the current system appearance even when
@@ -2783,10 +2786,54 @@ void EpubActivity::saveBookSettings() {
     if (SdMan.exists(settingsPath.c_str())) {
       SdMan.remove(settingsPath.c_str());
     }
+    saveReaderTouchSetting();
     return;
   }
 
   bookSettings.saveToFile(cachePath);
+  saveReaderTouchSetting();
+}
+
+void EpubActivity::loadReaderTouchSetting() {
+  readerTouchEnabled_ = true;
+  if (!epub) {
+    return;
+  }
+
+  const std::string touchPath = epub->getCachePath() + "/reader_touch.bin";
+  FsFile file;
+  if (!SdMan.openFileForRead("BTOUCH", touchPath.c_str(), file)) {
+    return;
+  }
+
+  uint8_t enabled = 1;
+  if (file.read(&enabled, sizeof(enabled)) == sizeof(enabled)) {
+    readerTouchEnabled_ = enabled != 0;
+  }
+  file.close();
+}
+
+void EpubActivity::saveReaderTouchSetting() {
+  if (!epub) {
+    return;
+  }
+
+  const std::string touchPath = epub->getCachePath() + "/reader_touch.bin";
+  if (readerTouchEnabled_) {
+    if (SdMan.exists(touchPath.c_str())) {
+      SdMan.remove(touchPath.c_str());
+    }
+    return;
+  }
+
+  FsFile file;
+  if (!SdMan.openFileForWrite("BTOUCH", touchPath.c_str(), file)) {
+    return;
+  }
+
+  const uint8_t disabled = 0;
+  file.write(&disabled, sizeof(disabled));
+  file.close();
 }
 
 /**

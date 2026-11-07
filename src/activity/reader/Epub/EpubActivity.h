@@ -153,6 +153,7 @@ class EpubActivity final : public ActivityWithSubactivity {
 
   SettingsDrawer* settingsDrawer = nullptr;
   bool settingsDrawerVisible = false;
+  bool readerTouchEnabled_ = true;
   std::unique_ptr<class EpubNavigation> navigation_;
   BookSettings bookSettings;
   BookSettings settingsDrawerSnapshot_;
@@ -323,6 +324,8 @@ class EpubActivity final : public ActivityWithSubactivity {
 
   void saveBookSettings();
   void loadBookSettings();
+  void saveReaderTouchSetting();
+  void loadReaderTouchSetting();
 
   void initStats();
   void maybeCommitReadingSessionCount();

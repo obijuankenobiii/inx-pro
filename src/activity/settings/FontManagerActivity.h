@@ -37,6 +37,7 @@ class FontManagerActivity final : public ActivityWithSubactivity {
   std::string status_;
   int selectedIndex_ = 0;
   int scrollOffset_ = 0;
+  int paginatorPage_ = 0;
   bool selectedVisible_ = false;
   bool categoryFilterOpen_ = false;
   CategoryFilter categoryFilter_ = CategoryFilter::All;

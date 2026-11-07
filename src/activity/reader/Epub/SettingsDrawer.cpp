@@ -1791,6 +1791,19 @@ void SettingsDrawer::handleInput(MappedInputManager& input) {
     }
   }
 
+  // An upward swipe from the bottom edge dismisses the standalone reader
+  // settings drawer. Body swipes remain list pagination, while selector and
+  // margin-editor swipes are handled by their dedicated paths above.
+  if (!embedded_ && input.hasTouch()) {
+    float swipeStartNx = 0.0f;
+    float swipeStartNy = 0.0f;
+    if (input.wasTouchSwipeUpInScreen(renderer, swipeStartNx, swipeStartNy) && swipeStartNy >= 0.85f) {
+      hide();
+      lastInputTime = currentTime;
+      return;
+    }
+  }
+
   if (currentTime - lastInputTime < pdMS_TO_TICKS(150)) {
     return;
   }
@@ -1843,6 +1856,9 @@ void SettingsDrawer::handleInput(MappedInputManager& input) {
         const int tab = std::min(tabCount - 1, std::max(0, (tapX - drawerX) / tabWidth));
         if (!embedded_ && tab == count) {
           touchEnabled_ = !touchEnabled_;
+          if (onTouchEnabledChanged_) {
+            onTouchEnabledChanged_(touchEnabled_);
+          }
           lastInputTime = currentTime;
           renderWithRefresh(HalDisplay::FAST_REFRESH);
           return;

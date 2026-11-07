@@ -224,12 +224,7 @@ bool current(const navigation::Menu& menu, const navigation::Menu::Action action
 
 namespace navigation {
 
-Menu::Menu(GfxRenderer& renderer)
-    : menuRenderer(renderer)
-#if INX_HAS_FRONTLIGHT || FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
-      , lightDrawer(renderer)
-#endif
-{}
+Menu::Menu(GfxRenderer& renderer) : menuRenderer(renderer) {}
 
 MappedInputManager::Button Menu::tabPrevButton() const { return MappedInputManager::Button::Left; }
 
@@ -259,14 +254,6 @@ void Menu::handleTabNavigation(const bool leftPressed, const bool rightPressed) 
     tabSelectorIndex = (tabSelectorIndex + 1) % tabCount;
     navigateToSelectedMenu();
   }
-}
-
-bool Menu::restoreLightDrawerFrameForRender() const {
-#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
-  return lightDrawer.restoreStoredFrameForRender();
-#else
-  return false;
-#endif
 }
 
 bool Menu::handleTabBarTouch(MappedInputManager& mappedInput, const GfxRenderer& renderer) {
@@ -308,9 +295,6 @@ void Menu::render() const {
   navigation();
   bottom();
   popup();
-#if INX_HAS_FRONTLIGHT || FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
-  lightDrawer.render();
-#endif
 }
 
 void Menu::title() const {
@@ -425,28 +409,6 @@ Menu::Action Menu::choose() const {
 }
 
 Menu::Action Menu::handleInput(MappedInputManager& input) const {
-#if INX_HAS_FRONTLIGHT || FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
-  const LightDrawer::Action lightAction = lightDrawer.handleInput(input);
-  if (lightAction == LightDrawer::Action::Opened) {
-    open = false;
-    return Action::Opened;
-  }
-  if (lightAction == LightDrawer::Action::Closed) return Action::Closed;
-  if (lightAction == LightDrawer::Action::Adjusted) {
-#if FREEINK_DEVICE_PICCO
-    // Picco's e-paper refresh is much slower than the X4 Pro/Murphy path.  A
-    // slider sample already updates the frontlight and its live row renderer;
-    // routing it as Opened sets UiPage::updateRequired and immediately causes
-    // a second full drawer render.  That render waits for the Picco panel and
-    // drops the next touch samples, making the slider jump or miss values.
-    // Keep the input cycle consumed and let the release path perform the one
-    // final drawer refresh.
-    return Action::None;
-#else
-    return Action::Opened;
-#endif
-  }
-#endif
   if (SETTINGS.hiddenMenu != 0) {
     if (open && input.wasTouchSwipeDownForRenderer(menuRenderer)) {
       open = false;
@@ -506,19 +468,6 @@ Menu::Action Menu::handleInput(MappedInputManager& input) const {
 }
 
 Menu::Action Menu::handleTap(const int tapX, const int tapY) const {
-#if INX_HAS_FRONTLIGHT || FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
-  if (lightDrawer.isOpen()) {
-    switch (lightDrawer.handleTap(tapX, tapY)) {
-      case LightDrawer::Action::Opened:
-        return Action::Opened;
-      case LightDrawer::Action::Closed:
-        return Action::Closed;
-      case LightDrawer::Action::None:
-        break;
-    }
-  }
-#endif
-
   if (open) {
     const int menuX = x(menuRenderer);
     const int menuY = y(menuRenderer);

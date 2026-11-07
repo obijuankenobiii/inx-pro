@@ -24,7 +24,7 @@ int SubPage::header(const GfxRenderer& renderer, const char* name) {
 
 bool SubPage::closeInput(GfxRenderer& renderer, MappedInputManager& mappedInput,
                          const std::function<void()>& close, const bool closeOnSwipeUp) {
-  if (closeOnSwipeUp && mappedInput.hasTouch() && mappedInput.wasTouchSwipeUp()) {
+  if (closeOnSwipeUp && mappedInput.hasTouch() && mappedInput.wasTouchSwipeUpForRenderer(renderer)) {
     if (close) close();
     return true;
   }
@@ -77,7 +77,7 @@ void SubPage::menu() {
 }
 
 bool SubPage::closeInput(const bool closeOnSwipeUp) {
-  if (closeOnSwipeUp && mappedInput.hasTouch() && mappedInput.wasTouchSwipeUp()) {
+  if (closeOnSwipeUp && mappedInput.hasTouch() && mappedInput.wasTouchSwipeUpForRenderer(renderer)) {
     dismiss();
     return true;
   }

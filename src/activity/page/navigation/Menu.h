@@ -69,11 +69,9 @@ class Menu {
     selectedVisible = false;
   }
 #if INX_HAS_FRONTLIGHT || FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
-  bool isLightDrawerOpen() const { return lightDrawer.isOpen(); }
-  bool isLightDrawerSliderDragging() const { return lightDrawer.isSliderDragging(); }
+  bool isLightDrawerOpen() const { return globalLightDrawer(menuRenderer).isOpen(); }
+  bool isLightDrawerSliderDragging() const { return globalLightDrawer(menuRenderer).isSliderDragging(); }
 #endif
-  /** Restores the page frame when only the light drawer changed. */
-  bool restoreLightDrawerFrameForRender() const;
   void render() const;
   Action handleInput(MappedInputManager& input) const;
   Action handleTap(int tapX, int tapY) const;
@@ -104,9 +102,6 @@ class Menu {
   mutable bool open = false;
   mutable int selected = 0;
   mutable bool selectedVisible = false;
-#if INX_HAS_FRONTLIGHT || FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
-  mutable LightDrawer lightDrawer;
-#endif
 
   void navigation() const;
   void bottom() const;

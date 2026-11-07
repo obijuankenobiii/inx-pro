@@ -11,6 +11,7 @@
 #include "activity/page/SubPage.h"
 #include "activity/network/WifiSelectionActivity.h"
 #include "activity/page/components/global/Button.h"
+#include "activity/page/components/global/Paginator.h"
 #include "images/Check.h"
 #include "images/Download.h"
 #include "images/LibraryFilterRight.h"
@@ -75,19 +76,6 @@ void drawProgressBar(const GfxRenderer& renderer, const int x, const int y, cons
   if (fillWidth > 0) renderer.rectangle.fill(x + 1, y + 1, fillWidth, height - 2, true);
 }
 
-void drawScrollBar(const GfxRenderer& renderer, const int x, const int y, const int height, const int total,
-                   const int visible, const int offset) {
-  if (total <= visible || height <= 0) return;
-
-  constexpr int width = 3;
-  const int maxOffset = std::max(1, total - visible);
-  const int thumbHeight = std::max(14, height * visible / total);
-  const int thumbTravel = std::max(1, height - thumbHeight);
-  const int thumbY = y + offset * thumbTravel / maxOffset;
-  renderer.rectangle.fill(x, y, width, height, static_cast<int>(GfxRenderer::FillTone::Gray), true);
-  renderer.rectangle.fill(x, thumbY, width, thumbHeight, static_cast<int>(GfxRenderer::FillTone::Ink), true);
-}
-
 ButtonBounds scrollCaretBounds(const GfxRenderer& renderer) {
   return {renderer.getScreenWidth() - kSideMargin - kScrollCaretSize, renderer.getScreenHeight() - kBottomMargin + 2,
           kScrollCaretSize, kScrollCaretSize};
@@ -109,6 +97,7 @@ void FontManagerActivity::onEnter() {
   status_.clear();
   selectedIndex_ = 0;
   scrollOffset_ = 0;
+  paginatorPage_ = 0;
   selectedVisible_ = false;
   categoryFilterOpen_ = false;
   categoryFilter_ = CategoryFilter::All;
@@ -252,6 +241,7 @@ void FontManagerActivity::applyCategoryFilter(const int index) {
   categoryFilter_ = static_cast<CategoryFilter>(index);
   selectedIndex_ = 0;
   scrollOffset_ = 0;
+  paginatorPage_ = 0;
   selectedVisible_ = false;
   categoryFilterOpen_ = false;
   updateDisplay();
@@ -522,10 +512,14 @@ void FontManagerActivity::render() {
     const int total = visiblePackageCount();
     const int visibleRows = visibleRowCount(fontListTop);
     const int maxScroll = std::max(0, total - visibleRows);
+    const int pageCount = std::max(1, (total + visibleRows - 1) / visibleRows);
+    const int pageStep = std::max(1, visibleRows - 1);
+    paginatorPage_ = std::max(0, std::min(paginatorPage_, pageCount - 1));
     scrollOffset_ = std::max(0, std::min(scrollOffset_, maxScroll));
     if (selectedVisible_) {
       if (selectedIndex_ < scrollOffset_) scrollOffset_ = selectedIndex_;
       if (selectedIndex_ >= scrollOffset_ + visibleRows) scrollOffset_ = selectedIndex_ - visibleRows + 1;
+      paginatorPage_ = std::max(0, std::min(pageCount - 1, (scrollOffset_ + pageStep / 2) / pageStep));
     }
 
     Button::render(renderer, categoryFilterBounds(), categoryFilterLabel(), categoryFilterOpen_, font);
@@ -583,7 +577,8 @@ void FontManagerActivity::render() {
         renderer.line.render(0, y + kRowHeight - 1, screenW, y + kRowHeight - 1, true, LineRender::Style::Dotted);
       }
     }
-    drawScrollBar(renderer, screenW - 8, fontListTop, visibleRows * kRowHeight, total, visibleRows, scrollOffset_);
+    Paginator::render(renderer, paginatorPage_, pageCount, screenW - 10, fontListTop,
+                      visibleRows * kRowHeight);
     const ButtonBounds caretBounds = scrollCaretBounds(renderer);
     const auto caretOrientation = scrollOffset_ >= maxScroll ? BitmapRender::Orientation::Rotate270CW
                                                                : BitmapRender::Orientation::Rotate90CW;
@@ -619,11 +614,17 @@ void FontManagerActivity::loop() {
     if (swipeUp || swipeDown) {
       const int visibleRows = visibleRowCount(fontListTop);
       const int maxScroll = std::max(0, visiblePackageCount() - visibleRows);
+      const int pageCount = std::max(1, (visiblePackageCount() + visibleRows - 1) / visibleRows);
+      const int pageStep = std::max(1, visibleRows - 1);
+      // A touch scroll is navigation, not a new row selection. Do not let a
+      // previously button-selected row pull the list back onto its old page.
+      selectedVisible_ = false;
       if (swipeUp) {
-        scrollOffset_ = std::min(maxScroll, scrollOffset_ + std::max(1, visibleRows - 1));
+        paginatorPage_ = std::min(pageCount - 1, paginatorPage_ + 1);
       } else {
-        scrollOffset_ = std::max(0, scrollOffset_ - std::max(1, visibleRows - 1));
+        paginatorPage_ = std::max(0, paginatorPage_ - 1);
       }
+      scrollOffset_ = std::min(maxScroll, paginatorPage_ * pageStep);
       updateDisplay();
       return;
     }
@@ -650,11 +651,15 @@ void FontManagerActivity::loop() {
         const int visibleRows = visibleRowCount(fontListTop);
         const int maxScroll = std::max(0, visiblePackageCount() - visibleRows);
         if (maxScroll > 0 && contains(scrollCaretBounds(renderer), x, y)) {
+          const int pageCount = std::max(1, (visiblePackageCount() + visibleRows - 1) / visibleRows);
+          const int pageStep = std::max(1, visibleRows - 1);
+          selectedVisible_ = false;
           if (scrollOffset_ >= maxScroll) {
-            scrollOffset_ = std::max(0, scrollOffset_ - std::max(1, visibleRows - 1));
+            paginatorPage_ = std::max(0, paginatorPage_ - 1);
           } else {
-            scrollOffset_ = std::min(maxScroll, scrollOffset_ + std::max(1, visibleRows - 1));
+            paginatorPage_ = std::min(pageCount - 1, paginatorPage_ + 1);
           }
+          scrollOffset_ = std::min(maxScroll, paginatorPage_ * pageStep);
           updateDisplay();
           return;
         }

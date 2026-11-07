@@ -51,17 +51,6 @@ bool UiPage::menuInput() {
     return true;
   }
 
-#if INX_HAS_FRONTLIGHT || FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
-  if (mappedInput.isTouchPressed() || isLightDrawerSliderDragging()) {
-    const navigation::Menu::Action action = navigation::Menu::handleInput(mappedInput);
-    if (action != navigation::Menu::Action::None) {
-      routeMenuAction(action);
-      return true;
-    }
-    if (isLightDrawerSliderDragging()) return true;
-  }
-#endif
-
   if (mappedInput.hasTouch()) {
 
     float tapX = 0.0f;
@@ -174,8 +163,8 @@ bool UiPage::menuAction(const navigation::Menu::Action action) {
 
 void UiPage::render() {
   renderer.setRenderMode(GfxRenderer::BW);
-  bool restored = restoreLightDrawerFrameForRender();
-  if (!restored && overlayFrameStored_ && (overlayFrameActive_ || overlayFrameRestorePending_)) {
+  bool restored = false;
+  if (overlayFrameStored_ && (overlayFrameActive_ || overlayFrameRestorePending_)) {
     restored = renderer.copyStoredBwToFramebuffer();
     if (!restored) {
       discardOverlayFrame();

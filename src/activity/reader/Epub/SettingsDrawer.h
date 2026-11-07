@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <functional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "state/BookSetting.h"
@@ -105,6 +106,14 @@ class SettingsDrawer {
   /** True when reader touch actions are enabled. */
   bool isTouchEnabled() const { return touchEnabled_; }
 
+  /** Sets the persisted reader touch state when the drawer is opened. */
+  void setTouchEnabled(bool enabled) { touchEnabled_ = enabled; }
+
+  /** Called immediately when the in-book touch setting changes. */
+  void setTouchEnabledChanged(std::function<void(bool)> callback) {
+    onTouchEnabledChanged_ = std::move(callback);
+  }
+
  private:
   /**
    * @enum GroupType
@@ -181,6 +190,7 @@ class SettingsDrawer {
   GfxRenderer& renderer;                    ///< Graphics renderer reference
   BookSettings& settings;                   ///< Book settings reference
   std::function<void()> onSettingsChanged;  ///< Settings change callback
+  std::function<void(bool)> onTouchEnabledChanged_;
 
   bool embedded_ = false;                       ///< Render within a fixed sub-region (preset editor)
   std::function<void()> onEmbeddedInvalidate_;  ///< Host push callback used instead of displayBuffer when embedded

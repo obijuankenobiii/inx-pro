@@ -9,6 +9,7 @@
 
 #include "activity/page/SubPage.h"
 #include "activity/page/components/global/Button.h"
+#include "activity/page/components/global/Paginator.h"
 #include "activity/page/components/global/PopUp.h"
 #include "activity/page/components/global/Toggle.h"
 #include "activity/settings/BaseCarouselActivity.h"
@@ -856,21 +857,9 @@ void ThemePickerActivity::renderWidgetPopup() {
   const int visibleRows = kWidgetGridRows;
   const int pageCount = std::max(1, (totalRows + visibleRows - 1) / visibleRows);
   const int activePage = std::min(pageCount - 1, widgetPopupScroll_ / kWidgetGridPageSize);
-  constexpr int radius = 6;
-  constexpr int gap = 12;
-  const int indicatorHeight = pageCount * radius * 2 + (pageCount - 1) * gap;
   constexpr int indicatorRightPadding = 20;
   const int indicatorX = box.x + box.width - indicatorRightPadding;
-  const int indicatorTop = std::max(box.gridY, (box.gridY + box.cellHeight * visibleRows - indicatorHeight) / 2);
-  for (int page = 0; page < pageCount; ++page) {
-    const int centerY = indicatorTop + radius + page * (radius * 2 + gap);
-    if (page == activePage) {
-      renderer.circle.render(indicatorX, centerY, radius, true);
-    } else {
-      renderer.circle.render(indicatorX, centerY, radius, true);
-      renderer.circle.render(indicatorX, centerY, radius - 2, false);
-    }
-  }
+  Paginator::render(renderer, activePage, pageCount, indicatorX, box.gridY, box.cellHeight * visibleRows);
 }
 
 void ThemePickerActivity::renderBorderPopup() {

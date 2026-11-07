@@ -47,6 +47,7 @@
 #include "system/FontManager.h"
 #include "system/Fonts.h"
 #include "system/ScreenComponents.h"
+#include "system/GlobalGestureHandler.h"
 #include "system/MappedInputManager.h"
 #include "system/PluginManager.h"
 #include "util/LibraryIndexRefresh.h"
@@ -62,6 +63,7 @@ HalGPIO gpio;
 MappedInputManager input(gpio);
 GfxRenderer renderer(display);
 GfxRenderer& render = renderer;
+GlobalGestureHandler globalGestureHandler(renderer);
 
 Activity* currentActivity = nullptr;
 bool sdCardAvailable = false;
@@ -69,8 +71,6 @@ bool activityLoopRunning = false;
 std::function<void()> deferredActivitySwitch;
 
 namespace {
-constexpr float kHomeSwipeLeftEdge = 0.05f;
-
 bool isHomeActivity(const Activity* activity) {
   return activity && std::strcmp(activity->getName(), "Home") == 0;
 }
@@ -473,18 +473,14 @@ void loop() {
     return;
   }
 
-  // A right swipe that starts at the logical left edge is a global escape
-  // gesture. Keep it edge-only so ordinary horizontal content swipes remain
-  // available everywhere, including Home's carousel.
-  if (!isHomeActivity(currentActivity) && !isBookReaderActivity(currentActivity)) {
-    float swipeStartX = 0.0f;
-    float swipeStartY = 0.0f;
-    if (input.wasTouchSwipeRightInScreen(renderer, swipeStartX, swipeStartY) &&
-        swipeStartX <= kHomeSwipeLeftEdge) {
-      INX_SERIAL.printf("[GESTURE] left-edge right-swipe -> Home start=(%.3f,%.3f)\n", swipeStartX, swipeStartY);
-      onGoToHome();
-      return;
-    }
+  const bool allowGlobalExitGesture = !isHomeActivity(currentActivity) && !isBookReaderActivity(currentActivity);
+  // The reader owns vertical swipes: swipe-down opens its book settings drawer.
+  // Keep servicing an already-open global drawer so its touch controls remain usable.
+  if (globalGestureHandler.handleInput(input, allowGlobalExitGesture, !isBookReaderActivity(currentActivity),
+                                       [] { input.injectButtonEdge(MappedInputManager::Button::Back); },
+                                       [] { onGoToHome(); })) {
+    delay(10);
+    return;
   }
 
   if (currentActivity) {

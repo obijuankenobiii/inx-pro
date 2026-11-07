@@ -43,6 +43,13 @@ class Statistics final : public SubPage {
   uint32_t weeklyTotalReadingTimeMs_ = 0;
   uint32_t weeklyGoalTimeMs_ = 0;
   int64_t weeklyChartWeekStartDay_ = 0;
+  bool monthlyChart_ = false;
+  int64_t chartPeriodStartDay_ = 0;
+  std::array<uint32_t, 31> monthlyReadingTimeMs_{};
+  uint32_t monthlyTotalReadingTimeMs_ = 0;
+  uint32_t monthlyGoalTimeMs_ = 0;
+  int monthlyChartDays_ = 0;
+  int monthlyChartOffset_ = 0;
 
   /**
    * Loads and sorts reading statistics for all books by most recently read.
@@ -55,6 +62,10 @@ class Statistics final : public SubPage {
   void loadIndexedBooks();
   bool ensureBookStatsLoaded(int bookIdx);
   void refreshWeeklyChartData();
+  void refreshMonthlyChartData();
+  void refreshChartData();
+  void moveChartPeriod(int direction);
+  bool scrollMonthlyChart(int direction);
 
   /**
    * Renders a book cover or placeholder at the specified position.
@@ -70,6 +81,7 @@ class Statistics final : public SubPage {
   void menu() override;
   void title() const override;
   void renderWeeklyChart(int chartTop, int chartBottom) const;
+  void renderMonthlyChart(int chartTop, int chartBottom) const;
   void renderRadialChart(int chartTop, int chartBottom, int chartLeft, int chartRight) const;
   void renderBooksView(int contentTop, int contentBottom);
   void renderBookListThumbnail(const BookListMetadata& book, int x, int y, int width, int height) const;
@@ -88,6 +100,7 @@ class Statistics final : public SubPage {
   bool handleControlDrawerInput();
   bool handleHamburgerTap();
   bool handleRefreshTap();
+  bool handleChartPeriodToggleTap();
   bool handleBooksInput();
   void drawControlDrawer() const;
   void refresh() override;

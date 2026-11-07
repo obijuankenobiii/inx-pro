@@ -85,11 +85,8 @@ void PiccoDisplay::refreshDisplay(const RefreshMode mode, const bool turnOffScre
 
 void PiccoDisplay::syncWriteBufferFromActive() const {
   const_cast<EInkDisplay&>(display).waitRefreshComplete();
-  if (writeBufferDirty_) {
-    INX_SERIAL.printf("[PICCO][BUFFER] preserve prepared write buffer; skip active sync\n");
-    return;
-  }
   display.syncWriteBufferFromActive();
+  writeBufferDirty_ = false;
 }
 
 void PiccoDisplay::deepSleep() { display.deepSleep(); }
@@ -152,6 +149,14 @@ void PiccoDisplay::prepareQualityGrayscale() {
     writeBufferDirty_ = false;
     bwCommitMs = millis() - startedAt;
   }
+
+  // Picco uses FreeInk's dual buffers. After displayBufferAsync() swaps them,
+  // frameBuffer is the old writable page while frameBufferActive is the page
+  // now on the panel. X4Pro's HQ path seeds from the active page; doing the
+  // grayscale base from Picco's stale writable page makes embedded text come
+  // from the previous page while the HQ image itself is current.
+  syncWriteBufferFromActive();
+  writeBufferDirty_ = false;
 
   // Picco HQ images are complete four-level frames. Enter the SDK driver's
   // absolute mode before the renderer writes the LSB/MSB planes; the overlay

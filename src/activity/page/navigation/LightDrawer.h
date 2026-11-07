@@ -6,6 +6,11 @@ class GfxRenderer;
 
 namespace navigation {
 
+class LightDrawer;
+
+/** Returns the single light drawer shared by all activities. */
+LightDrawer& globalLightDrawer(GfxRenderer& renderer);
+
 /** Owns the X4 Pro front-light drawer UI and input handling. */
 class LightDrawer {
  public:
@@ -18,7 +23,7 @@ class LightDrawer {
   /** Restores the page frame for a drawer-only render, if one was captured. */
   bool restoreStoredFrameForRender() const;
   void render() const;
-  Action handleInput(MappedInputManager& input) const;
+  Action handleInput(MappedInputManager& input, bool allowOpen = true) const;
   Action handleTap(int tapX, int tapY) const;
 
  private:

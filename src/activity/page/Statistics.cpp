@@ -38,6 +38,7 @@
 #include "images/LibraryFilterRight.h"
 #include "images/Refresh.h"
 #include "images/StatsPie.h"
+#include "images/StatisticsPeriodToggle.h"
 #include <Epub/BookMetadataCache.h>
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
@@ -67,6 +68,7 @@ constexpr int kWeeklyChartTop = kStatsHeaderBottom + 2;
 constexpr int kStatsContentBottomPadding = 12;
 constexpr int kBooksPerPage = 5;
 constexpr int kBooksRowHeight = 132;
+constexpr int kMonthlyMaxBarWidth = 28;
 
 int mondayBasedWeekday(const int64_t day) {
   const int value = static_cast<int>((day + 3) % 7);
@@ -130,6 +132,35 @@ std::string formatBookHistoryDate(const uint32_t dateKey) {
   return text;
 }
 
+int daysInMonth(const int year, const unsigned month) {
+  constexpr int kDaysPerMonth[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+  if (month < 1 || month > 12) return 0;
+  if (month != 2) return kDaysPerMonth[month - 1];
+  const bool leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+  return leap ? 29 : 28;
+}
+
+int64_t currentStatisticsDay() {
+  uint32_t dateKey = 0;
+  if (currentRtcDateKey(dateKey)) {
+    return readingDateToDay(dateKey);
+  }
+
+  int64_t latestDay = 0;
+  for (const ReadingHistoryEntry& entry : getReadingHistory()) {
+    latestDay = std::max(latestDay, readingDateToDay(entry.dateKey));
+  }
+  return latestDay;
+}
+
+int64_t monthStartDay(const int64_t day) {
+  if (day <= 0) return 0;
+  const uint32_t dateKey = readingDayToDate(day);
+  const int year = static_cast<int>(dateKey / 10000UL);
+  const unsigned month = static_cast<unsigned>((dateKey / 100UL) % 100UL);
+  return readingDateToDay(static_cast<uint32_t>(year) * 10000UL + month * 100UL + 1UL);
+}
+
 ButtonBounds nextButton(const GfxRenderer& renderer) {
   return {renderer.getScreenWidth() - 80, renderer.getScreenHeight() - 20 - Button::height, 60, Button::height};
 }
@@ -141,6 +172,11 @@ ButtonBounds statisticsRefreshButton(const GfxRenderer& renderer) {
   return {renderer.getScreenWidth() - kRightMargin - kButtonSize,
           renderer.getScreenHeight() - kBottomMargin - kButtonSize,
           kButtonSize, kButtonSize};
+}
+
+ButtonBounds statisticsChartPeriodButton(const GfxRenderer& renderer, const int chartTop) {
+  constexpr int kButtonSize = 50;
+  return {renderer.getScreenWidth() / 2 - kButtonSize / 2, chartTop + 2, kButtonSize, kButtonSize};
 }
 
 struct SingleBookLayout {
@@ -167,6 +203,16 @@ void drawStatisticsRefreshButton(const GfxRenderer& renderer) {
                           static_cast<int>(GfxRenderer::FillTone::Ink), true, true);
   renderer.bitmap.icon(Refresh, refresh.x + (refresh.width - 40) / 2, refresh.y + (refresh.height - 40) / 2,
                        40, 40, BitmapRender::Orientation::None, true);
+}
+
+void drawStatisticsChartPeriodButton(const GfxRenderer& renderer, const int chartTop) {
+  const ButtonBounds bounds = statisticsChartPeriodButton(renderer, chartTop);
+  renderer.rectangle.fill(bounds.x, bounds.y, bounds.width, bounds.height,
+                          static_cast<int>(GfxRenderer::FillTone::Paper), true);
+  renderer.rectangle.render(bounds.x, bounds.y, bounds.width, bounds.height, true, true);
+  constexpr int iconSize = 40;
+  renderer.bitmap.icon(StatisticsPeriodToggle, bounds.x + (bounds.width - iconSize) / 2,
+                       bounds.y + (bounds.height - iconSize) / 2, iconSize, iconSize);
 }
 
 struct StatisticsAction {
@@ -686,26 +732,20 @@ void Statistics::loadStats(const bool showProgress) {
   booksPage_ = 0;
   setProgress(100);
   saveGlobalStats(globalStats);
-  refreshWeeklyChartData();
+  refreshChartData();
 }
 
 void Statistics::refreshWeeklyChartData() {
   weeklyReadingTimeMs_.fill(0);
   weeklyTotalReadingTimeMs_ = 0;
   weeklyGoalTimeMs_ = 0;
-  weeklyChartWeekStartDay_ = 0;
-
-  uint32_t today = 0;
-  const std::vector<ReadingHistoryEntry>& history = getReadingHistory();
-  if (currentRtcDateKey(today)) {
-    weeklyChartWeekStartDay_ = readingDateToDay(today);
-    weeklyChartWeekStartDay_ -= mondayBasedWeekday(weeklyChartWeekStartDay_);
-  } else if (!history.empty()) {
-    weeklyChartWeekStartDay_ = readingDateToDay(history.back().dateKey);
-    weeklyChartWeekStartDay_ -= mondayBasedWeekday(weeklyChartWeekStartDay_);
-  } else {
-    return;
+  if (weeklyChartWeekStartDay_ <= 0) {
+    const int64_t today = currentStatisticsDay();
+    if (today <= 0) return;
+    weeklyChartWeekStartDay_ = today - mondayBasedWeekday(today);
   }
+
+  const std::vector<ReadingHistoryEntry>& history = getReadingHistory();
 
   for (size_t index = 0; index < weeklyReadingTimeMs_.size(); ++index) {
     const uint32_t dateKey = readingDayToDate(weeklyChartWeekStartDay_ + static_cast<int64_t>(index));
@@ -718,6 +758,98 @@ void Statistics::refreshWeeklyChartData() {
   if (goal.goalMinutes > 0) {
     weeklyGoalTimeMs_ = static_cast<uint32_t>(goal.goalMinutes) * 7UL * 60UL * 1000UL;
   }
+}
+
+void Statistics::refreshMonthlyChartData() {
+  monthlyReadingTimeMs_.fill(0);
+  monthlyTotalReadingTimeMs_ = 0;
+  monthlyGoalTimeMs_ = 0;
+  monthlyChartDays_ = 0;
+  if (chartPeriodStartDay_ <= 0) return;
+
+  const uint32_t firstDateKey = readingDayToDate(chartPeriodStartDay_);
+  const int year = static_cast<int>(firstDateKey / 10000UL);
+  const unsigned month = static_cast<unsigned>((firstDateKey / 100UL) % 100UL);
+  const int monthDays = daysInMonth(year, month);
+  if (monthDays <= 0) return;
+  chartPeriodStartDay_ = monthStartDay(chartPeriodStartDay_);
+  monthlyChartDays_ = monthDays;
+
+  const std::vector<ReadingHistoryEntry>& history = getReadingHistory();
+  for (int index = 0; index < monthlyChartDays_; ++index) {
+    const uint32_t dateKey = readingDayToDate(chartPeriodStartDay_ + index);
+    const uint32_t readingMs = readingTimeForDate(history, dateKey);
+    monthlyReadingTimeMs_[static_cast<size_t>(index)] = readingMs;
+    monthlyTotalReadingTimeMs_ += readingMs;
+  }
+
+  const ReadingGoal::Status goal = ReadingGoal::status();
+  if (goal.goalMinutes > 0) {
+    monthlyGoalTimeMs_ = static_cast<uint32_t>(goal.goalMinutes) * static_cast<uint32_t>(monthlyChartDays_) * 60UL *
+                         1000UL;
+  }
+}
+
+bool Statistics::scrollMonthlyChart(const int direction) {
+  if (!monthlyChart_ || direction == 0) return false;
+
+  int plottedCount = 0;
+  for (int index = 0; index < monthlyChartDays_; ++index) {
+    if (monthlyReadingTimeMs_[static_cast<size_t>(index)] > 0) ++plottedCount;
+  }
+
+  constexpr int left = 24;
+  const int right = renderer.getScreenWidth() - 24;
+  const int gridWidth = std::max(1, (right - 8) - (left + 8));
+  const int barGap = plottedCount > 20 ? 3 : 6;
+  const int maxVisible = std::max(1, (gridWidth + barGap) / (kMonthlyMaxBarWidth + barGap));
+  if (plottedCount <= maxVisible) return false;
+
+  const int maxOffset = plottedCount - maxVisible;
+  const int nextOffset = std::max(0, std::min(maxOffset, monthlyChartOffset_ + direction));
+  if (nextOffset == monthlyChartOffset_) return true;
+  monthlyChartOffset_ = nextOffset;
+  updateRequired = true;
+  renderPage();
+  return true;
+}
+
+void Statistics::refreshChartData() {
+  if (monthlyChart_) {
+    refreshMonthlyChartData();
+    return;
+  }
+  weeklyChartWeekStartDay_ = chartPeriodStartDay_;
+  refreshWeeklyChartData();
+}
+
+void Statistics::moveChartPeriod(const int direction) {
+  if (direction == 0) return;
+  const int64_t currentDay = currentStatisticsDay();
+  if (currentDay <= 0) return;
+
+  if (monthlyChart_) {
+    chartPeriodStartDay_ = monthStartDay(chartPeriodStartDay_);
+    const int64_t currentMonthStart = monthStartDay(currentDay);
+    if (direction > 0) {
+      const uint32_t dateKey = readingDayToDate(chartPeriodStartDay_);
+      const int year = static_cast<int>(dateKey / 10000UL);
+      const unsigned month = static_cast<unsigned>((dateKey / 100UL) % 100UL);
+      chartPeriodStartDay_ += daysInMonth(year, month);
+    } else {
+      chartPeriodStartDay_ = monthStartDay(chartPeriodStartDay_ - 1);
+    }
+    if (chartPeriodStartDay_ > currentMonthStart) chartPeriodStartDay_ = currentMonthStart;
+  } else {
+    const int64_t currentWeekStart = currentDay - mondayBasedWeekday(currentDay);
+    chartPeriodStartDay_ += static_cast<int64_t>(direction) * 7;
+    if (chartPeriodStartDay_ > currentWeekStart) chartPeriodStartDay_ = currentWeekStart;
+  }
+
+  monthlyChartOffset_ = 0;
+  refreshChartData();
+  updateRequired = true;
+  renderPage();
 }
 
 void Statistics::hydrateFromStorage() {
@@ -1006,7 +1138,11 @@ void Statistics::onEnter() {
   calendarWeekStartDay_ = calendarDate != 0
                               ? readingDateToDay(calendarDate) - mondayBasedWeekday(readingDateToDay(calendarDate))
                               : 0;
-  refreshWeeklyChartData();
+  monthlyChart_ = false;
+  monthlyChartOffset_ = 0;
+  chartPeriodStartDay_ = calendarWeekStartDay_;
+  weeklyChartWeekStartDay_ = calendarWeekStartDay_;
+  refreshChartData();
   SETTINGS.runHalfRefreshOnLoadIfEnabled(renderer, SystemSetting::RefreshOnLoadPage::Statistics);
 }
 
@@ -1112,6 +1248,34 @@ bool Statistics::handleRefreshTap() {
 
   mappedInput.restoreTouchTapInScreen(renderer, tapNx, tapNy);
   return false;
+}
+
+bool Statistics::handleChartPeriodToggleTap() {
+  if (statsTab_ != 0 || !mappedInput.hasTouch()) return false;
+
+  float tapNx = 0.0f;
+  float tapNy = 0.0f;
+  if (!mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy)) return false;
+
+  const int tapX = static_cast<int>(tapNx * renderer.getScreenWidth());
+  const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
+  const ButtonBounds bounds = statisticsChartPeriodButton(renderer, kWeeklyChartTop);
+  constexpr int touchPadding = 8;
+  if (tapX < bounds.x - touchPadding || tapX >= bounds.x + bounds.width + touchPadding ||
+      tapY < bounds.y - touchPadding || tapY >= bounds.y + bounds.height + touchPadding) {
+    mappedInput.restoreTouchTapInScreen(renderer, tapNx, tapNy);
+    return false;
+  }
+
+  const int64_t anchorDay = monthlyChart_ ? chartPeriodStartDay_ : chartPeriodStartDay_ + 3;
+  monthlyChart_ = !monthlyChart_;
+  monthlyChartOffset_ = 0;
+  chartPeriodStartDay_ = monthlyChart_ ? monthStartDay(anchorDay)
+                                       : anchorDay - mondayBasedWeekday(anchorDay);
+  refreshChartData();
+  updateRequired = true;
+  renderPage();
+  return true;
 }
 
 bool Statistics::handleControlDrawerInput() {
@@ -1812,6 +1976,11 @@ void Statistics::renderSingleBookBottomGrid(const int bookIdx) const {
 }
 
 void Statistics::renderWeeklyChart(const int chartTop, const int chartBottom) const {
+  if (monthlyChart_) {
+    renderMonthlyChart(chartTop, chartBottom);
+    return;
+  }
+
   const int screenWidth = renderer.getScreenWidth();
   if (screenWidth <= 0 || chartBottom <= chartTop + 160) return;
 
@@ -1829,6 +1998,7 @@ void Statistics::renderWeeklyChart(const int chartTop, const int chartBottom) co
   if (chartContentBottom <= chartTop + 160) return;
 
   renderer.text.renderGray(headerFont, left, chartTop, "This week", true, EpdFontFamily::REGULAR);
+  drawStatisticsChartPeriodButton(renderer, chartTop);
   const std::string goalText = "Goal · " + formatReadingDuration(weeklyGoalTimeMs_);
   const int goalWidth = renderer.text.getWidth(headerFont, goalText.c_str(), EpdFontFamily::REGULAR);
   renderer.text.renderGray(headerFont, right - goalWidth, chartTop, goalText.c_str(), true,
@@ -1901,6 +2071,128 @@ void Statistics::renderWeeklyChart(const int chartTop, const int chartBottom) co
   std::snprintf(peakText, sizeof(peakText), "Peak · %s", kWeekdays[peakIndex]);
   const int peakWidth = renderer.text.getWidth(smallFont, peakText);
   renderer.text.render(smallFont, right - peakWidth, chartContentBottom - smallLine, peakText, true);
+}
+
+void Statistics::renderMonthlyChart(const int chartTop, const int chartBottom) const {
+  const int screenWidth = renderer.getScreenWidth();
+  if (screenWidth <= 0 || chartBottom <= chartTop + 160 || monthlyChartDays_ <= 0) return;
+
+  const int left = 24;
+  const int right = screenWidth - 24;
+  const int headerFont = MONTSERRAT_10_FONT_ID;
+  const int valueFont = MONTSERRAT_18_FONT_ID;
+  const int smallFont = MONTSERRAT_8_FONT_ID;
+  const int headerLine = renderer.text.getLineHeight(headerFont);
+  const int valueLine = renderer.text.getLineHeight(valueFont);
+  const int smallLine = renderer.text.getLineHeight(smallFont);
+  constexpr int kChartBottomPadding = 20;
+  const int chartContentBottom = chartBottom - kChartBottomPadding;
+  if (chartContentBottom <= chartTop + 160) return;
+
+  renderer.text.renderGray(headerFont, left, chartTop, "This month", true, EpdFontFamily::REGULAR);
+  drawStatisticsChartPeriodButton(renderer, chartTop);
+  const std::string goalText = "Goal · " + formatReadingDuration(monthlyGoalTimeMs_);
+  const int goalWidth = renderer.text.getWidth(headerFont, goalText.c_str(), EpdFontFamily::REGULAR);
+  renderer.text.renderGray(headerFont, right - goalWidth, chartTop, goalText.c_str(), true,
+                           EpdFontFamily::REGULAR);
+
+  const std::string totalText = formatReadingDuration(monthlyTotalReadingTimeMs_);
+  const int totalY = chartTop + headerLine + 18;
+  renderer.text.render(valueFont, left, totalY, totalText.c_str(), true, EpdFontFamily::BOLD);
+
+  int percent = 0;
+  if (monthlyGoalTimeMs_ > 0) {
+    percent = static_cast<int>((static_cast<uint64_t>(monthlyTotalReadingTimeMs_) * 100ULL +
+                                monthlyGoalTimeMs_ / 2ULL) /
+                               monthlyGoalTimeMs_);
+    percent = std::min(100, std::max(0, percent));
+  }
+  char percentText[12];
+  std::snprintf(percentText, sizeof(percentText), "%d%%", percent);
+  const int percentWidth = renderer.text.getWidth(valueFont, percentText, EpdFontFamily::BOLD);
+  renderer.text.render(valueFont, right - percentWidth, totalY, percentText, true, EpdFontFamily::BOLD);
+
+  const int plotTop = totalY + valueLine + 22;
+  constexpr int kDateToAverageGap = 62;
+  constexpr int kDateLabelOffset = 65;
+  const int plotBottom = chartContentBottom - smallLine - kDateToAverageGap;
+  const int plotHeight = plotBottom - plotTop;
+  if (plotHeight <= 20) return;
+
+  std::vector<int> plottedDays;
+  plottedDays.reserve(static_cast<size_t>(monthlyChartDays_));
+  for (int index = 0; index < monthlyChartDays_; ++index) {
+    if (monthlyReadingTimeMs_[static_cast<size_t>(index)] > 0) {
+      plottedDays.push_back(index);
+    }
+  }
+
+  uint32_t maximum = monthlyGoalTimeMs_ > 0 ? monthlyGoalTimeMs_ / static_cast<uint32_t>(monthlyChartDays_) : 0;
+  int peakDay = plottedDays.empty() ? 0 : plottedDays.front();
+  for (const int day : plottedDays) {
+    const uint32_t value = monthlyReadingTimeMs_[static_cast<size_t>(day)];
+    if (value > maximum) maximum = value;
+    if (value > monthlyReadingTimeMs_[static_cast<size_t>(peakDay)]) peakDay = day;
+  }
+  if (maximum == 0) maximum = 1;
+
+  const int gridLeft = left + 8;
+  const int gridRight = right - 8;
+  const int gridWidth = std::max(1, gridRight - gridLeft);
+  const int plottedCount = static_cast<int>(plottedDays.size());
+  const int barGap = plottedCount > 20 ? 3 : 6;
+  const int maxVisible = std::max(1, (gridWidth + barGap) / (kMonthlyMaxBarWidth + barGap));
+  const int visibleStart = plottedCount > maxVisible
+                               ? std::min(monthlyChartOffset_, plottedCount - maxVisible)
+                               : 0;
+  const int visibleCount = std::min(plottedCount - visibleStart, maxVisible);
+  const int barWidth = visibleCount > 0
+                           ? std::min(kMonthlyMaxBarWidth,
+                                      std::max(4, (gridWidth - barGap * (visibleCount - 1)) / visibleCount))
+                           : 0;
+  const int seriesWidth = visibleCount > 0 ? visibleCount * barWidth + (visibleCount - 1) * barGap : 0;
+  const int seriesLeft = gridLeft + std::max(0, (gridWidth - seriesWidth) / 2);
+
+  for (int level = 0; level <= 4; ++level) {
+    const int y = plotBottom - (plotHeight * level) / 4;
+    renderer.line.render(gridLeft, y, gridRight, y, true, LineRender::Style::Dotted);
+  }
+
+  for (int plottedIndex = 0; plottedIndex < visibleCount; ++plottedIndex) {
+    const int day = plottedDays[static_cast<size_t>(visibleStart + plottedIndex)];
+    const int x = seriesLeft + plottedIndex * (barWidth + barGap);
+    const uint32_t value = monthlyReadingTimeMs_[static_cast<size_t>(day)];
+    const int barHeight = std::max(4, static_cast<int>((static_cast<uint64_t>(value) * plotHeight) / maximum));
+    const int tone = static_cast<int>(day == peakDay ? GfxRenderer::FillTone::Ink : GfxRenderer::FillTone::Gray);
+    renderer.rectangle.fill(x, plotBottom - barHeight, barWidth, barHeight, tone, true);
+
+    const uint32_t dateKey = readingDayToDate(chartPeriodStartDay_ + day);
+    const std::string dateLabel = formatBookHistoryDate(dateKey);
+    const int labelX = x + barWidth / 2 - smallLine / 2;
+    renderer.text.rotated90CW(smallFont, labelX, plotBottom + kDateLabelOffset, dateLabel.c_str(), true,
+                              EpdFontFamily::REGULAR);
+  }
+
+  if (plottedDays.empty()) {
+    renderer.text.renderGray(smallFont, gridLeft, plotTop + std::max(0, plotHeight - smallLine) / 2,
+                             "No reading history", true, EpdFontFamily::REGULAR);
+  }
+
+  const uint32_t averageMinutes = plottedDays.empty()
+                                      ? 0
+                                      : (monthlyTotalReadingTimeMs_ + static_cast<uint32_t>(plottedCount) * 30000UL) /
+                                            (static_cast<uint32_t>(plottedCount) * 60000UL);
+  char averageText[32];
+  std::snprintf(averageText, sizeof(averageText), "Avg · %um/day", static_cast<unsigned>(averageMinutes));
+  renderer.text.render(smallFont, left, chartContentBottom - smallLine, averageText, true);
+
+  if (!plottedDays.empty()) {
+    char peakText[32];
+    const uint32_t peakDateKey = readingDayToDate(chartPeriodStartDay_ + peakDay);
+    std::snprintf(peakText, sizeof(peakText), "Peak · %s", formatBookHistoryDate(peakDateKey).c_str());
+    const int peakWidth = renderer.text.getWidth(smallFont, peakText);
+    renderer.text.render(smallFont, right - peakWidth, chartContentBottom - smallLine, peakText, true);
+  }
 }
 
 void Statistics::renderRadialChart(const int chartTop, const int chartBottom, const int chartLeft,
@@ -2232,6 +2524,8 @@ void Statistics::loop() {
 
   if (handleRefreshTap()) return;
 
+  if (handleChartPeriodToggleTap()) return;
+
   if (handleBooksInput()) return;
 
   const int totalViews = 1 + static_cast<int>(allBooksStats.size());
@@ -2250,9 +2544,15 @@ void Statistics::loop() {
     return;
   }
 
-  if (statsTab_ == 0 && totalViews > 1 && mappedInput.hasTouch() && mappedInput.wasTouchSwipeRight()) {
-    viewIndex = (viewIndex + 1) % totalViews;
-    updateRequired = true;
+  if (statsTab_ == 0 && mappedInput.hasTouch() && mappedInput.wasTouchSwipeLeft()) {
+    if (scrollMonthlyChart(1)) return;
+    moveChartPeriod(1);
+    return;
+  }
+
+  if (statsTab_ == 0 && mappedInput.hasTouch() && mappedInput.wasTouchSwipeRight()) {
+    if (scrollMonthlyChart(-1)) return;
+    moveChartPeriod(-1);
     return;
   }
 

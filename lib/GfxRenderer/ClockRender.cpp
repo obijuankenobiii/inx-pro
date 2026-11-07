@@ -296,6 +296,50 @@ void renderHorizontalCard(GfxRenderer& renderer, const ClockRender::DateTimeView
   }
 }
 
+void renderWeekdaysTime(GfxRenderer& renderer, const ClockRender::DateTimeView& dt, int x, int y, int w, int h,
+                        const bool compact) {
+  char timeText[8];
+  formatTime(dt, timeText, sizeof(timeText));
+
+  constexpr int weekdayGap = 12;
+  constexpr int weekdayFont = MONTSERRAT_10_FONT_ID;
+  constexpr int weekdayCount = 7;
+  const int weekdayLine = renderer.text.getLineHeight(weekdayFont);
+  const int visibleTimeHeight = clockVisibleHeight(compact);
+  const int contentHeight = weekdayLine + weekdayGap + visibleTimeHeight;
+  const int contentTop = y + std::max(0, (h - contentHeight) / 2);
+
+  // Keep the complete Monday through Sunday row with compact spacing.
+  constexpr int firstWeekday = 1;
+  constexpr int weekdayLabelGap = 5;
+  uint8_t weekdays[weekdayCount];
+  int labelWidths[weekdayCount];
+  int labelsWidth = 0;
+  for (int index = 0; index < weekdayCount; ++index) {
+    weekdays[index] = static_cast<uint8_t>(((firstWeekday - 1 + index) % 7) + 1);
+    const bool current = dt.weekday == weekdays[index];
+    const EpdFontFamily::Style labelStyle = current ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR;
+    labelWidths[index] = textW(renderer, weekdayFont, weekdayShort(weekdays[index]), labelStyle);
+    labelsWidth += labelWidths[index];
+  }
+  labelsWidth += weekdayLabelGap * (weekdayCount - 1);
+  int labelX = x + std::max(0, (w - labelsWidth) / 2);
+  for (int index = 0; index < weekdayCount; ++index) {
+    const uint8_t weekday = weekdays[index];
+    const bool current = dt.weekday == weekday;
+    const char* label = weekdayShort(weekday);
+    const EpdFontFamily::Style labelStyle = current ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR;
+    if (current) {
+      renderer.text.render(weekdayFont, labelX, contentTop, label, true, labelStyle);
+    } else {
+      renderer.text.renderGray(weekdayFont, labelX, contentTop, label, true, labelStyle);
+    }
+    labelX += labelWidths[index] + weekdayLabelGap;
+  }
+
+  centerClockLine(renderer, x, w, contentTop + weekdayLine + weekdayGap, timeText, true, compact);
+}
+
 }
 
 namespace ClockRender {
@@ -306,6 +350,8 @@ const char* styleName(uint8_t style) {
       return "Stacked";
     case SystemSetting::CLOCK_HORIZONTAL_CARD:
       return "Card";
+    case SystemSetting::CLOCK_WEEKDAYS_TIME:
+      return "Days";
     case SystemSetting::CLOCK_CENTERED_DATE:
     default:
       return "Centered";
@@ -327,6 +373,9 @@ void render(GfxRenderer& renderer, uint8_t style, const DateTimeView& dateTime, 
       break;
     case SystemSetting::CLOCK_HORIZONTAL_CARD:
       renderHorizontalCard(renderer, dateTime, x, y, w, h, compact);
+      break;
+    case SystemSetting::CLOCK_WEEKDAYS_TIME:
+      renderWeekdaysTime(renderer, dateTime, x, y, w, h, compact);
       break;
     case SystemSetting::CLOCK_CENTERED_DATE:
     default:

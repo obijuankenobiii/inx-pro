@@ -130,6 +130,11 @@ void saveLightPreferences() {
 }
 }
 
+LightDrawer& globalLightDrawer(GfxRenderer& renderer) {
+  static LightDrawer drawer(renderer);
+  return drawer;
+}
+
 LightDrawer::LightDrawer(GfxRenderer& renderer) : drawerRenderer(renderer) {}
 
 void LightDrawer::refreshAfterSliderChange() const {
@@ -241,7 +246,7 @@ void LightDrawer::render() const {
 
 constexpr float kOpenFromTopMaxNy = 0.15f;
 
-LightDrawer::Action LightDrawer::handleInput(MappedInputManager& input) const {
+LightDrawer::Action LightDrawer::handleInput(MappedInputManager& input, const bool allowOpen) const {
   if (open && sliderDragging) {
     if (input.isTouchPressed()) {
       float nx = 0.0f;
@@ -331,7 +336,7 @@ LightDrawer::Action LightDrawer::handleInput(MappedInputManager& input) const {
     frameRestorePending = true;
     return Action::Closed;
   }
-  if (!open) {
+  if (!open && allowOpen) {
     float startNx = 0.0f;
     float startNy = 0.0f;
     if (input.wasTouchSwipeDownInScreen(drawerRenderer, startNx, startNy)) {
