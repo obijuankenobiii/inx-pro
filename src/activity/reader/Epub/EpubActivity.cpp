@@ -65,6 +65,10 @@ namespace {
 constexpr unsigned long goHomeMs = 1000;
 constexpr unsigned long bookmarkHoldMs = 1000;
 constexpr unsigned long wordSelectionHoldMs = 300;
+// Compose the next forward page shortly after the current page becomes idle.
+// The prepared-page path makes a normal page turn feel instantaneous, but a
+// long debounce leaves most readers paying the full render cost on every tap.
+constexpr unsigned long kPreparedPageIdleDelayMs = 120;
 constexpr bool kReaderHighQualityFastLut = true;
 constexpr int kWordSelectionHandleRadius = 11;
 constexpr int kWordSelectionActionGap = 14;
@@ -1861,7 +1865,7 @@ void EpubActivity::scheduleIdlePreparedPage() {
 
   preparedPageSpineIndex_ = currentSpineIndex;
   preparedPageIndex_ = section->currentPage + 1;
-  preparePageAfterMs_ = millis() + 750;
+  preparePageAfterMs_ = millis() + kPreparedPageIdleDelayMs;
 }
 
 bool EpubActivity::composePreparedForwardPage() {
