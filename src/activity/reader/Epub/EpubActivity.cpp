@@ -3026,6 +3026,11 @@ void EpubActivity::renderReaderSuggestion() {
 }
 
 bool EpubActivity::handleFinishedBookInput() {
+  if (mappedInput.wasTouchSwipeUpForRenderer(renderer)) {
+    onGoBack();
+    return true;
+  }
+
   if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
     onGoBack();
     return true;

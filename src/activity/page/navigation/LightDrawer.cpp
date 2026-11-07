@@ -368,11 +368,20 @@ LightDrawer::Action LightDrawer::handleTap(const int tapX, const int tapY) const
 
   if (tapX >= darkModeButtonX && tapX < darkModeButtonX + lightButtonSize && tapY >= lightButtonY &&
       tapY < lightButtonY + lightButtonSize) {
-    // The page itself must be repainted when the color mode changes; the old
-    // stored frame is no longer valid in that case.
-    releaseDrawerFrame();
-    frameRestorePending = false;
+    // The saved frame is the page that will be restored when the drawer closes.
+    // Rebuild it in the new mode instead of discarding it; otherwise the drawer
+    // can get stuck over the old page frame after a dark-mode toggle.
     drawerRenderer.setDarkMode(!drawerRenderer.isDarkMode());
+    if (drawerFrameStored) {
+      if (drawerRenderer.copyStoredBwToFramebuffer()) {
+        drawerRenderer.invertScreen();
+        drawerRenderer.freeBwBufferChunks();
+        drawerFrameStored = drawerRenderer.storeBwBuffer();
+      } else {
+        releaseDrawerFrame();
+        frameRestorePending = false;
+      }
+    }
     SETTINGS.darkMode = drawerRenderer.isDarkMode() ? 1 : 0;
     SETTINGS.saveToFile();
     return Action::Opened;

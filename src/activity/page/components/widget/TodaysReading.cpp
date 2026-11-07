@@ -181,6 +181,46 @@ void drawReadingButton(const GfxRenderer& renderer, const int x, const int y, co
   renderer.text.render(subtitleFont, x + (width - textWidth) / 2, subtitleY, truncated.c_str(), false);
 }
 
+void renderReadingDuration(const GfxRenderer& renderer, const int fontId, const int centerX, const int topY,
+                           const uint32_t elapsedSeconds) {
+  const int lineHeight = renderer.text.getLineHeight(fontId);
+  if (elapsedSeconds < 60U * 60U) {
+    char duration[16];
+    std::snprintf(duration, sizeof(duration), "%u:%02u", static_cast<unsigned>(elapsedSeconds / 60),
+                  static_cast<unsigned>(elapsedSeconds % 60));
+    const int durationWidth = renderer.text.getWidth(fontId, duration);
+    renderer.text.render(fontId, centerX - durationWidth / 2, topY, duration, true);
+    return;
+  }
+
+  const unsigned totalMinutes = static_cast<unsigned>(elapsedSeconds / 60U);
+  char hours[12];
+  char minutes[4];
+  std::snprintf(hours, sizeof(hours), "%u", totalMinutes / 60U);
+  std::snprintf(minutes, sizeof(minutes), "%u", totalMinutes % 60U);
+
+  const int unitFont = MONTSERRAT_10_FONT_ID;
+  const int unitLineHeight = renderer.text.getLineHeight(unitFont);
+  const int hourWidth = renderer.text.getWidth(fontId, hours);
+  const int hourUnitWidth = renderer.text.getWidth(unitFont, "h");
+  const int minuteWidth = renderer.text.getWidth(fontId, minutes);
+  const int minuteUnitWidth = renderer.text.getWidth(unitFont, "m");
+  constexpr int unitGap = 2;
+  constexpr int valueGap = 6;
+  const int totalWidth = hourWidth + unitGap + hourUnitWidth + valueGap + minuteWidth + unitGap + minuteUnitWidth;
+  const int startX = centerX - totalWidth / 2;
+  const int unitY = topY + lineHeight - unitLineHeight;
+
+  int x = startX;
+  renderer.text.render(fontId, x, topY, hours, true);
+  x += hourWidth + unitGap;
+  renderer.text.renderGray(unitFont, x, unitY, "h", true);
+  x += hourUnitWidth + valueGap;
+  renderer.text.render(fontId, x, topY, minutes, true);
+  x += minuteWidth + unitGap;
+  renderer.text.renderGray(unitFont, x, unitY, "m", true);
+}
+
 }
 
 void TodaysReading::render(const int x, const int y, const int width, const int height, const bool compact) const {
@@ -252,9 +292,6 @@ void TodaysReading::renderContent(const int x, const int y, const int width, con
   const int gaugeCenterX = x + width / 2;
 
   const uint32_t elapsedSeconds = status.readingTimeMs / 1000;
-  char duration[16];
-  std::snprintf(duration, sizeof(duration), "%u:%02u", static_cast<unsigned>(elapsedSeconds / 60),
-                static_cast<unsigned>(elapsedSeconds % 60));
   const float progress = status.goalMinutes > 0
                              ? std::min(1.0f, status.readingTimeMs / (static_cast<float>(status.goalMinutes) * 60000.0f))
                              : 0.0f;
@@ -285,8 +322,7 @@ void TodaysReading::renderContent(const int x, const int y, const int width, con
 
     const int compactTimeFont = MONTSERRAT_18_FONT_ID;
     const int compactTimeLine = renderer_.text.getLineHeight(compactTimeFont);
-    const int durationWidth = renderer_.text.getWidth(compactTimeFont, duration);
-    renderer_.text.render(compactTimeFont, centerX - durationWidth / 2, centerY - compactTimeLine / 2, duration, true);
+    renderReadingDuration(renderer_, compactTimeFont, centerX, centerY - compactTimeLine / 2, elapsedSeconds);
 
     const int compactTitleFont = MONTSERRAT_12_FONT_ID;
     const int compactGoalFont = MONTSERRAT_10_FONT_ID;
@@ -323,8 +359,7 @@ void TodaysReading::renderContent(const int x, const int y, const int width, con
   const int titleWidth = renderer_.text.getWidth(titleFont, "Today's Reading", EpdFontFamily::BOLD);
   renderer_.text.render(titleFont, x + std::max(0, (width - titleWidth) / 2), titleY, "Today's Reading", true,
                         EpdFontFamily::BOLD);
-  const int durationWidth = renderer_.text.getWidth(timeFont, duration);
-  renderer_.text.render(timeFont, x + std::max(0, (width - durationWidth) / 2), timeY, duration, true);
+  renderReadingDuration(renderer_, timeFont, x + width / 2, timeY, elapsedSeconds);
   const std::string goalDisplay = renderer_.text.truncate(goalFont, goalText, std::max(1, width - 24));
   const int goalWidth = renderer_.text.getWidth(goalFont, goalDisplay.c_str());
   renderer_.text.render(goalFont, x + std::max(0, (width - goalWidth) / 2), goalY, goalDisplay.c_str(), true);

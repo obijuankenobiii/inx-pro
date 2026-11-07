@@ -5,6 +5,8 @@
 
 #include "SyncActivity.h"
 
+#include <BoardConfig.h>
+
 #include "system/UiLayout.h"
 
 #include <GfxRenderer.h>
@@ -13,6 +15,9 @@
 #include "activity/settings/DictionaryPickerActivity.h"
 #include "activity/settings/KOReaderSettingsActivity.h"
 #include "activity/settings/OtaUpdateActivity.h"
+#if FREEINK_CAP_USB_MSC
+#include "activity/network/UsbFileTransferActivity.h"
+#endif
 #include "state/SystemSetting.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
@@ -20,10 +25,31 @@
 extern void onGoToHome();
 
 namespace {
+constexpr int kCalibreIndex = 1;
+#if FREEINK_CAP_USB_MSC
+constexpr int kUsbFileTransferIndex = 2;
+constexpr int kCreateHotspotIndex = 3;
+constexpr int kOpdsBrowserIndex = 4;
+constexpr int kKoReaderSyncIndex = 5;
+constexpr int kCheckForUpdatesIndex = 6;
+constexpr int kChooseDictionaryIndex = 7;
+constexpr int kDeviceInformationIndex = 8;
+constexpr int menuItemCount = 9;
+const char* menuItems[menuItemCount] = {"Manage via wifi",    "Calibre File Transfer", "USB File Transfer",
+                                        "Create hotspot",    "OPDS Browser",          "KOReader Sync",
+                                        "Check for updates", "Choose dictionary",      "Device Information"};
+#else
+constexpr int kCreateHotspotIndex = 2;
+constexpr int kOpdsBrowserIndex = 3;
+constexpr int kKoReaderSyncIndex = 4;
+constexpr int kCheckForUpdatesIndex = 5;
+constexpr int kChooseDictionaryIndex = 6;
+constexpr int kDeviceInformationIndex = 7;
 constexpr int menuItemCount = 8;
 const char* menuItems[menuItemCount] = {"Manage via wifi",   "Calibre File Transfer", "Create hotspot",
-                                        "OPDS Browser",      "KOReader Sync",       "Check for updates",
+                                        "OPDS Browser",      "KOReader Sync",         "Check for updates",
                                         "Choose dictionary", "Device Information"};
+#endif
 constexpr int listItemHeight = UiLayout::LIST_ITEM_HEIGHT;
 constexpr int headerTop = 20;
 constexpr int headerHeight = 40;
@@ -39,32 +65,42 @@ void SyncActivity::activateItem(const int index) {
   if (index < 0 || index >= menuItemCount) return;
 
   NetworkMode mode = NetworkMode::JOIN_NETWORK;
-  if (index == 1) mode = NetworkMode::CONNECT_CALIBRE;
-  if (index == 2) mode = NetworkMode::CREATE_HOTSPOT;
-  if (index == 3) mode = NetworkMode::OPDS_BROWSER;
+  if (index == kCalibreIndex) mode = NetworkMode::CONNECT_CALIBRE;
+  if (index == kCreateHotspotIndex) mode = NetworkMode::CREATE_HOTSPOT;
+  if (index == kOpdsBrowserIndex) mode = NetworkMode::OPDS_BROWSER;
 
-  if (index == 4) {
+#if FREEINK_CAP_USB_MSC
+  if (index == kUsbFileTransferIndex) {
+    enter(new UsbFileTransferActivity(renderer, mappedInput, [this] {
+      exit();
+      updateRequired = true;
+    }));
+    return;
+  }
+#endif
+
+  if (index == kKoReaderSyncIndex) {
     enter(new KOReaderSettingsActivity(renderer, mappedInput, [this] {
       exit();
       updateRequired = true;
     }));
     return;
   }
-  if (index == 5) {
+  if (index == kCheckForUpdatesIndex) {
     enter(new OtaUpdateActivity(renderer, mappedInput, [this] {
       exit();
       updateRequired = true;
     }));
     return;
   }
-  if (index == 6) {
+  if (index == kChooseDictionaryIndex) {
     enter(new DictionaryPickerActivity(renderer, mappedInput, [this] {
       exit();
       updateRequired = true;
     }));
     return;
   }
-  if (index == 7) {
+  if (index == kDeviceInformationIndex) {
     enter(new DeviceInfoActivity(renderer, mappedInput, [this] {
       exit();
       updateRequired = true;
