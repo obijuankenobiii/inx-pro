@@ -220,6 +220,8 @@ void openReaderFromCallback(const std::string& path, std::function<void()> retur
 void openReaderFromCallback(const std::string& path, std::function<void()> returnToCaller, const int spineIndex,
                             const int pageNumber) {
   const std::string pathCopy = path;
+  INX_SERIAL.printf("[%lu] [READER-OPEN] request path=%s spine=%d page=%d\n", millis(), pathCopy.c_str(), spineIndex,
+                    pageNumber);
   if (isExportedNoteImage(pathCopy)) {
     switchTo<ImageViewerActivity>(render, input, pathCopy, std::move(returnToCaller));
     return;

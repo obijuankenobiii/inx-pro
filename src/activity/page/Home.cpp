@@ -115,6 +115,7 @@ void Home::onEnter() {
   favoritePopupOpen = false;
   heatmapPopupOpen = false;
   popupFavoritePath.clear();
+  tapRejectLogged_ = false;
 }
 
 void Home::menu() {
@@ -288,10 +289,23 @@ void Home::preloadCarousel() {
 }
 
 bool Home::handleTap() {
-  if (!mappedInput.hasTouch()) return false;
+  if (!mappedInput.hasTouch()) {
+    tapRejectLogged_ = false;
+    return false;
+  }
+  const bool touchActivity = mappedInput.wasTouchActivity();
+  if (!touchActivity) tapRejectLogged_ = false;
   float tapNx = 0.0f;
   float tapNy = 0.0f;
-  if (!mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy)) return false;
+  if (!mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy)) {
+    if (!tapRejectLogged_ && touchActivity) {
+      INX_SERIAL.printf("[%lu] [HOME-TAP] touch present but tap predicate rejected carouselIndex=%d\n", millis(),
+                        carouselIndex);
+      tapRejectLogged_ = true;
+    }
+    return false;
+  }
+  tapRejectLogged_ = false;
   const int tapX = static_cast<int>(tapNx * renderer.getScreenWidth());
   const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
   const int bookCount = RECENT_BOOKS.getCount();
@@ -326,6 +340,11 @@ bool Home::handleTap() {
     const HomeWidgetLayout::HitResult hit =
         widgetLayout.hitTest(HomeTheme::active(), carouselIndex, favoriteIndex, bookCount, widgetPageIndex,
                              recentGridPageIndex, flowIndex, tapX, tapY);
+    INX_SERIAL.printf(
+        "[%lu] [HOME-TAP] tap=(%d,%d) norm=(%.3f,%.3f) books=%d carouselIndex=%d widgetPage=%d recentGridPage=%d "
+        "hitType=%d hitIndex=%d held_ms=%lu\n",
+        millis(), tapX, tapY, tapNx, tapNy, bookCount, carouselIndex, widgetPageIndex, recentGridPageIndex,
+        static_cast<int>(hit.type), hit.index, mappedInput.lastTouchHeldMs());
     if (hit.type == HomeWidgetLayout::HitType::Shortcut) return handleShortcut(hit.index);
     if (hit.type == HomeWidgetLayout::HitType::Recent) {
       if (mappedInput.lastTouchHeldMs() >= longPressMs) {
@@ -367,6 +386,8 @@ bool Home::handleTap() {
       updateRequired = true;
       return true;
     }
+    INX_SERIAL.printf("[%lu] [RECENT-CAROUSEL] opening index=%d path=%s\n", millis(), tappedIndex,
+                      RECENT_BOOKS.getBooks()[static_cast<size_t>(tappedIndex)].path.c_str());
     openReaderFromCallback(RECENT_BOOKS.getBooks()[static_cast<size_t>(tappedIndex)].path, [] { onGoToHome(); });
     return true;
   }

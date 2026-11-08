@@ -33,7 +33,7 @@ class ScreenComponents {
   static constexpr int BATTERY_ICON_WIDTH = 28;
   static constexpr int BATTERY_ICON_HEIGHT = 14;
   static constexpr int BATTERY_TEXT_GAP = 5;
-  static constexpr int BATTERY_ICON_TOP_OFFSET = 3;
+  static constexpr int BATTERY_ICON_TOP_OFFSET = 8;
   static constexpr int BATTERY_RIGHT_MARGIN = 20;
 
   struct PopupLayout {

@@ -2493,7 +2493,11 @@ void EpubActivity::renderContents(Page* page, const int orientedMarginTop,
   const bool useWindowedQuality = displayWithQualityPass && renderer.supportsWindowedQuality() &&
                                   pageGrayscaleImageRegion(*page, renderer, orientedMarginLeft, orientedMarginTop,
                                                            imageRegion);
-  const bool skipBasePageRefresh = (FREEINK_DEVICE_STICKY || FREEINK_DEVICE_MURPHY_M4) && useWindowedQuality;
+  // Murphy's windowed quality pass updates only the image rectangle. The
+  // current page must first be committed as the active dual-buffer frame;
+  // otherwise a later manual/page refresh copies the previous page back into
+  // the write buffer and refreshes that stale screen.
+  const bool skipBasePageRefresh = FREEINK_DEVICE_STICKY && useWindowedQuality;
 #if FREEINK_DEVICE_PICCO
   // A real Picco PTLW update only drives the image rectangle. The freshly
   // rendered B/W page must therefore be shown first; skipping it would leave

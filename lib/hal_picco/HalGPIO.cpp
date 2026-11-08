@@ -5,6 +5,7 @@
 #include <Imu.h>
 #include <PowerManager.h>
 #include <Rtc.h>
+#include <Wire.h>
 #include <driver/gpio.h>
 #include <esp_sleep.h>
 #include <esp_system.h>
@@ -54,6 +55,12 @@ void HalGPIO::begin() {
 }
 
 void HalGPIO::reinitializeTouch() {
+  // FrontlightManager probes the Picco LED controller on the same SDA/SCL
+  // pins. Explicitly release Arduino's native bus handle before TMA525C opens
+  // it again; calling Wire.begin() over the old handle can leave the touch
+  // driver alive but unable to receive reports on ESP32-S3.
+  Wire.end();
+  delay(1);
   inputMgr.begin();
   nextTouchRetryMs = millis() + 1000;
   lastTouchPressed = false;
@@ -287,22 +294,27 @@ void HalGPIO::startDeepSleep(const bool wakeOnToggle) {
 int HalGPIO::getBatteryPercentage() const {
   const unsigned long now = millis();
   if (batteryLastPollMs != 0 && now - batteryLastPollMs < BATTERY_POLL_MS) return batteryCachedPercent;
-  uint16_t percent = 0;
   static const BatteryMonitor battery;
-  if (battery.readPercentageChecked(percent)) batteryCachedPercent = percent;
+  uint16_t percent = 0;
+  if (BoardConfig::isPicco()) {
+    // Picco's charger shares SDA/SCL with the TMA525C touch controller. The
+    // normal BatteryMonitor percentage call also samples the charger over I2C,
+    // which can invalidate the shared Arduino Wire handle and stop touch.
+    // Keep the normal UI battery read ADC-only; charger state is not safe to
+    // poll from the main loop until it has a dedicated bus owner.
+    const uint16_t millivolts = battery.readMillivolts();
+    if (millivolts >= 2500 && millivolts <= 4500) {
+      batteryCachedPercent = BatteryMonitor::percentageFromMillivolts(millivolts);
+    }
+  } else if (battery.readPercentageChecked(percent)) {
+    batteryCachedPercent = percent;
+  }
   batteryLastPollMs = now;
   return batteryCachedPercent;
 }
 
 bool HalGPIO::isCharging() const {
-  const int8_t pin = BoardConfig::ACTIVE.batteryChargeStatus;
-  if (pin < 0) return false;
-  static bool configured = false;
-  if (!configured) {
-    pinMode(pin, INPUT_PULLUP);
-    configured = true;
-  }
-  return digitalRead(pin) == LOW;
+  return batteryCachedCharging;
 }
 
 bool HalGPIO::isUsbConnected() const {

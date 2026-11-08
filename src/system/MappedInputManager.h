@@ -58,6 +58,7 @@ class MappedInputManager {
    */
   bool hasTouch() const { return pendingTouchTap_ || gpio.hasTouch(); }
   bool isTouchPressed() const { return gpio.isTouchPressed(); }
+  bool wasTouchActivity() const { return gpio.wasTouchActivity(); }
   bool wasTouchPressedInScreen(const GfxRenderer& renderer, float& nx, float& ny) const;
   bool isTouchHeldInScreen(const GfxRenderer& renderer, float& nx, float& ny) const;
   bool wasTouchTap(float& nx, float& ny) const { return gpio.wasTouchTap(nx, ny); }

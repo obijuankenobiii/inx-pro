@@ -54,6 +54,14 @@ bool formatMenuClock(char* out, const size_t outSize) {
   return true;
 }
 
+int menuStatusTextTop(const GfxRenderer& renderer, const int top, const int font) {
+  // Keep clock text on the same line box as the percentage next to the
+  // battery. This is important for external TTFs, whose ascender and line
+  // height differ from the embedded Montserrat metrics.
+  return top + ScreenComponents::BATTERY_ICON_TOP_OFFSET +
+         (ScreenComponents::BATTERY_ICON_HEIGHT - renderer.text.getLineHeight(font)) / 2;
+}
+
 }
 
 void ScreenComponents::drawBattery(const GfxRenderer& renderer, const int left, const int top,
@@ -100,7 +108,8 @@ bool ScreenComponents::drawMenuClock(const GfxRenderer& renderer, const int left
     return false;
   }
 
-  renderer.text.render(systemFontIdForPointSize(8), left, top, clockText, true);
+  const int font = systemFontIdForPointSize(8);
+  renderer.text.render(font, left, menuStatusTextTop(renderer, top, font), clockText, true);
   return true;
 }
 
@@ -111,9 +120,10 @@ bool ScreenComponents::drawMenuClockRightAligned(const GfxRenderer& renderer, co
     return false;
   }
 
-  const int width = renderer.text.getWidth(systemFontIdForPointSize(8), clockText);
+  const int font = systemFontIdForPointSize(8);
+  const int width = renderer.text.getWidth(font, clockText);
   const int left = right - width;
-  renderer.text.render(systemFontIdForPointSize(8), left, top, clockText, true);
+  renderer.text.render(font, left, menuStatusTextTop(renderer, top, font), clockText, true);
   if (outLeft) *outLeft = left;
   return true;
 }
@@ -126,7 +136,8 @@ void ScreenComponents::drawMenuClockAndBattery(const GfxRenderer& renderer, cons
   if (formatMenuClock(clockText, sizeof(clockText))) {
     const int clockFont = systemFontIdForPointSize(8);
     const int clockW = renderer.text.getWidth(clockFont, clockText);
-    renderer.text.render(clockFont, batteryLeft - kClockBatteryGap - clockW, top, clockText, true);
+    renderer.text.render(clockFont, batteryLeft - kClockBatteryGap - clockW,
+                         menuStatusTextTop(renderer, top, clockFont), clockText, true);
   }
 
   drawBattery(renderer, batteryLeft, top, showBatteryPercentage);

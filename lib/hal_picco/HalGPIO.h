@@ -88,6 +88,7 @@ class HalGPIO {
   mutable int batteryCachedPercent = 0;
   mutable unsigned long batteryLastPollMs = 0;
   static constexpr unsigned long BATTERY_POLL_MS = 1500;
+  bool batteryCachedCharging = false;
   bool motionSensorInitialized = false;
   bool motionGestureInProgress = false;
   unsigned long motionLastPollMs = 0;

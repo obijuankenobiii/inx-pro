@@ -49,6 +49,7 @@ class Home final : public UiPage {
   int popupBook = -1;
   bool favoritePopupOpen = false;
   bool heatmapPopupOpen = false;
+  bool tapRejectLogged_ = false;
   HomeTheme::HeatmapView heatmapPopupView = HomeTheme::HeatmapView::Weekly;
   std::string popupFavoritePath;
 };
