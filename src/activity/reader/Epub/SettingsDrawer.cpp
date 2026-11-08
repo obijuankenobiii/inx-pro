@@ -148,10 +148,10 @@ void drawSettingsDropdown(const GfxRenderer& renderer, int left, int right, int 
   renderer.rectangle.render(left, boxY, right - left, boxH, true, false);
 
   const int textMaxW = std::max(1, right - left - 32);
-  const std::string shown = renderer.text.truncate(MONTSERRAT_8_FONT_ID, value ? value : "", textMaxW,
+  const std::string shown = renderer.text.truncate(systemFontIdForPointSize(8), value ? value : "", textMaxW,
                                                     EpdFontFamily::REGULAR);
-  const int textY = boxY + (boxH - renderer.text.getLineHeight(MONTSERRAT_8_FONT_ID)) / 2;
-  renderer.text.render(MONTSERRAT_8_FONT_ID, left + kPadX, textY, shown.c_str(), true,
+  const int textY = boxY + (boxH - renderer.text.getLineHeight(systemFontIdForPointSize(8))) / 2;
+  renderer.text.render(systemFontIdForPointSize(8), left + kPadX, textY, shown.c_str(), true,
                        EpdFontFamily::REGULAR);
 
   const int chevronX = right - 14;
@@ -163,14 +163,14 @@ void drawSettingsDropdown(const GfxRenderer& renderer, int left, int right, int 
 void drawValueStepper(GfxRenderer& renderer, const char* value, int left, int right, int itemY, int itemHeight) {
   constexpr int iconSize = 30;
   constexpr int gap = 8;
-  const int valueW = renderer.text.getWidth(MONTSERRAT_10_FONT_ID, value, EpdFontFamily::REGULAR);
+  const int valueW = renderer.text.getWidth(systemFontIdForPointSize(10), value, EpdFontFamily::REGULAR);
   const int width = iconSize + gap + valueW + gap + iconSize;
   const int x = std::max(left, right - width);
   const int iconY = itemY + (itemHeight - iconSize) / 2 + 5;
-  const int textY = itemY + (itemHeight - renderer.text.getLineHeight(MONTSERRAT_10_FONT_ID)) / 2;
+  const int textY = itemY + (itemHeight - renderer.text.getLineHeight(systemFontIdForPointSize(10))) / 2;
 
   renderer.bitmap.icon(LibraryFilterLeft, x, iconY, iconSize, iconSize);
-  renderer.text.render(MONTSERRAT_10_FONT_ID, x + iconSize + gap, textY, value, true, EpdFontFamily::REGULAR);
+  renderer.text.render(systemFontIdForPointSize(10), x + iconSize + gap, textY, value, true, EpdFontFamily::REGULAR);
   renderer.bitmap.icon(LibraryFilterRight, x + iconSize + gap + valueW + gap, iconY, iconSize, iconSize);
 }
 
@@ -842,8 +842,8 @@ void SettingsDrawer::drawMarginEditor() {
   for (int i = 0; i < 4; ++i) {
     const int itemY = startY + i * rowHeight;
     renderer.rectangle.fill(drawerX, itemY, drawerWidth, rowHeight, false);
-    const int textY = itemY + (rowHeight - renderer.text.getLineHeight(MONTSERRAT_10_FONT_ID)) / 2;
-    renderer.text.render(MONTSERRAT_10_FONT_ID, controlsLeft, textY, labels[i], true);
+    const int textY = itemY + (rowHeight - renderer.text.getLineHeight(systemFontIdForPointSize(10))) / 2;
+    renderer.text.render(systemFontIdForPointSize(10), controlsLeft, textY, labels[i], true);
     char value[12];
     snprintf(value, sizeof(value), "%u px", values[i]);
     const int valueAreaLeft = controlsLeft + drawerWidth * 10 / 100;
@@ -858,11 +858,11 @@ void SettingsDrawer::drawMarginEditor() {
   constexpr int iconSize = 30;
   constexpr int gap = 8;
   const int valueColumnRight = drawerX + drawerWidth - 24;
-  const int textWidth = renderer.text.getWidth(MONTSERRAT_10_FONT_ID, "Back", EpdFontFamily::REGULAR);
+  const int textWidth = renderer.text.getWidth(systemFontIdForPointSize(10), "Back", EpdFontFamily::REGULAR);
   const int iconX = embedded_ ? controlsLeft : valueColumnRight - iconSize - gap - textWidth;
-  const int textY = backY + (actualBackHeight - renderer.text.getLineHeight(MONTSERRAT_10_FONT_ID)) / 2;
+  const int textY = backY + (actualBackHeight - renderer.text.getLineHeight(systemFontIdForPointSize(10))) / 2;
   renderer.bitmap.icon(LibraryFilterLeft, iconX, backY + (actualBackHeight - iconSize) / 2, iconSize, iconSize);
-  renderer.text.render(MONTSERRAT_10_FONT_ID, iconX + iconSize + gap, textY, "Back", true);
+  renderer.text.render(systemFontIdForPointSize(10), iconX + iconSize + gap, textY, "Back", true);
 
   if (!embedded_) {
     drawMarginPreview(drawerX, startY, std::max(1, controlsLeft - drawerX - 8), contentHeight);
@@ -1002,7 +1002,7 @@ bool SettingsDrawer::handleMarginEditorInput(MappedInputManager& input) {
         snprintf(value, sizeof(value), "%u px", current[row]);
         constexpr int iconSize = 30;
         constexpr int gap = 8;
-        const int valueW = renderer.text.getWidth(MONTSERRAT_10_FONT_ID, value, EpdFontFamily::REGULAR);
+        const int valueW = renderer.text.getWidth(systemFontIdForPointSize(10), value, EpdFontFamily::REGULAR);
         const int x = std::max(valueAreaLeft, valueColumnRight - (iconSize + gap + valueW + gap + iconSize));
         const int rightX = x + iconSize + gap + valueW + gap;
         if (tapX >= x && tapX < x + iconSize) {
@@ -1265,13 +1265,13 @@ void SettingsDrawer::drawMenuItemRow(int visibleRow, int menuIndex) {
   if (entry.item == MenuItem::Separator || entry.item == MenuItem::StatusBarSeparator ||
       entry.item == MenuItem::StatusBarFullSeparator) {
     const int textX = drawerX + 15;
-    const int textY = itemY + (itemHeight - renderer.text.getLineHeight(MONTSERRAT_10_FONT_ID)) / 2;
-    renderer.text.render(MONTSERRAT_10_FONT_ID, textX, textY, entry.name, isSelected ? 0 : 1);
+    const int textY = itemY + (itemHeight - renderer.text.getLineHeight(systemFontIdForPointSize(10))) / 2;
+    renderer.text.render(systemFontIdForPointSize(10), textX, textY, entry.name, isSelected ? 0 : 1);
 
     const char* indicator = entry.getValueText(settings);
     if (indicator && indicator[0] != '\0') {
-      const int indicatorW = renderer.text.getWidth(MONTSERRAT_10_FONT_ID, indicator);
-      renderer.text.render(MONTSERRAT_10_FONT_ID, drawerX + drawerWidth - indicatorW - 30, textY, indicator,
+      const int indicatorW = renderer.text.getWidth(systemFontIdForPointSize(10), indicator);
+      renderer.text.render(systemFontIdForPointSize(10), drawerX + drawerWidth - indicatorW - 30, textY, indicator,
                            isSelected ? 0 : 1, EpdFontFamily::BOLD);
     }
 
@@ -1281,8 +1281,8 @@ void SettingsDrawer::drawMenuItemRow(int visibleRow, int menuIndex) {
   }
 
   const int textX = drawerX + 23;
-  const int textY = itemY + (itemHeight - renderer.text.getLineHeight(MONTSERRAT_10_FONT_ID)) / 2;
-  renderer.text.render(MONTSERRAT_10_FONT_ID, textX, textY, entry.name, isSelected ? 0 : 1);
+  const int textY = itemY + (itemHeight - renderer.text.getLineHeight(systemFontIdForPointSize(10))) / 2;
+  renderer.text.render(systemFontIdForPointSize(10), textX, textY, entry.name, isSelected ? 0 : 1);
 
   const int valueColumnRight = drawerX + drawerWidth - 24;
   const int valueAreaLeft = drawerX + drawerWidth * 40 / 100;
@@ -1338,8 +1338,8 @@ void SettingsDrawer::drawMenuItemRow(int visibleRow, int menuIndex) {
     } else {
       const char* val = entry.getValueText(settings);
       if (val && val[0] != '\0') {
-        const int valW = renderer.text.getWidth(MONTSERRAT_10_FONT_ID, val);
-        renderer.text.render(MONTSERRAT_10_FONT_ID, valueColumnRight - valW, textY, val, isSelected ? 0 : 1);
+        const int valW = renderer.text.getWidth(systemFontIdForPointSize(10), val);
+        renderer.text.render(systemFontIdForPointSize(10), valueColumnRight - valW, textY, val, isSelected ? 0 : 1);
       }
     }
   }
@@ -1562,8 +1562,8 @@ void SettingsDrawer::drawSelectorPopup() {
         renderer.rectangle.fill(box.x + 1, rowY, box.width - 2, selectorRowHeight,
                                 static_cast<int>(GfxRenderer::FillTone::Ink));
       }
-      const int textY = rowY + (selectorRowHeight - renderer.text.getLineHeight(MONTSERRAT_10_FONT_ID)) / 2;
-      renderer.text.render(MONTSERRAT_10_FONT_ID, box.x + 12, textY,
+      const int textY = rowY + (selectorRowHeight - renderer.text.getLineHeight(systemFontIdForPointSize(10))) / 2;
+      renderer.text.render(systemFontIdForPointSize(10), box.x + 12, textY,
                            selectorOptions_[static_cast<size_t>(optionIndex)].c_str(), selected ? 0 : 1);
     }
     if (i + 1 < box.rows) {
@@ -1907,7 +1907,7 @@ void SettingsDrawer::handleInput(MappedInputManager& input) {
             constexpr int gap = 8;
             const int valueAreaLeft = drawerX + drawerWidth * 40 / 100;
             const int valueColumnRight = drawerX + drawerWidth - 24;
-            const int valueW = renderer.text.getWidth(MONTSERRAT_10_FONT_ID, value, EpdFontFamily::REGULAR);
+            const int valueW = renderer.text.getWidth(systemFontIdForPointSize(10), value, EpdFontFamily::REGULAR);
             const int width = iconSize + gap + valueW + gap + iconSize;
             const int x = std::max(valueAreaLeft, valueColumnRight - width);
             const int rightX = x + iconSize + gap + valueW + gap;

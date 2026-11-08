@@ -182,7 +182,7 @@ void Recent::render(const int x, const int y, const int width, const int height,
   if (!showProgress) return;
   const int percentage = book.progress < 0.0f ? 0 : std::max(0, std::min(100, static_cast<int>(book.progress * 100.0f + 0.5f)));
   const std::string percentageText = std::to_string(percentage) + "%";
-  constexpr int percentageFont = MONTSERRAT_8_FONT_ID;
+  const int percentageFont = systemFontIdForPointSize(8);
   const int percentageWidth = renderer_.text.getWidth(percentageFont, percentageText.c_str());
   const int barY = std::min(content.y + content.height - innerPadding - 11,
                             content.y + content.height / 2 + lineHeight + 20);
@@ -245,7 +245,7 @@ void Recent::preview(const int x, const int y, const int width, const int height
 
   if (!showProgress) return;
   constexpr int percentage = 65;
-  const int percentageWidth = renderer_.text.getWidth(MONTSERRAT_8_FONT_ID, "65%");
+  const int percentageWidth = renderer_.text.getWidth(systemFontIdForPointSize(8), "65%");
   const int barY = std::min(content.y + content.height - innerPadding - 11,
                             content.y + content.height / 2 + lineHeight + 20);
   const int barWidth = std::max(1, contentWidth - percentageWidth - 8);
@@ -255,7 +255,7 @@ void Recent::preview(const int x, const int y, const int width, const int height
   renderer_.rectangle.fill(contentX + 1, barY + 1, std::max(1, barWidth - 2), barInnerHeight, false);
   renderer_.rectangle.fill(contentX + 1, barY + 1, std::max(1, (barWidth - 2) * percentage / 100),
                            barInnerHeight, true);
-  constexpr int percentageFont = MONTSERRAT_8_FONT_ID;
+  const int percentageFont = systemFontIdForPointSize(8);
   const int percentageY = barY + (barHeight - renderer_.text.getLineHeight(percentageFont)) / 2;
   renderer_.text.render(percentageFont, contentX + barWidth + 8, percentageY, "65%", true);
 }

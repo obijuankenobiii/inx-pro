@@ -405,8 +405,8 @@ void ThemePickerActivity::renderMode() {
 
 void ThemePickerActivity::renderList() {
   SubPage::header(renderer, "Theme");
-  constexpr int titleFont = MONTSERRAT_16_FONT_ID;
-  constexpr int subtitleFont = MONTSERRAT_12_FONT_ID;
+  const int titleFont = systemFontIdForPointSize(16);
+  const int subtitleFont = systemFontIdForPointSize(12);
   constexpr int headerTop = navigation::Menu::topPadding;
   constexpr int headerIconSize = navigation::Menu::iconSize;
   const char* subtitle = sleepMode_ ? "Sleep" : "Home";

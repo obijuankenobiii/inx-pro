@@ -495,8 +495,8 @@ void XtcReaderActivity::renderMenuChapters() {
   renderer.rectangle.fill(0, 0, drawerW, screenH, false);
   renderer.rectangle.render(drawerW - 1, 0, 1, screenH, true);
 
-  const int titleY = (XTC_TOC_HEADER_HEIGHT - renderer.text.getLineHeight(MONTSERRAT_12_FONT_ID)) / 2 + 5;
-  renderer.text.render(MONTSERRAT_12_FONT_ID, XTC_TOC_PADDING, titleY, "Table of Contents", true,
+  const int titleY = (XTC_TOC_HEADER_HEIGHT - renderer.text.getLineHeight(systemFontIdForPointSize(12))) / 2 + 5;
+  renderer.text.render(systemFontIdForPointSize(12), XTC_TOC_PADDING, titleY, "Table of Contents", true,
                        EpdFontFamily::REGULAR);
   const int closeX = drawerW - XTC_TOC_PADDING - XTC_TOC_CLOSE_HIT_SIZE;
   const int closeY = (XTC_TOC_HEADER_HEIGHT - XTC_TOC_CLOSE_HIT_SIZE) / 2;
@@ -514,13 +514,13 @@ void XtcReaderActivity::renderMenuChapters() {
     if (selected) {
       renderer.rectangle.fill(0, rowY, drawerW, XTC_TOC_ROW_HEIGHT, static_cast<int>(GfxRenderer::FillTone::Ink));
     }
-    const int textY = rowY + (XTC_TOC_ROW_HEIGHT - renderer.text.getLineHeight(MONTSERRAT_10_FONT_ID)) / 2;
+    const int textY = rowY + (XTC_TOC_ROW_HEIGHT - renderer.text.getLineHeight(systemFontIdForPointSize(10))) / 2;
     const std::string& title = chapters[idx].name;
     const int tone = selected ? 0 : 1;
     const int textWidth = std::max(40, drawerW - XTC_TOC_PADDING * 2);
     const std::string truncatedTitle = renderer.text.truncate(
-        MONTSERRAT_10_FONT_ID, title.empty() ? "Chapter" : title.c_str(), textWidth);
-    renderer.text.render(MONTSERRAT_10_FONT_ID, XTC_TOC_PADDING, textY, truncatedTitle.c_str(), tone);
+        systemFontIdForPointSize(10), title.empty() ? "Chapter" : title.c_str(), textWidth);
+    renderer.text.render(systemFontIdForPointSize(10), XTC_TOC_PADDING, textY, truncatedTitle.c_str(), tone);
     if (i + 1 < visibleRows && chapterScrollOffset + i + 1 < chapterCount) {
       renderer.line.render(0, rowY + XTC_TOC_ROW_HEIGHT - 1, drawerW, rowY + XTC_TOC_ROW_HEIGHT - 1, true,
                            LineRender::Style::Dotted);
@@ -571,15 +571,15 @@ void XtcReaderActivity::renderEndOfBookStats() {
 
   const int screenW = renderer.getScreenWidth();
   const int screenH = renderer.getScreenHeight();
-  constexpr int valueFont = MONTSERRAT_18_FONT_ID;
-  constexpr int labelFont = MONTSERRAT_10_FONT_ID;
+  const int valueFont = systemFontIdForPointSize(18);
+  const int labelFont = systemFontIdForPointSize(10);
 
   const int statsX = (screenW - 250) / 2;
   const int statsY = (screenH - 300) / 2;
   int currentY = statsY;
   char buffer[32];
 
-  renderer.text.render(MONTSERRAT_18_FONT_ID, statsX, statsY - 90, "End of book", true, EpdFontFamily::BOLD);
+  renderer.text.render(systemFontIdForPointSize(18), statsX, statsY - 90, "End of book", true, EpdFontFamily::BOLD);
 
   const std::string timeStr = formatReadingTime(bookStats.totalReadingTimeMs);
   renderer.text.render(valueFont, statsX, currentY, timeStr.c_str(), true, EpdFontFamily::BOLD);
@@ -628,7 +628,7 @@ void XtcReaderActivity::renderPage() {
   if (!pageBuffer) {
     INX_SERIAL.printf("[%lu] [XTR] Failed to allocate page buffer (%lu bytes)\n", millis(), pageBufferSize);
     renderer.clearScreen();
-    renderer.text.centered(MONTSERRAT_12_FONT_ID, 300, "Memory error", true, EpdFontFamily::BOLD);
+    renderer.text.centered(systemFontIdForPointSize(12), 300, "Memory error", true, EpdFontFamily::BOLD);
     renderer.displayBuffer();
     return;
   }
@@ -638,7 +638,7 @@ void XtcReaderActivity::renderPage() {
     INX_SERIAL.printf("[%lu] [XTR] Failed to load page %lu\n", millis(), currentPage);
     free(pageBuffer);
     renderer.clearScreen();
-    renderer.text.centered(MONTSERRAT_12_FONT_ID, 300, "Page load error", true, EpdFontFamily::BOLD);
+    renderer.text.centered(systemFontIdForPointSize(12), 300, "Page load error", true, EpdFontFamily::BOLD);
     renderer.displayBuffer();
     return;
   }

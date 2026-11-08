@@ -30,12 +30,12 @@ void Temperature::renderCard(const int x, const int y, const int width, const in
   renderer_.rectangle.fill(x, y, width, height, false, true, true);
 
   const int padding = std::max(16, std::min(26, width / 10));
-  const int dateFont = MONTSERRAT_10_FONT_ID;
-  const int labelFont = MONTSERRAT_14_FONT_ID;
+  const int dateFont = systemFontIdForPointSize(10);
+  const int labelFont = systemFontIdForPointSize(14);
   const int dateLineHeight = renderer_.text.getLineHeight(dateFont);
   const int labelLineHeight = renderer_.text.getLineHeight(labelFont);
   const bool wideCard = width >= 300 && height >= 220;
-  const int valueFont = wideCard ? MONTSERRAT_CLOCK_70_FONT_ID : MONTSERRAT_16_FONT_ID;
+  const int valueFont = wideCard ? systemFontIdForPointSize(70) : systemFontIdForPointSize(16);
   constexpr int kClockVisibleHeight = 106;
   const int valueHeight = wideCard ? kClockVisibleHeight : renderer_.text.getLineHeight(valueFont);
   const int contentHeight = dateLineHeight + 6 + labelLineHeight + 30 + valueHeight;
@@ -77,7 +77,7 @@ void Temperature::renderCard(const int x, const int y, const int width, const in
     renderer_.text.render(valueFont, valueX, valueY, fractionalValue, true, EpdFontFamily::BOLD);
 
     const int clockBottom = valueY + clockTopInset + kClockGlyphTop + 2;
-    const int unitFont = MONTSERRAT_14_FONT_ID;
+    const int unitFont = systemFontIdForPointSize(14);
     const int unitY = clockBottom - renderer_.text.getLineHeight(unitFont) + 3;
     valueX += renderer_.text.getWidth(valueFont, fractionalValue, EpdFontFamily::BOLD) + 8;
     renderer_.text.renderGray(unitFont, valueX, unitY, fahrenheit_ ? "°F" : "°C", true, EpdFontFamily::BOLD);
@@ -86,7 +86,7 @@ void Temperature::renderCard(const int x, const int y, const int width, const in
     std::snprintf(temperatureNumber, sizeof(temperatureNumber), "%.1f", static_cast<double>(temperature));
     renderer_.text.render(valueFont, x + padding, valueTop, temperatureNumber, true, EpdFontFamily::BOLD);
     const int numberWidth = renderer_.text.getWidth(valueFont, temperatureNumber, EpdFontFamily::BOLD);
-    const int unitFont = MONTSERRAT_14_FONT_ID;
+    const int unitFont = systemFontIdForPointSize(14);
     const int unitY = valueTop + renderer_.text.getLineHeight(valueFont) - renderer_.text.getLineHeight(unitFont);
     renderer_.text.renderGray(unitFont, x + padding + numberWidth + 6, unitY, fahrenheit_ ? "°F" : "°C", true,
                               EpdFontFamily::BOLD);
@@ -114,9 +114,9 @@ void Temperature::render(const int x, const int y, const int width, const int he
 
   if (!available) {
     renderer_.rectangle.fill(x, y, width, height, false);
-    renderer_.text.render(MONTSERRAT_10_FONT_ID, x + 16, y + std::max(0, height / 2 - 16),
+    renderer_.text.render(systemFontIdForPointSize(10), x + 16, y + std::max(0, height / 2 - 16),
                           "Temperature unavailable", true, EpdFontFamily::BOLD);
-    renderer_.text.render(MONTSERRAT_8_FONT_ID, x + 16, y + height / 2 + 12, "Sensor not found", true);
+    renderer_.text.render(systemFontIdForPointSize(8), x + 16, y + height / 2 + 12, "Sensor not found", true);
     return;
   }
 

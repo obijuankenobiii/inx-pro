@@ -81,6 +81,7 @@
         <div class="setting-item"><span class="setting-label">Choose sleep image</span><div class="setting-control"><input id="sleepCustomBmp" type="text" placeholder="Filename or empty for random" autocomplete="off"></div></div>
         <div class="setting-item"><span class="setting-label">Hide Battery %</span><div class="setting-control"><select id="hideBatteryPercentage"></select></div></div>
         <div class="setting-item"><span class="setting-label">Keyboard</span><div class="setting-control"><select id="keyboardLayout"></select></div></div>
+        <div class="setting-item"><span class="setting-label">System font</span><div class="setting-control"><select id="systemFontFamily"></select></div></div>
         <div class="setting-item"><span class="setting-label">Text size</span><div class="setting-control"><select id="systemTextSize"></select></div></div>
         <div class="setting-item"><span class="setting-label">Hide title for thumbnails</span><div class="setting-control"><label class="toggle-switch"><input id="hideThumbnailTitles" type="checkbox"><span class="toggle-slider"></span></label></div></div>
       </section>
@@ -224,6 +225,10 @@
     }
     function populateSettings() {
       Object.entries(enumOptions).forEach(([id, config]) => populateSelect(id, config.labels, config.values));
+      if (Array.isArray(settingsData.systemFontFamilyOptions)) {
+        populateSelect('systemFontFamily', settingsData.systemFontFamilyOptions.map(option => option.label),
+          settingsData.systemFontFamilyOptions.map(option => option.value));
+      }
       populateRange('pageAutoTurnSeconds', Array.from({length: 19}, (_, index) => index * 10), value => value ? value + ' sec' : 'Off');
       populateRange('dailyReadingGoalMinutes', [0, ...Array.from({length: 24}, (_, index) => (index + 1) * 5)], value => value ? value + ' min' : 'Off');
       boolFields.forEach(id => {

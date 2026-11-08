@@ -12,7 +12,6 @@
 #include <GfxRenderer.h>
 
 #include "activity/settings/DeviceInfoActivity.h"
-#include "activity/settings/DictionaryPickerActivity.h"
 #include "activity/settings/KOReaderSettingsActivity.h"
 #include "activity/settings/OtaUpdateActivity.h"
 #if FREEINK_CAP_USB_MSC
@@ -32,28 +31,23 @@ constexpr int kCreateHotspotIndex = 3;
 constexpr int kOpdsBrowserIndex = 4;
 constexpr int kKoReaderSyncIndex = 5;
 constexpr int kCheckForUpdatesIndex = 6;
-constexpr int kChooseDictionaryIndex = 7;
-constexpr int kDeviceInformationIndex = 8;
-constexpr int menuItemCount = 9;
+  constexpr int kDeviceInformationIndex = 7;
+  constexpr int menuItemCount = 8;
 const char* menuItems[menuItemCount] = {"Manage via wifi",    "Calibre File Transfer", "USB File Transfer",
                                         "Create hotspot",    "OPDS Browser",          "KOReader Sync",
-                                        "Check for updates", "Choose dictionary",      "Device Information"};
+                                        "Check for updates", "Device Information"};
 #else
 constexpr int kCreateHotspotIndex = 2;
 constexpr int kOpdsBrowserIndex = 3;
 constexpr int kKoReaderSyncIndex = 4;
 constexpr int kCheckForUpdatesIndex = 5;
-constexpr int kChooseDictionaryIndex = 6;
-constexpr int kDeviceInformationIndex = 7;
-constexpr int menuItemCount = 8;
+constexpr int kDeviceInformationIndex = 6;
+constexpr int menuItemCount = 7;
 const char* menuItems[menuItemCount] = {"Manage via wifi",   "Calibre File Transfer", "Create hotspot",
                                         "OPDS Browser",      "KOReader Sync",         "Check for updates",
-                                        "Choose dictionary", "Device Information"};
+                                        "Device Information"};
 #endif
 constexpr int listItemHeight = UiLayout::LIST_ITEM_HEIGHT;
-constexpr int headerTop = 20;
-constexpr int headerHeight = 40;
-constexpr int listGap = 30;
 }
 
 void SyncActivity::onEnter() {
@@ -88,13 +82,6 @@ void SyncActivity::activateItem(const int index) {
   }
   if (index == kCheckForUpdatesIndex) {
     enter(new OtaUpdateActivity(renderer, mappedInput, [this] {
-      exit();
-      updateRequired = true;
-    }));
-    return;
-  }
-  if (index == kChooseDictionaryIndex) {
-    enter(new DictionaryPickerActivity(renderer, mappedInput, [this] {
       exit();
       updateRequired = true;
     }));
@@ -137,7 +124,7 @@ void SyncActivity::loop() {
     if (mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy)) {
       const int tapX = static_cast<int>(tapNx * renderer.getScreenWidth());
       const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
-      const int listStartY = headerTop + headerHeight + listGap;
+      const int listStartY = FREEINK_DEVICE_X4PRO ? 80 : 70;
       const int contentBottom = renderer.getScreenHeight() - navigation::Menu::bottomInset() - 10;
       const int tappedIndex = (tapY - listStartY) / listItemHeight;
 
@@ -158,7 +145,7 @@ void SyncActivity::content() {
   const int screenWidth = renderer.getScreenWidth();
   const int screenHeight = renderer.getScreenHeight();
 
-  const int listStartY = headerTop + headerHeight + listGap;
+  const int listStartY = FREEINK_DEVICE_X4PRO ? 80 : 70;
 
   const int contentBottom = screenHeight - navigation::Menu::bottomInset() - 10;
   for (int index = 0; index < menuItemCount; ++index) {

@@ -41,18 +41,18 @@
 #define MONTSERRAT_CLOCK_70_FONT_ID (4001)
 
 /**
- * @brief Returns the configured bitmap font used by the device UI.
+ * @brief Returns the configured font used by the device UI.
  *
  * Reader text uses its own ReaderSetting font size and does not use this helper.
+ * The selected SD-card family is loaded lazily before its ID is returned.
  */
-inline int systemFontId() {
-  switch (SETTINGS.systemTextSize) {
-    case SystemSetting::SYSTEM_TEXT_MEDIUM:
-      return MONTSERRAT_12_FONT_ID;
-    case SystemSetting::SYSTEM_TEXT_LARGE:
-      return MONTSERRAT_14_FONT_ID;
-    case SystemSetting::SYSTEM_TEXT_SMALL:
-    default:
-      return MONTSERRAT_10_FONT_ID;
-  }
-}
+int systemFontId();
+
+/**
+ * @brief Returns the selected system family at a requested UI point size.
+ *
+ * This is used for UI elements that intentionally have a different size than
+ * the global system-text-size preference (small metadata, large headings, and
+ * similar cases). Reader body text continues to use ReaderSetting separately.
+ */
+int systemFontIdForPointSize(int pointSize);

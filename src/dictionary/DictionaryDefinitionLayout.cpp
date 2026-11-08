@@ -162,15 +162,15 @@ std::vector<DefinitionStyledLine> wrapAtomsToWidth(const GfxRenderer& renderer,
 
 int fontIdForBlock(const DefinitionBlock& block) {
   if (block.kind != DefinitionBlockKind::Heading) {
-    return MONTSERRAT_10_FONT_ID;
+    return systemFontIdForPointSize(10);
   }
   if (block.headingLevel <= 1) {
-    return MONTSERRAT_16_FONT_ID;
+    return systemFontIdForPointSize(16);
   }
   if (block.headingLevel == 2) {
-    return MONTSERRAT_14_FONT_ID;
+    return systemFontIdForPointSize(14);
   }
-  return MONTSERRAT_12_FONT_ID;
+  return systemFontIdForPointSize(12);
 }
 
 }

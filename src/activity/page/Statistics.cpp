@@ -52,11 +52,11 @@ Statistics::Statistics(GfxRenderer& renderer, MappedInputManager& mappedInput, s
 
 namespace {
 
-constexpr int FONT_SANS_SM = MONTSERRAT_8_FONT_ID;
-constexpr int FONT_SERIF = MONTSERRAT_14_FONT_ID;
-constexpr int FONT_SERIF_MD = MONTSERRAT_16_FONT_ID;
-constexpr int FONT_SERIF_LG = MONTSERRAT_18_FONT_ID;
-constexpr int FONT_SERIF_SM = MONTSERRAT_12_FONT_ID;
+int fontSansSm() { return systemFontIdForPointSize(8); }
+int fontSerif() { return systemFontIdForPointSize(14); }
+int fontSerifMd() { return systemFontIdForPointSize(16); }
+int fontSerifLg() { return systemFontIdForPointSize(18); }
+int fontSerifSm() { return systemFontIdForPointSize(12); }
 constexpr float kPi = 3.14159265f;
 
 constexpr int kCalendarGap = 5;
@@ -530,9 +530,9 @@ void drawFullDonutGauge(const GfxRenderer& renderer, int cx, int cy, int rOut, i
   drawCircleOutlinePixels(renderer, cx, cy, rOut);
   drawCircleOutlinePixels(renderer, cx, cy, rIn);
 
-  const int tw = renderer.text.getWidth(FONT_SERIF_MD, centerPct);
-  const int lhMd = renderer.text.getLineHeight(FONT_SERIF_MD);
-  renderer.text.render(FONT_SERIF_MD, cx - tw / 2, cy - lhMd / 2, centerPct);
+  const int tw = renderer.text.getWidth(fontSerifMd(), centerPct);
+  const int lhMd = renderer.text.getLineHeight(fontSerifMd());
+  renderer.text.render(fontSerifMd(), cx - tw / 2, cy - lhMd / 2, centerPct);
 }
 
 /** Shared geometry for the global “all items” donut + metrics block (must stay in sync across draw paths). */
@@ -548,8 +548,8 @@ struct GlobalAllItemsGeom {
 static GlobalAllItemsGeom computeGlobalAllItemsGeom(const GfxRenderer& renderer) {
   const int fontSans = systemFontId();
   const int lhSans = renderer.text.getLineHeight(fontSans);
-  const int lhSm = renderer.text.getLineHeight(FONT_SANS_SM);
-  const int lhNum = renderer.text.getLineHeight(FONT_SERIF_LG);
+  const int lhSm = renderer.text.getLineHeight(fontSansSm());
+  const int lhNum = renderer.text.getLineHeight(fontSerifLg());
   const int kCaptionStackH = lhSans * 2 + 6;
   constexpr int kMetricsPadT = 8;
   const int kMetricsH = kMetricsPadT + lhNum + 4 + lhSm;
@@ -602,21 +602,21 @@ static int drawGlobalAllItemsSecondBand(const GfxRenderer& renderer, int innerLe
   char buf[32];
   snprintf(buf, sizeof(buf), "%u", booksFinished);
   const int leftCx = innerLeft + (midX - innerLeft) / 2;
-  const int twFin = renderer.text.getWidth(FONT_SERIF_LG, buf);
+  const int twFin = renderer.text.getWidth(fontSerifLg(), buf);
   const int yNum = yRule + g.kMetricsPadT;
-  renderer.text.render(FONT_SERIF_LG, leftCx - twFin / 2, yNum, buf);
+  renderer.text.render(fontSerifLg(), leftCx - twFin / 2, yNum, buf);
   const char* labFin = "Books finished";
-  const int twLabF = renderer.text.getWidth(FONT_SANS_SM, labFin);
+  const int twLabF = renderer.text.getWidth(fontSansSm(), labFin);
   const int yLabFin = yNum + g.lhNum + 4;
-  renderer.text.render(FONT_SANS_SM, leftCx - twLabF / 2, yLabFin, labFin);
+  renderer.text.render(fontSansSm(), leftCx - twLabF / 2, yLabFin, labFin);
 
   snprintf(buf, sizeof(buf), "%u", booksOpened);
   const int rightCx = midX + (innerRight - midX) / 2;
-  const int twH = renderer.text.getWidth(FONT_SERIF_LG, buf);
-  renderer.text.render(FONT_SERIF_LG, rightCx - twH / 2, yNum, buf);
+  const int twH = renderer.text.getWidth(fontSerifLg(), buf);
+  renderer.text.render(fontSerifLg(), rightCx - twH / 2, yNum, buf);
   const char* labH = "Books opened";
-  const int twLabH = renderer.text.getWidth(FONT_SANS_SM, labH);
-  renderer.text.render(FONT_SANS_SM, rightCx - twLabH / 2, yLabFin, labH);
+  const int twLabH = renderer.text.getWidth(fontSansSm(), labH);
+  renderer.text.render(fontSansSm(), rightCx - twLabH / 2, yLabFin, labH);
 
   return yRule + g.kMetricsH;
 }
@@ -650,8 +650,8 @@ int drawFourColumnStatsNx2(const GfxRenderer& renderer, int innerLeft, int y, in
   constexpr int kCellPadTop = 0;
   const int wLeft = std::max(20, midX - innerLeft - kEdgePad - kMidGutter);
   const int wRight = std::max(20, (innerLeft + innerW) - midX - kEdgePad - kMidGutter);
-  const int lhVal = renderer.text.getLineHeight(FONT_SERIF_LG);
-  const int lhLab = renderer.text.getLineHeight(FONT_SANS_SM);
+  const int lhVal = renderer.text.getLineHeight(fontSerifLg());
+  const int lhLab = renderer.text.getLineHeight(fontSansSm());
   constexpr int kValLabGap = 4;
   const int stackH = lhVal + kValLabGap + lhLab;
 
@@ -674,10 +674,10 @@ int drawFourColumnStatsNx2(const GfxRenderer& renderer, int innerLeft, int y, in
     } else {
       rowTop = (stackH <= innerBand) ? bandTop : std::max(bandTop, bandBottom - stackH);
     }
-    const std::string valT = renderer.text.truncate(FONT_SERIF_LG, val, cw);
-    const std::string labT = renderer.text.truncate(FONT_SANS_SM, lab, cw);
-    renderer.text.render(FONT_SERIF_LG, cellLeft, rowTop, valT.c_str());
-    renderer.text.render(FONT_SANS_SM, cellLeft, rowTop + lhVal + kValLabGap, labT.c_str());
+    const std::string valT = renderer.text.truncate(fontSerifLg(), val, cw);
+    const std::string labT = renderer.text.truncate(fontSansSm(), lab, cw);
+    renderer.text.render(fontSerifLg(), cellLeft, rowTop, valT.c_str());
+    renderer.text.render(fontSansSm(), cellLeft, rowTop + lhVal + kValLabGap, labT.c_str());
   };
   for (int row = 0; row < numRows; ++row) {
     cell(0, row, vals[row * 2], labs[row * 2]);
@@ -983,7 +983,7 @@ void Statistics::renderCover(const std::string& bookPath, int x, int y, int widt
   if (!title.empty()) {
     int lineY = y + 18;
     int maxWidth = width - 24;
-    int lineHeight = renderer.text.getLineHeight(FONT_SERIF_SM);
+    int lineHeight = renderer.text.getLineHeight(fontSerifSm());
 
     std::string remaining = title;
     int lineCount = 0;
@@ -996,7 +996,7 @@ void Statistics::renderCover(const std::string& bookPath, int x, int y, int widt
         size_t spacePos = remaining.find(' ');
         std::string word = (spacePos != std::string::npos) ? remaining.substr(0, spacePos) : remaining;
 
-        int wordWidth = renderer.text.getWidth(FONT_SERIF_SM, word.c_str(), EpdFontFamily::REGULAR);
+        int wordWidth = renderer.text.getWidth(fontSerifSm(), word.c_str(), EpdFontFamily::REGULAR);
 
         if (lineWidth + wordWidth <= maxWidth) {
           if (!line.empty()) line += " ";
@@ -1017,9 +1017,9 @@ void Statistics::renderCover(const std::string& bookPath, int x, int y, int widt
         break;
       }
 
-      int textWidth = renderer.text.getWidth(FONT_SERIF_SM, line.c_str(), EpdFontFamily::REGULAR);
+      int textWidth = renderer.text.getWidth(fontSerifSm(), line.c_str(), EpdFontFamily::REGULAR);
       int textX = x + (width - textWidth) / 2;
-      renderer.text.render(FONT_SERIF_SM, textX, lineY, line.c_str(), true, EpdFontFamily::REGULAR);
+      renderer.text.render(fontSerifSm(), textX, lineY, line.c_str(), true, EpdFontFamily::REGULAR);
       lineY += lineHeight;
       lineCount++;
     }
@@ -1180,7 +1180,7 @@ void Statistics::menu() {
 void Statistics::title() const {
   renderer.bitmap.icon(Hamburger, navigation::Menu::leftMargin, navigation::Menu::topPadding,
                        navigation::Menu::iconSize, navigation::Menu::iconSize);
-  const int font = MONTSERRAT_16_FONT_ID;
+  const int font = systemFontIdForPointSize(16);
   const int textY = navigation::Menu::topPadding +
                     (navigation::Menu::iconSize - renderer.text.getLineHeight(font)) / 2;
   renderer.text.render(font, navigation::Menu::leftMargin + navigation::Menu::iconSize + 12, textY,
@@ -1418,9 +1418,9 @@ int Statistics::renderRecent(int y, int innerLeft, int innerRight, int innerW, i
   constexpr int g8 = 8;
   constexpr int g10 = 10;
 
-  const int lhSerif = renderer.text.getLineHeight(FONT_SERIF);
+  const int lhSerif = renderer.text.getLineHeight(fontSerif());
   const int lhSans = renderer.text.getLineHeight(systemFontId());
-  const int lhSm = renderer.text.getLineHeight(FONT_SANS_SM);
+  const int lhSm = renderer.text.getLineHeight(fontSansSm());
   const int yCoverTop = y;
 
   std::pair<int, int> tf;
@@ -1433,8 +1433,8 @@ int Statistics::renderRecent(int y, int innerLeft, int innerRight, int innerW, i
     const int textColW = std::max(40, innerRight - textX);
 
     const int yTitle = yCoverTop + kGlobalThumbOuterPad;
-    std::string titleLine = renderer.text.truncate(FONT_SERIF, cur.title.c_str(), textColW, EpdFontFamily::ITALIC);
-    renderer.text.render(FONT_SERIF, textX, yTitle, titleLine.c_str(), true, EpdFontFamily::ITALIC);
+    std::string titleLine = renderer.text.truncate(fontSerif(), cur.title.c_str(), textColW, EpdFontFamily::ITALIC);
+    renderer.text.render(fontSerif(), textX, yTitle, titleLine.c_str(), true, EpdFontFamily::ITALIC);
     const int yAuthor = yTitle + lhSerif + g8;
     if (!cur.author.empty()) {
       std::string auth = renderer.text.truncate(systemFontId(), cur.author.c_str(), textColW);
@@ -1443,7 +1443,7 @@ int Statistics::renderRecent(int y, int innerLeft, int innerRight, int innerW, i
     const int yProg = yAuthor + lhSans + g10;
     char progLabel[48];
     snprintf(progLabel, sizeof(progLabel), "Book progress: %.0f%%", prog * 100.f);
-    renderer.text.render(FONT_SANS_SM, textX, yProg, progLabel);
+    renderer.text.render(fontSansSm(), textX, yProg, progLabel);
     const int yBar = yProg + lhSm + g8;
     drawThinProgressBar(renderer, textX, yBar, textColW, 8, prog);
     yThumbBottom = yBar + 8;
@@ -1462,7 +1462,7 @@ int Statistics::renderRecent(int y, int innerLeft, int innerRight, int innerW, i
 int Statistics::renderCalendar(const int y, const int innerLeft, const int innerW, const int contentBottom) const {
   if (calendarWeekStartDay_ <= 0 || innerW <= 0 || contentBottom <= y) return 0;
 
-  const int smallFont = FONT_SANS_SM;
+  const int smallFont = fontSansSm();
   const int smallLine = renderer.text.getLineHeight(smallFont);
   const int gridTop = y;
   const int gridBottom = contentBottom;
@@ -1492,7 +1492,7 @@ int Statistics::renderCalendar(const int y, const int innerLeft, const int inner
   // labels such as "Wed 24" before the thumbnails begin.
   constexpr int kDayLabelWidth = 90;
   constexpr int kDailyTotalWidth = 78;
-  const int totalFont = FONT_SERIF_SM;
+  const int totalFont = fontSerifSm();
   const int totalLine = renderer.text.getLineHeight(totalFont);
   for (int day = 0; day < 7; ++day) {
     const int cellY = gridTop + day * (cellHeight + kCalendarGap);
@@ -1598,7 +1598,7 @@ void Statistics::renderSingleBookView(int bookIdx, int contentTop, int contentBo
   const int y0 = contentTop;
   const int yEnd = contentBottom - 24;
 
-  const int lhSerif = renderer.text.getLineHeight(FONT_SERIF);
+  const int lhSerif = renderer.text.getLineHeight(fontSerif());
   const int lhSans = renderer.text.getLineHeight(systemFontId());
   /** Title and author below cover row; sessions/chapters are in the bottom stats grid (same style as hours). */
   const int metaSpan = lhSerif + g8 + lhSans + g10;
@@ -1645,9 +1645,9 @@ void Statistics::renderSingleBookView(int bookIdx, int contentTop, int contentBo
   drawFullDonutGauge(renderer, cxGauge, cyGauge, kBookDonutR, kBookDonutThick, prog, pctStr);
 
   const int textMaxW = innerW;
-  std::string titleLine = renderer.text.truncate(FONT_SERIF, b.title.c_str(), textMaxW, EpdFontFamily::ITALIC);
+  std::string titleLine = renderer.text.truncate(fontSerif(), b.title.c_str(), textMaxW, EpdFontFamily::ITALIC);
   const int yTitle = yCoverTop + rowHeight + gapCoverTitle;
-  renderer.text.render(FONT_SERIF, innerLeft, yTitle, titleLine.c_str(), true, EpdFontFamily::ITALIC);
+  renderer.text.render(fontSerif(), innerLeft, yTitle, titleLine.c_str(), true, EpdFontFamily::ITALIC);
   const int yAuthor = yTitle + lhSerif + g8;
   if (!b.author.empty()) {
     std::string auth = renderer.text.truncate(systemFontId(), b.author.c_str(), textMaxW);
@@ -1675,7 +1675,7 @@ void Statistics::renderSingleBookView(int bookIdx, int contentTop, int contentBo
 
   char footer[24];
   snprintf(footer, sizeof(footer), "%d/%zu", bookIdx + 1, allBooksStats.size());
-  renderer.text.centered(FONT_SANS_SM, contentBottom - 5, footer);
+  renderer.text.centered(fontSansSm(), contentBottom - 5, footer);
 }
 
 void Statistics::renderSingleBookTopSection(const int bookIdx) const {
@@ -1755,8 +1755,8 @@ void Statistics::renderSingleBookMiddleChart(const int bookIdx) const {
     points.erase(points.begin(), points.begin() + static_cast<int>(points.size() - kMaxChartPoints));
   }
 
-  const int valueFont = FONT_SERIF_LG;
-  const int labelFont = FONT_SANS_SM;
+  const int valueFont = fontSerifLg();
+  const int labelFont = fontSansSm();
   const int valueLine = renderer.text.getLineHeight(valueFont);
   const int labelLine = renderer.text.getLineHeight(labelFont);
   const int summaryY = panelY + kSummaryTopPadding;
@@ -1886,8 +1886,8 @@ void Statistics::renderSingleBookBottomGrid(const int bookIdx) const {
   std::snprintf(sessions, sizeof(sessions), "%u", static_cast<unsigned>(book.sessionCount));
   const char* values[] = {chapters, pages, sessions};
   const char* labels[] = {"Chapters", "Pages", "Sessions"};
-  const int valueFont = FONT_SERIF_LG;
-  const int labelFont = FONT_SANS_SM;
+  const int valueFont = fontSerifLg();
+  const int labelFont = fontSansSm();
   const int valueLine = renderer.text.getLineHeight(valueFont);
   const int labelLine = renderer.text.getLineHeight(labelFont);
   const int groupH = valueLine + 4 + labelLine;
@@ -1987,9 +1987,9 @@ void Statistics::renderWeeklyChart(const int chartTop, const int chartBottom) co
   constexpr const char* kWeekdays[] = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
   const int left = 24;
   const int right = screenWidth - 24;
-  const int headerFont = MONTSERRAT_10_FONT_ID;
-  const int valueFont = MONTSERRAT_18_FONT_ID;
-  const int smallFont = MONTSERRAT_10_FONT_ID;
+  const int headerFont = systemFontIdForPointSize(10);
+  const int valueFont = systemFontIdForPointSize(18);
+  const int smallFont = systemFontIdForPointSize(10);
   const int headerLine = renderer.text.getLineHeight(headerFont);
   const int valueLine = renderer.text.getLineHeight(valueFont);
   const int smallLine = renderer.text.getLineHeight(smallFont);
@@ -2079,9 +2079,9 @@ void Statistics::renderMonthlyChart(const int chartTop, const int chartBottom) c
 
   const int left = 24;
   const int right = screenWidth - 24;
-  const int headerFont = MONTSERRAT_10_FONT_ID;
-  const int valueFont = MONTSERRAT_18_FONT_ID;
-  const int smallFont = MONTSERRAT_8_FONT_ID;
+  const int headerFont = systemFontIdForPointSize(10);
+  const int valueFont = systemFontIdForPointSize(18);
+  const int smallFont = systemFontIdForPointSize(8);
   const int headerLine = renderer.text.getLineHeight(headerFont);
   const int valueLine = renderer.text.getLineHeight(valueFont);
   const int smallLine = renderer.text.getLineHeight(smallFont);
@@ -2246,8 +2246,8 @@ void Statistics::content() {
                   static_cast<unsigned>(globalStats.totalBooksStarted));
     char pagesValue[16];
     std::snprintf(pagesValue, sizeof(pagesValue), "%u", static_cast<unsigned>(globalStats.totalPagesRead));
-    const int valueFont = FONT_SERIF_LG;
-    const int labelFont = FONT_SANS_SM;
+    const int valueFont = fontSerifLg();
+    const int labelFont = fontSansSm();
     const int valueWidth = renderer.text.getWidth(valueFont, readingValue);
     const int labelWidth = renderer.text.getWidth(labelFont, "Reading");
     const int pagesValueWidth = renderer.text.getWidth(valueFont, pagesValue);
@@ -2378,9 +2378,9 @@ void Statistics::renderBooksView(const int contentTop, const int contentBottom) 
   constexpr int textGap = 14;
   constexpr int caretSize = 30;
   const int width = renderer.getScreenWidth();
-  const int titleFont = MONTSERRAT_14_FONT_ID;
-  const int descriptionFont = MONTSERRAT_10_FONT_ID;
-  const int progressFont = MONTSERRAT_18_FONT_ID;
+  const int titleFont = systemFontIdForPointSize(14);
+  const int descriptionFont = systemFontIdForPointSize(10);
+  const int progressFont = systemFontIdForPointSize(18);
   const int caretX = width - sideMargin - caretSize;
   const int progressWidth = 74;
   const int visibleHeight = std::max(0, contentBottom - contentTop);

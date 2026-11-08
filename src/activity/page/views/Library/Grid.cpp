@@ -98,7 +98,7 @@ void drawItemBadge(const GfxRenderer& renderer, const int x, const int y, const 
   constexpr int paddingX = 5;
   constexpr int paddingY = 3;
   constexpr int margin = 5;
-  constexpr int font = MONTSERRAT_8_FONT_ID;
+  const int font = systemFontIdForPointSize(8);
   const int badgeWidth = renderer.text.getWidth(font, label.c_str()) + paddingX * 2;
   const int badgeHeight = renderer.text.getLineHeight(font) + paddingY * 2;
   const int badgeX = x + std::max(0, width - badgeWidth - margin);

@@ -16,6 +16,7 @@
 #include "activity/settings/CategorySettingsActivity.h"
 #include "activity/settings/ReaderPresetsActivity.h"
 #include "state/SystemSetting.h"
+#include "system/FontManager.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
 
@@ -93,6 +94,8 @@ std::vector<SettingInfo> buildSystemSettings() {
   std::vector<SettingInfo> settings;
   settings.reserve(40);
 
+  FontManager::scanSDFonts("/fonts", false);
+
   settings.push_back(SettingInfo::Separator("Display ", GroupType::DEVICE_DISPLAY));
   settings.push_back(SettingInfo::Toggle("Hidden Menu", &SystemSetting::hiddenMenu,
                                          GroupType::DEVICE_DISPLAY));
@@ -107,6 +110,8 @@ std::vector<SettingInfo> buildSystemSettings() {
                                        {"Never", "In Reader", "Always"}, GroupType::DEVICE_DISPLAY));
   settings.push_back(SettingInfo::Enum("Keyboard", &SystemSetting::keyboardLayout, {"QWERTY", "Numpad"},
                                        GroupType::DEVICE_DISPLAY));
+  settings.push_back(SettingInfo::Enum("System font", &SystemSetting::systemFontFamily,
+                                       FontManager::readerFontFamilyEnumLabels(), GroupType::DEVICE_DISPLAY));
   settings.push_back(SettingInfo::Enum("Text size", &SystemSetting::systemTextSize, {"Small", "Medium", "Large"},
                                        GroupType::DEVICE_DISPLAY));
   settings.push_back(SettingInfo::Toggle("Hide title for thumbnails", &SystemSetting::hideThumbnailTitles,
@@ -138,7 +143,7 @@ std::vector<SettingInfo> buildSystemSettings() {
   settings.push_back(SettingInfo::Enum("Boot Mode", &SystemSetting::bootSetting, {"Recent Book", "Home"},
                                        GroupType::DEVICE_ADVANCED));
   settings.push_back(SettingInfo::Action("Language", GroupType::DEVICE_ADVANCED));
-#if FREEINK_DEVICE_STICKY
+#if FREEINK_DEVICE_STICKY || FREEINK_DEVICE_PICCO
   settings.push_back(SettingInfo::Enum("Flick page turn", &SystemSetting::shakePageTurn,
                                        {"Off", "Normal", "Inverted"}, GroupType::DEVICE_ADVANCED));
   settings.push_back(SettingInfo::Enum("Flick sensitivity", &SystemSetting::shakePageTurnSensitivity,

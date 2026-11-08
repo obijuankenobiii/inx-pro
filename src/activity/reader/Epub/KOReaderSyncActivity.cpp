@@ -134,7 +134,7 @@ int renderSyncChrome(const GfxRenderer& renderer) {
   renderer.bitmap.icon(Phone, iconX, iconY, kSyncIconSize, kSyncIconSize);
   renderer.bitmap.icon(Transfer, iconX + kSyncIconSize + kSyncIconGap, iconY, kSyncIconSize, kSyncIconSize);
   renderer.bitmap.icon(Computer, iconX + (kSyncIconSize + kSyncIconGap) * 2, iconY, kSyncIconSize, kSyncIconSize);
-  renderer.text.centered(MONTSERRAT_8_FONT_ID, iconY + kSyncIconSize + 12, "KOREADER", true,
+  renderer.text.centered(systemFontIdForPointSize(8), iconY + kSyncIconSize + 12, "KOREADER", true,
                          EpdFontFamily::BOLD);
   return iconY + kSyncIconSize + 12;
 }

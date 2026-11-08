@@ -7,7 +7,6 @@
 
 #include "Page.h"
 #include "components/home/HomeWidgetLayout.h"
-#include "components/widget/ShortcutList.h"
 #include "state/HomeTheme.h"
 
 #include <string>
@@ -30,9 +29,7 @@ class Home final : public UiPage {
   bool handlePopup();
   bool handleSwipe();
   bool handleTap();
-  bool handleShortcutDrawerInput();
   bool handleShortcut(int item);
-  void drawShortcutDrawer() const;
   void advanceCarousel(int delta);
   void advanceFlow(int delta);
   void preloadCarousel();
@@ -43,7 +40,6 @@ class Home final : public UiPage {
   void deleteCache();
   ButtonBounds libraryButton() const;
   HomeWidgetLayout widgetLayout;
-  ShortcutList shortcutList;
   int carouselIndex = 0;
   int favoriteIndex = 0;
   int widgetPageIndex = 0;
@@ -55,5 +51,4 @@ class Home final : public UiPage {
   bool heatmapPopupOpen = false;
   HomeTheme::HeatmapView heatmapPopupView = HomeTheme::HeatmapView::Weekly;
   std::string popupFavoritePath;
-  bool shortcutDrawerOpen = false;
 };

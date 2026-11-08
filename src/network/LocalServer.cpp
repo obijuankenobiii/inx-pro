@@ -2156,7 +2156,7 @@ void LocalServer::handleSettingsGet() const {
 
   doc["clockAvailable"] = clockAvailable;
   doc["flickPageTurnAvailable"] =
-#if FREEINK_DEVICE_STICKY
+#if FREEINK_DEVICE_STICKY || FREEINK_DEVICE_PICCO
       true;
 #else
       false;
@@ -2172,6 +2172,14 @@ void LocalServer::handleSettingsGet() const {
   }
   doc["hideBatteryPercentage"] = SETTINGS.hideBatteryPercentage;
   doc["keyboardLayout"] = SETTINGS.keyboardLayout;
+  doc["systemFontFamily"] = SETTINGS.systemFontFamily;
+  JsonArray systemFontFamilies = doc["systemFontFamilyOptions"].to<JsonArray>();
+  const std::vector<std::string> systemFontLabels = FontManager::readerFontFamilyEnumLabels();
+  for (size_t i = 0; i < systemFontLabels.size(); ++i) {
+    JsonObject option = systemFontFamilies.add<JsonObject>();
+    option["value"] = static_cast<uint8_t>(i);
+    option["label"] = systemFontLabels[i];
+  }
   doc["systemTextSize"] = SETTINGS.systemTextSize;
   doc["hideThumbnailTitles"] = SETTINGS.hideThumbnailTitles;
   doc["thumbnailSize"] = SETTINGS.thumbnailSize;
@@ -2371,6 +2379,13 @@ void LocalServer::handleSettingsUpdate() const {
       SETTINGS.keyboardLayout = (v >= 0 && v < SystemSetting::KEYBOARD_LAYOUT_COUNT)
                                     ? static_cast<uint8_t>(v)
                                     : SystemSetting::KEYBOARD_QWERTY;
+      changed = true;
+    } else if (strcmp(key, "systemFontFamily") == 0) {
+      const int v = static_cast<int>(value);
+      const uint32_t optionCount = FontManager::readerFontFamilyOptionCount();
+      SETTINGS.systemFontFamily = (v >= 0 && static_cast<uint32_t>(v) < optionCount)
+                                      ? static_cast<uint8_t>(v)
+                                      : SystemSetting::MONTSERRAT;
       changed = true;
     } else if (strcmp(key, "systemTextSize") == 0) {
       const int v = static_cast<int>(value);

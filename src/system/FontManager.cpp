@@ -670,6 +670,20 @@ bool FontManager::ensureFontReady(int fontId, GfxRenderer& renderer) {
   return false;
 }
 
+bool FontManager::ensureSystemFontReady(int fontId) {
+  if (g_renderer == nullptr) {
+    return false;
+  }
+  // systemFontIdForPointSize() is used throughout layout and drawing code.
+  // Avoid rescanning the SD-font table on every text measurement once the
+  // selected family is already registered with the renderer.
+  if (g_renderer->findFontFamily(fontId) != nullptr) {
+    updateFontLRU(fontId);
+    return true;
+  }
+  return ensureFontReady(fontId, *g_renderer);
+}
+
 int FontManager::findLanguageFontForCodepoint(const uint32_t codepoint, const int preferredPt,
                                               const EpdFontFamily::Style style, GfxRenderer& renderer,
                                               const char* preferredLanguageCode) {

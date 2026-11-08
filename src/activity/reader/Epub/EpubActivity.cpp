@@ -213,7 +213,7 @@ void EpubActivity::drawLoadingScreen() {
 void EpubActivity::drawPreparingBookScreen() {
   invalidatePreparedPage();
   renderer.clearScreen(0xff);
-  renderer.text.centered(MONTSERRAT_12_FONT_ID, renderer.getScreenHeight() / 2,
+  renderer.text.centered(systemFontIdForPointSize(12), renderer.getScreenHeight() / 2,
                          "Preparing book...", true);
   renderer.displayBuffer();
 }
@@ -901,7 +901,7 @@ bool EpubActivity::wordSelectionActionBarBounds(const PageWordHit& word, int& x,
     return false;
   }
 
-  const int font = MONTSERRAT_8_FONT_ID;
+  const int font = systemFontIdForPointSize(8);
   const std::vector<std::string> actions = currentWordActions();
   if (actions.empty()) {
     return false;
@@ -2646,13 +2646,13 @@ void EpubActivity::displayBookTitle() {
 
   int maxWidth = renderer.getScreenWidth() * 0.6;
 
-  int titleWidth = renderer.text.getWidth(MONTSERRAT_12_FONT_ID, bookTitle.c_str());
+  int titleWidth = renderer.text.getWidth(systemFontIdForPointSize(12), bookTitle.c_str());
 
   if (titleWidth > maxWidth) {
-    bookTitle = renderer.text.truncate(MONTSERRAT_12_FONT_ID, bookTitle.c_str(), maxWidth);
+    bookTitle = renderer.text.truncate(systemFontIdForPointSize(12), bookTitle.c_str(), maxWidth);
   }
 
-  renderer.text.centered(MONTSERRAT_12_FONT_ID, renderer.getScreenHeight() / 2, bookTitle.c_str(), true,
+  renderer.text.centered(systemFontIdForPointSize(12), renderer.getScreenHeight() / 2, bookTitle.c_str(), true,
                          EpdFontFamily::BOLD);
   renderer.displayBuffer();
 }
@@ -3015,13 +3015,13 @@ void EpubActivity::renderReaderSuggestion() {
   const int width = renderer.getScreenWidth();
   const int height = renderer.getScreenHeight();
   if (!readerSuggestionGroup_.empty()) {
-    renderer.text.centered(MONTSERRAT_10_FONT_ID, height - Button::height - 58,
+    renderer.text.centered(systemFontIdForPointSize(10), height - Button::height - 58,
                            readerSuggestionGroup_.c_str(), true);
   }
   const int buttonWidth = Button::width(renderer, readerSuggestionLabel_.c_str(), font);
   const ButtonBounds button{(width - buttonWidth) / 2, height - Button::height - 20, buttonWidth, Button::height};
   Button::render(renderer, button, readerSuggestionLabel_.c_str(), true, font);
-  renderer.text.centered(MONTSERRAT_8_FONT_ID, height - 8, readerSuggestionTitle_.c_str(), true);
+  renderer.text.centered(systemFontIdForPointSize(8), height - 8, readerSuggestionTitle_.c_str(), true);
   renderer.displayBuffer(HalDisplay::FAST_REFRESH);
 }
 

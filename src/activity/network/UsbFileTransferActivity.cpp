@@ -231,7 +231,7 @@ void UsbFileTransferActivity::render() const {
 #else
   renderer.text.centered(systemFontId(), centerY - 24, message, true);
   if (detail[0] != '\0') renderer.text.centered(systemFontId(), centerY + 10, detail, true);
-  renderer.text.centered(MONTSERRAT_8_FONT_ID, screenHeight - 30,
+  renderer.text.centered(systemFontIdForPointSize(8), screenHeight - 30,
                          state == State::Connected || state == State::Accessed
                              ? "Eject the drive before unplugging"
                              : "Swipe up or press Back to cancel",

@@ -663,7 +663,7 @@ void WifiSelectionActivity::renderScanning(const int screenWidth, const int scre
   const int dividerY = SubPage::header(renderer, "WiFi Networks");
 
   const int centerY = dividerY + (screenHeight - dividerY - 80) / 2;
-  renderer.text.centered(MONTSERRAT_10_FONT_ID, centerY, "Searching for connections...");
+  renderer.text.centered(systemFontIdForPointSize(10), centerY, "Searching for connections...");
 
   const auto labels = mappedInput.mapLabels("« Back", "", "", "");
 }
@@ -682,8 +682,8 @@ void WifiSelectionActivity::renderNetworkList(int screenWidth, int screenHeight,
 
   if (networks.empty()) {
     const int centerY = listStartY + (visibleAreaHeight / 2);
-    renderer.text.centered(MONTSERRAT_10_FONT_ID, centerY - 20, "No networks found");
-    renderer.text.centered(MONTSERRAT_10_FONT_ID, centerY + 10, "Press Connect to scan again");
+    renderer.text.centered(systemFontIdForPointSize(10), centerY - 20, "No networks found");
+    renderer.text.centered(systemFontIdForPointSize(10), centerY + 10, "Press Connect to scan again");
   } else {
     const int maxVisibleNetworks = visibleAreaHeight / LIST_ITEM_HEIGHT;
 
@@ -710,19 +710,19 @@ void WifiSelectionActivity::renderNetworkList(int screenWidth, int screenHeight,
       const int textX = 20;
       const int titleY = itemY + 20;
 
-      renderer.text.render(MONTSERRAT_10_FONT_ID, textX, titleY, displayName.c_str(), !isSelected);
+      renderer.text.render(systemFontIdForPointSize(10), textX, titleY, displayName.c_str(), !isSelected);
 
       if (network.isEncrypted) {
-        int lockTextX = textX + renderer.text.getWidth(MONTSERRAT_10_FONT_ID, displayName.c_str()) + 10;
+        int lockTextX = textX + renderer.text.getWidth(systemFontIdForPointSize(10), displayName.c_str()) + 10;
         if (lockTextX < screenWidth - 150) {
-          renderer.text.render(MONTSERRAT_8_FONT_ID, lockTextX, titleY + 2, "(Locked)", !isSelected);
+          renderer.text.render(systemFontIdForPointSize(8), lockTextX, titleY + 2, "(Locked)", !isSelected);
         }
       }
 
       drawWifiIcon(screenWidth - 60, itemY + 15, network.rssi, isSelected);
 
       if (network.hasSavedPassword) {
-        renderer.text.render(MONTSERRAT_10_FONT_ID, screenWidth - 80, itemY + 15, "+", !isSelected);
+        renderer.text.render(systemFontIdForPointSize(10), screenWidth - 80, itemY + 15, "+", !isSelected);
       }
 
       if (i < networks.size() - 1) {
@@ -732,17 +732,17 @@ void WifiSelectionActivity::renderNetworkList(int screenWidth, int screenHeight,
     }
 
     if (scrollOffset > 0) {
-      renderer.text.render(MONTSERRAT_8_FONT_ID, screenWidth - 15, listStartY, "^");
+      renderer.text.render(systemFontIdForPointSize(8), screenWidth - 15, listStartY, "^");
     }
     if (scrollOffset + maxVisibleNetworks < static_cast<int>(networks.size())) {
-      renderer.text.render(MONTSERRAT_8_FONT_ID, screenWidth - 15,
+      renderer.text.render(systemFontIdForPointSize(8), screenWidth - 15,
                            listStartY + maxVisibleNetworks * LIST_ITEM_HEIGHT, "v");
     }
 
     char countStr[32];
     snprintf(countStr, sizeof(countStr), LanguageManager::translateText("%zu networks found"), networks.size());
-    renderer.text.render(MONTSERRAT_8_FONT_ID, 20, screenHeight - 90, countStr);
-    renderer.text.render(MONTSERRAT_8_FONT_ID, 20, screenHeight - 105, cachedMacAddress.c_str());
+    renderer.text.render(systemFontIdForPointSize(8), 20, screenHeight - 90, countStr);
+    renderer.text.render(systemFontIdForPointSize(8), 20, screenHeight - 105, cachedMacAddress.c_str());
   }
 
   const auto labels = mappedInput.mapLabels("« Back", "Connect", "", "");
@@ -764,9 +764,9 @@ void WifiSelectionActivity::renderConnecting(const int screenWidth, const int sc
   if (ssidInfo.length() > 25) {
     ssidInfo.replace(22, ssidInfo.length() - 22, "...");
   }
-  renderer.text.centered(MONTSERRAT_12_FONT_ID, centerY - 50, connect.c_str());
-  renderer.text.centered(MONTSERRAT_12_FONT_ID, centerY - 20, ssidInfo.c_str());
-  renderer.text.centered(MONTSERRAT_12_FONT_ID, centerY + 20, "Please wait...");
+  renderer.text.centered(systemFontIdForPointSize(12), centerY - 50, connect.c_str());
+  renderer.text.centered(systemFontIdForPointSize(12), centerY - 20, ssidInfo.c_str());
+  renderer.text.centered(systemFontIdForPointSize(12), centerY + 20, "Please wait...");
 
   const auto labels = mappedInput.mapLabels("", "", "", "");
 }
@@ -782,13 +782,13 @@ void WifiSelectionActivity::renderConnectionFailed(const int screenWidth, const 
   const int dividerY = SubPage::header(renderer, "WiFi Networks");
 
   const int errorY = dividerY + 40;
-  renderer.text.centered(MONTSERRAT_10_FONT_ID, errorY - 20, connectionError.c_str());
+  renderer.text.centered(systemFontIdForPointSize(10), errorY - 20, connectionError.c_str());
 
   std::string ssidInfo = std::string(LanguageManager::translateText("Network:")) + " " + selectedSSID;
   if (ssidInfo.length() > 25) {
     ssidInfo.replace(22, ssidInfo.length() - 22, "...");
   }
-  renderer.text.centered(MONTSERRAT_10_FONT_ID, errorY + 10, ssidInfo.c_str());
+  renderer.text.centered(systemFontIdForPointSize(10), errorY + 10, ssidInfo.c_str());
 
   const auto labels = mappedInput.mapLabels("« Back", "Continue", "", "");
 }
@@ -803,7 +803,7 @@ void WifiSelectionActivity::renderForgetPrompt(const int screenWidth, const int 
   const int dividerY = SubPage::header(renderer, "WiFi Networks");
 
   const int promptY = dividerY + 30;
-  renderer.text.centered(MONTSERRAT_10_FONT_ID, promptY, "Forget network and remove saved password?");
+  renderer.text.centered(systemFontIdForPointSize(10), promptY, "Forget network and remove saved password?");
 
   const int buttonY = promptY + 50;
   constexpr int buttonWidth = 120;
@@ -812,16 +812,16 @@ void WifiSelectionActivity::renderForgetPrompt(const int screenWidth, const int 
   const int startX = (screenWidth - totalWidth) / 2;
 
   if (forgetPromptSelection == 0) {
-    renderer.text.render(MONTSERRAT_10_FONT_ID, startX, buttonY, "[Cancel]");
+    renderer.text.render(systemFontIdForPointSize(10), startX, buttonY, "[Cancel]");
   } else {
-    renderer.text.render(MONTSERRAT_10_FONT_ID, startX + 4, buttonY, "Cancel");
+    renderer.text.render(systemFontIdForPointSize(10), startX + 4, buttonY, "Cancel");
   }
 
   if (forgetPromptSelection == 1) {
-    renderer.text.render(MONTSERRAT_10_FONT_ID, startX + buttonWidth + buttonSpacing, buttonY,
+    renderer.text.render(systemFontIdForPointSize(10), startX + buttonWidth + buttonSpacing, buttonY,
                          "[Forget network]");
   } else {
-    renderer.text.render(MONTSERRAT_10_FONT_ID, startX + buttonWidth + buttonSpacing + 4, buttonY,
+    renderer.text.render(systemFontIdForPointSize(10), startX + buttonWidth + buttonSpacing + 4, buttonY,
                          "Forget network");
   }
 

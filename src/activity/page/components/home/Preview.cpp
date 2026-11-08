@@ -13,7 +13,7 @@
 namespace home {
 
 bool preview(GfxRenderer& renderer, const std::string& cachePath, const int spine, const int page) {
-  int font = MONTSERRAT_12_FONT_ID;
+  int font = systemFontIdForPointSize(12);
   Section section(cachePath, spine, renderer);
   if (!section.loadSectionFileForPreview(&font)) {
     return false;

@@ -139,7 +139,7 @@ std::string bookTitle(const RecentBook& book) {
 
 void renderProgress(GfxRenderer& renderer, const int x, const int y, const int width, const int percentage) {
   constexpr int barHeight = 5;
-  constexpr int percentageFont = MONTSERRAT_8_FONT_ID;
+  const int percentageFont = systemFontIdForPointSize(8);
   constexpr int gap = 8;
   const int barWidth = std::max(1, width / 2);
   const std::string percentageText = std::to_string(percentage) + "%";
@@ -264,9 +264,9 @@ void Description::render(const int recentIndex, const int x, const int y, const 
   constexpr int marginX = 20;
   constexpr int bottomPadding = 20;
   const int marginTop = compact ? 12 : 20;
-  const int titleFont = compact ? MONTSERRAT_14_FONT_ID : MONTSERRAT_16_FONT_ID;
-  const int authorFont = compact ? MONTSERRAT_10_FONT_ID : MONTSERRAT_12_FONT_ID;
-  const int descriptionFont = compact ? MONTSERRAT_10_FONT_ID : MONTSERRAT_12_FONT_ID;
+  const int titleFont = compact ? systemFontIdForPointSize(14) : systemFontIdForPointSize(16);
+  const int authorFont = compact ? systemFontIdForPointSize(10) : systemFontIdForPointSize(12);
+  const int descriptionFont = compact ? systemFontIdForPointSize(10) : systemFontIdForPointSize(12);
   const int textWidth = std::max(1, width - marginX * 2);
   ensureLines(recentIndex, textWidth, descriptionFont, preview);
   int textBottom = content.y + marginTop;

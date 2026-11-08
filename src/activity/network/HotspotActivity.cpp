@@ -330,20 +330,20 @@ void HotspotActivity::renderServerRunning() const {
   const int bodyTop = contentStart + verticalOffset;
   const int wifiY = bodyTop + 8;
   const int webY = wifiY + stepStride;
-  const int labelFont = MONTSERRAT_8_FONT_ID;
-  const int titleFont = MONTSERRAT_14_FONT_ID;
+  const int labelFont = systemFontIdForPointSize(8);
+  const int titleFont = systemFontIdForPointSize(14);
   const int bodyFont = systemFontId();
 
   renderer.text.render(labelFont, textX, wifiY, "STEP 1", true, EpdFontFamily::BOLD);
   renderer.text.render(titleFont, textX, wifiY + 24, "Join WiFi", true, EpdFontFamily::BOLD);
   renderer.text.render(bodyFont, textX, wifiY + 61, truncateString(connectedSSID, 20).c_str(), true);
-  renderer.text.render(MONTSERRAT_8_FONT_ID, textX, wifiY + 86, connectedIP.c_str());
+  renderer.text.render(systemFontIdForPointSize(8), textX, wifiY + 86, connectedIP.c_str());
   drawQRCode(qrX, wifiY, "WIFI:S:" + connectedSSID + ";;");
 
   renderer.text.render(labelFont, textX, webY, "STEP 2", true, EpdFontFamily::BOLD);
   renderer.text.render(titleFont, textX, webY + 24, "Open Transfer", true, EpdFontFamily::BOLD);
   renderer.text.render(bodyFont, textX, webY + 61, hostnameUrl.c_str(), true);
-  renderer.text.render(MONTSERRAT_8_FONT_ID, textX, webY + 86, ipUrl.c_str());
+  renderer.text.render(systemFontIdForPointSize(8), textX, webY + 86, ipUrl.c_str());
   drawQRCode(qrX, webY, hostnameUrl);
 
   auto labels = mappedInput.mapLabels("« Back", "", "", "");

@@ -71,8 +71,8 @@ void Calendar::render(const int x, const int y, const int width, const int heigh
   }
 
   renderedDateKey_ = year * 10000 + month * 100 + day;
-  const int font = MONTSERRAT_10_FONT_ID;
-  const int headerFont = MONTSERRAT_14_FONT_ID;
+  const int font = systemFontIdForPointSize(10);
+  const int headerFont = systemFontIdForPointSize(14);
   renderer_.rectangle.fill(x, y, width, height, false);
 
   const int paddingX = compact ? 20 : 0;
@@ -87,8 +87,8 @@ void Calendar::render(const int x, const int y, const int width, const int heigh
   int gridY = 0;
   int lineHeight = renderer_.text.getLineHeight(font) + 3;
   if (compact) {
-    const int yearFont = MONTSERRAT_16_FONT_ID;
-    const int monthFont = MONTSERRAT_16_FONT_ID;
+    const int yearFont = systemFontIdForPointSize(16);
+    const int monthFont = systemFontIdForPointSize(16);
     const int yearLineHeight = renderer_.text.getLineHeight(yearFont);
     const int monthLineHeight = renderer_.text.getLineHeight(monthFont);
     const int columnSpacing = std::min(16, std::max(8, width / 24));

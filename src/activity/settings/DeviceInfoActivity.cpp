@@ -124,7 +124,7 @@ void DeviceInfoActivity::render() {
                             ? std::max(60, (renderer.getScreenHeight() - startY - 10) / static_cast<int>(rows.size()))
                             : 80;
 
-  constexpr int labelFont = MONTSERRAT_8_FONT_ID;
+  const int labelFont = systemFontIdForPointSize(8);
   const int valueFont = systemFontId();
 
   for (size_t i = 0; i < rows.size(); ++i) {

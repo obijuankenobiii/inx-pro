@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 
 #include "system/TouchHitTest.h"
 #include <iterator>
@@ -39,6 +40,7 @@
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
 #include "util/StringUtils.h"
+#include <Utf8.h>
 
 namespace {
 constexpr const char* kSleepImageIndexPath = "/.system/sleep_images.idx";
@@ -68,6 +70,27 @@ void drawValueStepper(GfxRenderer& renderer, const char* value, int left, int ri
   renderer.bitmap.icon(LibraryFilterLeft, x, iconY, iconSize, iconSize);
   renderer.text.render(font, x + iconSize + gap, textY, value, true, EpdFontFamily::REGULAR);
   renderer.bitmap.icon(LibraryFilterRight, x + iconSize + gap + valueWidth + gap, iconY, iconSize, iconSize);
+}
+
+int centeredHeadingY(const GfxRenderer& renderer, const int font, const int itemY, const int itemHeight,
+                     const char* text) {
+  const int lineHeight = renderer.text.getLineHeight(font);
+  int topInset = std::numeric_limits<int>::max();
+  int bottomInset = std::numeric_limits<int>::max();
+  const unsigned char* cursor = reinterpret_cast<const unsigned char*>(text ? text : "");
+  while (const uint32_t codepoint = utf8NextCodepoint(&cursor)) {
+    const int glyphTop = renderer.text.getGlyphTopInset(font, codepoint, EpdFontFamily::REGULAR);
+    if (glyphTop <= 0) continue;
+    topInset = std::min(topInset, glyphTop);
+    bottomInset = std::min(bottomInset,
+                           renderer.text.getGlyphBottomInset(font, codepoint, EpdFontFamily::REGULAR));
+  }
+  if (topInset == std::numeric_limits<int>::max()) {
+    topInset = renderer.text.getFontTopInset(font, EpdFontFamily::REGULAR);
+    bottomInset = renderer.text.getGlyphBottomInset(font, 'H', EpdFontFamily::REGULAR);
+  }
+  const int visibleHeight = std::max(1, lineHeight - topInset - bottomInset);
+  return itemY + (itemHeight - visibleHeight) / 2 - topInset;
 }
 
 void markManualTimezoneSelection(uint8_t SystemSetting::* valuePtr) {
@@ -261,7 +284,7 @@ bool CategorySettingsActivity::groupInput() {
 void CategorySettingsActivity::renderGroupPage() {
   const int pageWidth = renderer.getScreenWidth();
   const int pageHeight = renderer.getScreenHeight();
-  constexpr int titleFont = MONTSERRAT_16_FONT_ID;
+  const int titleFont = systemFontIdForPointSize(16);
   const int itemFont = systemFontId();
   constexpr int rowHeight = UiPage::LIST_ITEM_HEIGHT;
   const int listTop = navigation::Menu::height + 20;
@@ -352,7 +375,8 @@ void CategorySettingsActivity::setupMenu() {
           };
         }
         if (setting.type == SettingType::ENUM) {
-          if (setting.name != nullptr && strcmp(setting.name, "Font Family") == 0) {
+          if (setting.name != nullptr &&
+              (strcmp(setting.name, "Font Family") == 0 || strcmp(setting.name, "System font") == 0)) {
             entry.getValueText = [settingPtr]() -> const char* {
               thread_local std::string tls;
               tls = FontManager::readerFontFamilyLabel(SETTINGS.*(settingPtr->valuePtr));
@@ -1166,14 +1190,15 @@ void CategorySettingsActivity::render() {
 
     if (entry.type == SettingType::SEPARATOR) {
       int textX = 20;
-      int textY = itemY + (itemHeight - renderer.text.getLineHeight(systemFontId())) / 2;
-      renderer.text.render(systemFontId(), textX, textY, entry.name, true);
+      const int headingFont = systemFontId();
+      const int textY = centeredHeadingY(renderer, headingFont, itemY, itemHeight, entry.name);
+      renderer.text.render(headingFont, textX, textY, entry.name, true);
 
       const char* indicator = entry.getValueText();
       if (indicator && indicator[0] != '\0') {
-        int indicatorW = renderer.text.getWidth(systemFontId(), indicator);
-        const int indicatorY = itemY + (itemHeight - renderer.text.getLineHeight(systemFontId())) / 2;
-        renderer.text.render(systemFontId(), pageWidth - indicatorW - 30, indicatorY, indicator, true);
+        const int indicatorW = renderer.text.getWidth(headingFont, indicator);
+        const int indicatorY = centeredHeadingY(renderer, headingFont, itemY, itemHeight, indicator);
+        renderer.text.render(headingFont, pageWidth - indicatorW - 30, indicatorY, indicator, true);
       }
 
       if (hasNextItem) {

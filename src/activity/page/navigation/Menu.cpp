@@ -15,6 +15,7 @@
 #include <cstring>
 
 #include "images/Library.h"
+#include "images/Apps.h"
 #include "images/Recent.h"
 #include "images/Search.h"
 #include "images/Setting.h"
@@ -24,8 +25,8 @@
 #include "system/ScreenComponents.h"
 
 namespace {
-constexpr int regularItemCount = 5;
-constexpr int hiddenItemCount = 4;
+constexpr int regularItemCount = 6;
+constexpr int hiddenItemCount = 5;
 constexpr int itemSize = 40;
 constexpr int gridColumns = 3;
 constexpr int cellSize = 80;
@@ -68,15 +69,18 @@ const Item items[regularItemCount] = {
     {Setting, navigation::Menu::Action::Settings, "Settings"},
     {Sync, navigation::Menu::Action::Sync, "Manage"},
     {Search, navigation::Menu::Action::Search, "Search"},
+    {Apps, navigation::Menu::Action::Apps, "Apps"},
 };
 
 bool current(const navigation::Menu& menu, navigation::Menu::Action action);
 
 bool excludedFromHiddenDrawer(const navigation::Menu& menu, const int index) {
   if (current(menu, items[index].action)) return true;
-  // Keep the drawer at four entries even on pages without a matching main-page action.
-  if (index == regularItemCount - 1) {
-    for (int candidate = 0; candidate < regularItemCount - 1; ++candidate) {
+  // Keep the drawer at five entries even on pages without a matching main-page action.
+  // Search is already available as the center action in the regular navigation bar;
+  // keep Apps visible so it remains reachable from every page.
+  if (index == 5) {
+    for (int candidate = 0; candidate < regularItemCount; ++candidate) {
       if (current(menu, items[candidate].action)) return false;
     }
     return true;
@@ -94,7 +98,7 @@ int visibleCount(const navigation::Menu& menu) {
 }
 
 int hiddenDrawerGroupWidth(const GfxRenderer& renderer) {
-  const int labelFont = MONTSERRAT_10_FONT_ID;
+  const int labelFont = systemFontIdForPointSize(10);
   int widestLabel = 0;
   for (int index = 0; index < regularItemCount; ++index) {
     widestLabel = std::max(widestLabel, renderer.text.getWidth(labelFont, items[index].label));
@@ -180,7 +184,9 @@ int itemAt(const navigation::Menu& menu, const GfxRenderer& renderer, const int 
     const int columnBoundary = slotWidth + hiddenDrawerColumnGap / 2;
     const int rowBoundary = hiddenDrawerRowHeight + hiddenDrawerRowGap / 2;
     const int column = relativeX < columnBoundary ? 0 : 1;
-    const int row = relativeY < rowBoundary ? 0 : 1;
+    const int row = std::min(hiddenDrawerGridRows - 1,
+                             std::max(0, (relativeY + hiddenDrawerRowGap / 2) /
+                                               (hiddenDrawerRowHeight + hiddenDrawerRowGap)));
     const int shown = row * hiddenDrawerGridColumns + column;
     return shown >= 0 && shown < visibleCount(menu) ? shown : -1;
   }
@@ -215,6 +221,8 @@ bool current(const navigation::Menu& menu, const navigation::Menu::Action action
              std::strcmp(page, "Network Settings") == 0;
     case navigation::Menu::Action::Search:
       return std::strcmp(page, "Search") == 0;
+    case navigation::Menu::Action::Apps:
+      return std::strcmp(page, "Apps") == 0;
     default:
       return false;
   }
@@ -237,7 +245,7 @@ MappedInputManager::Button Menu::itemNextButton() const { return MappedInputMana
 void Menu::drawBattery(const GfxRenderer& renderer) const {
   constexpr int batteryRightMargin = 10;
   const bool showPercentage = SETTINGS.hideBatteryPercentage != SystemSetting::HIDE_BATTERY_PERCENTAGE::HIDE_ALWAYS;
-  const int textWidth = showPercentage ? renderer.text.getWidth(MONTSERRAT_8_FONT_ID, "100%") : 0;
+  const int textWidth = showPercentage ? renderer.text.getWidth(systemFontIdForPointSize(8), "100%") : 0;
   const int width = showPercentage ? ScreenComponents::BATTERY_ICON_WIDTH + ScreenComponents::BATTERY_TEXT_GAP + textWidth
                                    : ScreenComponents::BATTERY_ICON_WIDTH;
   const int x = renderer.getScreenWidth() - batteryRightMargin - width;
@@ -298,7 +306,7 @@ void Menu::render() const {
 }
 
 void Menu::title() const {
-  const int font = MONTSERRAT_16_FONT_ID;
+  const int font = systemFontIdForPointSize(16);
   const int textY = topPadding + (iconSize - menuRenderer.text.getLineHeight(font)) / 2;
   const char* title = name();
   if (title && title[0] != '\0') {
@@ -308,7 +316,7 @@ void Menu::title() const {
 
 void Menu::navigation() const {
   if (SETTINGS.hiddenMenu != 0) return;
-  constexpr int count = 5;
+  constexpr int count = 6;
   const int left = leftMargin + iconSize / 2;
   const int right = menuRenderer.getScreenWidth() - leftMargin - iconSize / 2;
   const int step = count > 1 ? (right - left) / (count - 1) : 0;
@@ -329,9 +337,16 @@ void Menu::navigation() const {
   icon(Setting, Action::Settings);
   icon(Sync, Action::Sync);
 
-  const int centerX = left + slot++ * step;
-  menuRenderer.circle.render(centerX, centerY + 5, bottomSize / 2, true);
-  menuRenderer.bitmap.icon(Search, centerX - iconSize / 2, iconY + 5, iconSize, iconSize,
+  const int appsCenterX = left + slot++ * step;
+  const bool appsActive = current(*this, Action::Apps);
+  menuRenderer.bitmap.icon(Apps, appsCenterX - iconSize / 2, iconY, iconSize, iconSize);
+  if (appsActive) {
+    constexpr int underline = 36;
+    menuRenderer.rectangle.fill(appsCenterX - underline / 2, iconY + iconSize + 5, underline, 4, true);
+  }
+  const int searchCenterX = left + slot++ * step;
+  menuRenderer.circle.render(searchCenterX, centerY + 5, bottomSize / 2, true);
+  menuRenderer.bitmap.icon(Search, searchCenterX - iconSize / 2, iconY + 5, iconSize, iconSize,
                            BitmapRender::Orientation::None, true);
 }
 
@@ -376,7 +391,7 @@ void Menu::popup() const {
 
     if (SETTINGS.hiddenMenu != 0) {
       const int itemCellWidth = hiddenCellWidth(menuRenderer);
-      const int labelFont = MONTSERRAT_10_FONT_ID;
+      const int labelFont = systemFontIdForPointSize(10);
       const int labelLineHeight = menuRenderer.text.getLineHeight(labelFont);
       const int groupWidth = hiddenDrawerGroupWidth(menuRenderer);
       const int groupX = itemX + (itemCellWidth - groupWidth) / 2;
@@ -497,7 +512,7 @@ Menu::Action Menu::handleTap(const int tapX, const int tapY) const {
 
   if (SETTINGS.hiddenMenu != 0) return Action::None;
 
-  constexpr int count = 5;
+  constexpr int count = 6;
   const int left = leftMargin + iconSize / 2;
   const int right = menuRenderer.getScreenWidth() - leftMargin - iconSize / 2;
   const int step = count > 1 ? (right - left) / (count - 1) : 0;
@@ -517,6 +532,8 @@ Menu::Action Menu::handleTap(const int tapX, const int tapY) const {
     case 3:
       return Action::Sync;
     case 4:
+      return Action::Apps;
+    case 5:
       return Action::Search;
     default:
       break;

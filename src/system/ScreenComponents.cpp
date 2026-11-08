@@ -65,9 +65,14 @@ void ScreenComponents::drawBattery(const GfxRenderer& renderer, const int left, 
   const uint16_t percentage = gpio.getBatteryPercentage();
   const bool charging = gpio.isCharging();
 #endif
+  const int font = systemFontIdForPointSize(8);
   const auto percentageText = showPercentage ? std::to_string(percentage) + "%" : "";
-  renderer.text.render(MONTSERRAT_8_FONT_ID, left + BATTERY_ICON_WIDTH + BATTERY_TEXT_GAP, top,
-                       percentageText.c_str());
+  // Align the font's line box to the battery artwork. External TTFs often have
+  // a taller ascender/line height than the built-in bitmap font, so using the
+  // header's raw top coordinate leaves the percentage visibly off-center.
+  const int textY = top + BATTERY_ICON_TOP_OFFSET +
+                    (BATTERY_ICON_HEIGHT - renderer.text.getLineHeight(font)) / 2;
+  renderer.text.render(font, left + BATTERY_ICON_WIDTH + BATTERY_TEXT_GAP, textY, percentageText.c_str());
 
   renderer.bitmap.icon(BatteryIcon, left, top + BATTERY_ICON_TOP_OFFSET, BATTERY_ICON_WIDTH, BATTERY_ICON_HEIGHT);
 
@@ -95,7 +100,7 @@ bool ScreenComponents::drawMenuClock(const GfxRenderer& renderer, const int left
     return false;
   }
 
-  renderer.text.render(MONTSERRAT_8_FONT_ID, left, top, clockText, true);
+  renderer.text.render(systemFontIdForPointSize(8), left, top, clockText, true);
   return true;
 }
 
@@ -106,9 +111,9 @@ bool ScreenComponents::drawMenuClockRightAligned(const GfxRenderer& renderer, co
     return false;
   }
 
-  const int width = renderer.text.getWidth(MONTSERRAT_8_FONT_ID, clockText);
+  const int width = renderer.text.getWidth(systemFontIdForPointSize(8), clockText);
   const int left = right - width;
-  renderer.text.render(MONTSERRAT_8_FONT_ID, left, top, clockText, true);
+  renderer.text.render(systemFontIdForPointSize(8), left, top, clockText, true);
   if (outLeft) *outLeft = left;
   return true;
 }
@@ -119,7 +124,7 @@ void ScreenComponents::drawMenuClockAndBattery(const GfxRenderer& renderer, cons
 
   char clockText[10] = {};
   if (formatMenuClock(clockText, sizeof(clockText))) {
-    const int clockFont = MONTSERRAT_8_FONT_ID;
+    const int clockFont = systemFontIdForPointSize(8);
     const int clockW = renderer.text.getWidth(clockFont, clockText);
     renderer.text.render(clockFont, batteryLeft - kClockBatteryGap - clockW, top, clockText, true);
   }
@@ -329,12 +334,12 @@ void ScreenComponents::drawScrollIndicator(const GfxRenderer& renderer, const in
   }
 
   const std::string pageText = std::to_string(currentPage) + "/" + std::to_string(totalPages);
-  const int textWidth = renderer.text.getWidth(MONTSERRAT_8_FONT_ID, pageText.c_str());
+  const int textWidth = renderer.text.getWidth(systemFontIdForPointSize(8), pageText.c_str());
   const int textX = centerX - textWidth / 2;
   const int textY =
-      (indicatorTop + indicatorBottom) / 2 - renderer.text.getLineHeight(MONTSERRAT_8_FONT_ID) / 2;
+      (indicatorTop + indicatorBottom) / 2 - renderer.text.getLineHeight(systemFontIdForPointSize(8)) / 2;
 
-  renderer.text.render(MONTSERRAT_8_FONT_ID, textX, textY, pageText.c_str());
+  renderer.text.render(systemFontIdForPointSize(8), textX, textY, pageText.c_str());
 }
 
 void ScreenComponents::drawProgressBar(const GfxRenderer& renderer, const int x, const int y, const int width,

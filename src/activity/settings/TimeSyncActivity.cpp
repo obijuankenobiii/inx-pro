@@ -392,7 +392,7 @@ void TimeSyncActivity::render() {
 
   char tz[16];
   SETTINGS.formatTimeZone(tz, sizeof(tz));
-  renderer.text.centered(MONTSERRAT_8_FONT_ID, bodyY + 32, tz, true);
+  renderer.text.centered(systemFontIdForPointSize(8), bodyY + 32, tz, true);
 
   if (state == State::DONE || state == State::FAILED) {
     const auto labels = mappedInput.mapLabels("\xC2\xAB Back", "Done", "", "");

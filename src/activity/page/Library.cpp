@@ -1000,7 +1000,7 @@ void Library::title() const {
       break;
   }
 
-  const int font = MONTSERRAT_16_FONT_ID;
+  const int font = systemFontIdForPointSize(16);
   const int textY = navigation::Menu::topPadding +
                     (navigation::Menu::iconSize - renderer.text.getLineHeight(font)) / 2;
   const int textX = navigation::Menu::leftMargin + navigation::Menu::iconSize + 12;
@@ -1604,7 +1604,7 @@ void Library::sortDropdown() const {
     }
     const int textY = rowY + (rowHeight - renderer.text.getLineHeight(font)) / 2;
     renderer.text.render(font, x + leftPadding, textY, names[index], !selected, EpdFontFamily::REGULAR);
-    const int directionFont = MONTSERRAT_8_FONT_ID;
+    const int directionFont = systemFontIdForPointSize(8);
     const int directionWidth = renderer.text.getWidth(directionFont, directions[index]);
     const int directionY = rowY + (rowHeight - renderer.text.getLineHeight(directionFont)) / 2;
     renderer.text.render(directionFont, x + width - rightPadding - directionWidth, directionY, directions[index],

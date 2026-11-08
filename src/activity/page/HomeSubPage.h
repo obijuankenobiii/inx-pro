@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -19,6 +20,7 @@ class HomeSubPage final : public SubPage {
 
   const char* name() const override;
   void onEnter() override;
+  void onExit() override;
   void loop() override;
 
  protected:
@@ -61,6 +63,7 @@ class HomeSubPage final : public SubPage {
   void lookupContent();
   bool dictionaryLookupInput();
   void performDictionaryLookup();
+  void openDictionaryPicker();
   void closeDictionaryLookup();
   void saveDictionaryLookup();
   void startNoteTranscription();
@@ -103,4 +106,6 @@ class HomeSubPage final : public SubPage {
   int descriptionPage_ = 0;
   int descriptionBodyTop_ = 80;
   int descriptionBottom_ = 0;
+  std::unique_ptr<Activity> dictionaryPicker_;
+  bool dictionaryPickerFinished_ = false;
 };

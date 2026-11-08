@@ -290,7 +290,7 @@ void CalibreConnectActivity::renderServerRunning(int screenWidth, int screenHeig
   constexpr int rowHeight = UiLayout::LIST_ITEM_HEIGHT;
   constexpr int sideMargin = 20;
   constexpr int actionIconSize = 40;
-  const int labelFont = MONTSERRAT_8_FONT_ID;
+  const int labelFont = systemFontIdForPointSize(8);
   const int bodyFont = systemFontId();
 
   const int iconGroupWidth = iconSize * 3 + iconGap * 2;
@@ -352,7 +352,7 @@ void CalibreConnectActivity::renderServerRunning(int screenWidth, int screenHeig
     renderer.text.centered(bodyFont, instructionCenterY + 24, "plugin");
   }
 
-  renderer.text.centered(MONTSERRAT_8_FONT_ID, screenHeight - 30, "Choose Send to device in Calibre");
+  renderer.text.centered(systemFontIdForPointSize(8), screenHeight - 30, "Choose Send to device in Calibre");
 
   auto labels = mappedInput.mapLabels("« Back", "", "", "");
 }

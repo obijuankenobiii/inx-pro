@@ -108,7 +108,7 @@ void renderProgressTag(GfxRenderer& renderer, const RecentBook& book, const int 
   constexpr int paddingX = 6;
   constexpr int paddingY = 4;
   constexpr int margin = 5;
-  constexpr int font = MONTSERRAT_8_FONT_ID;
+  const int font = systemFontIdForPointSize(8);
   const int percentage =
       book.progress < 0.0f ? 0 : std::max(0, std::min(100, static_cast<int>(book.progress * 100.0f + 0.5f)));
   const std::string label = std::to_string(percentage) + "%";
@@ -281,7 +281,7 @@ void Carousel::render(const int index, const int x, const int y, const int width
   const auto& books = RECENT_BOOKS.getBooks();
   const size_t count = visibleBookCount(books, hideFirst);
   if (count == 0) {
-    renderer_.text.centered(MONTSERRAT_12_FONT_ID, content.y + content.height / 2, "No recent");
+    renderer_.text.centered(systemFontIdForPointSize(12), content.y + content.height / 2, "No recent");
     return;
   }
 
@@ -293,12 +293,12 @@ void Carousel::render(const int index, const int x, const int y, const int width
   if (count == 2) {
     const bool even = evenThumbnails();
     renderCover(renderer_, books[visibleBookIndex(books, 0, hideFirst)], layout.centerX, layout.centerY,
-                layout.centerWidth, layout.centerHeight, MONTSERRAT_14_FONT_ID, 0.5f, even, shadowStyle);
+                layout.centerWidth, layout.centerHeight, systemFontIdForPointSize(14), 0.5f, even, shadowStyle);
     if (showProgress)
       renderProgressTag(renderer_, books[visibleBookIndex(books, 0, hideFirst)], layout.centerX, layout.centerY,
                         layout.centerWidth, layout.centerHeight);
     renderCover(renderer_, books[visibleBookIndex(books, 1, hideFirst)], layout.sideX, layout.sideY, layout.sideWidth,
-                layout.sideHeight, MONTSERRAT_10_FONT_ID, 0.0f, true, shadowStyle);
+                layout.sideHeight, systemFontIdForPointSize(10), 0.0f, true, shadowStyle);
     if (showProgress)
       renderProgressTag(renderer_, books[visibleBookIndex(books, 1, hideFirst)], layout.sideX, layout.sideY,
                         layout.sideWidth, layout.sideHeight);
@@ -307,7 +307,7 @@ void Carousel::render(const int index, const int x, const int y, const int width
   const bool even = evenThumbnails();
   if (count > 1) {
     renderCover(renderer_, books[visibleBookIndex(books, current - 1, hideFirst)], layout.sideX, layout.sideY,
-                layout.sideWidth, layout.sideHeight, MONTSERRAT_10_FONT_ID, 1.0f, true, shadowStyle);
+                layout.sideWidth, layout.sideHeight, systemFontIdForPointSize(10), 1.0f, true, shadowStyle);
     if (showProgress) {
       const RecentBook& book = books[visibleBookIndex(books, current - 1, hideFirst)];
       renderProgressTag(renderer_, book, layout.sideX, layout.sideY, layout.sideWidth, layout.sideHeight);
@@ -316,7 +316,7 @@ void Carousel::render(const int index, const int x, const int y, const int width
   if (count > 1) {
     renderCover(renderer_, books[visibleBookIndex(books, current + 1, hideFirst)],
                 layout.centerX + layout.centerWidth + layout.gap, layout.sideY, layout.sideWidth, layout.sideHeight,
-                MONTSERRAT_10_FONT_ID, 0.0f, true, shadowStyle);
+                systemFontIdForPointSize(10), 0.0f, true, shadowStyle);
     if (showProgress) {
       const RecentBook& book = books[visibleBookIndex(books, current + 1, hideFirst)];
       renderProgressTag(renderer_, book, layout.centerX + layout.centerWidth + layout.gap, layout.sideY,
@@ -324,7 +324,7 @@ void Carousel::render(const int index, const int x, const int y, const int width
     }
   }
   renderCover(renderer_, books[visibleBookIndex(books, current, hideFirst)], layout.centerX, layout.centerY,
-              layout.centerWidth, layout.centerHeight, MONTSERRAT_14_FONT_ID, 0.5f, even, shadowStyle);
+              layout.centerWidth, layout.centerHeight, systemFontIdForPointSize(14), 0.5f, even, shadowStyle);
   if (showProgress) {
     renderProgressTag(renderer_, books[visibleBookIndex(books, current, hideFirst)], layout.centerX, layout.centerY,
                       layout.centerWidth, layout.centerHeight);
@@ -352,7 +352,7 @@ void Carousel::renderLeft(const int index, const int x, const int y, const int w
     const int visibleWidth = std::min(card.width, x + width - card.x);
     if (visibleWidth <= 0) break;
     const bool clipped = visibleWidth < card.width;
-    renderCover(renderer_, books[bookIndex], card.x, card.y, visibleWidth, card.height, MONTSERRAT_10_FONT_ID,
+    renderCover(renderer_, books[bookIndex], card.x, card.y, visibleWidth, card.height, systemFontIdForPointSize(10),
                 clipped ? 0.0f : 0.5f, even || clipped, shadowStyle);
     if (showProgress && !clipped) {
       renderProgressTag(renderer_, books[static_cast<size_t>(bookIndex)], card.x, card.y, visibleWidth, card.height);
@@ -418,7 +418,7 @@ void Carousel::preview(const int x, const int y, const int width, const int heig
   const ContentArea content = contentArea(y, height, showLabel);
   if (showLabel) renderLabel(x, y, "Continue Reading", labelColor);
   if (RECENT_BOOKS.getBooks().empty()) {
-    renderer_.text.centered(MONTSERRAT_12_FONT_ID, content.y + content.height / 2, "No recent");
+    renderer_.text.centered(systemFontIdForPointSize(12), content.y + content.height / 2, "No recent");
     return;
   }
   if (style == HomeTheme::CarouselStyle::Left) {

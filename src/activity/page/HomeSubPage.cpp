@@ -25,6 +25,7 @@
 #include "images/LibraryFilterRight.h"
 #include "images/Trash.h"
 #include "activity/util/KeyboardEntryActivity.h"
+#include "activity/settings/DictionaryPickerActivity.h"
 #include "dictionary/StarDictLookup.h"
 #include "state/BookState.h"
 #include "state/RecentBooks.h"
@@ -94,6 +95,15 @@ ButtonBounds dictionaryLookupButtonBounds(const GfxRenderer& renderer) {
   const int width = Button::width(renderer, "Look up", font);
   const int y = renderer.getScreenHeight() - contentBottom - Button::height;
   return {renderer.getScreenWidth() - 20 - width, y, width, Button::height};
+}
+
+ButtonBounds dictionaryChooseButtonBounds(const GfxRenderer& renderer) {
+  const int font = systemFontId();
+  const int lookupWidth = Button::width(renderer, "Look up", font);
+  const int chooseWidth = Button::width(renderer, "Choose", font);
+  const int y = renderer.getScreenHeight() - contentBottom - Button::height;
+  const int lookupX = renderer.getScreenWidth() - 20 - lookupWidth;
+  return {lookupX - dictionaryLookupButtonGap - chooseWidth, y, chooseWidth, Button::height};
 }
 
 std::string cachedTitle(const std::string& cachePath) {
@@ -200,7 +210,7 @@ void HomeSubPage::onEnter() {
   load();
   if (section == Section::Dictionary && !lookupWord_.empty()) {
     lookupWord_ = trimText(lookupWord_);
-    headerName_ = renderer.text.truncate(MONTSERRAT_16_FONT_ID, lookupWord_.c_str(),
+    headerName_ = renderer.text.truncate(systemFontIdForPointSize(16), lookupWord_.c_str(),
                                          renderer.getScreenWidth() - 100, EpdFontFamily::BOLD);
     lookupShowing_ = true;
     lookupLoading_ = true;
@@ -208,7 +218,27 @@ void HomeSubPage::onEnter() {
   }
 }
 
+void HomeSubPage::onExit() {
+  if (dictionaryPicker_) {
+    dictionaryPicker_->onExit();
+    dictionaryPicker_.reset();
+  }
+  SubPage::onExit();
+}
+
 void HomeSubPage::loop() {
+  if (dictionaryPicker_) {
+    dictionaryPicker_->loop();
+    if (dictionaryPickerFinished_) {
+      dictionaryPicker_->onExit();
+      dictionaryPicker_.reset();
+      dictionaryPickerFinished_ = false;
+      updateRequired = true;
+      renderPage();
+    }
+    return;
+  }
+
   // Home widget subpages have nested list/detail/lookup states, so handle the
   // activity-level swipe before dispatching to one of those states.
   if (mappedInput.hasTouch() && mappedInput.wasTouchSwipeUp()) {
@@ -264,6 +294,11 @@ void HomeSubPage::loop() {
       const int x = static_cast<int>(tapNx * renderer.getScreenWidth());
       const int y = static_cast<int>(tapNy * renderer.getScreenHeight());
       const ButtonBounds lookup = dictionaryLookupButtonBounds(renderer);
+      const ButtonBounds choose = dictionaryChooseButtonBounds(renderer);
+      if (x >= choose.x && x < choose.x + choose.width && y >= choose.y && y < choose.y + choose.height) {
+        openDictionaryPicker();
+        return;
+      }
       if (x >= lookup.x && x < lookup.x + lookup.width && y >= lookup.y && y < lookup.y + lookup.height) {
         openDictionaryLookupKeyboard();
         return;
@@ -323,7 +358,7 @@ void HomeSubPage::loop() {
         } else {
           selected = index;
           if (section == Section::Dictionary) {
-            headerName_ = renderer.text.truncate(MONTSERRAT_16_FONT_ID, row.label.c_str(),
+            headerName_ = renderer.text.truncate(systemFontIdForPointSize(16), row.label.c_str(),
                                                  renderer.getScreenWidth() - 100, EpdFontFamily::BOLD);
           }
           updateRequired = true;
@@ -434,14 +469,14 @@ void HomeSubPage::loadDescription() {
     raw = metadata.coreMetadata.description;
   }
 
-  headerName_ = renderer.text.truncate(MONTSERRAT_16_FONT_ID, title.c_str(), renderer.getScreenWidth() - 100,
+  headerName_ = renderer.text.truncate(systemFontIdForPointSize(16), title.c_str(), renderer.getScreenWidth() - 100,
                                        EpdFontFamily::BOLD);
   descriptionLines_ = layoutDefinitionBlocks(renderer, parseHtmlToBlocks(raw), renderer.getScreenWidth() - 40);
   descriptionBodyTop_ = contentTop;
   if (!descriptionAuthor_.empty()) {
-    descriptionBodyTop_ += renderer.text.getLineHeight(MONTSERRAT_12_FONT_ID) + 14;
+    descriptionBodyTop_ += renderer.text.getLineHeight(systemFontIdForPointSize(12)) + 14;
   }
-  descriptionBottom_ = renderer.getScreenHeight() - contentBottom - renderer.text.getLineHeight(MONTSERRAT_10_FONT_ID) - 12;
+  descriptionBottom_ = renderer.getScreenHeight() - contentBottom - renderer.text.getLineHeight(systemFontIdForPointSize(10)) - 12;
   makeDescriptionPages();
 }
 
@@ -640,6 +675,8 @@ void HomeSubPage::menu() {
     SubPage::menu();
     if (section == Section::Dictionary && !lookupShowing_) {
       const ButtonBounds lookup = dictionaryLookupButtonBounds(renderer);
+      const ButtonBounds choose = dictionaryChooseButtonBounds(renderer);
+      Button::render(renderer, choose, "Choose", false, systemFontId());
       Button::render(renderer, lookup, "Look up", true, systemFontId());
     }
     return;
@@ -660,6 +697,14 @@ void HomeSubPage::menu() {
                                  BitmapRender::Orientation::Rotate270CW, true);
     }
   }
+}
+
+void HomeSubPage::openDictionaryPicker() {
+  dictionaryPickerFinished_ = false;
+  dictionaryPicker_ = std::make_unique<DictionaryPickerActivity>(renderer, mappedInput, [this] {
+    dictionaryPickerFinished_ = true;
+  });
+  dictionaryPicker_->onEnter();
 }
 
 bool HomeSubPage::showingBookList() const {
@@ -789,7 +834,7 @@ void HomeSubPage::content() {
 void HomeSubPage::descriptionContent() {
   constexpr int left = 20;
   if (!descriptionAuthor_.empty()) {
-    renderer.text.render(MONTSERRAT_12_FONT_ID, left, contentTop, descriptionAuthor_.c_str(), true,
+    renderer.text.render(systemFontIdForPointSize(12), left, contentTop, descriptionAuthor_.c_str(), true,
                          EpdFontFamily::REGULAR);
   }
   if (descriptionLines_.empty()) {

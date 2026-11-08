@@ -452,7 +452,7 @@ void KeyboardEntryActivity::render() const {
 
   renderer.clearScreen();
 
-  constexpr int titleFont = MONTSERRAT_16_FONT_ID;
+  const int titleFont = systemFontIdForPointSize(16);
   const int inputFont = systemFontId();
   const int keyFont = systemFontId();
   const int hintFont = systemFontId();

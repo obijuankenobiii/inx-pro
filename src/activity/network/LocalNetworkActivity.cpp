@@ -316,7 +316,7 @@ void LocalNetworkActivity::renderServerRunning() const {
   const int screenWidth = renderer.getScreenWidth();
   const int screenHeight = renderer.getScreenHeight();
   const int sideMargin = 20;
-  const int labelFont = MONTSERRAT_8_FONT_ID;
+  const int labelFont = systemFontIdForPointSize(8);
   const int bodyFont = systemFontId();
   const int iconGroupWidth = ICON_SIZE * 3 + ICON_GAP * 2;
   const int iconX = (screenWidth - iconGroupWidth) / 2;
@@ -346,7 +346,7 @@ void LocalNetworkActivity::renderServerRunning() const {
                          ipUrl.c_str());
 
   const int hintY = screenHeight - 92;
-  renderer.text.centered(MONTSERRAT_8_FONT_ID, hintY, "Keep this screen open while transferring");
+  renderer.text.centered(systemFontIdForPointSize(8), hintY, "Keep this screen open while transferring");
 }
 
 void LocalNetworkActivity::drawQRCode(const int x, const int y, const std::string& data) const {

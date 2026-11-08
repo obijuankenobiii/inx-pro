@@ -31,6 +31,7 @@ class Menu {
     Settings,
     Stats,
     Sync,
+    Apps,
   };
 
   static constexpr int topPadding = (FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO) ? 20 : 15;
@@ -77,7 +78,7 @@ class Menu {
   Action handleTap(int tapX, int tapY) const;
 
  protected:
-  static constexpr int tabCount = 5;
+  static constexpr int tabCount = 6;
   int tabSelectorIndex = 0;
 
   MappedInputManager::Button tabPrevButton() const;

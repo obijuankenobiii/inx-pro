@@ -82,8 +82,8 @@ void drawUpdateProgressCard(const GfxRenderer& renderer, const int pageWidth, co
                             const float progress, const size_t processedBytes, const size_t totalBytes) {
   const int centerY = bodyTop + (screenHeight - bodyTop - 80) / 2;
 
-  renderer.text.centered(MONTSERRAT_8_FONT_ID, centerY - 92, "INSTALLING UPDATE", true, EpdFontFamily::BOLD);
-  renderer.text.centered(MONTSERRAT_14_FONT_ID, centerY - 54, "Installing firmware", true,
+  renderer.text.centered(systemFontIdForPointSize(8), centerY - 92, "INSTALLING UPDATE", true, EpdFontFamily::BOLD);
+  renderer.text.centered(systemFontIdForPointSize(14), centerY - 54, "Installing firmware", true,
                          EpdFontFamily::BOLD);
   renderer.text.centered(systemFontId(), centerY - 10, "Please keep the device powered on.", true,
                          EpdFontFamily::REGULAR);
@@ -108,7 +108,7 @@ void drawUpdateProgressCard(const GfxRenderer& renderer, const int pageWidth, co
   } else {
     metaLine = "Preparing package";
   }
-  renderer.text.centered(MONTSERRAT_8_FONT_ID, barY + 26, metaLine.c_str(), true, EpdFontFamily::REGULAR);
+  renderer.text.centered(systemFontIdForPointSize(8), barY + 26, metaLine.c_str(), true, EpdFontFamily::REGULAR);
 }
 
 void drawUpdateListRow(const GfxRenderer& renderer, const int pageWidth, const int itemY, const char* title,
@@ -117,7 +117,7 @@ void drawUpdateListRow(const GfxRenderer& renderer, const int pageWidth, const i
     renderer.rectangle.fill(0, itemY, pageWidth, kFirmwareItemHeight, static_cast<int>(GfxRenderer::FillTone::Ink));
   }
 
-  constexpr int labelFont = MONTSERRAT_8_FONT_ID;
+  const int labelFont = systemFontIdForPointSize(8);
   const int valueFont = systemFontId();
   const int labelY = itemY + 7;
   const int valueY = itemY + 25;
@@ -394,14 +394,14 @@ void OtaUpdateActivity::render() {
       const int centerY = dividerY + (screenHeight - dividerY - 80) / 2;
       const std::string fileName = renderer.text.truncate(systemFontId(),
                                                           fileNameFromPath(firmwarePath).c_str(), pageWidth - 56);
-      renderer.text.centered(MONTSERRAT_8_FONT_ID, centerY - 92, "SD FIRMWARE", true, EpdFontFamily::BOLD);
-      renderer.text.centered(MONTSERRAT_14_FONT_ID, centerY - 54, "Install update?", true,
+      renderer.text.centered(systemFontIdForPointSize(8), centerY - 92, "SD FIRMWARE", true, EpdFontFamily::BOLD);
+      renderer.text.centered(systemFontIdForPointSize(14), centerY - 54, "Install update?", true,
                              EpdFontFamily::BOLD);
       renderer.text.centered(systemFontId(), centerY - 10, fileName.c_str(), true,
                              EpdFontFamily::REGULAR);
-      renderer.text.centered(MONTSERRAT_8_FONT_ID, centerY + 18, formatBytes(firmwareSize).c_str(), true,
+      renderer.text.centered(systemFontIdForPointSize(8), centerY + 18, formatBytes(firmwareSize).c_str(), true,
                              EpdFontFamily::REGULAR);
-      renderer.text.centered(MONTSERRAT_8_FONT_ID, centerY + 58,
+      renderer.text.centered(systemFontIdForPointSize(8), centerY + 58,
                              "Keep the device powered on during install.", true, EpdFontFamily::REGULAR);
       Button::render(renderer, updateButtonBounds(renderer, centerY + 88), "Update", true, systemFontId());
       const auto labels = mappedInput.mapLabels("Cancel", "Install", "", "");

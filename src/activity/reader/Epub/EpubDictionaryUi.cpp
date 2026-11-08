@@ -569,7 +569,7 @@ void EpubDictionaryUi::drawDefinitionPanel(EpubActivity& act) {
   const int defaultPanelTop = screenH * 2 / 5;
   const int minPanelTop = margin;
 
-  const int titleFontId = MONTSERRAT_12_FONT_ID;
+  const int titleFontId = systemFontIdForPointSize(12);
   const int titleH = act.renderer.text.getLineHeight(titleFontId);
   constexpr int closeSize = 40;
   const int headerH = std::max(titleH, closeSize);
@@ -609,7 +609,7 @@ void EpubDictionaryUi::drawDefinitionPanel(EpubActivity& act) {
   act.renderer.text.render(titleFontId, panelX + pad, titleY, title.c_str(), true, EpdFontFamily::BOLD);
   act.renderer.bitmap.icon(Close, closeX_, closeY_, closeSize, closeSize);
   if (wordAlreadySaved_) {
-    const int tagFontId = MONTSERRAT_8_FONT_ID;
+    const int tagFontId = systemFontIdForPointSize(8);
     const char* tag = "\xE2\x98\x85 Saved";
     const int tagW = act.renderer.text.getWidth(tagFontId, tag);
     const int tagY = titleY + (titleH - act.renderer.text.getLineHeight(tagFontId)) / 2;

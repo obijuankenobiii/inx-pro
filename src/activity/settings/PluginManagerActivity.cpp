@@ -223,8 +223,8 @@ void PluginManagerActivity::render() {
     const int percentWidth = renderer.text.getWidth(font, percentText.c_str());
     const int descriptionMaxWidth = std::max(1, screenW - kTextX - kSideMargin - percentWidth - 20);
     const std::string description = renderer.text.truncate(
-        MONTSERRAT_8_FONT_ID, package.description.c_str(), descriptionMaxWidth, EpdFontFamily::REGULAR);
-    const int descriptionFont = MONTSERRAT_8_FONT_ID;
+        systemFontIdForPointSize(8), package.description.c_str(), descriptionMaxWidth, EpdFontFamily::REGULAR);
+    const int descriptionFont = systemFontIdForPointSize(8);
     const int contentHeight = renderer.text.getLineHeight(font) + 5 + renderer.text.getLineHeight(descriptionFont);
     const int titleY = rowY + (kRowHeight - contentHeight) / 2;
     const int descriptionY = titleY + renderer.text.getLineHeight(font) + 5;
@@ -250,8 +250,8 @@ void PluginManagerActivity::render() {
       const bool installed = PluginManager::isInstalled(package);
       const int descriptionMaxWidth = std::max(1, iconX - kTextX - 16);
       const std::string description = renderer.text.truncate(
-          MONTSERRAT_8_FONT_ID, package.description.c_str(), descriptionMaxWidth, EpdFontFamily::REGULAR);
-      const int descriptionFont = MONTSERRAT_8_FONT_ID;
+          systemFontIdForPointSize(8), package.description.c_str(), descriptionMaxWidth, EpdFontFamily::REGULAR);
+      const int descriptionFont = systemFontIdForPointSize(8);
       const int contentHeight = renderer.text.getLineHeight(font) + 5 + renderer.text.getLineHeight(descriptionFont);
       const int titleY = y + (kRowHeight - contentHeight) / 2;
       const int descriptionY = titleY + renderer.text.getLineHeight(font) + 5;

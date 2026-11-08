@@ -19,9 +19,6 @@
 #include "HomeSubPage.h"
 #include "components/global/Button.h"
 #include "components/global/PopUp.h"
-#include "components/global/Sidebar.h"
-#include "images/Hamburger.h"
-#include "images/Store.h"
 #include "state/BookState.h"
 #include "state/RecentBooks.h"
 #include "state/SystemSetting.h"
@@ -36,20 +33,16 @@ extern void openHomeSubPage(HomeSubPage::Section section);
 extern void openHomeDescription(const std::string& bookPath, const std::string& cachePath);
 extern void onGoToStatistics();
 extern void onGoToHeatmapReport(HomeTheme::HeatmapView view);
-extern void onGoToStore();
 
 namespace {
 
 constexpr unsigned long longPressMs = 500;
-constexpr int kStoreIconSize = 40;
-constexpr int kStoreBottomMargin = 20;
-
 void drawHomeClockAndBattery(const GfxRenderer& renderer) {
   constexpr int batteryRightMargin = 10;
   constexpr int clockRightMargin = 20;
   constexpr int batteryClockGap = 10;
   const bool showPercentage = SETTINGS.hideBatteryPercentage != SystemSetting::HIDE_BATTERY_PERCENTAGE::HIDE_ALWAYS;
-  const int textWidth = showPercentage ? renderer.text.getWidth(MONTSERRAT_8_FONT_ID, "100%") : 0;
+  const int textWidth = showPercentage ? renderer.text.getWidth(systemFontIdForPointSize(8), "100%") : 0;
   const int batteryWidth = showPercentage
                                ? ScreenComponents::BATTERY_ICON_WIDTH + ScreenComponents::BATTERY_TEXT_GAP + textWidth
                                : ScreenComponents::BATTERY_ICON_WIDTH;
@@ -71,16 +64,6 @@ void drawHomeClockAndBattery(const GfxRenderer& renderer) {
 
   const int batteryLeft = clockLeft - batteryClockGap - batteryWidth;
   ScreenComponents::drawBattery(renderer, batteryLeft, top, showPercentage);
-}
-
-int storeIconY(const GfxRenderer& renderer) { return renderer.getScreenHeight() - kStoreBottomMargin - kStoreIconSize; }
-
-bool storeIconHit(const GfxRenderer& renderer, const int x, const int y) {
-  const int iconY = storeIconY(renderer);
-  constexpr int rowSideMargin = 16;
-  constexpr int rowVerticalPadding = 10;
-  return x >= rowSideMargin && x < renderer.getScreenWidth() / 2 + rowSideMargin && y >= iconY - rowVerticalPadding &&
-         y < iconY + kStoreIconSize + rowVerticalPadding;
 }
 
 std::string cachePath(const RecentBook& book) {
@@ -117,7 +100,7 @@ bool removeTree(const std::string& path, int& removed) {
 }  // namespace
 
 Home::Home(GfxRenderer& renderer, MappedInputManager& mappedInput)
-    : UiPage("Home", renderer, mappedInput), widgetLayout(renderer), shortcutList(renderer) {}
+    : UiPage("Home", renderer, mappedInput), widgetLayout(renderer) {}
 
 void Home::onEnter() {
   UiPage::onEnter();
@@ -133,7 +116,6 @@ void Home::onEnter() {
   favoritePopupOpen = false;
   heatmapPopupOpen = false;
   popupFavoritePath.clear();
-  shortcutDrawerOpen = false;
 }
 
 void Home::menu() {
@@ -143,27 +125,22 @@ void Home::menu() {
 #else
   drawHomeClockAndBattery(renderer);
 #endif
-  if (shortcutDrawerOpen) drawShortcutDrawer();
 }
 
 void Home::title() const {
-  renderer.bitmap.icon(Hamburger, navigation::Menu::leftMargin, navigation::Menu::topPadding,
-                       navigation::Menu::iconSize, navigation::Menu::iconSize);
-  const int font = MONTSERRAT_16_FONT_ID;
+  const int font = systemFontIdForPointSize(16);
   const int textY = navigation::Menu::topPadding + (navigation::Menu::iconSize - renderer.text.getLineHeight(font)) / 2;
-  renderer.text.render(font, navigation::Menu::leftMargin + navigation::Menu::iconSize + 12, textY, "Home", true,
-                       EpdFontFamily::BOLD);
+  renderer.text.render(font, navigation::Menu::leftMargin, textY, "Home", true, EpdFontFamily::BOLD);
 }
 
 ButtonBounds Home::libraryButton() const {
-  const int width = Button::width(renderer, "Library", MONTSERRAT_10_FONT_ID);
+  const int width = Button::width(renderer, "Library", systemFontIdForPointSize(10));
   const int x = (renderer.getScreenWidth() - width) / 2;
   const int y = navigation::Menu::height + Carousel::kHeight / 2 + 14;
   return {x, y, width, Button::height};
 }
 
 void Home::loop() {
-  if (shortcutDrawerOpen && handleShortcutDrawerInput()) return;
   if ((popupBook >= 0 || favoritePopupOpen || heatmapPopupOpen) && handlePopup()) return;
   if (menuInput()) return;
   if (isOpen()) {
@@ -239,14 +216,6 @@ bool Home::handleSwipe() {
   const bool swipeRight = !swipeLeft && (swipeRightInScreen || mappedInput.wasTouchSwipeRight());
   if (!swipeLeft && !swipeRight) return false;
 
-  if (swipeRight && static_cast<int>(swipeNy * renderer.getScreenHeight()) < navigation::Menu::height) {
-    storeOverlayFrame();
-    shortcutDrawerOpen = true;
-    updateRequired = true;
-    renderPage();
-    return true;
-  }
-
   const int swipeX = (swipeLeftInScreen || swipeRightInScreen)
                          ? static_cast<int>(swipeNx * renderer.getScreenWidth())
                          : renderer.getScreenWidth() / 2;
@@ -320,13 +289,6 @@ bool Home::handleTap() {
   if (!mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy)) return false;
   const int tapX = static_cast<int>(tapNx * renderer.getScreenWidth());
   const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
-  if (navigation::Menu::hamburgerHit(tapX, tapY)) {
-    storeOverlayFrame();
-    shortcutDrawerOpen = true;
-    updateRequired = true;
-    renderPage();
-    return true;
-  }
   const int bookCount = RECENT_BOOKS.getCount();
   const HomeWidgetLayout::HitResult favoriteHit =
       widgetLayout.hitTest(HomeTheme::active(), carouselIndex, favoriteIndex, bookCount, widgetPageIndex,
@@ -430,61 +392,6 @@ bool Home::handleTap() {
     return true;
   }
   return false;
-}
-
-bool Home::handleShortcutDrawerInput() {
-  if (mappedInput.wasPressed(MappedInputManager::Button::Back) || mappedInput.wasTouchSwipeRight()) {
-    restoreOverlayFrameOnClose();
-    shortcutDrawerOpen = false;
-    updateRequired = true;
-    return true;
-  }
-  if (!mappedInput.hasTouch()) return false;
-
-  float tapNx = 0.0f;
-  float tapNy = 0.0f;
-  if (!mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy)) return false;
-  const int tapX = static_cast<int>(tapNx * renderer.getScreenWidth());
-  const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
-  const int drawerWidth = Sidebar::width(renderer);
-  const int listTop = Sidebar::listTop();
-  if (tapX >= 0 && tapX < drawerWidth && storeIconHit(renderer, tapX, tapY)) {
-    discardOverlayFrame();
-    shortcutDrawerOpen = false;
-    updateRequired = true;
-    onGoToStore();
-    return true;
-  }
-  if (tapX >= 0 && tapX < drawerWidth && tapY >= listTop) {
-    const int item = shortcutList.hitTest(tapX, tapY, 0, listTop, drawerWidth, renderer.getScreenHeight() - listTop,
-                                          Sidebar::rowHeight);
-    if (item >= 0) {
-      discardOverlayFrame();
-      shortcutDrawerOpen = false;
-      updateRequired = true;
-      handleShortcut(item);
-      return true;
-    }
-  }
-
-  if (tapX >= drawerWidth) {
-    restoreOverlayFrameOnClose();
-    shortcutDrawerOpen = false;
-    updateRequired = true;
-  }
-  return true;
-}
-
-void Home::drawShortcutDrawer() const {
-  const int drawerWidth = Sidebar::width(renderer);
-  const int listTop = Sidebar::listTop();
-  Sidebar::renderFrame(renderer, "Shortcuts");
-  shortcutList.render(0, listTop, drawerWidth, renderer.getScreenHeight() - listTop, Sidebar::rowHeight);
-  const int storeY = storeIconY(renderer);
-  renderer.line.render(20, storeY - 14, drawerWidth - 20, storeY - 14, true, LineRender::Style::Dotted);
-  const int storeLabelY = storeY + (kStoreIconSize - renderer.text.getLineHeight(systemFontId())) / 2;
-  renderer.bitmap.icon(Store, 24, storeY, kStoreIconSize, kStoreIconSize);
-  renderer.text.render(systemFontId(), 80, storeLabelY, "Store", true);
 }
 
 bool Home::handleShortcut(const int item) {

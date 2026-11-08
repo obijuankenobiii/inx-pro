@@ -81,8 +81,8 @@ uint32_t Heatmap::hitTestDateKey(const int px, const int py, const int x, const 
   uint32_t today = 0;
   if (!currentRtcDateKey(today)) return 0;
 
-  const int titleFont = MONTSERRAT_10_FONT_ID;
-  const int smallFont = MONTSERRAT_8_FONT_ID;
+  const int titleFont = systemFontIdForPointSize(10);
+  const int smallFont = systemFontIdForPointSize(8);
   const int titleLine = renderer_.text.getLineHeight(titleFont);
   const int smallLine = renderer_.text.getLineHeight(smallFont);
   constexpr int paddingX = 20;
@@ -181,8 +181,8 @@ void Heatmap::renderContent(const int x, const int y, const int width, const int
   }
   if (sample) today = 20260831;
 
-  const int titleFont = MONTSERRAT_10_FONT_ID;
-  const int smallFont = MONTSERRAT_8_FONT_ID;
+  const int titleFont = systemFontIdForPointSize(10);
+  const int smallFont = systemFontIdForPointSize(8);
   const int titleLine = renderer_.text.getLineHeight(titleFont);
   const int smallLine = renderer_.text.getLineHeight(smallFont);
   const int paddingX = 20;
@@ -315,7 +315,7 @@ void Heatmap::renderContent(const int x, const int y, const int width, const int
 
     const int statsRight = x + width - paddingX;
     const int statsLeft = gridX + actualGridWidth + 20;
-    const int valueFont = MONTSERRAT_18_FONT_ID;
+    const int valueFont = systemFontIdForPointSize(18);
     const int valueLine = renderer_.text.getLineHeight(valueFont);
     constexpr int barHeight = 10;
     const int barWidth = std::max(1, statsRight - statsLeft);

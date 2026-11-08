@@ -26,7 +26,7 @@ constexpr int kPageSize = RecentGrid::kPageSize;
 constexpr int kGapY = 25;
 constexpr int kMarginX = 20;
 constexpr int kMarginY = 15;
-constexpr int kFont = MONTSERRAT_12_FONT_ID;
+int gridFont() { return systemFontIdForPointSize(12); }
 constexpr int kGridThumbnailWidth = 118;
 constexpr int kGridThumbnailHeight = 180;
 constexpr int kFeaturedRowHeight = 200;
@@ -34,9 +34,9 @@ constexpr int kFeaturedThumbnailWidth = kGridThumbnailWidth;
 constexpr int kFeaturedThumbnailHeight = kGridThumbnailHeight;
 constexpr int kFeaturedSideMargin = 20;
 constexpr int kFeaturedTextGap = 14;
-constexpr int kFeaturedTitleFont = MONTSERRAT_14_FONT_ID;
-constexpr int kFeaturedDescriptionFont = MONTSERRAT_10_FONT_ID;
-constexpr int kFeaturedProgressFont = MONTSERRAT_18_FONT_ID;
+int featuredTitleFont() { return systemFontIdForPointSize(14); }
+int featuredDescriptionFont() { return systemFontIdForPointSize(10); }
+int featuredProgressFont() { return systemFontIdForPointSize(18); }
 constexpr int kFeaturedProgressBarHeight = 6;
 constexpr int kFeaturedProgressBarGap = 8;
 constexpr int kTitleToPercentageGap = 5;
@@ -154,8 +154,8 @@ void renderPercentage(const GfxRenderer& renderer, const int x, const int y, con
   if (progress < 0.0f || progress > 1.0f) progress = 0.0f;
   char percent[8];
   std::snprintf(percent, sizeof(percent), "%d%%", static_cast<int>(progress * 100.0f + 0.5f));
-  const std::string shown = renderer.text.truncate(kFont, percent, std::max(1, width));
-  renderer.text.renderGray(kFont, x, y, shown.c_str(), true);
+  const std::string shown = renderer.text.truncate(gridFont(), percent, std::max(1, width));
+  renderer.text.renderGray(gridFont(), x, y, shown.c_str(), true);
 }
 
 void descriptionLines(const GfxRenderer& renderer, const std::string& value, const int width, std::string& first,
@@ -163,7 +163,7 @@ void descriptionLines(const GfxRenderer& renderer, const std::string& value, con
   first.clear();
   second.clear();
   if (value.empty()) return;
-  const int font = kFeaturedDescriptionFont;
+  const int font = featuredDescriptionFont();
   if (renderer.text.getWidth(font, value.c_str()) <= width) {
     first = value;
     return;
@@ -204,27 +204,27 @@ void renderFeaturedBook(GfxRenderer& renderer, const RecentBook& book, const std
                             SETTINGS.bitmapRoundedCorners != 0, SETTINGS.bitmapRoundedCorners == 2);
 
   const int titleY = y + 28;
-  const int titleLine = renderer.text.getLineHeight(kFeaturedTitleFont);
-  const std::string title = renderer.text.truncate(kFeaturedTitleFont, titleFor(book).c_str(), textWidth,
+  const int titleLine = renderer.text.getLineHeight(featuredTitleFont());
+  const std::string title = renderer.text.truncate(featuredTitleFont(), titleFor(book).c_str(), textWidth,
                                                    EpdFontFamily::BOLD);
-  renderer.text.render(kFeaturedTitleFont, textX, titleY, title.c_str(), true, EpdFontFamily::BOLD);
+  renderer.text.render(featuredTitleFont(), textX, titleY, title.c_str(), true, EpdFontFamily::BOLD);
 
   const int descriptionY = titleY + titleLine + 12;
   std::string descriptionFirst;
   std::string descriptionSecond;
   descriptionLines(renderer, description, textWidth, descriptionFirst, descriptionSecond);
-  renderer.text.render(kFeaturedDescriptionFont, textX, descriptionY, descriptionFirst.c_str(), true);
+  renderer.text.render(featuredDescriptionFont(), textX, descriptionY, descriptionFirst.c_str(), true);
   if (!descriptionSecond.empty()) {
-    renderer.text.render(kFeaturedDescriptionFont, textX,
-                         descriptionY + renderer.text.getLineHeight(kFeaturedDescriptionFont),
+    renderer.text.render(featuredDescriptionFont(), textX,
+                         descriptionY + renderer.text.getLineHeight(featuredDescriptionFont()),
                          descriptionSecond.c_str(), true);
   }
   const int progress = book.progress < 0.0f
                            ? 0
                            : std::max(0, std::min(100, static_cast<int>(book.progress * 100.0f + 0.5f)));
   const std::string progressText = std::to_string(progress) + "%";
-  const int progressActualWidth = renderer.text.getWidth(kFeaturedProgressFont, progressText.c_str());
-  const int progressLineHeight = renderer.text.getLineHeight(kFeaturedProgressFont);
+  const int progressActualWidth = renderer.text.getWidth(featuredProgressFont(), progressText.c_str());
+  const int progressLineHeight = renderer.text.getLineHeight(featuredProgressFont());
   const int progressY = y + rowHeight - 14 - progressLineHeight;
 
   const int progressX = x + width - sideMargin - progressActualWidth;
@@ -239,7 +239,7 @@ void renderFeaturedBook(GfxRenderer& renderer, const RecentBook& book, const std
   }
   renderer.rectangle.dotted(textX, progressBarY, progressBarWidth, kFeaturedProgressBarHeight, true);
 
-  renderer.text.renderGray(kFeaturedProgressFont, progressX, progressY, progressText.c_str(), true,
+  renderer.text.renderGray(featuredProgressFont(), progressX, progressY, progressText.c_str(), true,
                            EpdFontFamily::REGULAR);
   renderer.line.render(x + sideMargin, y + rowHeight - 1, x + width - sideMargin, y + rowHeight - 1, true,
                        LineRender::Style::Dotted);
@@ -259,7 +259,7 @@ void mockCard(const GfxRenderer& renderer, const int index, const Geometry& g, c
 void RecentGrid::render(const int x, const int y, const int width, const int height, const int pageIndex) const {
   const auto& books = RECENT_BOOKS.getBooks();
   if (books.empty()) {
-    renderer_.text.centered(MONTSERRAT_12_FONT_ID, y + height / 2, "No recent books");
+    renderer_.text.centered(systemFontIdForPointSize(12), y + height / 2, "No recent books");
     return;
   }
   renderFeaturedBook(renderer_, books.front(), featuredDescription(books.front()), x, y, width);
@@ -269,7 +269,7 @@ void RecentGrid::render(const int x, const int y, const int width, const int hei
   const int remainingBookCount = std::max(0, static_cast<int>(books.size()) - 1);
   const int lastPage = remainingBookCount == 0 ? 0 : (remainingBookCount - 1) / kPageSize;
   const Geometry g = geometry(x, gridY, width, gridHeight, std::min(std::max(0, pageIndex), lastPage),
-                              renderer_.text.getLineHeight(kFont));
+                              renderer_.text.getLineHeight(gridFont()));
   const int startIndex = 1 + g.startIndex;
   for (int offset = 0; offset < kPageSize; ++offset) {
     const int index = startIndex + offset;
@@ -303,7 +303,7 @@ void RecentGrid::preview(const int x, const int y, const int width, const int he
   renderFeaturedBook(renderer_, featured, "Description", x, y, width);
   const int gridY = y + kFeaturedRowHeight;
   const int gridHeight = std::max(1, height - kFeaturedRowHeight);
-  const Geometry g = geometry(x, gridY, width, gridHeight, 0, renderer_.text.getLineHeight(kFont));
+  const Geometry g = geometry(x, gridY, width, gridHeight, 0, renderer_.text.getLineHeight(gridFont()));
   for (int index = 0; index < kPageSize; ++index) mockCard(renderer_, index, g, x);
 }
 
@@ -318,14 +318,14 @@ int RecentGrid::hitTest(const int x, const int y, const int width, const int hei
   const int remainingBookCount = std::max(0, static_cast<int>(books.size()) - 1);
   const int lastPage = remainingBookCount == 0 ? 0 : (remainingBookCount - 1) / kPageSize;
   const Geometry g = geometry(x, gridY, width, gridHeight, std::min(std::max(0, pageIndex), lastPage),
-                              renderer_.text.getLineHeight(kFont));
+                              renderer_.text.getLineHeight(gridFont()));
   const int startIndex = 1 + g.startIndex;
   for (int offset = 0; offset < kPageSize; ++offset) {
     const int index = startIndex + offset;
     if (index >= static_cast<int>(books.size())) break;
     int coverX, coverY, coverW, coverH, labelY;
     coverRect(g, x, offset % kColumns, offset / kColumns, coverX, coverY, coverW, coverH, labelY);
-    const int bottom = labelY + kTitleToPercentageGap + renderer_.text.getLineHeight(kFont);
+    const int bottom = labelY + kTitleToPercentageGap + renderer_.text.getLineHeight(gridFont());
     if (tapX >= coverX && tapX < coverX + coverW && tapY >= coverY && tapY < bottom) return index;
   }
   return -1;

@@ -285,10 +285,10 @@ void PdfReaderActivity::renderBuildProgress(const char* status, const int curren
   const int screenHeight = renderer.getScreenHeight();
   const int centerY = screenHeight / 2;
 
-  renderer.text.centered(MONTSERRAT_10_FONT_ID, centerY - 66, "PREPARING BOOK", true, EpdFontFamily::BOLD);
-  const std::string title = renderer.text.truncate(MONTSERRAT_12_FONT_ID, pdf->getTitle().c_str(), pageWidth - 80);
-  renderer.text.centered(MONTSERRAT_12_FONT_ID, centerY - 34, title.c_str(), true, EpdFontFamily::BOLD);
-  renderer.text.centered(MONTSERRAT_10_FONT_ID, centerY - 4, status, true, EpdFontFamily::REGULAR);
+  renderer.text.centered(systemFontIdForPointSize(10), centerY - 66, "PREPARING BOOK", true, EpdFontFamily::BOLD);
+  const std::string title = renderer.text.truncate(systemFontIdForPointSize(12), pdf->getTitle().c_str(), pageWidth - 80);
+  renderer.text.centered(systemFontIdForPointSize(12), centerY - 34, title.c_str(), true, EpdFontFamily::BOLD);
+  renderer.text.centered(systemFontIdForPointSize(10), centerY - 4, status, true, EpdFontFamily::REGULAR);
 
   const int barW = std::min(300, pageWidth - 72);
   constexpr int barH = 6;
@@ -303,7 +303,7 @@ void PdfReaderActivity::renderBuildProgress(const char* status, const int curren
 
     char line[32];
     snprintf(line, sizeof(line), "%d / %d", current, total);
-    renderer.text.centered(MONTSERRAT_8_FONT_ID, barY + 22, line, true, EpdFontFamily::REGULAR);
+    renderer.text.centered(systemFontIdForPointSize(8), barY + 22, line, true, EpdFontFamily::REGULAR);
   }
 
   renderer.displayBuffer();
@@ -710,7 +710,7 @@ void PdfReaderActivity::renderScreen() {
 
   if (totalPages == 0) {
     renderer.clearScreen();
-    renderer.text.centered(MONTSERRAT_12_FONT_ID, 300, "Empty book", true, EpdFontFamily::BOLD);
+    renderer.text.centered(systemFontIdForPointSize(12), 300, "Empty book", true, EpdFontFamily::BOLD);
     renderer.displayBuffer();
     return;
   }

@@ -18,7 +18,7 @@ void drawFontFamilyRowValue(const GfxRenderer& renderer, uint8_t fontFamily, int
   if (!familyLabel || familyLabel[0] == '\0') {
     return;
   }
-  constexpr int previewFont = MONTSERRAT_8_FONT_ID;
+  const int previewFont = systemFontIdForPointSize(8);
   const bool black = !rowSelected;
   const int valW = renderer.text.getWidth(previewFont, familyLabel, EpdFontFamily::REGULAR);
   const int lh = renderer.text.getLineHeight(previewFont);

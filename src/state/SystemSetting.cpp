@@ -42,7 +42,7 @@ void readAndValidate(FsFile& file, uint8_t& member, const uint8_t maxValue) {
 
 namespace {
 constexpr uint8_t SETTINGS_FILE_VERSION = 1;
-constexpr uint8_t SETTINGS_COUNT = 46;
+constexpr uint8_t SETTINGS_COUNT = 47;
 constexpr char SETTINGS_FILE[] = "/.system/settings.bin";
 constexpr uint32_t FNV1A_OFFSET = 2166136261UL;
 constexpr uint32_t FNV1A_PRIME = 16777619UL;
@@ -173,6 +173,7 @@ uint32_t settingsHash(const SystemSetting& settings) {
   hashPod(hash, settings.piccoToggleMode);
   hashPod(hash, settings.hideMenuClock);
   hashPod(hash, settings.disableStatistics);
+  hashPod(hash, settings.systemFontFamily);
   return hash;
 }
 
@@ -297,6 +298,7 @@ bool SystemSetting::saveToFile() const {
   serialization::writePod(outputFile, hideMenuClock);
   serialization::writePod(outputFile, exitAnimation);
   serialization::writePod(outputFile, disableStatistics);
+  serialization::writePod(outputFile, systemFontFamily);
 
   outputFile.close();
 
@@ -550,6 +552,10 @@ bool SystemSetting::loadFromFile() {
       if (disableStatistics > 1) disableStatistics = 0;
       ++settingsRead;
     }
+    if (settingsRead < fileSettingsCount) {
+      serialization::readPod(inputFile, systemFontFamily);
+      ++settingsRead;
+    }
 
   } while (false);
 
@@ -562,6 +568,9 @@ bool SystemSetting::loadFromFile() {
   if (disableStatistics > 1) disableStatistics = 0;
   if (keyboardLayout >= KEYBOARD_LAYOUT_COUNT) keyboardLayout = KEYBOARD_QWERTY;
   if (systemTextSize >= SYSTEM_TEXT_SIZE_COUNT) systemTextSize = SYSTEM_TEXT_SMALL;
+#ifndef INX_SIMULATOR_WEB_ONLY
+  FontManager::clampReaderFontFamilySlot(systemFontFamily);
+#endif
   if (darkMode > 1) darkMode = 0;
   if (hideThumbnailTitles > 1) hideThumbnailTitles = 0;
   if (hideFinishedBooks > 1) hideFinishedBooks = 0;

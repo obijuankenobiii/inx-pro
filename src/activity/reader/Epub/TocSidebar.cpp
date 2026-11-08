@@ -176,8 +176,8 @@ void TocSidebar::render() {
   renderer.rectangle.fill(0, 0, panelWidth, screenHeight, false);
   renderer.rectangle.render(panelWidth - dividerWidth, 0, dividerWidth, screenHeight, true);
 
-  const int titleY = (headerHeight() - renderer.text.getLineHeight(MONTSERRAT_12_FONT_ID)) / 2 + 5;
-  renderer.text.render(MONTSERRAT_12_FONT_ID, padding, titleY, "Table of Contents", true);
+  const int titleY = (headerHeight() - renderer.text.getLineHeight(systemFontIdForPointSize(12))) / 2 + 5;
+  renderer.text.render(systemFontIdForPointSize(12), padding, titleY, "Table of Contents", true);
   const int closeX = panelWidth - padding - closeHitSize;
   const int closeY = (headerHeight() - closeHitSize) / 2;
   renderer.bitmap.iconScaled(Close, closeX + (closeHitSize - closeSize) / 2, closeY + (closeHitSize - closeSize) / 2 + 5,
@@ -186,7 +186,7 @@ void TocSidebar::render() {
 
   const int rows = visibleRows();
   if (visibleItems.empty()) {
-    renderer.text.render(MONTSERRAT_10_FONT_ID, padding, headerHeight() + 24, "No table of contents", true);
+    renderer.text.render(systemFontIdForPointSize(10), padding, headerHeight() + 24, "No table of contents", true);
   } else {
     for (int row = 0; row < rows; ++row) {
       const int visibleIndex = scroll + row;
@@ -204,14 +204,14 @@ void TocSidebar::render() {
       const int toggleX = padding + indent;
       const int textX = toggleX + (parent ? 22 : 0);
       const int textWidth = std::max(40, panelWidth - textX - padding);
-      const std::string title = renderer.text.truncate(MONTSERRAT_10_FONT_ID, item.title.c_str(), textWidth);
-      const int textY = y + (rowHeight() - renderer.text.getLineHeight(MONTSERRAT_10_FONT_ID)) / 2;
+      const std::string title = renderer.text.truncate(systemFontIdForPointSize(10), item.title.c_str(), textWidth);
+      const int textY = y + (rowHeight() - renderer.text.getLineHeight(systemFontIdForPointSize(10))) / 2;
       if (parent) {
         const char* toggle = collapsed[tocIndex] ? "+" : "−";
-        const int toggleY = y + (rowHeight() - renderer.text.getLineHeight(MONTSERRAT_12_FONT_ID)) / 2;
-        renderer.text.render(MONTSERRAT_12_FONT_ID, toggleX, toggleY, toggle, !isCurrent);
+        const int toggleY = y + (rowHeight() - renderer.text.getLineHeight(systemFontIdForPointSize(12))) / 2;
+        renderer.text.render(systemFontIdForPointSize(12), toggleX, toggleY, toggle, !isCurrent);
       }
-      renderer.text.render(MONTSERRAT_10_FONT_ID, textX, textY, title.c_str(), !isCurrent);
+      renderer.text.render(systemFontIdForPointSize(10), textX, textY, title.c_str(), !isCurrent);
       if (visibleIndex + 1 < static_cast<int>(visibleItems.size())) {
         renderer.line.render(0, y + rowHeight() - 1, panelWidth, y + rowHeight() - 1, true,
                              LineRender::Style::Dotted);
@@ -223,7 +223,7 @@ void TocSidebar::render() {
                 static_cast<int>(visibleItems.size()), rows, scroll);
 
   const ButtonBounds syncButton = syncButtonBounds();
-  constexpr int font = MONTSERRAT_10_FONT_ID;
+  const int font = systemFontIdForPointSize(10);
   const int syncIconY = syncButton.y + (syncButton.height - syncIconSize) / 2;
   Button::render(renderer, syncButton, "", false, font);
   const int textY = syncButton.y + (syncButton.height - renderer.text.getLineHeight(font)) / 2;

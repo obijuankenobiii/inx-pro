@@ -86,9 +86,9 @@ void WeeklyStatistics::renderContent(const int x, const int y, const int width, 
   const int verticalPadding = compact ? 5 : 20;
   const int left = x + kHorizontalPadding;
   const int right = x + width - kHorizontalPadding;
-  const int headerFont = MONTSERRAT_10_FONT_ID;
-  const int valueFont = MONTSERRAT_18_FONT_ID;
-  const int smallFont = MONTSERRAT_8_FONT_ID;
+  const int headerFont = systemFontIdForPointSize(10);
+  const int valueFont = systemFontIdForPointSize(18);
+  const int smallFont = systemFontIdForPointSize(8);
   const int headerLine = renderer_.text.getLineHeight(headerFont);
   const int valueLine = renderer_.text.getLineHeight(valueFont);
   const int smallLine = renderer_.text.getLineHeight(smallFont);

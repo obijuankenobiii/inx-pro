@@ -14,7 +14,7 @@
 int SubPage::header(const GfxRenderer& renderer, const char* name) {
   constexpr int top = navigation::Menu::topPadding;
   constexpr int size = navigation::Menu::iconSize;
-  const int font = MONTSERRAT_16_FONT_ID;
+  const int font = systemFontIdForPointSize(16);
   const int textY = top + (size - renderer.text.getLineHeight(font)) / 2;
   renderer.text.render(font, navigation::Menu::leftMargin, textY, name ? name : "", true,
                        EpdFontFamily::BOLD);

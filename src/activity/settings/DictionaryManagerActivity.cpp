@@ -262,7 +262,7 @@ void DictionaryManagerActivity::render() {
     renderer.line.render(kSideMargin, y + kRowHeight - 1, screenW - kSideMargin, y + kRowHeight - 1, true,
                          LineRender::Style::Dotted);
     if (installed) {
-      renderer.text.centered(MONTSERRAT_8_FONT_ID, y + kRowHeight + 20, "Installed — tap to remove", true,
+      renderer.text.centered(systemFontIdForPointSize(8), y + kRowHeight + 20, "Installed — tap to remove", true,
                              EpdFontFamily::REGULAR);
     }
     mappedInput.mapLabels("\xC2\xAB Back", installed ? "Remove" : "Download", "", "");

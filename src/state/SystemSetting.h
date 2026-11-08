@@ -165,7 +165,7 @@ class SystemSetting {
   };
 
   /**
-   * @brief Font family options (stored in fontFamily / BookSettings::fontFamily)
+   * @brief Font family options used by reader and system-font settings.
    * @details 0 is the built-in font; 1+ select SD card folders under /fonts (sorted names), see FontManager.
    */
   enum FONT_FAMILY {
@@ -369,6 +369,8 @@ class SystemSetting {
   uint8_t keyboardLayout = KEYBOARD_QWERTY;
   /** System UI text size: Small=10pt, Medium=12pt, Large=14pt. */
   uint8_t systemTextSize = SYSTEM_TEXT_SMALL;
+  /** System UI font family: 0 is Montserrat, 1+ are sorted families under /fonts. */
+  uint8_t systemFontFamily = MONTSERRAT;
   /** Persisted Light drawer text/icon theme: 0=light, 1=dark. */
   uint8_t darkMode = 0;
 

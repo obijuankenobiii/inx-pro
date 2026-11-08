@@ -16,6 +16,7 @@ extern void onGoToLibrary(const std::string& path);
 extern void onGoToFileTransfer();
 extern void onGoToSettings();
 extern void onGoToStatistics();
+extern void onGoToApps();
 extern void openSearchFromCallback(std::function<void()> returnToCaller);
 
 UiPage::UiPage(const char* name, GfxRenderer& renderer, MappedInputManager& mappedInput)
@@ -137,6 +138,9 @@ bool UiPage::routeMenuAction(const navigation::Menu::Action action) {
       return true;
     case navigation::Menu::Action::Sync:
       onGoToFileTransfer();
+      return true;
+    case navigation::Menu::Action::Apps:
+      onGoToApps();
       return true;
     case navigation::Menu::Action::None:
     default:

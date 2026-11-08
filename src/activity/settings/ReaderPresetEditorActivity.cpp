@@ -365,7 +365,7 @@ void ReaderPresetEditorActivity::renderPreviewStatusBar(int barTop, int barHeigh
   const int screenW = renderer.getScreenWidth();
   const int marginLeft = std::max<int>(6, working_.marginLeft);
   const int marginRight = std::max<int>(6, working_.marginRight);
-  const int fontId = MONTSERRAT_8_FONT_ID;
+  const int fontId = systemFontIdForPointSize(8);
 
   const int textY = barTop + (barHeight - renderer.text.getLineHeight(fontId)) / 2 + 2;
 
@@ -393,7 +393,7 @@ void ReaderPresetEditorActivity::renderPreviewFullBar(int barTop, int barHeight)
   }
 
   const int screenW = renderer.getScreenWidth();
-  const int fontId = MONTSERRAT_8_FONT_ID;
+  const int fontId = systemFontIdForPointSize(8);
   const int textY = barTop + (barHeight - renderer.text.getLineHeight(fontId)) / 2 + 2;
 
   if (style == StatusBarItem::PAGE_BARS) {

@@ -139,8 +139,8 @@ void drawFlowCard(GfxRenderer& renderer, const RecentBook& book, const int x, co
                   const int height, const bool center, const std::string& author) {
   // The reference card is portrait-oriented: the cover spans the full card
   // width, followed by a separate white title/description section.
-  const int font = center ? MONTSERRAT_16_FONT_ID : MONTSERRAT_10_FONT_ID;
-  const int authorFont = center ? MONTSERRAT_10_FONT_ID : MONTSERRAT_8_FONT_ID;
+  const int font = center ? systemFontIdForPointSize(16) : systemFontIdForPointSize(10);
+  const int authorFont = center ? systemFontIdForPointSize(10) : systemFontIdForPointSize(8);
   constexpr int detailTopPadding = 10;
   constexpr int titleAuthorGap = 5;
   constexpr int detailBottomMargin = 20;
@@ -171,7 +171,7 @@ void drawFlowCard(GfxRenderer& renderer, const RecentBook& book, const int x, co
 void drawProgressAndRating(GfxRenderer& renderer, const RecentBook& book, const int x, const int rowY, const int width,
                            const int stars) {
   constexpr int margin = 20;
-  constexpr int percentageFont = MONTSERRAT_8_FONT_ID;
+  const int percentageFont = systemFontIdForPointSize(8);
   constexpr int barHeight = 5;
   const int percentage = book.progress < 0.0f
                              ? 0
@@ -241,7 +241,7 @@ void drawFlowProgressTrack(GfxRenderer& renderer, const RecentBook& book, const 
 void drawDescription(GfxRenderer& renderer, const std::string& description, const int x, const int y,
                      const int width, const int maxLines) {
   if (description.empty()) return;
-  constexpr int font = MONTSERRAT_10_FONT_ID;
+  const int font = systemFontIdForPointSize(10);
   constexpr int margin = 20;
   const int maxWidth = std::max(1, width - margin * 2);
   const int lineHeight = renderer.text.getLineHeight(font);
@@ -275,8 +275,8 @@ void drawDescription(GfxRenderer& renderer, const std::string& description, cons
 
 void drawPreviewCard(GfxRenderer& renderer, const int x, const int y, const int width, const int height,
                      const char* title, const char* author, const bool center) {
-  const int titleFont = center ? MONTSERRAT_16_FONT_ID : MONTSERRAT_10_FONT_ID;
-  const int authorFont = center ? MONTSERRAT_10_FONT_ID : MONTSERRAT_8_FONT_ID;
+  const int titleFont = center ? systemFontIdForPointSize(16) : systemFontIdForPointSize(10);
+  const int authorFont = center ? systemFontIdForPointSize(10) : systemFontIdForPointSize(8);
   constexpr int detailTopPadding = 10;
   constexpr int titleAuthorGap = 5;
   constexpr int detailBottomMargin = 20;
@@ -350,7 +350,7 @@ void Flow::render(const int x, const int y, const int width, const int height, c
 
   constexpr int descriptionLines = 5;
   constexpr int carouselMetadataGap = 40;
-  const int metadataFontHeight = renderer_.text.getLineHeight(MONTSERRAT_10_FONT_ID);
+  const int metadataFontHeight = renderer_.text.getLineHeight(systemFontIdForPointSize(10));
   const bool oneByOne = limitCardsToAvailableBooks;
   const int progressRowHeight = oneByOne ? 32 : metadataFontHeight;
   const int descriptionY = y + height - 20 - descriptionLines * metadataFontHeight;
@@ -405,7 +405,7 @@ void Flow::preview(const int x, const int y, const int width, const int height, 
   renderer_.rectangle.fill(x, y, width, height, false);
   constexpr int descriptionLines = 5;
   constexpr int carouselMetadataGap = 40;
-  const int metadataFontHeight = renderer_.text.getLineHeight(MONTSERRAT_10_FONT_ID);
+  const int metadataFontHeight = renderer_.text.getLineHeight(systemFontIdForPointSize(10));
   const int descriptionY = y + height - 20 - descriptionLines * metadataFontHeight;
   const int progressRowHeight = oneByOne ? 32 : metadataFontHeight;
   const int progressRowY = descriptionY - 8 - progressRowHeight;
@@ -447,7 +447,7 @@ bool Flow::hitTest(const int x, const int y, const int boundsX, const int bounds
   if (boundsWidth <= 0 || boundsHeight <= 0) return false;
   constexpr int descriptionLines = 5;
   constexpr int carouselMetadataGap = 40;
-  const int metadataFontHeight = renderer_.text.getLineHeight(MONTSERRAT_10_FONT_ID);
+  const int metadataFontHeight = renderer_.text.getLineHeight(systemFontIdForPointSize(10));
   const int descriptionY = boundsY + boundsHeight - 20 - descriptionLines * metadataFontHeight;
   const int progressRowY = descriptionY - 8 - metadataFontHeight;
   constexpr int carouselInset = 20;

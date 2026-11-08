@@ -35,6 +35,7 @@
 #include "activity/page/HeatmapReport.h"
 #include "activity/page/SyncActivity.h"
 #include "activity/settings/StoreActivity.h"
+#include "activity/settings/AppsActivity.h"
 #include "activity/reader/ImageViewerActivity.h"
 #include "activity/reader/ReaderActivity.h"
 #include "activity/system/BootActivity.h"
@@ -98,6 +99,7 @@ void openDictionaryLookup(const std::string& word);
 void onGoToFileTransfer();
 void onGoToSettings();
 void onGoToStore();
+void onGoToApps();
 void onGoToLibrary(const std::string& path = "/");
 void onGoToPluginLibrary();
 void setupDisplayAndFonts();
@@ -313,6 +315,11 @@ void onGoToSettings() {
 /** @brief Opens the Home drawer's software store page. */
 void onGoToStore() {
   switchTo<StoreActivity>(render, input, [] { onGoToHome(); });
+}
+
+/** @brief Opens the application shortcuts page. */
+void onGoToApps() {
+  switchTo<AppsActivity>(render, input, [] { onGoToHome(); });
 }
 
 /**

@@ -138,7 +138,7 @@ void Streaks::renderContent(const int x, const int y, const int width, const int
     }
     currentKey = dataKey();
     if (referenceDay == 0) {
-      renderer_.text.render(MONTSERRAT_8_FONT_ID, x + 16, y + std::max(0, height / 2 - 5),
+      renderer_.text.render(systemFontIdForPointSize(8), x + 16, y + std::max(0, height / 2 - 5),
                             "Streaks unavailable", true, EpdFontFamily::REGULAR);
       renderedKey_ = currentKey;
       return;
@@ -167,9 +167,9 @@ void Streaks::renderContent(const int x, const int y, const int width, const int
   constexpr int iconWidth = 64;
   constexpr int iconHeight = 65;
 
-  const int labelFont = MONTSERRAT_8_FONT_ID;
+  const int labelFont = systemFontIdForPointSize(8);
   const int labelLine = renderer_.text.getLineHeight(labelFont);
-  const int valueFont = MONTSERRAT_18_FONT_ID;
+  const int valueFont = systemFontIdForPointSize(18);
   constexpr uint8_t valueScale = 150;
   constexpr uint8_t labelScale = 125;
   constexpr int textGap = 10;
@@ -178,7 +178,7 @@ void Streaks::renderContent(const int x, const int y, const int width, const int
   const int topSectionHeight = std::max(iconHeight, 6 + valueLine + scaledLabelLine);
   const int circleRadius = monthly ? std::max(10, std::min(13, height / 16))
                                    : std::max(9, std::min(15, height / 14 + 2));
-  const int calendarFont = MONTSERRAT_10_FONT_ID;
+  const int calendarFont = systemFontIdForPointSize(10);
   const int calendarLine = renderer_.text.getLineHeight(calendarFont);
   int monthFirstWeekday = 0;
   int monthDayCount = 0;
@@ -217,7 +217,7 @@ void Streaks::renderContent(const int x, const int y, const int width, const int
   const int countY = top + 6;
   const int labelY = countY + valueLine + textGap;
   renderer_.text.renderScaled(valueFont, valueX, countY, streakText, valueScale, true, EpdFontFamily::BOLD);
-  renderer_.text.renderScaledGray(MONTSERRAT_8_FONT_ID, valueX, labelY - 10, "Day streak", labelScale, true,
+  renderer_.text.renderScaledGray(systemFontIdForPointSize(8), valueX, labelY - 10, "Day streak", labelScale, true,
                                   EpdFontFamily::REGULAR);
 
   const int circlesTop = blockTop + topSectionHeight + actualGap;

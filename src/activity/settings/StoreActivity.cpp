@@ -130,7 +130,7 @@ void StoreActivity::render() {
   const int font = systemFontId();
   const int screenW = renderer.getScreenWidth();
   const int firstRowY = top;
-  const int subtitleFont = MONTSERRAT_8_FONT_ID;
+  const int subtitleFont = systemFontIdForPointSize(8);
   const int contentHeight = renderer.text.getLineHeight(font) + kSubtitleGap +
                             renderer.text.getLineHeight(subtitleFont);
   for (int i = 0; i < kMenuItemCount; ++i) {

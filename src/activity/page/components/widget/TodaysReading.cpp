@@ -148,8 +148,8 @@ std::string recentBookTitle() {
 }
 
 int readingButtonHeight(const GfxRenderer& renderer) {
-  const int actionLine = renderer.text.getLineHeight(MONTSERRAT_10_FONT_ID);
-  const int subtitleLine = renderer.text.getLineHeight(MONTSERRAT_8_FONT_ID);
+  const int actionLine = renderer.text.getLineHeight(systemFontIdForPointSize(10));
+  const int subtitleLine = renderer.text.getLineHeight(systemFontIdForPointSize(8));
   constexpr int paddingY = 10;
   constexpr int lineGap = 1;
   return actionLine + lineGap + subtitleLine + paddingY * 2;
@@ -157,8 +157,8 @@ int readingButtonHeight(const GfxRenderer& renderer) {
 
 void drawReadingButton(const GfxRenderer& renderer, const int x, const int y, const int width, const int height,
                        const std::string& bookTitle) {
-  const int actionFont = MONTSERRAT_10_FONT_ID;
-  const int subtitleFont = MONTSERRAT_8_FONT_ID;
+  const int actionFont = systemFontIdForPointSize(10);
+  const int subtitleFont = systemFontIdForPointSize(8);
   constexpr int paddingY = 6;
   constexpr int lineGap = 1;
   const int radius = std::max(1, height / 2);
@@ -199,7 +199,7 @@ void renderReadingDuration(const GfxRenderer& renderer, const int fontId, const 
   std::snprintf(hours, sizeof(hours), "%u", totalMinutes / 60U);
   std::snprintf(minutes, sizeof(minutes), "%u", totalMinutes % 60U);
 
-  const int unitFont = MONTSERRAT_10_FONT_ID;
+  const int unitFont = systemFontIdForPointSize(10);
   const int unitLineHeight = renderer.text.getLineHeight(unitFont);
   const int hourWidth = renderer.text.getWidth(fontId, hours);
   const int hourUnitWidth = renderer.text.getWidth(unitFont, "h");
@@ -270,15 +270,15 @@ void TodaysReading::renderContent(const int x, const int y, const int width, con
     status.goalMinutes = 5;
   }
   if (!status.rtcAvailable) {
-    renderer_.text.render(MONTSERRAT_8_FONT_ID, x + 12, y + height / 2 - 5, "Today's Reading unavailable", true,
+    renderer_.text.render(systemFontIdForPointSize(8), x + 12, y + height / 2 - 5, "Today's Reading unavailable", true,
                           EpdFontFamily::BOLD);
     return;
   }
 
   const int designHeight = std::min(height, kDesignHeight);
   const int designY = y + (height - designHeight) / 2;
-  const int titleFont = MONTSERRAT_10_FONT_ID;
-  const int goalFont = MONTSERRAT_8_FONT_ID;
+  const int titleFont = systemFontIdForPointSize(10);
+  const int goalFont = systemFontIdForPointSize(8);
   const int titleLine = renderer_.text.getLineHeight(titleFont);
   const int goalLine = renderer_.text.getLineHeight(goalFont);
 
@@ -320,12 +320,12 @@ void TodaysReading::renderContent(const int x, const int y, const int width, con
     const int outerRadius = std::max(20, std::min(leftWidth / 2 - 4, contentHeight / 2 - 4));
     drawReadingGauge(renderer_, centerX, centerY, outerRadius, std::max(8, outerRadius / 8), progress, true);
 
-    const int compactTimeFont = MONTSERRAT_18_FONT_ID;
+    const int compactTimeFont = systemFontIdForPointSize(18);
     const int compactTimeLine = renderer_.text.getLineHeight(compactTimeFont);
     renderReadingDuration(renderer_, compactTimeFont, centerX, centerY - compactTimeLine / 2, elapsedSeconds);
 
-    const int compactTitleFont = MONTSERRAT_12_FONT_ID;
-    const int compactGoalFont = MONTSERRAT_10_FONT_ID;
+    const int compactTitleFont = systemFontIdForPointSize(12);
+    const int compactGoalFont = systemFontIdForPointSize(10);
     const int compactTitleLine = renderer_.text.getLineHeight(compactTitleFont);
     const int compactGoalLine = renderer_.text.getLineHeight(compactGoalFont);
     const int detailButtonHeight = readingButtonHeight(renderer_);
@@ -345,7 +345,7 @@ void TodaysReading::renderContent(const int x, const int y, const int width, con
     return;
   }
 
-  const int timeFont = MONTSERRAT_18_FONT_ID;
+  const int timeFont = systemFontIdForPointSize(18);
   const int timeLine = renderer_.text.getLineHeight(timeFont);
   const int stackGap = 5;
   const int stackHeight = titleLine + stackGap + timeLine + stackGap + goalLine;

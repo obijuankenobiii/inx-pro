@@ -223,7 +223,7 @@ void LightDrawer::render() const {
                                 static_cast<int>(GfxRenderer::FillTone::Paper));
   drawerRenderer.rectangle.render(0, 0, width, lightDrawerHeight(), true);
   drawerRenderer.line.render(0, lightDrawerHeight() - 2, width - 1, lightDrawerHeight() - 2, true);
-  drawerRenderer.text.render(MONTSERRAT_16_FONT_ID, 20, 30, "Light", true, EpdFontFamily::BOLD);
+  drawerRenderer.text.render(systemFontIdForPointSize(16), 20, 30, "Light", true, EpdFontFamily::BOLD);
 
   const bool on = frontlight.brightness() > 0;
   const int lightButtonX = width - lightButtonRightMargin - lightButtonSize;
@@ -233,12 +233,12 @@ void LightDrawer::render() const {
   drawerRenderer.bitmap.icon(on ? LightOn : LightOff, lightButtonX, lightButtonY, lightButtonSize,
                              lightButtonSize);
 
-  drawerRenderer.text.render(MONTSERRAT_10_FONT_ID, 20, lightBrightnessLabelY, "Brightness", true);
+  drawerRenderer.text.render(systemFontIdForPointSize(10), 20, lightBrightnessLabelY, "Brightness", true);
   drawLightTrack(drawerRenderer, lightBrightnessY, frontlight.brightness());
   if (!hasTemperatureSlider()) return;
-  drawerRenderer.text.render(MONTSERRAT_10_FONT_ID, 20, lightTemperatureLabelY, "Cool", true);
-  const int warmWidth = drawerRenderer.text.getWidth(MONTSERRAT_10_FONT_ID, "Warm");
-  drawerRenderer.text.render(MONTSERRAT_10_FONT_ID, width - 40 - warmWidth, lightTemperatureLabelY, "Warm",
+  drawerRenderer.text.render(systemFontIdForPointSize(10), 20, lightTemperatureLabelY, "Cool", true);
+  const int warmWidth = drawerRenderer.text.getWidth(systemFontIdForPointSize(10), "Warm");
+  drawerRenderer.text.render(systemFontIdForPointSize(10), width - 40 - warmWidth, lightTemperatureLabelY, "Warm",
                              true);
   drawLightTrack(drawerRenderer, lightTemperatureY, frontlight.colorTemperature());
   drawLightDrawerIndicator(drawerRenderer, width);

@@ -216,7 +216,7 @@ void Favorites::renderCover(const BookState::Book& book, const CardBounds& bound
   renderer_.rectangle.fill(bounds.x, bounds.y, bounds.width, bounds.height, false);
   renderer_.rectangle.render(bounds.x, bounds.y, bounds.width, bounds.height, true,
                              SETTINGS.bitmapRoundedCorners != 0, SETTINGS.bitmapRoundedCorners == 2);
-  const int font = MONTSERRAT_10_FONT_ID;
+  const int font = systemFontIdForPointSize(10);
   const std::string title = renderer_.text.truncate(font, bookTitle(book).c_str(), std::max(1, bounds.width - 8));
   const int lineHeight = renderer_.text.getLineHeight(font);
   const int textWidth = renderer_.text.getWidth(font, title.c_str());

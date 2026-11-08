@@ -227,7 +227,7 @@ void drawMissingSpineTitle(const GfxRenderer& renderer, const RecentBook& book, 
                            const int width, const int height) {
   if (width <= 0 || height <= 0) return;
 
-  const int font = MONTSERRAT_8_FONT_ID;
+  const int font = systemFontIdForPointSize(8);
   const std::string title = support::titleFor(book);
   const int availableLength = std::max(1, height - 8);
   const std::string shown = renderer.text.truncate(font, title.c_str(), availableLength);
@@ -275,7 +275,7 @@ void drawBookBody(GfxRenderer& renderer, const RecentBook& book, const int x, co
     drawMissingSpineTitle(renderer, book, x, y, width, height);
     return;
   }
-  support::drawThumbnail(renderer, book, x, y, width, height, MONTSERRAT_10_FONT_ID, false, true, true, true);
+  support::drawThumbnail(renderer, book, x, y, width, height, systemFontIdForPointSize(10), false, true, true, true);
 }
 
 void drawFakePages(const GfxRenderer& renderer, const int x, const int y, const int width, const int pageHeight,
@@ -534,7 +534,7 @@ void VerticalBookshelf::render(GfxRenderer& renderer, const int x, const int y, 
   const auto& books = RECENT_BOOKS.getBooks();
   renderer.rectangle.fill(x, y, width, height, false);
   if (books.empty()) {
-    renderer.text.centered(MONTSERRAT_12_FONT_ID, y + height / 2, "No recent books");
+    renderer.text.centered(systemFontIdForPointSize(12), y + height / 2, "No recent books");
     return;
   }
   renderBookshelf(renderer, x, y, width, height, books.data(),

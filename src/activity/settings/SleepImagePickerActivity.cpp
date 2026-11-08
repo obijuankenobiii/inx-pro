@@ -157,7 +157,7 @@ void SleepImagePickerActivity::drawPickerChrome(const int pageStart, const int r
                                                 const bool localRandomEnabled, const bool drawCells) {
   const int pageWidth = renderer.getScreenWidth();
   const int pageHeight = renderer.getScreenHeight();
-  renderer.text.render(MONTSERRAT_16_FONT_ID, 20, 20, "Choose sleep image", true,
+  renderer.text.render(systemFontIdForPointSize(16), 20, 20, "Choose sleep image", true,
                        EpdFontFamily::BOLD);
   renderer.bitmap.icon(Close, pageWidth - 60, 20, 40, 40);
 
@@ -190,7 +190,7 @@ void SleepImagePickerActivity::drawPickerChrome(const int pageStart, const int r
     const int emptyH = gridBottom - GRID_TOP;
     renderer.rectangle.render(emptyX, emptyY, emptyW, emptyH, true);
     const char* msg = "No sleep images";
-    const int msgFont = MONTSERRAT_12_FONT_ID;
+    const int msgFont = systemFontIdForPointSize(12);
     const int msgW = renderer.text.getWidth(msgFont, msg);
     renderer.text.render(msgFont, emptyX + (emptyW - msgW) / 2,
                          emptyY + (emptyH - renderer.text.getLineHeight(msgFont)) / 2, msg, true);
@@ -202,7 +202,7 @@ void SleepImagePickerActivity::drawPickerChrome(const int pageStart, const int r
     char pageText[16];
     std::snprintf(pageText, sizeof(pageText), "%d - %d", currentPage, totalPages);
 
-    const int pageFont = MONTSERRAT_12_FONT_ID;
+    const int pageFont = systemFontIdForPointSize(12);
     const int pagePadX = 8;
     const int pageTextW = renderer.text.getWidth(pageFont, pageText);
     const int pageLineH = renderer.text.getLineHeight(pageFont);
@@ -218,8 +218,8 @@ void SleepImagePickerActivity::drawPickerChrome(const int pageStart, const int r
   const char* buttonText = "Random";
   const int buttonTextX = buttonX;
   const int buttonTextY =
-      buttonY + (RANDOM_BUTTON_H - renderer.text.getLineHeight(MONTSERRAT_12_FONT_ID)) / 2;
-  renderer.text.render(MONTSERRAT_12_FONT_ID, buttonTextX, buttonTextY, buttonText, true,
+      buttonY + (RANDOM_BUTTON_H - renderer.text.getLineHeight(systemFontIdForPointSize(12))) / 2;
+  renderer.text.render(systemFontIdForPointSize(12), buttonTextX, buttonTextY, buttonText, true,
                        EpdFontFamily::BOLD);
   ReaderFontSettingsDraw::drawToggleCheckbox(renderer, pageWidth - FOOTER_SIDE_PAD, buttonY,
                                                RANDOM_BUTTON_H, false, localRandomEnabled);
@@ -264,7 +264,7 @@ void SleepImagePickerActivity::drawPickerThumbnails(const int pageStart, const i
 
     if (!rendered) {
       const char* msg = "No preview";
-    const int msgFont = MONTSERRAT_12_FONT_ID;
+    const int msgFont = systemFontIdForPointSize(12);
       const int msgW = renderer.text.getWidth(msgFont, msg);
       renderer.text.render(msgFont, cellX + (cellW - msgW) / 2,
                            cellY + (cellH - renderer.text.getLineHeight(msgFont)) / 2, msg, true);
