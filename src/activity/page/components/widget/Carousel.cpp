@@ -497,7 +497,7 @@ int Carousel::hitTest(const int index, const int count, const int x, const int y
         y < layout.sideY + layout.sideHeight) {
       return static_cast<int>(visibleBookIndex(books, 1, hideFirst));
     }
-    return -1;
+    return static_cast<int>(visibleBookIndex(books, 0, hideFirst));
   }
   if (x >= layout.centerX && x < layout.centerX + layout.centerWidth && y >= layout.centerY &&
       y < layout.centerY + layout.centerHeight) {
@@ -513,7 +513,8 @@ int Carousel::hitTest(const int index, const int count, const int x, const int y
       y < layout.sideY + layout.sideHeight) {
     return static_cast<int>(visibleBookIndex(books, index + 1, hideFirst));
   }
-  return -1;
+  // Keep unused space inside the carousel widget tappable for the current book.
+  return static_cast<int>(visibleBookIndex(books, index, hideFirst));
 }
 
 int Carousel::hitTestLeft(const int index, const int count, const int x, const int y, const int areaX, const int areaY,
@@ -532,5 +533,6 @@ int Carousel::hitTestLeft(const int index, const int count, const int x, const i
     }
     cardX += card.width + kLeftCardGap;
   }
-  return -1;
+  // The cards do not always fill the whole 1x2/1x3 carousel slot.
+  return static_cast<int>(visibleBookIndex(books, current, hideFirst));
 }

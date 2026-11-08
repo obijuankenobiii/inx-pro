@@ -22,7 +22,6 @@
 #include <tuple>
 #include <type_traits>
 
-#include "activity/OpdsServerListActivity.h"
 #include "activity/network/CalibreConnectActivity.h"
 #include "activity/network/HotspotActivity.h"
 #include "activity/network/LocalNetworkActivity.h"
@@ -289,9 +288,6 @@ void onNetworkModeSelected(NetworkMode mode) {
       break;
     case NetworkMode::CREATE_HOTSPOT:
       switchTo<HotspotActivity>(render, input, onGoToFileTransfer);
-      break;
-    case NetworkMode::OPDS_BROWSER:
-      switchTo<OpdsServerListActivity>(render, input, onGoToFileTransfer);
       break;
   }
 }

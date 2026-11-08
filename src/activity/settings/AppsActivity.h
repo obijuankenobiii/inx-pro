@@ -23,7 +23,8 @@ class AppsActivity final : public UiPage {
 
  private:
   static constexpr int kRowHeight = 100;
-  static constexpr int kMenuItemCount = 6;
+  static constexpr int kCompactRowHeight = 94;
+  static constexpr int kMenuItemCount = 7;
 
   std::function<void()> onBack_;
   std::unique_ptr<Activity> subActivity_;
@@ -31,6 +32,7 @@ class AppsActivity final : public UiPage {
   bool subActivityFinished_ = false;
 
   static int bodyTop();
+  int rowHeight() const;
   int visibleItemCount() const;
   int itemIndex(int visibleIndex) const;
   void enterChild(Activity* activity);

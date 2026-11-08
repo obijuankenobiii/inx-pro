@@ -40,6 +40,12 @@ class HalGPIO {
   bool wasTouchTap(float& nx, float& ny) const;
   unsigned long lastTouchHeldMs() const;
 
+  /** Drops a swipe latched for the current input cycle. */
+  void discardTouchSwipe();
+
+  /** Swallows the currently held touch through its release. */
+  void ignoreCurrentTouchUntilRelease();
+
   enum class TouchSwipe : uint8_t { None, Up, Down, Left, Right };
   TouchSwipe touchSwipe() const { return touchSwipeDirection; }
   bool touchSwipeStart(float& nx, float& ny) const;
@@ -76,6 +82,7 @@ class HalGPIO {
   float touchSwipeStartNy = 0.0f;
   bool lastTouchPressed = false;
   bool touchGestureActive = false;
+  bool suppressTouchUntilRelease = false;
   InputManager::TouchPoint touchGestureStart = {false, 0, 0, 0};
   InputManager::TouchPoint touchGestureLast = {false, 0, 0, 0};
   mutable int batteryCachedPercent = 0;

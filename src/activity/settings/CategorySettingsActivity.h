@@ -20,6 +20,7 @@
 
 #include "activity/page/navigation/Menu.h"
 #include "activity/ActivityWithSubactivity.h"
+#include "SettingsListLayout.h"
 #include "state/SystemSetting.h"
 
 class SystemSetting;
@@ -293,7 +294,7 @@ class CategorySettingsActivity final : public ActivityWithSubactivity, public na
     const int contentTop =
         navigation::Menu::height + 20 + UiPage::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra;
     const int contentBottom = renderer.getScreenHeight() - navigation::Menu::bottomInset() - 10;
-    itemsPerPage = (contentBottom - contentTop) / UiPage::LIST_ITEM_HEIGHT;
+    itemsPerPage = (contentBottom - contentTop) / SettingsListLayout::kRowHeight;
     if (itemsPerPage < 1) itemsPerPage = 1;
 
     groupExpanded_.fill(false);

@@ -38,7 +38,6 @@ namespace {
 
 constexpr unsigned long longPressMs = 500;
 void drawHomeClockAndBattery(const GfxRenderer& renderer) {
-  constexpr int batteryRightMargin = 10;
   constexpr int clockRightMargin = 20;
   constexpr int batteryClockGap = 10;
   const bool showPercentage = SETTINGS.hideBatteryPercentage != SystemSetting::HIDE_BATTERY_PERCENTAGE::HIDE_ALWAYS;
@@ -48,7 +47,7 @@ void drawHomeClockAndBattery(const GfxRenderer& renderer) {
                                : ScreenComponents::BATTERY_ICON_WIDTH;
   const int top = navigation::Menu::topPadding + (navigation::Menu::iconSize - 18) / 2;
   if (!SETTINGS.showMenuClock || SETTINGS.hideMenuClock) {
-    const int batteryLeft = renderer.getScreenWidth() - batteryRightMargin - batteryWidth;
+    const int batteryLeft = renderer.getScreenWidth() - ScreenComponents::BATTERY_RIGHT_MARGIN - batteryWidth;
     ScreenComponents::drawBattery(renderer, batteryLeft, top, showPercentage);
     return;
   }
@@ -57,7 +56,7 @@ void drawHomeClockAndBattery(const GfxRenderer& renderer) {
   const bool clockDrawn = ScreenComponents::drawMenuClockRightAligned(
       renderer, renderer.getScreenWidth() - clockRightMargin, top, &clockLeft);
   if (!clockDrawn) {
-    const int batteryLeft = renderer.getScreenWidth() - batteryRightMargin - batteryWidth;
+    const int batteryLeft = renderer.getScreenWidth() - ScreenComponents::BATTERY_RIGHT_MARGIN - batteryWidth;
     ScreenComponents::drawBattery(renderer, batteryLeft, top, showPercentage);
     return;
   }
@@ -206,7 +205,10 @@ bool Home::handleSwipe() {
       renderPage();
       return true;
     }
-    return false;
+    // A completed swipe owns this input cycle even when the current layout has
+    // no page to move to. Do not let the same release fall through to a book
+    // tap hit-test.
+    return true;
   }
   float swipeNx = 0.0f;
   float swipeNy = 0.0f;
@@ -251,7 +253,10 @@ bool Home::handleSwipe() {
     }
     return true;
   }
-  return false;
+  // Keep all classified horizontal swipes out of handleTap(). This matters on
+  // touch controllers that expose tap and swipe state on the same release
+  // edge, and on edge swipes that start outside a widget's hit area.
+  return true;
 }
 
 void Home::advanceCarousel(const int delta) {

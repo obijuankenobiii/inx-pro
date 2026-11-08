@@ -31,9 +31,11 @@ void Sidebar::renderFrame(const GfxRenderer& renderer, const char* title) {
   ScreenComponents::drawWhiteOverlay(renderer, 0);
   renderer.rectangle.fill(0, 0, drawerWidth, renderer.getScreenHeight(), false);
   renderer.line.render(drawerWidth - 1, 0, drawerWidth - 1, renderer.getScreenHeight(), true);
-  renderer.text.render(systemFontIdForPointSize(16), 20, 25, title ? title : "", true, EpdFontFamily::BOLD);
-  renderer.line.render(20, navigation::Menu::height + 14, drawerWidth - 20,
-                       navigation::Menu::height + 14, true);
+  const int font = systemFontIdForPointSize(16);
+  const int textY = navigation::Menu::topPadding +
+                    (navigation::Menu::iconSize - renderer.text.getLineHeight(font)) / 2;
+  renderer.text.render(font, navigation::Menu::leftMargin, textY, title ? title : "", true,
+                       EpdFontFamily::BOLD);
 }
 
 void Sidebar::renderTextList(const GfxRenderer& renderer, const char* const* labels, const size_t count,

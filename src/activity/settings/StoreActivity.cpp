@@ -2,6 +2,7 @@
 
 #include <GfxRenderer.h>
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -129,6 +130,7 @@ void StoreActivity::render() {
   const int top = SubPage::header(renderer, "Store");
   const int font = systemFontId();
   const int screenW = renderer.getScreenWidth();
+  const int maxTextWidth = std::max(1, screenW - kTextX - kSideMargin);
   const int firstRowY = top;
   const int subtitleFont = systemFontIdForPointSize(8);
   const int contentHeight = renderer.text.getLineHeight(font) + kSubtitleGap +
@@ -146,11 +148,12 @@ void StoreActivity::render() {
       renderer.text.render(font, kTextX, titleY, kMenuItems[i].label, true, EpdFontFamily::BOLD);
     }
     const int subtitleY = titleY + renderer.text.getLineHeight(font) + kSubtitleGap;
+    const std::string subtitle = renderer.text.truncate(subtitleFont, kMenuItems[i].subtitle, maxTextWidth);
     if (disabled) {
-      renderer.text.renderGray(subtitleFont, kTextX, subtitleY, kMenuItems[i].subtitle, true,
+      renderer.text.renderGray(subtitleFont, kTextX, subtitleY, subtitle.c_str(), true,
                                EpdFontFamily::REGULAR);
     } else {
-      renderer.text.render(subtitleFont, kTextX, subtitleY, kMenuItems[i].subtitle, true,
+      renderer.text.render(subtitleFont, kTextX, subtitleY, subtitle.c_str(), true,
                            EpdFontFamily::REGULAR);
     }
     if (i + 1 < kMenuItemCount) {

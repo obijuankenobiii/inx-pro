@@ -9,7 +9,7 @@
 #endif
 
 namespace {
-constexpr float kEdgeExitMaxNx = 0.05f;
+constexpr float kEdgeExitMinNx = 0.95f;
 constexpr float kBottomExitMinNy = 0.95f;
 }
 
@@ -63,7 +63,7 @@ bool GlobalGestureHandler::handleInput(MappedInputManager& input, const bool all
     if (onGlobalExit) onGlobalExit();
     return true;
   }
-  if (input.wasTouchSwipeRightInScreen(renderer_, startNx, startNy) && startNx <= kEdgeExitMaxNx) {
+  if (input.wasTouchSwipeLeftInScreen(renderer_, startNx, startNy) && startNx >= kEdgeExitMinNx) {
     if (onGlobalLeftEdgeHome) onGlobalLeftEdgeHome();
     return true;
   }

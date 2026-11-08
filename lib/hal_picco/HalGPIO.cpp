@@ -16,7 +16,10 @@
 
 
 namespace {
-constexpr int kPiccoSwipeMinPx = 40;
+// Keep the local fallback aligned with InputManager's tap/slop boundary. If
+// this is shorter, a normal finger roll can be reported as both a tap and a
+// swipe; Home then advances the carousel instead of opening the tapped book.
+constexpr int kPiccoSwipeMinPx = 60;
 constexpr unsigned long kPiccoSwipeMaxMs = 700;
 
 uint8_t weekdayFromCalendarDate(const uint16_t year, const uint8_t month, const uint8_t day) {
@@ -64,6 +67,10 @@ void HalGPIO::serviceTouchGestures() {
   touchSwipeDirection = TouchSwipe::None;
   touchSwipeStartNx = 0.0f;
   touchSwipeStartNy = 0.0f;
+  if (suppressTouchUntilRelease) {
+    if (!inputMgr.isTouchPressed()) suppressTouchUntilRelease = false;
+    return;
+  }
   if (!inputMgr.hasTouch()) return;
 
   // The shared SDK classifier uses a 60 px swipe threshold. That is reasonable
@@ -184,6 +191,20 @@ bool HalGPIO::touchSwipeStart(float& nx, float& ny) const {
   nx = touchSwipeStartNx;
   ny = touchSwipeStartNy;
   return true;
+}
+
+void HalGPIO::ignoreCurrentTouchUntilRelease() {
+  if (!inputMgr.isTouchPressed()) return;
+  suppressTouchUntilRelease = true;
+  touchSwipeDirection = TouchSwipe::None;
+  touchPressedEvents = 0;
+  touchReleasedEvents = 0;
+}
+
+void HalGPIO::discardTouchSwipe() {
+  touchSwipeDirection = TouchSwipe::None;
+  touchPressedEvents = 0;
+  touchReleasedEvents = 0;
 }
 
 HalGPIO::MotionGesture HalGPIO::readMotionGesture(const uint8_t orientation, const uint8_t mode,

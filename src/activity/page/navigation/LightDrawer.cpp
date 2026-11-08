@@ -7,6 +7,7 @@
 
 #include <algorithm>
 
+#include "Menu.h"
 #include "images/LibraryFilterLeft.h"
 #include "images/LibraryFilterRight.h"
 #include "images/LightOff.h"
@@ -21,9 +22,9 @@
 
 namespace navigation {
 namespace {
-constexpr int lightButtonSize = 40;
-constexpr int lightButtonY = 30;
-constexpr int lightButtonRightMargin = 20;
+constexpr int lightButtonSize = Menu::iconSize;
+constexpr int lightButtonY = Menu::topPadding;
+constexpr int lightButtonRightMargin = Menu::leftMargin;
 constexpr int lightButtonGap = 10;
 constexpr int lightCaretSize = 30;
 constexpr int lightCaretGap = 8;
@@ -33,13 +34,13 @@ constexpr int lightTrackX = 56;
 constexpr int lightTrackWidth = 368;
 constexpr int lightKnobRadius = 15;
 constexpr int lightKnobBorder = 2;
-constexpr int lightBrightnessLabelY = 120;
-constexpr int lightBrightnessY = 176;
-constexpr int lightTemperatureLabelY = 240;
-constexpr int lightTemperatureY = 286;
+constexpr int lightBrightnessLabelY = 90;
+constexpr int lightBrightnessY = 146;
+constexpr int lightTemperatureLabelY = 210;
+constexpr int lightTemperatureY = 256;
 constexpr int lightIndicatorWidth = 96;
 constexpr int lightIndicatorHeight = 6;
-constexpr int lightIndicatorBottomMargin = 18;
+constexpr int lightIndicatorBottomMargin = 20;
 
 // Single-channel boards (the T5 S3) have no colour temperature to set, so the drawer ends
 // below the brightness slider, with the same bottom gap.
@@ -223,7 +224,9 @@ void LightDrawer::render() const {
                                 static_cast<int>(GfxRenderer::FillTone::Paper));
   drawerRenderer.rectangle.render(0, 0, width, lightDrawerHeight(), true);
   drawerRenderer.line.render(0, lightDrawerHeight() - 2, width - 1, lightDrawerHeight() - 2, true);
-  drawerRenderer.text.render(systemFontIdForPointSize(16), 20, 30, "Light", true, EpdFontFamily::BOLD);
+  const int titleFont = systemFontIdForPointSize(16);
+  const int titleY = Menu::topPadding + (Menu::iconSize - drawerRenderer.text.getLineHeight(titleFont)) / 2;
+  drawerRenderer.text.render(titleFont, Menu::leftMargin, titleY, "Light", true, EpdFontFamily::BOLD);
 
   const bool on = frontlight.brightness() > 0;
   const int lightButtonX = width - lightButtonRightMargin - lightButtonSize;

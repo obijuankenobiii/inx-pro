@@ -10,6 +10,8 @@
 
 #include <functional>
 
+#include <GfxRenderer.h>
+
 #include "Epub.h"
 #include "Epub/EpubActivity.h"
 #include "Mobi.h"
@@ -19,6 +21,8 @@
 #include "TxtReaderActivity.h"
 #include "Xtc.h"
 #include "XtcReaderActivity.h"
+#include "state/BookState.h"
+#include "system/Fonts.h"
 #include "system/ScreenComponents.h"
 #include "util/SdIoMutex.h"
 #include "util/StringUtils.h"
@@ -263,6 +267,17 @@ void ReaderActivity::onEnter() {
       onGoBack("");
     }
     return;
+  }
+
+  // Type detection and metadata loading happen synchronously before the
+  // concrete reader activity exists. Show feedback only on the first user
+  // open; reopening a known book should return to the reader immediately.
+  BookState::Book knownBook;
+  const bool showOpeningFeedback = !BOOK_STATE.findBook(initialBookPath, knownBook);
+  if (showOpeningFeedback) {
+    renderer.clearScreen();
+    renderer.text.centered(systemFontIdForPointSize(12), renderer.getScreenHeight() / 2, "Opening book...", true);
+    renderer.displayBufferAsync();
   }
 
   currentBookPath = initialBookPath;

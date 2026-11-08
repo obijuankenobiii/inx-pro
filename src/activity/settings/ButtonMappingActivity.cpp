@@ -24,15 +24,20 @@
 #include "system/UiLayout.h"
 
 namespace {
+constexpr bool usesVerticalSideButtons() {
+  return FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO;
+}
+
+const char* previousButtonLabel() { return usesVerticalSideButtons() ? "Up" : "Left"; }
+const char* nextButtonLabel() { return usesVerticalSideButtons() ? "Down" : "Right"; }
+
 const char* buttonLabel(const int row) {
-  static const char* const left = FREEINK_DEVICE_STICKY ? "Up" : "Left";
-  static const char* const right = FREEINK_DEVICE_STICKY ? "Down" : "Right";
-  static const char* const kLabels[] = {left, "", right, "", "Power"};
+  static const char* const kLabels[] = {previousButtonLabel(), "", nextButtonLabel(), "", "Power"};
   if (row < 0 || row >= 5) return "";
-  if (row == 1) return FREEINK_DEVICE_STICKY ? "Up (Long)" : "Left (Long)";
-  if (row == 3) return FREEINK_DEVICE_STICKY ? "Down (Long)" : "Right (Long)";
-  if (row == 0) return FREEINK_DEVICE_STICKY ? "Up (Short)" : "Left (Short)";
-  if (row == 2) return FREEINK_DEVICE_STICKY ? "Down (Short)" : "Right (Short)";
+  if (row == 1) return usesVerticalSideButtons() ? "Up (Long)" : "Left (Long)";
+  if (row == 3) return usesVerticalSideButtons() ? "Down (Long)" : "Right (Long)";
+  if (row == 0) return usesVerticalSideButtons() ? "Up (Short)" : "Left (Short)";
+  if (row == 2) return usesVerticalSideButtons() ? "Down (Short)" : "Right (Short)";
   return kLabels[row];
 }
 

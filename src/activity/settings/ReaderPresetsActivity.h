@@ -16,6 +16,7 @@
 
 #include "activity/ActivityWithSubactivity.h"
 #include "activity/page/navigation/Menu.h"
+#include "SettingsListLayout.h"
 
 class ReaderPresetsActivity final : public ActivityWithSubactivity, public navigation::Menu {
  public:
@@ -76,7 +77,7 @@ class ReaderPresetsActivity final : public ActivityWithSubactivity, public navig
   const bool embedded_;
   const bool presetsOnly_;
 
-  static constexpr int kListItemHeight = UiPage::LIST_ITEM_HEIGHT;
+  static constexpr int kListItemHeight = SettingsListLayout::kRowHeight;
   int selectedRow_ = -1;
   int scrollOffset_ = 0;
   int itemsPerPage_ = 1;

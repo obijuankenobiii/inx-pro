@@ -726,6 +726,11 @@ void Library::open(const int index) {
 }
 
 void Library::loop() {
+  // Shared navigation must see the edge swipe before library navigation treats
+  // it as a folder/back gesture. This keeps the hidden menu available on the
+  // Library main page and inside library folders.
+  if (menuInput()) return;
+
   if (loading) {
     if (updateRequired) {
       renderPage();
@@ -842,8 +847,6 @@ void Library::loop() {
     renderPage();
     return;
   }
-
-  if (menuInput()) return;
 
   if (isOpen()) {
     renderPage();

@@ -17,6 +17,7 @@
 #include "activity/settings/BaseLibraryActivity.h"
 #include "activity/settings/BaseDescriptionActivity.h"
 #include "activity/settings/BaseTemperatureActivity.h"
+#include "activity/settings/SettingsListLayout.h"
 #include "activity/util/KeyboardEntryActivity.h"
 #include "images/LibraryFilterLeft.h"
 #include "images/LibraryFilterRight.h"
@@ -30,8 +31,11 @@
 
 namespace {
 
-constexpr int kRowHeight = UiPage::LIST_ITEM_HEIGHT;
+// Keep Theme's mode/theme lists aligned with the shared Settings list geometry.
+constexpr int kRowHeight = SettingsListLayout::kRowHeight;
 constexpr int kThemeListGap = 20;
+// SubPage::header leaves a 20pt gap below the header icon before page content.
+constexpr int kThemeContentTop = navigation::Menu::topPadding + navigation::Menu::iconSize + 20;
 
 struct PreviewBounds {
   int x;
@@ -41,7 +45,7 @@ struct PreviewBounds {
 };
 
 PreviewBounds widgetPreviewBounds(const GfxRenderer& renderer) {
-  const int contentTop = navigation::Menu::height;
+  const int contentTop = kThemeContentTop;
   const int previewHeight = std::max(1, renderer.getScreenHeight() - contentTop - 20);
   return {0, contentTop, renderer.getScreenWidth(), previewHeight};
 }
@@ -386,8 +390,7 @@ void ThemePickerActivity::render() {
 }
 
 void ThemePickerActivity::renderMode() {
-  SubPage::header(renderer, "Theme");
-  const int contentTop = navigation::Menu::height;
+  const int contentTop = SubPage::header(renderer, "Theme");
   const int font = systemFontId();
   const int width = renderer.getScreenWidth();
   const char* labels[] = {"Home", "Sleep"};
@@ -397,14 +400,15 @@ void ThemePickerActivity::renderMode() {
     renderer.text.render(font, 20, y + (kRowHeight - renderer.text.getLineHeight(font)) / 2, labels[index], true,
                          EpdFontFamily::REGULAR);
     if (index == 0) {
-      renderer.line.render(0, y + kRowHeight - 1, width, y + kRowHeight - 1, true,
+      renderer.line.render(SettingsListLayout::kDividerInset, y + kRowHeight - 1,
+                           width - SettingsListLayout::kDividerInset, y + kRowHeight - 1, true,
                            LineRender::Style::Dotted);
     }
   }
 }
 
 void ThemePickerActivity::renderList() {
-  SubPage::header(renderer, "Theme");
+  const int contentTop = SubPage::header(renderer, "Theme");
   const int titleFont = systemFontIdForPointSize(16);
   const int subtitleFont = systemFontIdForPointSize(12);
   constexpr int headerTop = navigation::Menu::topPadding;
@@ -414,7 +418,6 @@ void ThemePickerActivity::renderList() {
   const int subtitleY = headerTop + (headerIconSize - renderer.text.getLineHeight(subtitleFont)) / 2;
   renderer.text.renderGray(subtitleFont, navigation::Menu::leftMargin + titleWidth + 10, subtitleY, subtitle, true,
                            EpdFontFamily::BOLD);
-  const int contentTop = navigation::Menu::height;
   const int font = systemFontId();
   const int width = renderer.getScreenWidth();
   const int themeCount = sleepMode_ ? HomeTheme::sleepCount() : HomeTheme::count();
@@ -439,15 +442,15 @@ void ThemePickerActivity::renderList() {
     const int activeIndex = sleepMode_ ? HomeTheme::sleepActiveIndex() : HomeTheme::activeIndex();
     Toggle::render(renderer, width - 24, y, kRowHeight, activeIndex == i, false);
     if (i + 1 < themeCount) {
-      renderer.line.render(0, y + kRowHeight - 1, width, y + kRowHeight - 1, true,
+      renderer.line.render(SettingsListLayout::kDividerInset, y + kRowHeight - 1,
+                           width - SettingsListLayout::kDividerInset, y + kRowHeight - 1, true,
                            LineRender::Style::Dotted);
     }
   }
 }
 
 void ThemePickerActivity::renderLayoutPicker() {
-  SubPage::header(renderer, "Choose layout");
-  const int contentTop = navigation::Menu::height;
+  const int contentTop = SubPage::header(renderer, "Choose layout");
   const int font = systemFontId();
   const int width = renderer.getScreenWidth();
   const int availableHeight = std::max(1, renderer.getScreenHeight() - contentTop);
@@ -474,7 +477,8 @@ void ThemePickerActivity::renderLayoutPicker() {
                          y + (sectionHeight - renderer.text.getLineHeight(font)) / 2, label, true,
                          EpdFontFamily::REGULAR);
     if (index < 2) {
-      renderer.line.render(0, y + sectionHeight - 1, width, y + sectionHeight - 1, true,
+      renderer.line.render(SettingsListLayout::kDividerInset, y + sectionHeight - 1,
+                           width - SettingsListLayout::kDividerInset, y + sectionHeight - 1, true,
                            LineRender::Style::Dotted);
     }
   }
@@ -1428,7 +1432,7 @@ void ThemePickerActivity::switchLayout(const HomeTheme::Layout layout) {
 
 void ThemePickerActivity::handleTouch(const int x, const int y) {
   if (screen_ == Screen::Mode) {
-    const int top = navigation::Menu::height;
+    const int top = kThemeContentTop;
     if (y >= top && y < top + 2 * kRowHeight) {
       sleepMode_ = y >= top + kRowHeight;
       selected_ = sleepMode_ ? HomeTheme::sleepActiveIndex() : HomeTheme::activeIndex();
@@ -1439,7 +1443,7 @@ void ThemePickerActivity::handleTouch(const int x, const int y) {
     return;
   }
   if (screen_ == Screen::List) {
-    const int contentTop = navigation::Menu::height;
+    const int contentTop = kThemeContentTop;
     if (themeActionPopup_) {
       const PopUpBounds box = PopUp::bounds(renderer, 3);
       if (!inside(x, y, box.x, box.y, box.width, box.height)) {
@@ -1481,7 +1485,7 @@ void ThemePickerActivity::handleTouch(const int x, const int y) {
     return;
   }
   if (screen_ == Screen::Layouts) {
-    const int contentTop = navigation::Menu::height;
+    const int contentTop = kThemeContentTop;
     const int availableHeight = std::max(1, renderer.getScreenHeight() - contentTop);
     const int sectionHeight = std::max(1, availableHeight / 3);
     if (y >= contentTop && y < contentTop + availableHeight) {

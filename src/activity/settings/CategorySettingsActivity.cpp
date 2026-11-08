@@ -232,7 +232,7 @@ bool CategorySettingsActivity::groupInput() {
 
   std::vector<int> rows;
   detailRows(rows);
-  const int rowHeight = UiPage::LIST_ITEM_HEIGHT;
+  const int rowHeight = SettingsListLayout::kRowHeight;
   const int listTop = navigation::Menu::height + 20;
   const int visible = std::max(1, (renderer.getScreenHeight() - listTop - 10) / rowHeight);
 
@@ -286,7 +286,7 @@ void CategorySettingsActivity::renderGroupPage() {
   const int pageHeight = renderer.getScreenHeight();
   const int titleFont = systemFontIdForPointSize(16);
   const int itemFont = systemFontId();
-  constexpr int rowHeight = UiPage::LIST_ITEM_HEIGHT;
+  constexpr int rowHeight = SettingsListLayout::kRowHeight;
   const int listTop = navigation::Menu::height + 20;
   const int visible = std::max(1, (pageHeight - listTop - 10) / rowHeight);
 
@@ -321,7 +321,8 @@ void CategorySettingsActivity::renderGroupPage() {
       }
     }
     if (i + 1 < visible && detailScroll + i + 1 < static_cast<int>(rows.size())) {
-      renderer.line.render(0, itemY + rowHeight - 1, pageWidth, itemY + rowHeight - 1, true,
+      renderer.line.render(SettingsListLayout::kDividerInset, itemY + rowHeight - 1,
+                           pageWidth - SettingsListLayout::kDividerInset, itemY + rowHeight - 1, true,
                            LineRender::Style::Dotted);
     }
   }
@@ -813,7 +814,7 @@ void CategorySettingsActivity::loop() {
           embedded && !groupOpen
               ? std::max(1, std::min(static_cast<int>(selectorOptions.size()),
                                     (renderer.getScreenHeight() - (navigation::Menu::height + 20) - 10) /
-                                        UiLayout::LIST_ITEM_HEIGHT))
+                                        SettingsListLayout::kRowHeight))
               : PopUp::bounds(renderer, static_cast<int>(selectorOptions.size()),
                               navigation::Menu::height + 20 + UiPage::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra)
                     .rows;
@@ -838,7 +839,7 @@ void CategorySettingsActivity::loop() {
         const int tapX = static_cast<int>(tapNx * pageWidth);
         const int tapY = static_cast<int>(tapNy * pageHeight);
         const int listTop = navigation::Menu::height + 20;
-        const int rowHeight = UiPage::LIST_ITEM_HEIGHT;
+        const int rowHeight = SettingsListLayout::kRowHeight;
         const int rows = std::max(0, std::min(static_cast<int>(selectorOptions.size()),
                                               (pageHeight - listTop - 10) / rowHeight));
 
@@ -945,7 +946,7 @@ void CategorySettingsActivity::loop() {
       const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
       const int startY = navigation::Menu::height + 20 + UiPage::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra;
       const int tappedIndex =
-          TouchHitTest::uniformListIndex(tapY, startY, UiLayout::LIST_ITEM_HEIGHT, itemsPerPage, scrollOffset,
+          TouchHitTest::uniformListIndex(tapY, startY, SettingsListLayout::kRowHeight, itemsPerPage, scrollOffset,
                                          static_cast<int>(menuItems.size()));
       if (tappedIndex >= 0) {
         const MenuEntry& entry = menuItems[static_cast<size_t>(tappedIndex)];
@@ -1094,7 +1095,7 @@ void CategorySettingsActivity::renderSelectorOverlay() {
     const int pageHeight = renderer.getScreenHeight();
     const int titleFont = systemFontId();
     const int itemFont = systemFontId();
-    constexpr int rowHeight = UiPage::LIST_ITEM_HEIGHT;
+    constexpr int rowHeight = SettingsListLayout::kRowHeight;
     const int listTop = navigation::Menu::height + 20;
     const int rows = std::max(0, std::min(static_cast<int>(selectorOptions.size()),
                                           (pageHeight - listTop - 10) / rowHeight));
@@ -1120,7 +1121,8 @@ void CategorySettingsActivity::renderSelectorOverlay() {
       renderer.text.render(itemFont, 20, textY, selectorOptions[optionIndex].c_str(), !selected,
                            EpdFontFamily::REGULAR);
       if (i + 1 < rows) {
-        renderer.line.render(0, rowY + rowHeight - 1, pageWidth, rowY + rowHeight - 1, !selected,
+        renderer.line.render(SettingsListLayout::kDividerInset, rowY + rowHeight - 1,
+                             pageWidth - SettingsListLayout::kDividerInset, rowY + rowHeight - 1, !selected,
                              LineRender::Style::Dotted);
       }
     }
@@ -1174,7 +1176,7 @@ void CategorySettingsActivity::render() {
   const char* nextLbl = selectorOpen ? "Page +" : "";
   const auto labels = mappedInput.mapLabels(backLbl, confirmLbl, prevLbl, nextLbl);
 
-  constexpr int itemHeight = UiPage::LIST_ITEM_HEIGHT;
+  constexpr int itemHeight = SettingsListLayout::kRowHeight;
 
   int visibleCount = 0;
   for (int i = 0; i < itemsPerPage && (i + scrollOffset) < (int)menuItems.size(); i++) {
@@ -1202,7 +1204,8 @@ void CategorySettingsActivity::render() {
       }
 
       if (hasNextItem) {
-        renderer.line.render(0, itemY + itemHeight - 1, pageWidth, itemY + itemHeight - 1, true,
+        renderer.line.render(SettingsListLayout::kDividerInset, itemY + itemHeight - 1,
+                             pageWidth - SettingsListLayout::kDividerInset, itemY + itemHeight - 1, true,
                              LineRender::Style::Dotted);
       }
       visibleCount++;
@@ -1237,7 +1240,8 @@ void CategorySettingsActivity::render() {
     }
 
     if (hasNextItem) {
-      renderer.line.render(0, itemY + itemHeight - 1, pageWidth, itemY + itemHeight - 1, true,
+      renderer.line.render(SettingsListLayout::kDividerInset, itemY + itemHeight - 1,
+                           pageWidth - SettingsListLayout::kDividerInset, itemY + itemHeight - 1, true,
                            LineRender::Style::Dotted);
     }
     visibleCount++;

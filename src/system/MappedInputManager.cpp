@@ -181,16 +181,13 @@ bool MappedInputManager::isTouchHeldInScreen(const GfxRenderer& renderer, float&
 }
 
 bool MappedInputManager::wasTouchTapInScreen(const GfxRenderer& renderer, float& nx, float& ny) const {
-#if FREEINK_DEVICE_MURPHY_M4
-  // The Murphy FT6336U backend keeps the completed swipe latched for the
-  // whole input cycle, but its tap predicate can still be true on the same
-  // release edge. Never let a classified swipe fall through to a library/UI
-  // tap hit-test; otherwise an unhandled horizontal or diagonal swipe opens
-  // the book/folder beneath the finger.
+  // Some touch backends can report a tap and a completed swipe on the same
+  // release edge (Picco's short-swipe fallback is one example). A classified
+  // swipe must always win, otherwise a library gesture can also open the item
+  // underneath the finger and the reader will handle the same gesture again.
   if (gpio.touchSwipe() != HalGPIO::TouchSwipe::None) {
     return false;
   }
-#endif
 
   float nativeNx = 0.0f;
   float nativeNy = 0.0f;

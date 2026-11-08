@@ -263,7 +263,8 @@ void ReaderPresetsActivity::render() {
                              isSelected ? 0 : 1);
       }
       if (hasNextItem) {
-        renderer.line.render(0, itemY + listItemHeight_ - 1, screenW, itemY + listItemHeight_ - 1, true,
+        renderer.line.render(SettingsListLayout::kDividerInset, itemY + listItemHeight_ - 1,
+                             screenW - SettingsListLayout::kDividerInset, itemY + listItemHeight_ - 1, true,
                              LineRender::Style::Dotted);
       }
       continue;
@@ -277,7 +278,8 @@ void ReaderPresetsActivity::render() {
       renderer.text.render(systemFontId(), 20, textY, label, isSelected ? 0 : 1);
       renderOpenNavigationIcon(renderer, screenW, itemY, listItemHeight_, isSelected);
       if (hasNextItem) {
-        renderer.line.render(0, itemY + listItemHeight_ - 1, screenW, itemY + listItemHeight_ - 1, true,
+        renderer.line.render(SettingsListLayout::kDividerInset, itemY + listItemHeight_ - 1,
+                             screenW - SettingsListLayout::kDividerInset, itemY + listItemHeight_ - 1, true,
                              LineRender::Style::Dotted);
       }
       continue;
@@ -291,7 +293,8 @@ void ReaderPresetsActivity::render() {
       renderer.text.render(systemFontId(), 20, textY, label, isSelected ? 0 : 1);
       renderOpenNavigationIcon(renderer, screenW, itemY, listItemHeight_, isSelected);
       if (hasNextItem) {
-        renderer.line.render(0, itemY + listItemHeight_ - 1, screenW, itemY + listItemHeight_ - 1, true,
+        renderer.line.render(SettingsListLayout::kDividerInset, itemY + listItemHeight_ - 1,
+                             screenW - SettingsListLayout::kDividerInset, itemY + listItemHeight_ - 1, true,
                              LineRender::Style::Dotted);
       }
       continue;
@@ -313,7 +316,8 @@ void ReaderPresetsActivity::render() {
                      READER_PRESETS.isPresetDefault(presetIndex), isSelected);
     }
     if (hasNextItem) {
-      renderer.line.render(0, itemY + listItemHeight_ - 1, screenW, itemY + listItemHeight_ - 1, true,
+      renderer.line.render(SettingsListLayout::kDividerInset, itemY + listItemHeight_ - 1,
+                           screenW - SettingsListLayout::kDividerInset, itemY + listItemHeight_ - 1, true,
                            LineRender::Style::Dotted);
     }
   }

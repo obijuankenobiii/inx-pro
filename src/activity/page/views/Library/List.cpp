@@ -62,7 +62,12 @@ void List::reset() { page = 0; }
 
 int List::top() const { return navigation::Menu::height; }
 
-int List::visibleRows() const { return itemsPerPage; }
+int List::visibleRows() const {
+  // With the hidden sidebar there is no bottom tab bar consuming the final
+  // row's space, so expose one additional library item without changing the
+  // normal tab-bar layout.
+  return itemsPerPage + (SETTINGS.hiddenMenu != 0 ? 1 : 0);
+}
 
 int List::pageCount() const {
   const int rows = visibleRows();
