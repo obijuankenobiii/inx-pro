@@ -3,7 +3,7 @@
 #include <functional>
 
 #include "activity/Activity.h"
-#include "system/UiLayout.h"
+#include "SettingsListLayout.h"
 
 class BaseTemperatureActivity final : public Activity {
  public:
@@ -20,7 +20,7 @@ class BaseTemperatureActivity final : public Activity {
   void loop() override;
 
  private:
-  static constexpr int kRowHeight = UiLayout::LIST_ITEM_HEIGHT;
+  static constexpr int kRowHeight = SettingsListLayout::kRowHeight;
 
   bool fahrenheit_ = false;
   bool unitPopup_ = false;

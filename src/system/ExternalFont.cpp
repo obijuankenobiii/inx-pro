@@ -36,14 +36,15 @@ namespace {
 constexpr uint32_t kPackedFontMagic = 0x45504446u;
 constexpr uint32_t kPackedFontVersion = 1u;
 
-uint8_t* allocateFontBuffer(const size_t bytes, bool* inPsram) {
-  if (inPsram) *inPsram = false;
+// Outline fonts are intentionally kept out of the internal heap. stb_truetype
+// reads the font face repeatedly while rasterizing glyphs, so falling back to
+// internal RAM here both competes with the display/input tasks and makes the
+// result dependent on allocation order. The ESP32 targets all provide PSRAM;
+// fail the load cleanly if it is unavailable instead of silently moving a TTF
+// into internal RAM.
+uint8_t* allocateTtfPsramBuffer(const size_t bytes) {
 #if defined(ARDUINO_ARCH_ESP32)
-  if (uint8_t* psram = static_cast<uint8_t*>(heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT))) {
-    if (inPsram) *inPsram = true;
-    return psram;
-  }
-  return static_cast<uint8_t*>(heap_caps_malloc(bytes, MALLOC_CAP_8BIT));
+  return static_cast<uint8_t*>(heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
 #else
   return static_cast<uint8_t*>(std::malloc(bytes));
 #endif
@@ -379,7 +380,8 @@ bool ExternalFont::loadTtf(const char* path, const uint16_t pointSize) {
     }
 
     m_ttfDataSize = static_cast<uint32_t>(fileSize);
-    m_ttfData = allocateFontBuffer(m_ttfDataSize, &m_ttfDataInPsram);
+    m_ttfData = allocateTtfPsramBuffer(m_ttfDataSize);
+    m_ttfDataInPsram = m_ttfData != nullptr;
     if (!m_ttfData) {
       INX_SERIAL.printf("[ExternalFont] Could not allocate %lu bytes for TTF/OTF %s\n",
                         static_cast<unsigned long>(m_ttfDataSize), path);
@@ -812,7 +814,10 @@ bool ExternalFont::ensureTtfBitmap(const size_t metaSlot) {
   const size_t pixelCount = static_cast<size_t>(glyph.width) * static_cast<size_t>(glyph.height);
   if (!m_ttfBitmapBuffer || m_ttfBitmapBufferSize < pixelCount) {
     releaseFontBuffer(m_ttfBitmapBuffer);
-    m_ttfBitmapBuffer = allocateFontBuffer(pixelCount, nullptr);
+    // Keep the temporary grayscale glyph raster in PSRAM too. This buffer can
+    // grow for large glyphs and must not consume the internal heap used by the
+    // display and font UI tasks.
+    m_ttfBitmapBuffer = allocateTtfPsramBuffer(pixelCount);
     m_ttfBitmapBufferSize = m_ttfBitmapBuffer ? pixelCount : 0;
   }
   if (!m_ttfBitmapBuffer) return false;

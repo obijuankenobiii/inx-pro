@@ -77,7 +77,10 @@ class LocalNetworkActivity final : public ActivityWithSubactivity {
    * @brief Prevents auto sleep during active connections
    * @return true when server is running to maintain connection
    */
-  bool preventAutoSleep() override { return state == LocalNetworkState::SERVER_RUNNING; }
+  bool preventAutoSleep() override {
+    return state == LocalNetworkState::SERVER_RUNNING ||
+           (subActivity && subActivity->preventAutoSleep());
+  }
 
  private:
   /**
@@ -112,6 +115,9 @@ class LocalNetworkActivity final : public ActivityWithSubactivity {
 
   /** @brief Stops the web server and cleans up resources */
   void stopWebServer();
+
+  /** @brief Services the transfer server while its Wi-Fi selector remains visible */
+  void serviceWebServer();
 
   TaskHandle_t displayTaskHandle;   /**< Handle for display update task */
   SemaphoreHandle_t renderingMutex; /**< Mutex for thread-safe rendering */

@@ -36,7 +36,9 @@ void BaseStatisticsActivity::render() {
   renderer.text.render(font, 20, summaryY + (kRowHeight - lineHeight) / 2, "Summary", true,
                        EpdFontFamily::REGULAR);
   Toggle::render(renderer, width - 20, summaryY, kRowHeight, showSummary_);
-  renderer.line.render(0, summaryY - 1, width, summaryY - 1, true, LineRender::Style::Dotted);
+  renderer.line.render(SettingsListLayout::kDividerInset, summaryY - 1,
+                       width - SettingsListLayout::kDividerInset, summaryY - 1, true,
+                       LineRender::Style::Dotted);
   if (stylePopup_) renderStylePopup();
   renderer.displayBuffer();
 }

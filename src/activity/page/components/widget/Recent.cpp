@@ -1,14 +1,11 @@
 #include "Recent.h"
 
 #include <BitmapRender.h>
-#include <Epub/BookMetadataCache.h>
 #include <GfxRenderer.h>
 #include <ImageRender.h>
-#include <SDCardManager.h>
 
 #include <algorithm>
 #include <cstdio>
-#include <functional>
 #include <string>
 
 #include "images/Star.h"
@@ -16,19 +13,11 @@
 #include "state/RecentBooks.h"
 #include "state/SystemSetting.h"
 #include "system/Fonts.h"
-#include "util/SdIoMutex.h"
 
 namespace {
 
-std::string thumbnailPath(const std::string& cacheDir) {
-  if (cacheDir.empty()) return {};
-  SdIoMutex::Lock ioLock;
-  char path[192];
-  for (const char* extension : {"thumb.jpg", "thumb.png", "thumb.bmp"}) {
-    snprintf(path, sizeof(path), "%s/%s", cacheDir.c_str(), extension);
-    if (SdMan.exists(path)) return path;
-  }
-  return {};
+std::string thumbnailPath(const RecentBook& book) {
+  return book.thumbnailPath;
 }
 
 std::string bookTitle(const RecentBook& book) {
@@ -80,7 +69,7 @@ void renderThumbnail(GfxRenderer& renderer, const RecentBook& book, const int x,
                      const int height, const HomeTheme::CarouselShadowStyle shadowStyle) {
   BaseCarousel::renderShadow(renderer, x + 6, y + 6, width, height, shadowStyle);
   renderer.rectangle.fill(x, y, width, height, false);
-  const std::string path = thumbnailPath(book.cachePath);
+  const std::string path = thumbnailPath(book);
   if (!path.empty()) {
     ImageRender::Options options;
     options.cropToFill = true;
@@ -104,13 +93,7 @@ void renderThumbnail(GfxRenderer& renderer, const RecentBook& book, const int x,
 int Recent::ratingStars(const RecentBook& book) const {
   if (ratingCachePath_ == book.path) return cachedRatingStars_;
   ratingCachePath_ = book.path;
-  cachedRatingStars_ = 0;
-
-  const std::string cachePath = book.cachePath.empty()
-                                    ? "/.metadata/epub/" + std::to_string(std::hash<std::string>{}(book.path))
-                                    : book.cachePath;
-  BookMetadataCache metadata(cachePath);
-  if (metadata.load()) cachedRatingStars_ = metadataRatingStars(metadata.coreMetadata.rating);
+  cachedRatingStars_ = metadataRatingStars(book.rating);
   return cachedRatingStars_;
 }
 

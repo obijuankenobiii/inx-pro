@@ -19,6 +19,7 @@
 #include "images/Recent.h"
 #include "images/Search.h"
 #include "images/Setting.h"
+#include "images/StatisticsIcon.h"
 #include "images/Sync.h"
 #include "activity/page/components/global/Sidebar.h"
 #include "system/Fonts.h"
@@ -27,6 +28,7 @@
 
 namespace {
 constexpr int regularItemCount = 6;
+constexpr int hiddenItemCount = 7;
 constexpr int itemSize = 40;
 constexpr int gridColumns = 3;
 constexpr int cellSize = 80;
@@ -37,7 +39,8 @@ constexpr int popupRows = (regularItemCount + gridColumns - 1) / gridColumns;
 constexpr int popupHeight = popupRows * cellSize + (popupRows - 1) * itemGap + 2 * popupPadding;
 constexpr int hiddenSidebarTopPadding = 24;
 constexpr int hiddenSidebarRowGap = 8;
-constexpr int hiddenSidebarIconSize = 40;
+constexpr int hiddenSidebarIconSourceSize = 40;
+constexpr int hiddenSidebarIconSize = 32;
 constexpr int hiddenSidebarIconLabelGap = 16;
 // Allow for the small edge offset reported by some digitizers while still
 // requiring the gesture to originate at the left side of the screen.
@@ -49,7 +52,7 @@ struct Item {
   const char* label;
 };
 
-const Item items[regularItemCount] = {
+const Item regularItems[regularItemCount] = {
     {Recent, navigation::Menu::Action::Home, "Home"},
     {Library, navigation::Menu::Action::Library, "Library"},
     {Setting, navigation::Menu::Action::Settings, "Settings"},
@@ -58,14 +61,31 @@ const Item items[regularItemCount] = {
     {Search, navigation::Menu::Action::Search, "Search"},
 };
 
+// The hidden sidebar has room for Statistics without changing the six-slot
+// bottom navigation. Keep Search last in this list so it remains the final
+// action in the sidebar.
+const Item hiddenItems[hiddenItemCount] = {
+    {Recent, navigation::Menu::Action::Home, "Home"},
+    {Library, navigation::Menu::Action::Library, "Library"},
+    {Setting, navigation::Menu::Action::Settings, "Settings"},
+    {Sync, navigation::Menu::Action::Sync, "Manage"},
+    {Apps, navigation::Menu::Action::Apps, "Apps"},
+    {StatisticsIcon, navigation::Menu::Action::Stats, "Statistics"},
+    {Search, navigation::Menu::Action::Search, "Search"},
+};
+
+const Item& itemForIndex(const int index) {
+  return SETTINGS.hiddenMenu != 0 ? hiddenItems[index] : regularItems[index];
+}
+
 bool current(const navigation::Menu& menu, navigation::Menu::Action action);
 
 bool excludedFromHiddenDrawer(const navigation::Menu& menu, const int index) {
   // Keep Apps out of the drawer on sub-pages without a matching main-page action;
   // otherwise keep every main-page item visible, including the current page.
   if (index == 4) {
-    for (int candidate = 0; candidate < regularItemCount; ++candidate) {
-      if (current(menu, items[candidate].action)) return false;
+    for (int candidate = 0; candidate < hiddenItemCount; ++candidate) {
+      if (current(menu, hiddenItems[candidate].action)) return false;
     }
     return true;
   }
@@ -75,7 +95,7 @@ bool excludedFromHiddenDrawer(const navigation::Menu& menu, const int index) {
 int visibleCount(const navigation::Menu& menu) {
   if (SETTINGS.hiddenMenu == 0) return regularItemCount;
   int count = 0;
-  for (int index = 0; index < regularItemCount; ++index) {
+  for (int index = 0; index < hiddenItemCount; ++index) {
     if (!excludedFromHiddenDrawer(menu, index)) ++count;
   }
   return count;
@@ -86,7 +106,7 @@ int actual(const navigation::Menu& menu, const int shown) {
   if (SETTINGS.hiddenMenu == 0) return shown;
 
   int visible = 0;
-  for (int index = 0; index < regularItemCount; ++index) {
+  for (int index = 0; index < hiddenItemCount; ++index) {
     if (excludedFromHiddenDrawer(menu, index)) continue;
     if (visible++ == shown) return index;
   }
@@ -288,7 +308,7 @@ void Menu::popup() const {
 
   if (SETTINGS.hiddenMenu != 0) {
     Sidebar::renderFrame(menuRenderer, "Menu");
-    const int labelFont = systemFontIdForPointSize(10);
+    const int labelFont = systemFontId();
     const int lineHeight = menuRenderer.text.getLineHeight(labelFont);
     for (int shown = 0; shown < visibleCount(*this); ++shown) {
       const int index = actual(*this, shown);
@@ -303,9 +323,11 @@ void Menu::popup() const {
       const int iconY = itemY + (Sidebar::rowHeight - hiddenSidebarIconSize) / 2;
       const int labelX = iconX + hiddenSidebarIconSize + hiddenSidebarIconLabelGap;
       const int labelY = itemY + (Sidebar::rowHeight - lineHeight) / 2;
-      menuRenderer.bitmap.icon(items[index].icon, iconX, iconY, hiddenSidebarIconSize, hiddenSidebarIconSize,
-                               BitmapRender::Orientation::None, active);
-      menuRenderer.text.render(labelFont, labelX, labelY, items[index].label, !active, EpdFontFamily::REGULAR);
+      menuRenderer.bitmap.iconScaled(itemForIndex(index).icon, iconX, iconY, hiddenSidebarIconSourceSize,
+                                    hiddenSidebarIconSourceSize, hiddenSidebarIconSize, hiddenSidebarIconSize,
+                                    BitmapRender::Orientation::None, active);
+      menuRenderer.text.render(labelFont, labelX, labelY, itemForIndex(index).label, !active,
+                               EpdFontFamily::REGULAR);
     }
   } else {
     menuRenderer.rectangle.fill(left, top, popupW, popupH, false);
@@ -326,7 +348,7 @@ void Menu::popup() const {
     if (active) menuRenderer.rectangle.fill(itemX, itemY, cellSize, cellSize, true);
     const int iconX = itemX + (cellSize - itemSize) / 2;
     const int iconY = itemY + (cellSize - itemSize) / 2;
-    menuRenderer.bitmap.icon(items[index].icon, iconX, iconY, itemSize, itemSize,
+    menuRenderer.bitmap.icon(itemForIndex(index).icon, iconX, iconY, itemSize, itemSize,
                              BitmapRender::Orientation::None, active);
   }
   menuRenderer.rectangle.render(left, top, popupW, popupH, true);
@@ -335,7 +357,7 @@ void Menu::popup() const {
 Menu::Action Menu::choose() const {
   open = false;
   const int index = actual(*this, selected);
-  return index >= 0 ? items[index].action : Action::None;
+  return index >= 0 ? itemForIndex(index).action : Action::None;
 }
 
 Menu::Action Menu::handleInput(MappedInputManager& input) const {

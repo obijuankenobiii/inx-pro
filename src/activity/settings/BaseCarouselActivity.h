@@ -3,8 +3,8 @@
 #include <functional>
 
 #include "activity/Activity.h"
+#include "SettingsListLayout.h"
 #include "state/HomeTheme.h"
-#include "system/UiLayout.h"
 
 class BaseCarouselActivity final : public Activity {
  public:
@@ -39,7 +39,7 @@ class BaseCarouselActivity final : public Activity {
   void loop() override;
 
  private:
-  static constexpr int kRowHeight = UiLayout::LIST_ITEM_HEIGHT;
+  static constexpr int kRowHeight = SettingsListLayout::kRowHeight;
 
   HomeTheme::CarouselStyle style_;
   bool background_ = false;

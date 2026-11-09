@@ -127,11 +127,14 @@ void StoreActivity::loop() {
 
 void StoreActivity::render() {
   renderer.clearScreen();
-  const int top = SubPage::header(renderer, "Store");
+  SubPage::header(renderer, "Store");
   const int font = systemFontId();
   const int screenW = renderer.getScreenWidth();
   const int maxTextWidth = std::max(1, screenW - kTextX - kSideMargin);
-  const int firstRowY = top;
+  // Keep the Store list aligned with Apps and Device Management.  The shared
+  // header's returned baseline differs on some devices, while bodyTop() is
+  // the common content offset used by those main pages and by touch handling.
+  const int firstRowY = bodyTop();
   const int subtitleFont = systemFontIdForPointSize(8);
   const int contentHeight = renderer.text.getLineHeight(font) + kSubtitleGap +
                             renderer.text.getLineHeight(subtitleFont);
@@ -143,9 +146,9 @@ void StoreActivity::render() {
     renderer.bitmap.icon(kMenuItems[i].icon, kIconX, y + (rowHeight - kIconSize) / 2, kIconSize, kIconSize);
     const int titleY = y + (rowHeight - contentHeight) / 2;
     if (disabled) {
-      renderer.text.renderGray(font, kTextX, titleY, kMenuItems[i].label, true, EpdFontFamily::BOLD);
+      renderer.text.renderGray(font, kTextX, titleY, kMenuItems[i].label, true, EpdFontFamily::REGULAR);
     } else {
-      renderer.text.render(font, kTextX, titleY, kMenuItems[i].label, true, EpdFontFamily::BOLD);
+      renderer.text.render(font, kTextX, titleY, kMenuItems[i].label, true, EpdFontFamily::REGULAR);
     }
     const int subtitleY = titleY + renderer.text.getLineHeight(font) + kSubtitleGap;
     const std::string subtitle = renderer.text.truncate(subtitleFont, kMenuItems[i].subtitle, maxTextWidth);

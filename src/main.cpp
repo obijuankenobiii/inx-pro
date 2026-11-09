@@ -186,6 +186,17 @@ void switchTo(Args&&... args) {
     currentActivity = nullptr;
   }
 
+  // A page refresh can take long enough for the next activity to be created
+  // before the outgoing touch sequence has fully settled. Clear anything the
+  // old page latched so a swipe/tap cannot be replayed against the new page
+  // after its synchronous onEnter() work finishes. In particular, a stale
+  // upward swipe would make the reader immediately call its back callback
+  // after opening a book.
+  input.discardPendingButtonEdges();
+  input.discardPendingTouchTap();
+  input.discardPendingSwipe();
+  input.ignoreCurrentTouch();
+
   currentActivity = new T(std::forward<Args>(args)...);
 #ifdef SIMULATOR
   INX_SERIAL.printf("[%lu] [SIM] Activity: %s\n", millis(), currentActivity->getName());
@@ -298,7 +309,7 @@ void onNetworkModeSelected(NetworkMode mode) {
  * @brief Navigates to the file transfer/sync activity.
  */
 void onGoToFileTransfer() {
-  INX_SERIAL.printf("[STICKY][NAV] Device Management\n");
+  INX_SERIAL.printf("[NAV] Device Management\n");
   switchTo<SyncActivity>(render, input, onNetworkModeSelected);
 }
 
@@ -306,7 +317,7 @@ void onGoToFileTransfer() {
  * @brief Navigates to the settings activity.
  */
 void onGoToSettings() {
-  INX_SERIAL.printf("[STICKY][NAV] Settings\n");
+  INX_SERIAL.printf("[NAV] Settings\n");
   switchTo<Settings>(render, input);
 }
 
@@ -324,7 +335,7 @@ void onGoToApps() {
  * @brief Navigates to the library activity.
  */
 void onGoToLibrary(const std::string& path) {
-  INX_SERIAL.printf("[STICKY][NAV] Library path=%s\n", path.c_str());
+  INX_SERIAL.printf("[NAV] Library path=%s\n", path.c_str());
   switchTo<Library>(render, input, path);
 }
 
@@ -429,10 +440,10 @@ void loop() {
     if (!powerDownComboTracking) {
       powerDownComboTracking = true;
       powerDownComboStartedAt = millis();
-      INX_SERIAL.println("[STICKY][MAIN] power+down restart chord started");
+      INX_SERIAL.println("[MAIN] power+down restart chord started");
     }
     if (millis() - powerDownComboStartedAt >= kPowerDownRestartHoldMs) {
-      INX_SERIAL.println("[STICKY][MAIN] power+down restart chord triggered");
+      INX_SERIAL.println("[MAIN] power+down restart chord triggered");
 #ifndef SIMULATOR
       esp_restart();
 #else

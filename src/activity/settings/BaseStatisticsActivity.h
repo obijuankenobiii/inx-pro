@@ -3,7 +3,7 @@
 #include <functional>
 
 #include "activity/Activity.h"
-#include "system/UiLayout.h"
+#include "SettingsListLayout.h"
 
 class BaseStatisticsActivity final : public Activity {
  public:
@@ -20,7 +20,7 @@ class BaseStatisticsActivity final : public Activity {
   void loop() override;
 
  private:
-  static constexpr int kRowHeight = UiLayout::LIST_ITEM_HEIGHT;
+  static constexpr int kRowHeight = SettingsListLayout::kRowHeight;
 
   bool stylePopup_ = false;
   bool lineChart_ = false;

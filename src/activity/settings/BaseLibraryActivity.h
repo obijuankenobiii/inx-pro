@@ -8,6 +8,7 @@
 
 #include "activity/Activity.h"
 #include "activity/page/components/widget/Library.h"
+#include "SettingsListLayout.h"
 
 /** Settings screen for the Library home widget. */
 class BaseLibraryActivity final : public Activity {
@@ -24,7 +25,7 @@ class BaseLibraryActivity final : public Activity {
   void loop() override;
 
  private:
-  static constexpr int kRowHeight = 70;
+  static constexpr int kRowHeight = SettingsListLayout::kRowHeight;
 
   FolderPaths selectedFolders_;
   bool background_ = false;

@@ -4,6 +4,7 @@
  */
 
 #include "KOReaderSettingsActivity.h"
+#include "SettingsListLayout.h"
 #include "system/UiLayout.h"
 
 #include <GfxRenderer.h>
@@ -18,7 +19,7 @@
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
 
-constexpr int LIST_ITEM_HEIGHT = UiPage::LIST_ITEM_HEIGHT;
+constexpr int LIST_ITEM_HEIGHT = SettingsListLayout::kRowHeight;
 
 namespace {
 constexpr uint32_t kDisplayTaskStack = 8192;
@@ -232,7 +233,8 @@ void KOReaderSettingsActivity::render() {
       }
 
       if (i + 1 < MENU_ITEMS) {
-        renderer.line.render(0, itemY + LIST_ITEM_HEIGHT - 1, screenWidth, itemY + LIST_ITEM_HEIGHT - 1, true,
+        renderer.line.render(SettingsListLayout::kDividerInset, itemY + LIST_ITEM_HEIGHT - 1,
+                             screenWidth - SettingsListLayout::kDividerInset, itemY + LIST_ITEM_HEIGHT - 1, true,
                              LineRender::Style::Dotted);
       }
     }

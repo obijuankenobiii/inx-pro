@@ -1,4 +1,5 @@
 #include "FontManagerActivity.h"
+#include "SettingsListLayout.h"
 
 #include <GfxRenderer.h>
 #include <WiFi.h>
@@ -24,7 +25,10 @@
 #include "util/StringUtils.h"
 
 namespace {
-constexpr uint32_t kDisplayTaskStack = 4096;
+// Rendering the font list can traverse preview glyphs, build several strings,
+// and enter the renderer's text path. Four kilobytes is not enough on ESP32-S3
+// and trips the stack canary before the download even starts.
+constexpr uint32_t kDisplayTaskStack = 8192;
 constexpr uint32_t kInstallTaskStack = 8192;
 constexpr int kBottomMargin = 44;
 constexpr int kSideMargin = 20;
@@ -574,7 +578,9 @@ void FontManagerActivity::render() {
                              BitmapRender::Orientation::None, selected);
       }
       if (index + 1 < end) {
-        renderer.line.render(0, y + kRowHeight - 1, screenW, y + kRowHeight - 1, true, LineRender::Style::Dotted);
+        renderer.line.render(SettingsListLayout::kDividerInset, y + kRowHeight - 1,
+                             screenW - SettingsListLayout::kDividerInset, y + kRowHeight - 1, true,
+                             LineRender::Style::Dotted);
       }
     }
     Paginator::render(renderer, paginatorPage_, pageCount, screenW - 10, fontListTop,

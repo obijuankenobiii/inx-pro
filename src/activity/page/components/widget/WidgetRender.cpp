@@ -3,7 +3,6 @@
 #include <BitmapRender.h>
 #include <GfxRenderer.h>
 #include <ImageRender.h>
-#include <SDCardManager.h>
 
 #include <algorithm>
 #include <cctype>
@@ -12,20 +11,12 @@
 
 #include "state/SystemSetting.h"
 #include "system/Fonts.h"
-#include "util/SdIoMutex.h"
 
 namespace widget::support {
 namespace {
 
 std::string thumbnailPath(const RecentBook& book) {
-  SdIoMutex::Lock ioLock;
-  char path[192] = {};
-  const std::string cache = cachePathFor(book);
-  for (const char* extension : {"thumb.jpg", "thumb.png", "thumb.bmp"}) {
-    std::snprintf(path, sizeof(path), "%s/%s", cache.c_str(), extension);
-    if (SdMan.exists(path)) return path;
-  }
-  return {};
+  return book.thumbnailPath;
 }
 
 }  // namespace

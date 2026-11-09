@@ -4,6 +4,7 @@
  */
 
 #include "TimeSyncActivity.h"
+#include "SettingsListLayout.h"
 
 #include <ArduinoJson.h>
 #include <GfxRenderer.h>
@@ -32,16 +33,15 @@
 #include "system/LanguageManager.h"
 #include "system/MappedInputManager.h"
 #include "system/TimeZoneAutoDetect.h"
-#include "system/UiLayout.h"
 
 namespace {
 constexpr int NTP_TIMEOUT_MS = 20000;
 constexpr int HTTP_TIMEOUT_MS = 8000;
-constexpr int TIMEZONE_ROW_HEIGHT = UiLayout::LIST_ITEM_HEIGHT;
+constexpr int TIMEZONE_ROW_HEIGHT = SettingsListLayout::kRowHeight;
 constexpr int TIMEZONE_SIDE_MARGIN = 20;
 constexpr int TIMEZONE_BOTTOM_MARGIN = 44;
 constexpr int TIMEZONE_CARET_SIZE = 40;
-constexpr int TIMEZONE_KEYBOARD_CONTROL_HEIGHT = UiLayout::LIST_ITEM_HEIGHT;
+constexpr int TIMEZONE_KEYBOARD_CONTROL_HEIGHT = SettingsListLayout::kRowHeight;
 constexpr int TIMEZONE_KEYBOARD_CONTROL_WIDTH = 112;
 constexpr int TIMEZONE_KEYBOARD_CONTROL_GAP = 10;
 constexpr char TIMEZONE_LIST_URL[] = "https://time.now/developer/api/timezone";
@@ -348,7 +348,8 @@ void TimeSyncActivity::render() {
       renderer.text.render(systemFontId(), TIMEZONE_SIDE_MARGIN, textY, filteredTimezoneOptions[index].c_str(), true,
                            EpdFontFamily::REGULAR);
       if (index + 1 < last) {
-        renderer.line.render(0, y + TIMEZONE_ROW_HEIGHT - 1, renderer.getScreenWidth(),
+        renderer.line.render(SettingsListLayout::kDividerInset, y + TIMEZONE_ROW_HEIGHT - 1,
+                             renderer.getScreenWidth() - SettingsListLayout::kDividerInset,
                              y + TIMEZONE_ROW_HEIGHT - 1, true, LineRender::Style::Dotted);
       }
     }

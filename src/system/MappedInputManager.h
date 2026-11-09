@@ -107,6 +107,11 @@ class MappedInputManager {
   bool consumeHeaderBackTap(const GfxRenderer& renderer) const;
   /** Injects one Back press/release edge for a touch-driven header action. */
   void injectButtonEdge(Button button) const;
+  /** Clears synthetic button edges when the current activity is being replaced. */
+  void discardPendingButtonEdges() const {
+    injectedPressedButton_ = -1;
+    injectedReleasedButton_ = -1;
+  }
 
   Labels mapLabels(const char* back, const char* confirm, const char* previous, const char* next) const;
 

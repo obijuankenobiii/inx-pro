@@ -390,7 +390,8 @@ void ButtonMappingActivity::render() {
     }
     const bool isLastInGroup = row == kQuickActionRow || row == kGestureStartRow - 1 || row == kItemCount - 1;
     if (!isLastInGroup) {
-      renderer.line.render(0, y + kRowHeight - 1, screenW, y + kRowHeight - 1, true,
+      renderer.line.render(SettingsListLayout::kDividerInset, y + kRowHeight - 1,
+                           screenW - SettingsListLayout::kDividerInset, y + kRowHeight - 1, true,
                            LineRender::Style::Dotted);
     }
   }

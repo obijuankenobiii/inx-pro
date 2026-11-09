@@ -3,6 +3,7 @@
 #include <functional>
 
 #include "activity/Activity.h"
+#include "SettingsListLayout.h"
 
 /** Settings screen for the Book Details home widget. */
 class BaseDescriptionActivity final : public Activity {
@@ -25,7 +26,7 @@ class BaseDescriptionActivity final : public Activity {
   void loop() override;
 
  private:
-  static constexpr int kRowHeight = 60;
+  static constexpr int kRowHeight = SettingsListLayout::kRowHeight;
 
   bool background_ = false;
   bool showTitle_ = true;

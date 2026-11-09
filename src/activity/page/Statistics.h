@@ -27,6 +27,12 @@ class Bitmap;
  */
 class Statistics final : public SubPage {
  private:
+  enum class ChartPeriod : uint8_t {
+    Week,
+    Month,
+    Year,
+  };
+
   /** 0 = aggregated global overview; 1..N = one book (index N-1 in allBooksStats). */
   int viewIndex = 0;
   int statsTab_ = 0;
@@ -43,13 +49,17 @@ class Statistics final : public SubPage {
   uint32_t weeklyTotalReadingTimeMs_ = 0;
   uint32_t weeklyGoalTimeMs_ = 0;
   int64_t weeklyChartWeekStartDay_ = 0;
-  bool monthlyChart_ = false;
+  ChartPeriod chartPeriod_ = ChartPeriod::Week;
+  int64_t chartAnchorDay_ = 0;
   int64_t chartPeriodStartDay_ = 0;
   std::array<uint32_t, 31> monthlyReadingTimeMs_{};
   uint32_t monthlyTotalReadingTimeMs_ = 0;
   uint32_t monthlyGoalTimeMs_ = 0;
   int monthlyChartDays_ = 0;
   int monthlyChartOffset_ = 0;
+  std::array<uint32_t, 12> yearlyReadingTimeMs_{};
+  uint32_t yearlyTotalReadingTimeMs_ = 0;
+  uint32_t yearlyGoalTimeMs_ = 0;
 
   /**
    * Loads and sorts reading statistics for all books by most recently read.
@@ -63,6 +73,7 @@ class Statistics final : public SubPage {
   bool ensureBookStatsLoaded(int bookIdx);
   void refreshWeeklyChartData();
   void refreshMonthlyChartData();
+  void refreshYearlyChartData();
   void refreshChartData();
   void moveChartPeriod(int direction);
   bool scrollMonthlyChart(int direction);
@@ -82,6 +93,7 @@ class Statistics final : public SubPage {
   void title() const override;
   void renderWeeklyChart(int chartTop, int chartBottom) const;
   void renderMonthlyChart(int chartTop, int chartBottom) const;
+  void renderYearlyChart(int chartTop, int chartBottom) const;
   void renderRadialChart(int chartTop, int chartBottom, int chartLeft, int chartRight) const;
   void renderBooksView(int contentTop, int contentBottom);
   void renderBookListThumbnail(const BookListMetadata& book, int x, int y, int width, int height) const;

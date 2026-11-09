@@ -1,4 +1,5 @@
 #include "PluginManagerActivity.h"
+#include "SettingsListLayout.h"
 
 #include <GfxRenderer.h>
 #include <WiFi.h>
@@ -20,7 +21,7 @@
 
 namespace {
 constexpr uint32_t kTaskStack = 8192;
-constexpr int kRowHeight = 80;
+constexpr int kRowHeight = SettingsListLayout::kRowHeight;
 constexpr int kSideMargin = 20;
 constexpr int kLogoX = 24;
 constexpr int kTextX = 88;
@@ -263,7 +264,8 @@ void PluginManagerActivity::render() {
                                                                                            : (installed ? Trash : Download),
                            iconX, y + (kRowHeight - kIconSize) / 2, kIconSize, kIconSize);
       if (index + 1 < packages_.size()) {
-        renderer.line.render(kSideMargin, y + kRowHeight - 1, screenW - kSideMargin, y + kRowHeight - 1, true,
+        renderer.line.render(SettingsListLayout::kDividerInset, y + kRowHeight - 1,
+                             screenW - SettingsListLayout::kDividerInset, y + kRowHeight - 1, true,
                              LineRender::Style::Dotted);
       }
     }

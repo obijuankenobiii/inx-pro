@@ -30,7 +30,8 @@ void BaseTemperatureActivity::render() {
   const char* unit = fahrenheit_ ? "Fahrenheit" : "Celsius";
   const int unitWidth = renderer.text.getWidth(font, unit);
   renderer.text.render(font, width - unitWidth - 20, textY, unit, true, EpdFontFamily::REGULAR);
-  renderer.line.render(0, contentTop + kRowHeight - 1, width, contentTop + kRowHeight - 1, true,
+  renderer.line.render(SettingsListLayout::kDividerInset, contentTop + kRowHeight - 1,
+                       width - SettingsListLayout::kDividerInset, contentTop + kRowHeight - 1, true,
                        LineRender::Style::Dotted);
 
   if (unitPopup_) renderUnitPopup();

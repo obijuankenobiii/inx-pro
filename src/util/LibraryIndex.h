@@ -23,6 +23,8 @@ class LibraryIndex {
     std::string author;
     /** Optional transient UI badge supplied by a plugin-backed library view. */
     std::string badge;
+    /** Cached reading progress attached when the index is hydrated for a UI. */
+    float progressPercent = 0.0f;
     uint16_t bookCount = 0;
     uint16_t folderCount = 0;
     bool hasMetadata = false;

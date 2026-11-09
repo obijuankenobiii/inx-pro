@@ -27,7 +27,11 @@ void BaseStreaksActivity::render() {
     renderer.text.render(font, 20, rowY + (kRowHeight - renderer.text.getLineHeight(font)) / 2, labels[row], true,
                          EpdFontFamily::REGULAR);
     Toggle::render(renderer, width - 20, rowY, kRowHeight, values[row]);
-    if (row > 0) renderer.line.render(0, rowY - 1, width, rowY - 1, true, LineRender::Style::Dotted);
+    if (row > 0) {
+      renderer.line.render(SettingsListLayout::kDividerInset, rowY - 1,
+                           width - SettingsListLayout::kDividerInset, rowY - 1, true,
+                           LineRender::Style::Dotted);
+    }
   }
   renderer.displayBuffer();
 }

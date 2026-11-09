@@ -3,7 +3,6 @@
 #include <BitmapRender.h>
 #include <GfxRenderer.h>
 #include <ImageRender.h>
-#include <SDCardManager.h>
 
 #include <algorithm>
 #include <cmath>
@@ -13,7 +12,6 @@
 #include "state/RecentBooks.h"
 #include "state/SystemSetting.h"
 #include "system/Fonts.h"
-#include "util/SdIoMutex.h"
 
 namespace {
 constexpr int kLeftCardMargin = 20;
@@ -21,15 +19,8 @@ constexpr int kLeftCardGap = 20;
 
 bool evenThumbnails() { return SETTINGS.thumbnailSize == SystemSetting::THUMBNAIL_EVEN; }
 
-std::string thumbnailPath(const std::string& cacheDir) {
-  if (cacheDir.empty()) return {};
-  SdIoMutex::Lock ioLock;
-  char path[192];
-  for (const char* extension : {"thumb.jpg", "thumb.png", "thumb.bmp"}) {
-    snprintf(path, sizeof(path), "%s/%s", cacheDir.c_str(), extension);
-    if (SdMan.exists(path)) return path;
-  }
-  return {};
+std::string thumbnailPath(const RecentBook& book) {
+  return book.thumbnailPath;
 }
 
 std::string bookTitle(const RecentBook& book) {
@@ -44,15 +35,15 @@ std::string bookTitle(const RecentBook& book) {
 void renderCover(GfxRenderer& renderer, const RecentBook& book, const int x, const int y, const int width,
                  const int height, const int font, const float cropAnchorX = 0.5f, const bool cropToFill = true,
                  const HomeTheme::CarouselShadowStyle shadowStyle = HomeTheme::CarouselShadowStyle::None) {
-  const std::string path = thumbnailPath(book.cachePath);
+  const std::string path = thumbnailPath(book);
   int backgroundX = x;
   int backgroundY = y;
   int backgroundWidth = width;
   int backgroundHeight = height;
   if (!path.empty() && !cropToFill) {
-    int sourceWidth = 0;
-    int sourceHeight = 0;
-    if (ImageRender::getDimensions(path, &sourceWidth, &sourceHeight) && sourceWidth > 0 && sourceHeight > 0) {
+    const int sourceWidth = book.thumbnailWidth;
+    const int sourceHeight = book.thumbnailHeight;
+    if (sourceWidth > 0 && sourceHeight > 0) {
       const float scale = std::min(static_cast<float>(width) / static_cast<float>(sourceWidth),
                                    static_cast<float>(height) / static_cast<float>(sourceHeight));
       backgroundWidth = std::max(1, static_cast<int>(std::lround(sourceWidth * scale)));
@@ -123,7 +114,7 @@ void renderProgressTag(GfxRenderer& renderer, const RecentBook& book, const int 
 
 void preloadCover(GfxRenderer& renderer, const RecentBook& book, const int x, const int y, const int width,
                   const int height, const float cropAnchorX, const bool cropToFill = true) {
-  const std::string path = thumbnailPath(book.cachePath);
+  const std::string path = thumbnailPath(book);
   if (path.empty()) return;
 
   ImageRender::Options options;
@@ -176,17 +167,8 @@ LeftCardBounds leftCardBounds(const RecentBook& book, const int cardX, const int
   const int bottomPadding = fullHeight ? 5 : 20;
   constexpr int gap = kLeftCardGap;
   const int contentHeight = std::max(24, height - topPadding - bottomPadding);
-  int sourceWidth = 2;
-  int sourceHeight = 3;
-  const std::string path = thumbnailPath(book.cachePath);
-  if (!path.empty()) {
-    int detectedWidth = 0;
-    int detectedHeight = 0;
-    if (ImageRender::getDimensions(path, &detectedWidth, &detectedHeight) && detectedWidth > 0 && detectedHeight > 0) {
-      sourceWidth = detectedWidth;
-      sourceHeight = detectedHeight;
-    }
-  }
+  const int sourceWidth = book.thumbnailWidth > 0 ? book.thumbnailWidth : 2;
+  const int sourceHeight = book.thumbnailHeight > 0 ? book.thumbnailHeight : 3;
   const int naturalWidth =
       std::max(24, static_cast<int>(std::lround(static_cast<float>(contentHeight) * sourceWidth / sourceHeight)));
   const int maxCardWidth = std::max(24, (width - horizontalPadding - gap * 2) * 9 / 20);
@@ -222,26 +204,18 @@ CarouselBounds twoBookBounds(const int areaX, const int areaY, const int areaW, 
   const int gap = 20;
   int centerWidth = std::min(204, std::max(40, areaW * 3 / 5));
   const int centerHeight = std::min(312, std::max(50, areaH - (fullHeight ? 10 : 28)));
-  const std::string centerPath = thumbnailPath(centerBook.cachePath);
-  if (!centerPath.empty()) {
-    int sourceWidth = 0;
-    int sourceHeight = 0;
-    if (ImageRender::getDimensions(centerPath, &sourceWidth, &sourceHeight) && sourceWidth > 0 && sourceHeight > 0) {
-      centerWidth =
-          std::max(40, static_cast<int>(std::lround(static_cast<float>(centerHeight) * sourceWidth / sourceHeight)));
-      centerWidth = std::min(204, centerWidth);
-    }
+  if (centerBook.thumbnailWidth > 0 && centerBook.thumbnailHeight > 0) {
+    centerWidth = std::max(
+        40, static_cast<int>(std::lround(static_cast<float>(centerHeight) * centerBook.thumbnailWidth /
+                                         centerBook.thumbnailHeight)));
+    centerWidth = std::min(204, centerWidth);
   }
   const int sideHeight = std::max(32, centerHeight * 9 / 10);
   int sideWidth = std::max(24, centerWidth * 3 / 5);
-  const std::string path = thumbnailPath(sideBook.cachePath);
-  if (!path.empty()) {
-    int sourceWidth = 0;
-    int sourceHeight = 0;
-    if (ImageRender::getDimensions(path, &sourceWidth, &sourceHeight) && sourceWidth > 0 && sourceHeight > 0) {
-      sideWidth =
-          std::max(24, static_cast<int>(std::lround(static_cast<float>(sideHeight) * sourceWidth / sourceHeight)));
-    }
+  if (sideBook.thumbnailWidth > 0 && sideBook.thumbnailHeight > 0) {
+    sideWidth = std::max(
+        24, static_cast<int>(std::lround(static_cast<float>(sideHeight) * sideBook.thumbnailWidth /
+                                         sideBook.thumbnailHeight)));
   }
   const int centerX = areaX + leftMargin;
   const int centerY = areaY + (areaH - centerHeight) / 2;

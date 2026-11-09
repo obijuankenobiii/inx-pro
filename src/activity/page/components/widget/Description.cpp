@@ -1,11 +1,9 @@
 #include "Description.h"
 
-#include <Epub/BookMetadataCache.h>
 #include <GfxRenderer.h>
 
 #include <algorithm>
 #include <cctype>
-#include <functional>
 #include <utility>
 
 #include "state/RecentBooks.h"
@@ -123,11 +121,6 @@ std::vector<DescriptionWidgetLine::Run> parseDescription(const std::string& raw)
   return runs;
 }
 
-std::string metadataCachePath(const RecentBook& book) {
-  if (!book.cachePath.empty()) return book.cachePath;
-  return "/.metadata/epub/" + std::to_string(std::hash<std::string>{}(book.path));
-}
-
 std::string bookTitle(const RecentBook& book) {
   if (!book.title.empty()) return book.title;
   const size_t slash = book.path.find_last_of('/');
@@ -233,11 +226,8 @@ void Description::ensureLines(const int recentIndex, const int width, const int 
     cachedRatingStars_ = 4;
   } else if (!path.empty()) {
     const RecentBook& book = books[static_cast<size_t>(recentIndex)];
-    BookMetadataCache metadata(metadataCachePath(book));
-    if (metadata.load()) {
-      raw = metadata.coreMetadata.description;
-      cachedRatingStars_ = metadataRatingStars(metadata.coreMetadata.rating);
-    }
+    raw = book.description;
+    cachedRatingStars_ = metadataRatingStars(book.rating);
   }
   lines_ = wrapDescription(renderer_, raw, std::max(1, width), font);
 }

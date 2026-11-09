@@ -4,7 +4,7 @@
  */
 
 #include "ClearCacheActivity.h"
-#include "system/UiLayout.h"
+#include "SettingsListLayout.h"
 
 #include <GfxRenderer.h>
 #include <HardwareSerial.h>
@@ -15,6 +15,8 @@
 #include <cstring>
 #include <string>
 #include <strings.h>
+
+#include <esp_heap_caps.h>
 
 #include "activity/page/SubPage.h"
 #include "activity/page/components/global/Button.h"
@@ -31,13 +33,18 @@
 #include "util/LibraryIndex.h"
 
 namespace {
-constexpr int kListItemHeight = UiPage::LIST_ITEM_HEIGHT;
+// Custom TTF glyph rendering enters stb_truetype and TextRender's temporary
+// glyph path. The old 4 KB task stack could not hold that call chain and
+// tripped the canary when this page used a system TTF font.
+constexpr uint32_t kDisplayTaskStack = 8192;
+constexpr int kListItemHeight = SettingsListLayout::kRowHeight;
 constexpr int kActionButtonWidth = 180;
 constexpr int kActionButtonHeight = Button::height;
-constexpr int kActionButtonBottomMargin = 64;
+constexpr int kActionButtonSideMargin = 20;
+constexpr int kActionButtonBottomMargin = 20;
 
 ButtonBounds actionButtonBounds(const int screenWidth, const int screenHeight) {
-  return {(screenWidth - kActionButtonWidth) / 2,
+  return {screenWidth - kActionButtonSideMargin - kActionButtonWidth,
           screenHeight - kActionButtonBottomMargin - kActionButtonHeight,
           kActionButtonWidth,
           kActionButtonHeight};
@@ -75,7 +82,8 @@ void ClearCacheActivity::onEnter() {
   selectedGroup = -1;
   updateRequired = true;
 
-  xTaskCreate(&ClearCacheActivity::taskTrampoline, "ClearCacheActivityTask", 4096, this, 1, &displayTaskHandle);
+  xTaskCreateWithCaps(&ClearCacheActivity::taskTrampoline, "ClearCacheActivityTask", kDisplayTaskStack, this, 1,
+                      &displayTaskHandle, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 }
 
 void ClearCacheActivity::onExit() {
@@ -94,7 +102,7 @@ void ClearCacheActivity::onExit() {
 
   xSemaphoreTake(renderingMutex, portMAX_DELAY);
   if (displayTaskHandle) {
-    vTaskDelete(displayTaskHandle);
+    vTaskDeleteWithCaps(displayTaskHandle);
     displayTaskHandle = nullptr;
   }
   vSemaphoreDelete(renderingMutex);
@@ -150,7 +158,11 @@ void ClearCacheActivity::render() {
       const int textY = y + (rowH - renderer.text.getLineHeight(font)) / 2;
       renderer.text.render(font, left, textY, names[i], !focused, EpdFontFamily::REGULAR);
       ReaderFontSettingsDraw::drawToggleCheckbox(renderer, pageWidth - 24, y, rowH, focused, selectedGroups[i]);
-      renderer.line.render(0, y + rowH - 1, pageWidth, y + rowH - 1, true, LineRender::Style::Dotted);
+      if (i + 1 < GROUP_COUNT) {
+        renderer.line.render(SettingsListLayout::kDividerInset, y + rowH - 1,
+                             pageWidth - SettingsListLayout::kDividerInset, y + rowH - 1, true,
+                             LineRender::Style::Dotted);
+      }
     }
 
     const bool actionFocused = selectedGroup == GROUP_COUNT;

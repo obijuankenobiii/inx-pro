@@ -1,4 +1,5 @@
 #include "LanguageManagerActivity.h"
+#include "SettingsListLayout.h"
 
 #include <GfxRenderer.h>
 #include <WiFi.h>
@@ -377,8 +378,11 @@ void LanguageManagerActivity::render() {
       } else {
         renderer.text.renderGray(font, deleteIconX - 34, textY, "Store", true, EpdFontFamily::REGULAR);
       }
-      if (index + 1 < end) renderer.line.render(0, y + kRowHeight - 1, screenW, y + kRowHeight - 1, true,
-                                                LineRender::Style::Dotted);
+      if (index + 1 < end) {
+        renderer.line.render(SettingsListLayout::kDividerInset, y + kRowHeight - 1,
+                             screenW - SettingsListLayout::kDividerInset, y + kRowHeight - 1, true,
+                             LineRender::Style::Dotted);
+      }
     }
     drawScrollBar(renderer, screenW - 8, listTop, visibleRows * kRowHeight, static_cast<int>(packages_.size()),
                   visibleRows, scrollOffset_);

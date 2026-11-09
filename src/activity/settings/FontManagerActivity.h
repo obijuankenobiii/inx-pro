@@ -11,6 +11,7 @@
 #include "activity/ActivityWithSubactivity.h"
 #include "activity/page/Page.h"
 #include "activity/page/components/global/Button.h"
+#include "SettingsListLayout.h"
 #include "system/FontPackageManager.h"
 
 /** Downloads TTF/OTF font packages and refreshes the local FontManager catalog. */
@@ -29,7 +30,7 @@ class FontManagerActivity final : public ActivityWithSubactivity {
   enum class State : uint8_t { Ready, Downloading, Failed };
   enum class CategoryFilter : uint8_t { All, SansSerif, Serif };
 
-  static constexpr int kRowHeight = UiPage::LIST_ITEM_HEIGHT;
+  static constexpr int kRowHeight = SettingsListLayout::kRowHeight;
   static constexpr int kFilterHeight = Button::height - 10;
 
   const std::function<void()> goBack_;

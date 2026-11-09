@@ -259,7 +259,8 @@ void DictionaryManagerActivity::render() {
       renderer.bitmap.icon(Download, iconX, iconY, kActionIconSize, kActionIconSize,
                            BitmapRender::Orientation::None, false);
     }
-    renderer.line.render(kSideMargin, y + kRowHeight - 1, screenW - kSideMargin, y + kRowHeight - 1, true,
+    renderer.line.render(SettingsListLayout::kDividerInset, y + kRowHeight - 1,
+                         screenW - SettingsListLayout::kDividerInset, y + kRowHeight - 1, true,
                          LineRender::Style::Dotted);
     if (installed) {
       renderer.text.centered(systemFontIdForPointSize(8), y + kRowHeight + 20, "Installed — tap to remove", true,

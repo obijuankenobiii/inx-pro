@@ -625,10 +625,12 @@ bool EpubActivity::slowPath() {
                  coverAvailable ? 1 : 0);
   ensureThumbnailExists(coverAvailable);
   const int initialSpine = epub->getSpineIndexForInitialOpen();
-  // Honor the EPUB's initial spine item. Some books place the cover image in
-  // that item and put a separate, text-only title stub immediately after it.
-  // Skipping spine 0 made those books open on the stub instead of the cover.
-  currentSpineIndex = initialSpine;
+  // A number of EPUBs declare a cover/title XHTML item first, but that item
+  // has no renderable pages. Starting there makes the first-open path build a
+  // zero-page section and can send the reader back to Library. Preserve the
+  // original behavior for that common layout and start at the first real
+  // spine item; an explicit resume target below still takes precedence.
+  currentSpineIndex = (initialSpine == 0 && epub->getSpineItemsCount() > 1) ? 1 : initialSpine;
   nextPageNumber = 0;
   if (initialSpineIndex_ >= 0 && initialSpineIndex_ < epub->getSpineItemsCount() && initialPageNumber_ >= 0) {
     currentSpineIndex = initialSpineIndex_;

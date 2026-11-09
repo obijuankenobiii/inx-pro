@@ -1,7 +1,6 @@
 #include "VerticalBookshelf.h"
 
 #include <GfxRenderer.h>
-#include <SDCardManager.h>
 #include <esp_system.h>
 
 #include <algorithm>
@@ -215,12 +214,7 @@ int fakePageHeight(const int width, const int height) {
 }
 
 bool hasThumbnail(const RecentBook& book) {
-  const std::string cache = support::cachePathFor(book);
-  for (const char* extension : {"thumb.jpg", "thumb.png", "thumb.bmp"}) {
-    const std::string path = cache + "/" + extension;
-    if (SdMan.exists(path.c_str())) return true;
-  }
-  return false;
+  return !book.thumbnailPath.empty();
 }
 
 void drawMissingSpineTitle(const GfxRenderer& renderer, const RecentBook& book, const int x, const int y,

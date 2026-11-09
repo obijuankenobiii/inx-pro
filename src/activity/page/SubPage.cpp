@@ -11,6 +11,15 @@
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
 
+namespace {
+constexpr float kBottomEdgeSwipeStartNy = 0.95f;
+}
+
+void SubPage::closeIcon(const GfxRenderer& renderer, const int x, const int y, const int size) {
+  constexpr int sourceSize = 40;
+  renderer.bitmap.iconScaled(Close, x, y, sourceSize, sourceSize, size, size);
+}
+
 int SubPage::header(const GfxRenderer& renderer, const char* name) {
   constexpr int top = navigation::Menu::topPadding;
   constexpr int size = navigation::Menu::iconSize;
@@ -18,15 +27,35 @@ int SubPage::header(const GfxRenderer& renderer, const char* name) {
   const int textY = top + (size - renderer.text.getLineHeight(font)) / 2;
   renderer.text.render(font, navigation::Menu::leftMargin, textY, name ? name : "", true,
                        EpdFontFamily::BOLD);
-  renderer.bitmap.icon(Close, renderer.getScreenWidth() - 60, top, size, size);
+  closeIcon(renderer, renderer.getScreenWidth() - 60, top, size);
   return top + size + 20;
+}
+
+int SubPage::header(const GfxRenderer& renderer, const char* name, const char* mode) {
+  const int contentTop = header(renderer, name);
+  if (!mode || mode[0] == '\0') return contentTop;
+
+  constexpr int top = navigation::Menu::topPadding;
+  constexpr int size = navigation::Menu::iconSize;
+  const int titleFont = systemFontIdForPointSize(16);
+  const int modeFont = systemFontIdForPointSize(12);
+  const int titleWidth = renderer.text.getWidth(titleFont, name ? name : "", EpdFontFamily::BOLD);
+  const int modeY = top + (size - renderer.text.getLineHeight(modeFont)) / 2;
+  renderer.text.renderGray(modeFont, navigation::Menu::leftMargin + titleWidth + 10, modeY, mode, true,
+                           EpdFontFamily::BOLD);
+  return contentTop;
 }
 
 bool SubPage::closeInput(GfxRenderer& renderer, MappedInputManager& mappedInput,
                          const std::function<void()>& close, const bool closeOnSwipeUp) {
-  if (closeOnSwipeUp && mappedInput.hasTouch() && mappedInput.wasTouchSwipeUpForRenderer(renderer)) {
-    if (close) close();
-    return true;
+  if (closeOnSwipeUp && mappedInput.hasTouch()) {
+    float swipeStartNx = 0.0f;
+    float swipeStartNy = 0.0f;
+    if (mappedInput.wasTouchSwipeUpInScreen(renderer, swipeStartNx, swipeStartNy) &&
+        swipeStartNy >= kBottomEdgeSwipeStartNy) {
+      if (close) close();
+      return true;
+    }
   }
 
   if (mappedInput.hasTouch()) {
@@ -73,13 +102,18 @@ SubPage::SubPage(const char* name, GfxRenderer& renderer, MappedInputManager& ma
 
 void SubPage::menu() {
   title();
-  renderer.bitmap.icon(Close, renderer.getScreenWidth() - 60, 20, 40, 40);
+  closeIcon(renderer, renderer.getScreenWidth() - 60, 20, 40);
 }
 
 bool SubPage::closeInput(const bool closeOnSwipeUp) {
-  if (closeOnSwipeUp && mappedInput.hasTouch() && mappedInput.wasTouchSwipeUpForRenderer(renderer)) {
-    dismiss();
-    return true;
+  if (closeOnSwipeUp && mappedInput.hasTouch()) {
+    float swipeStartNx = 0.0f;
+    float swipeStartNy = 0.0f;
+    if (mappedInput.wasTouchSwipeUpInScreen(renderer, swipeStartNx, swipeStartNy) &&
+        swipeStartNy >= kBottomEdgeSwipeStartNy) {
+      dismiss();
+      return true;
+    }
   }
 
   if (mappedInput.hasTouch()) {

@@ -4,6 +4,7 @@
  */
 
 #include "OtaUpdateActivity.h"
+#include "SettingsListLayout.h"
 #include "system/UiLayout.h"
 
 #include <GfxRenderer.h>
@@ -27,8 +28,8 @@
 
 namespace {
 constexpr uint32_t kDisplayTaskStack = 8192;
-constexpr int kSourceItemHeight = UiPage::LIST_ITEM_HEIGHT;
-constexpr int kFirmwareItemHeight = UiPage::LIST_ITEM_HEIGHT;
+constexpr int kSourceItemHeight = SettingsListLayout::kRowHeight;
+constexpr int kFirmwareItemHeight = SettingsListLayout::kRowHeight;
 const std::string kEmptyPath;
 
 bool hasBinExtension(const std::string& path) {
@@ -127,7 +128,8 @@ void drawUpdateListRow(const GfxRenderer& renderer, const int pageWidth, const i
   renderer.text.render(labelFont, 20, labelY, title, !selected, EpdFontFamily::BOLD);
   renderer.text.render(valueFont, 20, valueY, clippedValue.c_str(), !selected, EpdFontFamily::REGULAR);
   if (drawDivider) {
-    renderer.line.render(0, itemY + kFirmwareItemHeight - 1, pageWidth, itemY + kFirmwareItemHeight - 1, true,
+    renderer.line.render(SettingsListLayout::kDividerInset, itemY + kFirmwareItemHeight - 1,
+                         pageWidth - SettingsListLayout::kDividerInset, itemY + kFirmwareItemHeight - 1, true,
                          LineRender::Style::Dotted);
   }
 }
@@ -312,7 +314,8 @@ void OtaUpdateActivity::render() {
       const int textY = itemY + (kSourceItemHeight - renderer.text.getLineHeight(systemFontId())) / 2;
       renderer.text.render(systemFontId(), 20, textY, items[i], !selected, EpdFontFamily::REGULAR);
       if (i + 1 < 2) {
-        renderer.line.render(0, itemY + kSourceItemHeight - 1, pageWidth, itemY + kSourceItemHeight - 1, true,
+        renderer.line.render(SettingsListLayout::kDividerInset, itemY + kSourceItemHeight - 1,
+                             pageWidth - SettingsListLayout::kDividerInset, itemY + kSourceItemHeight - 1, true,
                              LineRender::Style::Dotted);
       }
     }
@@ -376,8 +379,9 @@ void OtaUpdateActivity::render() {
         renderer.text.render(systemFontId(), 20, textY, label.c_str(), !selected,
                              EpdFontFamily::REGULAR);
         if (i + 1 < endIndex) {
-          renderer.line.render(0, itemY + kFirmwareItemHeight - 1, pageWidth, itemY + kFirmwareItemHeight - 1, true,
-                               LineRender::Style::Dotted);
+        renderer.line.render(SettingsListLayout::kDividerInset, itemY + kFirmwareItemHeight - 1,
+                             pageWidth - SettingsListLayout::kDividerInset,
+                             itemY + kFirmwareItemHeight - 1, true, LineRender::Style::Dotted);
         }
       }
       const auto labels = mappedInput.mapLabels("« Back", "Select", "Up", "Down");

@@ -1,6 +1,6 @@
 #pragma once
 
-/** Shared geometry for the top-level Settings tabs. */
+/** Shared geometry for every settings list, including nested settings pages. */
 #include "system/UiLayout.h"
 
 namespace SettingsListLayout {

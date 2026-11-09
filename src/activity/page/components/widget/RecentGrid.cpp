@@ -1,21 +1,17 @@
 #include "RecentGrid.h"
 
 #include <BitmapRender.h>
-#include <Epub/BookMetadataCache.h>
 #include <GfxRenderer.h>
 #include <ImageRender.h>
-#include <SDCardManager.h>
 
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
-#include <functional>
 #include <string>
 
 #include "state/RecentBooks.h"
 #include "state/SystemSetting.h"
 #include "system/Fonts.h"
-#include "util/SdIoMutex.h"
 #include "BaseCarousel.h"
 
 namespace {
@@ -49,15 +45,8 @@ struct Geometry {
   int startIndex;
 };
 
-std::string thumbnailPath(const std::string& cacheDir) {
-  if (cacheDir.empty()) return {};
-  SdIoMutex::Lock ioLock;
-  char path[192];
-  for (const char* extension : {"thumb.jpg", "thumb.png", "thumb.bmp"}) {
-    std::snprintf(path, sizeof(path), "%s/%s", cacheDir.c_str(), extension);
-    if (SdMan.exists(path)) return path;
-  }
-  return {};
+std::string thumbnailPath(const RecentBook& book) {
+  return book.thumbnailPath;
 }
 
 std::string titleFor(const RecentBook& book) {
@@ -67,12 +56,6 @@ std::string titleFor(const RecentBook& book) {
   const size_t dot = book.path.find_last_of('.');
   const size_t end = dot == std::string::npos || dot < start ? book.path.size() : dot;
   return book.path.substr(start, end - start);
-}
-
-std::string metadataPath(const RecentBook& book) {
-  return book.cachePath.empty()
-             ? "/.metadata/epub/" + std::to_string(std::hash<std::string>{}(book.path))
-             : book.cachePath;
 }
 
 std::string plainDescription(const std::string& raw) {
@@ -131,7 +114,7 @@ void drawThumbnail(GfxRenderer& renderer, const RecentBook& book, const int x, c
   // rather than outlining the cover itself.
   BaseCarousel::renderShadow(renderer, x + 4, y + 4, width, height, HomeTheme::CarouselShadowStyle::Gray);
   renderer.rectangle.fill(x, y, width, height, false);
-  const std::string path = thumbnailPath(book.cachePath);
+  const std::string path = thumbnailPath(book);
   if (!path.empty()) {
     ImageRender::Options options;
     options.cropToFill = true;
@@ -285,13 +268,10 @@ void RecentGrid::render(const int x, const int y, const int width, const int hei
 }
 
 std::string RecentGrid::featuredDescription(const RecentBook& book) const {
-  const std::string path = metadataPath(book);
-  if (featuredDescriptionPath_ == path) return featuredDescription_;
+  if (featuredDescriptionPath_ == book.path) return featuredDescription_;
 
-  featuredDescriptionPath_ = path;
-  featuredDescription_.clear();
-  BookMetadataCache metadata(path);
-  if (metadata.load()) featuredDescription_ = plainDescription(metadata.coreMetadata.description);
+  featuredDescriptionPath_ = book.path;
+  featuredDescription_ = plainDescription(book.description);
   if (featuredDescription_.empty()) {
     featuredDescription_ = book.author.empty() ? "-" : book.author;
   }

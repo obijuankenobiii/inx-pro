@@ -66,13 +66,16 @@ constexpr int kStatsContentTop = kStatsHeaderBottom + 10;
 constexpr int kCalendarContentTop = kStatsHeaderBottom;
 constexpr int kWeeklyChartTop = kStatsHeaderBottom + 2;
 constexpr int kStatsContentBottomPadding = 12;
-constexpr int kBooksPerPage = 5;
 constexpr int kBooksRowHeight = 132;
 constexpr int kMonthlyMaxBarWidth = 28;
 
 int mondayBasedWeekday(const int64_t day) {
   const int value = static_cast<int>((day + 3) % 7);
   return value < 0 ? value + 7 : value;
+}
+
+int booksPerPage(const int contentTop, const int contentBottom) {
+  return std::max(1, (contentBottom - contentTop) / kBooksRowHeight);
 }
 
 uint32_t readingTimeForDate(const std::vector<ReadingHistoryEntry>& history, const uint32_t dateKey) {
@@ -159,6 +162,13 @@ int64_t monthStartDay(const int64_t day) {
   const int year = static_cast<int>(dateKey / 10000UL);
   const unsigned month = static_cast<unsigned>((dateKey / 100UL) % 100UL);
   return readingDateToDay(static_cast<uint32_t>(year) * 10000UL + month * 100UL + 1UL);
+}
+
+int64_t yearStartDay(const int64_t day) {
+  if (day <= 0) return 0;
+  const uint32_t dateKey = readingDayToDate(day);
+  const int year = static_cast<int>(dateKey / 10000UL);
+  return readingDateToDay(static_cast<uint32_t>(year) * 10000UL + 101UL);
 }
 
 ButtonBounds nextButton(const GfxRenderer& renderer) {
@@ -702,7 +712,7 @@ int drawFourColumnStats2x2(const GfxRenderer& renderer, int innerLeft, int y, in
 void Statistics::loadStats(const bool showProgress) {
   ScreenComponents::LoadingProgressLayout layout{};
   if (showProgress) {
-    layout = ScreenComponents::LoadingProgress::show(renderer, "Loading statistics...", 12);
+    layout = ScreenComponents::LoadingProgress::show(renderer, "Updating...", 12);
   }
   const auto setProgress = [this, &layout, showProgress](const int progress) {
     if (showProgress) {
@@ -790,8 +800,38 @@ void Statistics::refreshMonthlyChartData() {
   }
 }
 
+void Statistics::refreshYearlyChartData() {
+  yearlyReadingTimeMs_.fill(0);
+  yearlyTotalReadingTimeMs_ = 0;
+  yearlyGoalTimeMs_ = 0;
+  if (chartPeriodStartDay_ <= 0) return;
+
+  chartPeriodStartDay_ = yearStartDay(chartPeriodStartDay_);
+  const uint32_t firstDateKey = readingDayToDate(chartPeriodStartDay_);
+  const int year = static_cast<int>(firstDateKey / 10000UL);
+  const std::vector<ReadingHistoryEntry>& history = getReadingHistory();
+
+  for (int month = 1; month <= 12; ++month) {
+    const int monthDays = daysInMonth(year, static_cast<unsigned>(month));
+    const int64_t monthDay = readingDateToDay(static_cast<uint32_t>(year) * 10000UL +
+                                               static_cast<uint32_t>(month) * 100UL + 1UL);
+    uint32_t monthTotal = 0;
+    for (int day = 0; day < monthDays; ++day) {
+      monthTotal += readingTimeForDate(history, readingDayToDate(monthDay + day));
+    }
+    yearlyReadingTimeMs_[static_cast<size_t>(month - 1)] = monthTotal;
+    yearlyTotalReadingTimeMs_ += monthTotal;
+  }
+
+  const ReadingGoal::Status goal = ReadingGoal::status();
+  if (goal.goalMinutes > 0) {
+    const int yearDays = ((year % 4 == 0 && year % 100 != 0) || year % 400 == 0) ? 366 : 365;
+    yearlyGoalTimeMs_ = static_cast<uint32_t>(goal.goalMinutes) * static_cast<uint32_t>(yearDays) * 60UL * 1000UL;
+  }
+}
+
 bool Statistics::scrollMonthlyChart(const int direction) {
-  if (!monthlyChart_ || direction == 0) return false;
+  if (chartPeriod_ != ChartPeriod::Month || direction == 0) return false;
 
   int plottedCount = 0;
   for (int index = 0; index < monthlyChartDays_; ++index) {
@@ -815,9 +855,15 @@ bool Statistics::scrollMonthlyChart(const int direction) {
 }
 
 void Statistics::refreshChartData() {
-  if (monthlyChart_) {
-    refreshMonthlyChartData();
-    return;
+  switch (chartPeriod_) {
+    case ChartPeriod::Month:
+      refreshMonthlyChartData();
+      return;
+    case ChartPeriod::Year:
+      refreshYearlyChartData();
+      return;
+    case ChartPeriod::Week:
+      break;
   }
   weeklyChartWeekStartDay_ = chartPeriodStartDay_;
   refreshWeeklyChartData();
@@ -828,7 +874,7 @@ void Statistics::moveChartPeriod(const int direction) {
   const int64_t currentDay = currentStatisticsDay();
   if (currentDay <= 0) return;
 
-  if (monthlyChart_) {
+  if (chartPeriod_ == ChartPeriod::Month) {
     chartPeriodStartDay_ = monthStartDay(chartPeriodStartDay_);
     const int64_t currentMonthStart = monthStartDay(currentDay);
     if (direction > 0) {
@@ -840,10 +886,20 @@ void Statistics::moveChartPeriod(const int direction) {
       chartPeriodStartDay_ = monthStartDay(chartPeriodStartDay_ - 1);
     }
     if (chartPeriodStartDay_ > currentMonthStart) chartPeriodStartDay_ = currentMonthStart;
+    chartAnchorDay_ = chartPeriodStartDay_;
+  } else if (chartPeriod_ == ChartPeriod::Year) {
+    chartPeriodStartDay_ = yearStartDay(chartPeriodStartDay_);
+    const int currentYear = static_cast<int>(readingDayToDate(currentDay) / 10000UL);
+    const int currentYearStart = static_cast<int>(readingDayToDate(chartPeriodStartDay_) / 10000UL);
+    const int nextYear = currentYearStart + direction;
+    const int boundedYear = std::min(currentYear, nextYear);
+    chartPeriodStartDay_ = readingDateToDay(static_cast<uint32_t>(boundedYear) * 10000UL + 101UL);
+    chartAnchorDay_ = chartPeriodStartDay_;
   } else {
     const int64_t currentWeekStart = currentDay - mondayBasedWeekday(currentDay);
     chartPeriodStartDay_ += static_cast<int64_t>(direction) * 7;
     if (chartPeriodStartDay_ > currentWeekStart) chartPeriodStartDay_ = currentWeekStart;
+    chartAnchorDay_ = chartPeriodStartDay_;
   }
 
   monthlyChartOffset_ = 0;
@@ -897,29 +953,38 @@ void Statistics::loadIndexedBooks() {
     indexedBooks_.clear();
     return;
   }
-  indexedBooks_.erase(
-      std::remove_if(indexedBooks_.begin(), indexedBooks_.end(), [](const LibraryIndex::Book& book) {
-        return book.type != LibraryIndex::Book::Type::BOOK;
-      }),
-      indexedBooks_.end());
+  std::vector<LibraryIndex::Book> startedBooks;
+  startedBooks.reserve(indexedBooks_.size());
 
-  // The library index contains every book on the card, while Statistics only
-  // shows books that have actually been started. Use the persisted metadata
-  // snapshot here so opening the page remains a read-only, fast operation.
-  indexedBooks_.erase(
-      std::remove_if(indexedBooks_.begin(), indexedBooks_.end(), [this](const LibraryIndex::Book& book) {
-        const std::string cachePath = epubCachePathForBookPath(book.path);
-        const std::string thumbnailPath = thumbnailPathForBookCache(cachePath);
-        const auto metadata = std::find_if(
-            bookListMetadata_.begin(), bookListMetadata_.end(), [&book, &thumbnailPath](const BookListMetadata& item) {
-              if (!thumbnailPath.empty() && item.thumbnailPath == thumbnailPath) {
-                return true;
-              }
-              return !book.title.empty() && item.title == book.title;
-            });
-        return metadata == bookListMetadata_.end() || !(metadata->progressPercent > 0.0f);
-      }),
-      indexedBooks_.end());
+  // Attach progress once while hydrating the index. The Books list must not
+  // reopen one statistics file per row during every render.
+  for (LibraryIndex::Book& book : indexedBooks_) {
+    if (book.type != LibraryIndex::Book::Type::BOOK) continue;
+
+    const std::string cachePath = epubCachePathForBookPath(book.path);
+    const std::string thumbnailPath = thumbnailPathForBookCache(cachePath);
+    const auto metadata = std::find_if(
+        bookListMetadata_.begin(), bookListMetadata_.end(), [&book, &thumbnailPath](const BookListMetadata& item) {
+          if (!thumbnailPath.empty() && item.thumbnailPath == thumbnailPath) return true;
+          return !book.title.empty() && item.title == book.title;
+        });
+    if (metadata != bookListMetadata_.end()) {
+      book.progressPercent = metadata->progressPercent;
+    }
+
+    // Recent books carry the newest in-memory progress snapshot. Prefer it
+    // when available, but do not perform any disk read here.
+    const auto recentStats = std::find_if(allBooksStats.begin(), allBooksStats.end(), [&cachePath](const BookReadingStats& stats) {
+      return stats.path == cachePath;
+    });
+    if (recentStats != allBooksStats.end() && recentStats->progressPercent > 0.0f) {
+      book.progressPercent = recentStats->progressPercent;
+    }
+
+    if (!(book.progressPercent > 0.0f)) continue;
+    startedBooks.push_back(std::move(book));
+  }
+  indexedBooks_ = std::move(startedBooks);
 }
 
 bool Statistics::ensureBookStatsLoaded(const int bookIdx) {
@@ -1138,10 +1203,11 @@ void Statistics::onEnter() {
   calendarWeekStartDay_ = calendarDate != 0
                               ? readingDateToDay(calendarDate) - mondayBasedWeekday(readingDateToDay(calendarDate))
                               : 0;
-  monthlyChart_ = false;
+  chartPeriod_ = ChartPeriod::Week;
   monthlyChartOffset_ = 0;
   chartPeriodStartDay_ = calendarWeekStartDay_;
   weeklyChartWeekStartDay_ = calendarWeekStartDay_;
+  chartAnchorDay_ = calendarDate != 0 ? readingDateToDay(calendarDate) : calendarWeekStartDay_;
   refreshChartData();
   SETTINGS.runHalfRefreshOnLoadIfEnabled(renderer, SystemSetting::RefreshOnLoadPage::Statistics);
 }
@@ -1161,7 +1227,7 @@ void Statistics::refresh() {
   // Opening Statistics uses the already saved snapshot and library index.
   loadStats(false);
   indexRefreshPending_ = true;
-  LibraryIndexRefresh::start(renderer, this, "Loading statistics...");
+  LibraryIndexRefresh::start(renderer, this, "Updating...");
 }
 
 void Statistics::menu() {
@@ -1267,11 +1333,22 @@ bool Statistics::handleChartPeriodToggleTap() {
     return false;
   }
 
-  const int64_t anchorDay = monthlyChart_ ? chartPeriodStartDay_ : chartPeriodStartDay_ + 3;
-  monthlyChart_ = !monthlyChart_;
+  const int64_t anchorDay = chartAnchorDay_ > 0 ? chartAnchorDay_ : chartPeriodStartDay_;
+  switch (chartPeriod_) {
+    case ChartPeriod::Week:
+      chartPeriod_ = ChartPeriod::Month;
+      chartPeriodStartDay_ = monthStartDay(anchorDay);
+      break;
+    case ChartPeriod::Month:
+      chartPeriod_ = ChartPeriod::Year;
+      chartPeriodStartDay_ = yearStartDay(anchorDay);
+      break;
+    case ChartPeriod::Year:
+      chartPeriod_ = ChartPeriod::Week;
+      chartPeriodStartDay_ = anchorDay - mondayBasedWeekday(anchorDay);
+      break;
+  }
   monthlyChartOffset_ = 0;
-  chartPeriodStartDay_ = monthlyChart_ ? monthStartDay(anchorDay)
-                                       : anchorDay - mondayBasedWeekday(anchorDay);
   refreshChartData();
   updateRequired = true;
   renderPage();
@@ -1328,10 +1405,12 @@ bool Statistics::handleBooksInput() {
     return false;
   }
 
-  const auto pageCount = [this] {
-    const int bookCount = indexedBooks_.empty() ? static_cast<int>(bookListMetadata_.size())
-                                                : static_cast<int>(indexedBooks_.size());
-    return std::max(1, (bookCount + kBooksPerPage - 1) / kBooksPerPage);
+  const int contentTop = kStatsContentTop;
+  const int contentBottom = renderer.getScreenHeight() - 12;
+  const int booksOnPage = booksPerPage(contentTop, contentBottom);
+  const auto pageCount = [this, booksOnPage] {
+    const int bookCount = static_cast<int>(indexedBooks_.size());
+    return std::max(1, (bookCount + booksOnPage - 1) / booksOnPage);
   };
   if (mappedInput.wasPressed(MappedInputManager::Button::Up)) {
     booksPage_ = std::max(0, booksPage_ - 1);
@@ -1350,9 +1429,6 @@ bool Statistics::handleBooksInput() {
   }
 
   constexpr int rowHeight = kBooksRowHeight;
-  const int contentTop = kStatsContentTop;
-  const int contentBottom = renderer.getScreenHeight() - 12;
-
   if (mappedInput.wasTouchSwipeUp()) {
     booksPage_ = std::min(pageCount() - 1, booksPage_ + 1);
     updateRequired = true;
@@ -1374,32 +1450,24 @@ bool Statistics::handleBooksInput() {
   const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
   if (tapY >= contentTop && tapY < contentBottom) {
     const int row = (tapY - contentTop) / rowHeight;
-    const int index = booksPage_ * kBooksPerPage + row;
+    const int index = booksPage_ * booksOnPage + row;
     const int rowY = contentTop + row * rowHeight;
-    const int bookCount = indexedBooks_.empty() ? static_cast<int>(bookListMetadata_.size())
-                                                : static_cast<int>(indexedBooks_.size());
+    const int bookCount = static_cast<int>(indexedBooks_.size());
     if (index >= 0 && index < bookCount && rowY >= contentTop &&
         rowY + rowHeight <= contentBottom) {
-      if (!indexedBooks_.empty()) {
-        const std::string cachePath = epubCachePathForBookPath(indexedBooks_[static_cast<size_t>(index)].path);
-        auto existing = std::find_if(allBooksStats.begin(), allBooksStats.end(), [&cachePath](const BookReadingStats& book) {
-          return book.path == cachePath;
-        });
-        if (existing == allBooksStats.end()) {
-          BookReadingStats loaded;
-          if (!loadBookStats(cachePath.c_str(), loaded)) {
-            loaded.path = cachePath;
-            loaded.title = indexedBooks_[static_cast<size_t>(index)].title;
-          }
-          loaded.path = cachePath;
-          allBooksStats.push_back(std::move(loaded));
-          loadedBookStatsFlags_.push_back(1);
-          selectedBookIndex_ = static_cast<int>(allBooksStats.size()) - 1;
-        } else {
-          selectedBookIndex_ = static_cast<int>(std::distance(allBooksStats.begin(), existing));
-        }
+      const std::string cachePath = epubCachePathForBookPath(indexedBooks_[static_cast<size_t>(index)].path);
+      auto existing = std::find_if(allBooksStats.begin(), allBooksStats.end(), [&cachePath](const BookReadingStats& book) {
+        return book.path == cachePath;
+      });
+      if (existing == allBooksStats.end()) {
+        BookReadingStats loaded;
+        loaded.path = cachePath;
+        loaded.title = indexedBooks_[static_cast<size_t>(index)].title;
+        allBooksStats.push_back(std::move(loaded));
+        loadedBookStatsFlags_.push_back(0);
+        selectedBookIndex_ = static_cast<int>(allBooksStats.size()) - 1;
       } else {
-        selectedBookIndex_ = index;
+        selectedBookIndex_ = static_cast<int>(std::distance(allBooksStats.begin(), existing));
       }
       statsTab_ = 3;
       updateRequired = true;
@@ -1976,8 +2044,12 @@ void Statistics::renderSingleBookBottomGrid(const int bookIdx) const {
 }
 
 void Statistics::renderWeeklyChart(const int chartTop, const int chartBottom) const {
-  if (monthlyChart_) {
+  if (chartPeriod_ == ChartPeriod::Month) {
     renderMonthlyChart(chartTop, chartBottom);
+    return;
+  }
+  if (chartPeriod_ == ChartPeriod::Year) {
+    renderYearlyChart(chartTop, chartBottom);
     return;
   }
 
@@ -2195,6 +2267,112 @@ void Statistics::renderMonthlyChart(const int chartTop, const int chartBottom) c
   }
 }
 
+void Statistics::renderYearlyChart(const int chartTop, const int chartBottom) const {
+  const int screenWidth = renderer.getScreenWidth();
+  if (screenWidth <= 0 || chartBottom <= chartTop + 160) return;
+
+  constexpr const char* kMonths[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+  const int left = 24;
+  const int right = screenWidth - 24;
+  const int headerFont = systemFontIdForPointSize(10);
+  const int valueFont = systemFontIdForPointSize(18);
+  const int smallFont = systemFontIdForPointSize(8);
+  const int headerLine = renderer.text.getLineHeight(headerFont);
+  const int valueLine = renderer.text.getLineHeight(valueFont);
+  const int smallLine = renderer.text.getLineHeight(smallFont);
+  constexpr int kChartBottomPadding = 20;
+  constexpr int kMonthLabelOffset = 45;
+  const int chartContentBottom = chartBottom - kChartBottomPadding;
+  if (chartContentBottom <= chartTop + 160) return;
+
+  renderer.text.renderGray(headerFont, left, chartTop, "This year", true, EpdFontFamily::REGULAR);
+  drawStatisticsChartPeriodButton(renderer, chartTop);
+  const std::string goalText = "Goal · " + formatReadingDuration(yearlyGoalTimeMs_);
+  const int goalWidth = renderer.text.getWidth(headerFont, goalText.c_str(), EpdFontFamily::REGULAR);
+  renderer.text.renderGray(headerFont, right - goalWidth, chartTop, goalText.c_str(), true,
+                           EpdFontFamily::REGULAR);
+
+  const std::string totalText = formatReadingDuration(yearlyTotalReadingTimeMs_);
+  const int totalY = chartTop + headerLine + 18;
+  renderer.text.render(valueFont, left, totalY, totalText.c_str(), true, EpdFontFamily::BOLD);
+
+  int percent = 0;
+  if (yearlyGoalTimeMs_ > 0) {
+    percent = static_cast<int>((static_cast<uint64_t>(yearlyTotalReadingTimeMs_) * 100ULL +
+                                yearlyGoalTimeMs_ / 2ULL) /
+                               yearlyGoalTimeMs_);
+    percent = std::min(100, std::max(0, percent));
+  }
+  char percentText[12];
+  std::snprintf(percentText, sizeof(percentText), "%d%%", percent);
+  const int percentWidth = renderer.text.getWidth(valueFont, percentText, EpdFontFamily::BOLD);
+  renderer.text.render(valueFont, right - percentWidth, totalY, percentText, true, EpdFontFamily::BOLD);
+
+  const int plotTop = totalY + valueLine + 22;
+  const int plotBottom = chartContentBottom - smallLine - kMonthLabelOffset - 8;
+  const int plotHeight = plotBottom - plotTop;
+  if (plotHeight <= 20) return;
+
+  uint32_t maximum = yearlyGoalTimeMs_ / 12U;
+  int peakMonth = 0;
+  for (int month = 0; month < 12; ++month) {
+    const uint32_t value = yearlyReadingTimeMs_[static_cast<size_t>(month)];
+    if (value > maximum) maximum = value;
+    if (value > yearlyReadingTimeMs_[static_cast<size_t>(peakMonth)]) peakMonth = month;
+  }
+  if (maximum == 0) maximum = 1;
+
+  const int gridLeft = left + 8;
+  const int gridRight = right - 8;
+  const int gridWidth = std::max(1, gridRight - gridLeft);
+  constexpr int kBarGap = 5;
+  const int barWidth = std::max(4, (gridWidth - kBarGap * 11) / 12);
+  const int seriesWidth = barWidth * 12 + kBarGap * 11;
+  const int seriesLeft = gridLeft + std::max(0, (gridWidth - seriesWidth) / 2);
+
+  for (int level = 0; level <= 4; ++level) {
+    const int y = plotBottom - (plotHeight * level) / 4;
+    renderer.line.render(gridLeft, y, gridRight, y, true, LineRender::Style::Dotted);
+  }
+
+  bool hasReading = false;
+  for (int month = 0; month < 12; ++month) {
+    const int x = seriesLeft + month * (barWidth + kBarGap);
+    const uint32_t value = yearlyReadingTimeMs_[static_cast<size_t>(month)];
+    if (value > 0) hasReading = true;
+    const int barHeight = value == 0
+                              ? 0
+                              : std::max(4, static_cast<int>((static_cast<uint64_t>(value) * plotHeight) / maximum));
+    if (barHeight > 0) {
+      const int tone = static_cast<int>(month == peakMonth ? GfxRenderer::FillTone::Ink
+                                                            : GfxRenderer::FillTone::Gray);
+      renderer.rectangle.fill(x, plotBottom - barHeight, barWidth, barHeight, tone, true);
+    }
+
+    const int labelX = x + barWidth / 2 - smallLine / 2;
+    renderer.text.rotated90CW(smallFont, labelX, plotBottom + kMonthLabelOffset, kMonths[month], true,
+                              EpdFontFamily::REGULAR);
+  }
+
+  if (!hasReading) {
+    renderer.text.renderGray(smallFont, gridLeft, plotTop + std::max(0, plotHeight - smallLine) / 2,
+                             "No reading history", true, EpdFontFamily::REGULAR);
+  }
+
+  const uint32_t averageMinutes = (yearlyTotalReadingTimeMs_ + 6UL * 30000UL) / (12UL * 60000UL);
+  char averageText[32];
+  std::snprintf(averageText, sizeof(averageText), "Avg · %um/month", static_cast<unsigned>(averageMinutes));
+  renderer.text.render(smallFont, left, chartContentBottom - smallLine, averageText, true);
+
+  if (hasReading) {
+    char peakText[32];
+    std::snprintf(peakText, sizeof(peakText), "Peak · %s", kMonths[peakMonth]);
+    const int peakWidth = renderer.text.getWidth(smallFont, peakText);
+    renderer.text.render(smallFont, right - peakWidth, chartContentBottom - smallLine, peakText, true);
+  }
+}
+
 void Statistics::renderRadialChart(const int chartTop, const int chartBottom, const int chartLeft,
                                    const int chartRight) const {
   if (chartBottom <= chartTop || chartRight <= chartLeft) return;
@@ -2384,20 +2562,18 @@ void Statistics::renderBooksView(const int contentTop, const int contentBottom) 
   const int caretX = width - sideMargin - caretSize;
   const int progressWidth = 74;
   const int visibleHeight = std::max(0, contentBottom - contentTop);
-  const bool useLibraryIndex = !indexedBooks_.empty();
-  const int bookCount = useLibraryIndex ? static_cast<int>(indexedBooks_.size())
-                                       : static_cast<int>(bookListMetadata_.size());
-  const int pageCount = std::max(1, (bookCount + kBooksPerPage - 1) / kBooksPerPage);
-  const int pageStart = std::min(static_cast<int>(bookListMetadata_.size()), booksPage_ * kBooksPerPage);
-  const int indexedPageStart = std::min(bookCount, booksPage_ * kBooksPerPage);
-  const int visiblePageStart = useLibraryIndex ? indexedPageStart : pageStart;
-  const int pageEnd = std::min(bookCount, visiblePageStart + kBooksPerPage);
+  const int bookCount = static_cast<int>(indexedBooks_.size());
+  const int booksOnPage = booksPerPage(contentTop, contentBottom);
+  const int pageCount = std::max(1, (bookCount + booksOnPage - 1) / booksOnPage);
+  const int indexedPageStart = std::min(bookCount, booksPage_ * booksOnPage);
+  const int visiblePageStart = indexedPageStart;
 
   if (bookCount == 0) {
-    renderer.text.centered(systemFontId(), contentTop + 24, "Refresh statistics to load books");
+    renderer.text.centered(systemFontId(), contentTop + 24, "Refresh library index to load books");
     return;
   }
 
+  const int pageEnd = std::min(bookCount, visiblePageStart + booksOnPage);
   for (int index = visiblePageStart; index < pageEnd; ++index) {
     const int row = index - visiblePageStart;
     const int rowY = contentTop + row * rowHeight;
@@ -2405,35 +2581,17 @@ void Statistics::renderBooksView(const int contentTop, const int contentBottom) 
       continue;
     }
 
+    const LibraryIndex::Book& indexedBook = indexedBooks_[static_cast<size_t>(index)];
     BookListMetadata indexedMetadata;
-    const BookListMetadata* book = nullptr;
-    if (useLibraryIndex) {
-      const LibraryIndex::Book& indexedBook = indexedBooks_[static_cast<size_t>(index)];
-      const std::string cachePath = epubCachePathForBookPath(indexedBook.path);
-      indexedMetadata.title = indexedBook.title.empty() ? "Untitled" : indexedBook.title;
-      indexedMetadata.description = indexedBook.folder;
-      indexedMetadata.thumbnailPath = thumbnailPathForBookCache(cachePath);
-      const auto cached = std::find_if(bookListMetadata_.begin(), bookListMetadata_.end(),
-                                       [&indexedMetadata](const BookListMetadata& cachedBook) {
-                                         return cachedBook.title == indexedMetadata.title;
-                                       });
-      if (cached != bookListMetadata_.end()) {
-        indexedMetadata.progressPercent = cached->progressPercent;
-        if (!cached->thumbnailPath.empty()) indexedMetadata.thumbnailPath = cached->thumbnailPath;
-        if (!cached->description.empty()) indexedMetadata.description = cached->description;
-      }
+    indexedMetadata.title = indexedBook.title.empty() ? "Untitled" : indexedBook.title;
+    indexedMetadata.description = indexedBook.folder;
+    indexedMetadata.thumbnailPath = thumbnailPathForBookCache(epubCachePathForBookPath(indexedBook.path));
+    indexedMetadata.progressPercent = indexedBook.progressPercent;
 
-      // The persisted list metadata can lag behind the per-book statistics
-      // file. Read the same record used by the individual-book view so the
-      // main list never displays a stale 0% value.
-      BookReadingStats liveStats;
-      if (loadBookStats(cachePath.c_str(), liveStats) && liveStats.progressPercent > 0.0f) {
-        indexedMetadata.progressPercent = liveStats.progressPercent;
-      }
-      book = &indexedMetadata;
-    } else {
-      book = &bookListMetadata_[static_cast<size_t>(index)];
-    }
+    // Do not reopen statistics.bin while drawing the list. The saved list
+    // metadata is the fast snapshot used for progress here; full per-book
+    // statistics are loaded only after the user opens a row.
+    const BookListMetadata* book = &indexedMetadata;
     const int thumbY = rowY + (rowHeight - thumbnailHeight) / 2;
     renderBookListThumbnail(*book, sideMargin, thumbY, thumbnailWidth, thumbnailHeight);
 

@@ -38,7 +38,7 @@ constexpr int kIconX = 24;
 constexpr int kTextX = 88;
 constexpr int kSubtitleGap = 5;
 constexpr int kRowHeight = 100;
-constexpr int kCompactRowHeight = 94;
+constexpr int kCompactRowHeight = 92;
 
 int rowHeight() { return SETTINGS.hiddenMenu == 0 ? kCompactRowHeight : kRowHeight; }
 #if FREEINK_CAP_USB_MSC
@@ -185,7 +185,7 @@ void SyncActivity::content() {
     renderer.bitmap.icon(menuItems[index].icon, kIconX,
                          itemY + (currentRowHeight - kIconSize) / 2, kIconSize,
                          kIconSize);
-    renderer.text.render(titleFont, kTextX, titleY, menuItems[index].label, true, EpdFontFamily::BOLD);
+    renderer.text.render(titleFont, kTextX, titleY, menuItems[index].label, true, EpdFontFamily::REGULAR);
     const std::string subtitle = renderer.text.truncate(subtitleFont, menuItems[index].description, maxTextWidth);
     renderer.text.render(subtitleFont, kTextX, titleY + titleHeight + kSubtitleGap, subtitle.c_str(), true,
                          EpdFontFamily::REGULAR);

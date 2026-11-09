@@ -47,7 +47,7 @@ constexpr uint32_t STACK_SIZE = 8192;
  */
 int renderActivityHeader(const GfxRenderer& renderer, int startY, const char* title) {
   (void)startY;
-  return SubPage::header(renderer, title);
+  return SubPage::header(renderer, title, "Hotspot");
 }
 
 /**
@@ -284,7 +284,7 @@ void HotspotActivity::render() const {
   if (state == HotspotState::RUNNING) {
     renderServerRunning();
   } else if (state == HotspotState::STARTING) {
-    const int contentStart = renderActivityHeader(renderer, startY, "Hotspot");
+    const int contentStart = renderActivityHeader(renderer, startY, "File Transfer");
 
     int centerY = contentStart + (screenHeight - contentStart - BOTTOM_AREA_HEIGHT) / 2;
 
@@ -292,7 +292,7 @@ void HotspotActivity::render() const {
 
     auto labels = mappedInput.mapLabels("« Back", "", "", "");
   } else if (state == HotspotState::ERROR) {
-    const int contentStart = renderActivityHeader(renderer, startY, "Hotspot");
+    const int contentStart = renderActivityHeader(renderer, startY, "File Transfer");
 
     int centerY = contentStart + (screenHeight - contentStart - BOTTOM_AREA_HEIGHT) / 2;
 
@@ -316,7 +316,7 @@ void HotspotActivity::renderServerRunning() const {
   int screenHeight = renderer.getScreenHeight();
   int startY = 0;
 
-  const int contentStart = renderActivityHeader(renderer, startY, "Hotspot");
+  const int contentStart = renderActivityHeader(renderer, startY, "File Transfer");
 
   std::string hostnameUrl = std::string("http://") + AP_HOSTNAME + ".local/";
   std::string ipUrl = "http://" + connectedIP + "/";

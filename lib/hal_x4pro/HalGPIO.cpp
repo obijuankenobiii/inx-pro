@@ -1,6 +1,6 @@
 /**
  * @file HalGPIO.cpp
- * @brief Sticky variant of HalGPIO — delegates to freeink-sdk.
+ * @brief X4 Pro variant of HalGPIO — delegates to freeink-sdk.
  */
 
 #include <BatteryMonitor.h>

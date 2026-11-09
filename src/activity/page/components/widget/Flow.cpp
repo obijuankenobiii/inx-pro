@@ -1,16 +1,13 @@
 #include "Flow.h"
 
 #include <BitmapRender.h>
-#include <Epub/BookMetadataCache.h>
 #include <GfxRenderer.h>
 #include <ImageRender.h>
-#include <SDCardManager.h>
 
 #include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstdio>
-#include <functional>
 #include <string>
 
 #include "images/Star.h"
@@ -19,19 +16,11 @@
 #include "state/RecentBooks.h"
 #include "state/SystemSetting.h"
 #include "system/Fonts.h"
-#include "util/SdIoMutex.h"
 
 namespace {
 
-std::string thumbnailPath(const std::string& cacheDir) {
-  if (cacheDir.empty()) return {};
-  SdIoMutex::Lock ioLock;
-  char path[192];
-  for (const char* extension : {"thumb.jpg", "thumb.png", "thumb.bmp"}) {
-    std::snprintf(path, sizeof(path), "%s/%s", cacheDir.c_str(), extension);
-    if (SdMan.exists(path)) return path;
-  }
-  return {};
+std::string thumbnailPath(const RecentBook& book) {
+  return book.thumbnailPath;
 }
 
 std::string titleFor(const RecentBook& book) {
@@ -41,12 +30,6 @@ std::string titleFor(const RecentBook& book) {
   const size_t dot = book.path.find_last_of('.');
   const size_t end = dot == std::string::npos || dot < start ? book.path.size() : dot;
   return book.path.substr(start, end - start);
-}
-
-std::string metadataPath(const RecentBook& book) {
-  return book.cachePath.empty()
-             ? "/.metadata/epub/" + std::to_string(std::hash<std::string>{}(book.path))
-             : book.cachePath;
 }
 
 std::string plainDescription(const std::string& raw) {
@@ -97,7 +80,7 @@ void maskThumbnailTopCorners(GfxRenderer& renderer, const int x, const int y, co
 void drawCover(GfxRenderer& renderer, const RecentBook& book, const int x, const int y, const int width,
                const int height, const bool squareCorners = false) {
   renderer.rectangle.fill(x, y, width, height, false);
-  const std::string path = thumbnailPath(book.cachePath);
+  const std::string path = thumbnailPath(book);
   const bool rounded = !squareCorners && SETTINGS.bitmapRoundedCorners != 0;
   if (!path.empty()) {
     ImageRender::Options options;
@@ -323,18 +306,14 @@ void drawFlowArrow(GfxRenderer& renderer, const int x, const int y, const int si
 int Flow::ratingStars(const RecentBook& book) const {
   if (ratingCachePath_ == book.path) return cachedRatingStars_;
   ratingCachePath_ = book.path;
-  cachedRatingStars_ = 0;
-  BookMetadataCache metadata(metadataPath(book));
-  if (metadata.load()) cachedRatingStars_ = metadataRatingStars(metadata.coreMetadata.rating);
+  cachedRatingStars_ = metadataRatingStars(book.rating);
   return cachedRatingStars_;
 }
 
 const std::string& Flow::descriptionFor(const RecentBook& book) const {
   if (descriptionCachePath_ == book.path) return cachedDescription_;
   descriptionCachePath_ = book.path;
-  cachedDescription_.clear();
-  BookMetadataCache metadata(metadataPath(book));
-  if (metadata.load()) cachedDescription_ = plainDescription(metadata.coreMetadata.description);
+  cachedDescription_ = plainDescription(book.description);
   return cachedDescription_;
 }
 

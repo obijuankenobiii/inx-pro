@@ -1,4 +1,5 @@
 #include "QuickActionsSettingsActivity.h"
+#include "SettingsListLayout.h"
 #include "system/UiLayout.h"
 
 #include <GfxRenderer.h>
@@ -17,7 +18,7 @@
 #include "system/MappedInputManager.h"
 
 namespace {
-constexpr int kRowH = UiLayout::LIST_ITEM_HEIGHT;
+constexpr int kRowH = SettingsListLayout::kRowHeight;
 constexpr int kSideMargin = 20;
 constexpr int kBottomMargin = 44;
 constexpr int kScrollCaretSize = 40;
@@ -206,7 +207,9 @@ void QuickActionsSettingsActivity::render() {
                          EpdFontFamily::REGULAR);
     ReaderFontSettingsDraw::drawToggleCheckbox(renderer, screenW - kValueColumnRight, y, kRowH, false, checked);
     if (i + 1 < endIndex) {
-      renderer.line.render(0, y + kRowH - 1, screenW, y + kRowH - 1, true, LineRender::Style::Dotted);
+      renderer.line.render(SettingsListLayout::kDividerInset, y + kRowH - 1,
+                           screenW - SettingsListLayout::kDividerInset, y + kRowH - 1, true,
+                           LineRender::Style::Dotted);
     }
   }
 

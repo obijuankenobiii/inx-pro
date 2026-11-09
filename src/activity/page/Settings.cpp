@@ -97,7 +97,7 @@ std::vector<SettingInfo> buildSystemSettings() {
   FontManager::scanSDFonts("/fonts", false);
 
   settings.push_back(SettingInfo::Separator("Display ", GroupType::DEVICE_DISPLAY));
-  settings.push_back(SettingInfo::Toggle("Hidden Menu", &SystemSetting::hiddenMenu,
+  settings.push_back(SettingInfo::Toggle("Sidebar Menu", &SystemSetting::hiddenMenu,
                                          GroupType::DEVICE_DISPLAY));
   settings.push_back(SettingInfo::Enum(
       "Sleep Screen", &SystemSetting::sleepScreen,

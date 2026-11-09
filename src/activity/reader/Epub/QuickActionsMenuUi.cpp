@@ -186,9 +186,10 @@ void QuickActionsMenuUi::render(EpubActivity& act) {
 
   renderer.rectangle.fill(box.x, box.y, box.width, box.height, false);
 
-  const int titleY = box.y + (box.header - renderer.text.getLineHeight(systemFontIdForPointSize(10))) / 2;
-  renderer.text.render(systemFontIdForPointSize(10), box.x + 16, titleY, "Quick Actions", true,
-                       EpdFontFamily::BOLD);
+  const int titleFont = systemFontId();
+  const int actionFont = systemFontId();
+  const int titleY = box.y + (box.header - renderer.text.getLineHeight(titleFont)) / 2;
+  renderer.text.render(titleFont, box.x + 16, titleY, "Quick Actions", true, EpdFontFamily::BOLD);
 
   clampScroll();
   for (int i = 0; i < rows; ++i) {
@@ -199,8 +200,8 @@ void QuickActionsMenuUi::render(EpubActivity& act) {
     const int rowY = box.y + box.header + i * box.row;
 
     const char* label = SystemSetting::readerButtonActionLabel(actions_[static_cast<size_t>(actionIdx)]);
-    const int textY = rowY + (box.row - renderer.text.getLineHeight(systemFontIdForPointSize(10))) / 2;
-    renderer.text.render(systemFontIdForPointSize(10), box.x + 20, textY, label, true);
+    const int textY = rowY + (box.row - renderer.text.getLineHeight(actionFont)) / 2;
+    renderer.text.render(actionFont, box.x + 20, textY, label, true);
     if (i + 1 < rows) {
       renderer.line.render(box.x, rowY + box.row, box.x + box.width, rowY + box.row, true,
                            LineRender::Style::Dotted);

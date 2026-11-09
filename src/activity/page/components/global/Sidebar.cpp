@@ -5,6 +5,7 @@
 #include <algorithm>
 
 #include "../../navigation/Menu.h"
+#include "activity/page/SubPage.h"
 #include "system/Fonts.h"
 #include "system/ScreenComponents.h"
 
@@ -12,6 +13,8 @@ namespace {
 constexpr int kInnerPadding = 16;
 constexpr int kTopPadding = 24;
 constexpr int kRowGap = 8;
+constexpr int kHeaderIconSize = 40;
+constexpr int kHeaderRightPadding = 16;
 }
 
 int Sidebar::width(const GfxRenderer& renderer) {
@@ -36,6 +39,9 @@ void Sidebar::renderFrame(const GfxRenderer& renderer, const char* title) {
                     (navigation::Menu::iconSize - renderer.text.getLineHeight(font)) / 2;
   renderer.text.render(font, navigation::Menu::leftMargin, textY, title ? title : "", true,
                        EpdFontFamily::BOLD);
+  const int closeX = drawerWidth - kHeaderRightPadding - kHeaderIconSize;
+  const int closeY = navigation::Menu::topPadding + (navigation::Menu::iconSize - kHeaderIconSize) / 2;
+  SubPage::closeIcon(renderer, closeX, closeY, kHeaderIconSize);
 }
 
 void Sidebar::renderTextList(const GfxRenderer& renderer, const char* const* labels, const size_t count,

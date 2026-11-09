@@ -93,7 +93,9 @@ void BaseCarouselActivity::render() {
         break;
     }
     if (item > scrollOffset_) {
-      renderer.line.render(0, rowY - 1, width, rowY - 1, true, LineRender::Style::Dotted);
+      renderer.line.render(SettingsListLayout::kDividerInset, rowY - 1,
+                           width - SettingsListLayout::kDividerInset, rowY - 1, true,
+                           LineRender::Style::Dotted);
     }
   }
   if (itemCount > visibleRows) {

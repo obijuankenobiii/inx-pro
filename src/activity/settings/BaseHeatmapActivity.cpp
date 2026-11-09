@@ -47,8 +47,12 @@ void BaseHeatmapActivity::render() {
   renderer.text.render(font, width - labelColorWidth - 20,
                        labelColorY + (kRowHeight - renderer.text.getLineHeight(font)) / 2, labelColor, true,
                        EpdFontFamily::REGULAR);
-  renderer.line.render(0, labelY - 1, width, labelY - 1, true, LineRender::Style::Dotted);
-  renderer.line.render(0, labelColorY - 1, width, labelColorY - 1, true, LineRender::Style::Dotted);
+  renderer.line.render(SettingsListLayout::kDividerInset, labelY - 1,
+                       width - SettingsListLayout::kDividerInset, labelY - 1, true,
+                       LineRender::Style::Dotted);
+  renderer.line.render(SettingsListLayout::kDividerInset, labelColorY - 1,
+                       width - SettingsListLayout::kDividerInset, labelColorY - 1, true,
+                       LineRender::Style::Dotted);
   if (viewPopup_) renderViewPopup();
   if (labelColorPopup_) renderLabelColorPopup();
   renderer.displayBuffer();

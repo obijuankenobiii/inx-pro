@@ -10,7 +10,7 @@
 #include <vector>
 
 #include "activity/ActivityWithSubactivity.h"
-#include "system/UiLayout.h"
+#include "SettingsListLayout.h"
 
 class ButtonMappingActivity final : public ActivityWithSubactivity {
  public:
@@ -28,7 +28,7 @@ class ButtonMappingActivity final : public ActivityWithSubactivity {
   static constexpr int kGestureStartRow = kButtonStartRow + kButtonCount;
   static constexpr int kItemCount = kGestureStartRow + kGestureCount;
   static constexpr int kSectionHeaderHeight = 24;
-  static constexpr int kRowHeight = UiLayout::LIST_ITEM_HEIGHT;
+  static constexpr int kRowHeight = SettingsListLayout::kRowHeight;
   static constexpr int kDisableLightRow = kGestureStartRow;
   static constexpr int kPageTurnRow = kGestureStartRow + 1;
   static constexpr int kDoubleTapRow = kGestureStartRow + 2;

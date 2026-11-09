@@ -408,16 +408,9 @@ void ThemePickerActivity::renderMode() {
 }
 
 void ThemePickerActivity::renderList() {
-  const int contentTop = SubPage::header(renderer, "Theme");
-  const int titleFont = systemFontIdForPointSize(16);
-  const int subtitleFont = systemFontIdForPointSize(12);
-  constexpr int headerTop = navigation::Menu::topPadding;
-  constexpr int headerIconSize = navigation::Menu::iconSize;
   const char* subtitle = sleepMode_ ? "Sleep" : "Home";
-  const int titleWidth = renderer.text.getWidth(titleFont, "Theme", EpdFontFamily::BOLD);
-  const int subtitleY = headerTop + (headerIconSize - renderer.text.getLineHeight(subtitleFont)) / 2;
-  renderer.text.renderGray(subtitleFont, navigation::Menu::leftMargin + titleWidth + 10, subtitleY, subtitle, true,
-                           EpdFontFamily::BOLD);
+  const int contentTop = SubPage::header(renderer, "Theme", subtitle);
+  const int titleFont = systemFontIdForPointSize(16);
   const int font = systemFontId();
   const int width = renderer.getScreenWidth();
   const int themeCount = sleepMode_ ? HomeTheme::sleepCount() : HomeTheme::count();

@@ -236,13 +236,13 @@ void LightDrawer::render() const {
   drawerRenderer.bitmap.icon(on ? LightOn : LightOff, lightButtonX, lightButtonY, lightButtonSize,
                              lightButtonSize);
 
-  drawerRenderer.text.render(systemFontIdForPointSize(10), 20, lightBrightnessLabelY, "Brightness", true);
+  const int labelFont = systemFontId();
+  drawerRenderer.text.render(labelFont, 20, lightBrightnessLabelY, "Brightness", true);
   drawLightTrack(drawerRenderer, lightBrightnessY, frontlight.brightness());
   if (!hasTemperatureSlider()) return;
-  drawerRenderer.text.render(systemFontIdForPointSize(10), 20, lightTemperatureLabelY, "Cool", true);
-  const int warmWidth = drawerRenderer.text.getWidth(systemFontIdForPointSize(10), "Warm");
-  drawerRenderer.text.render(systemFontIdForPointSize(10), width - 40 - warmWidth, lightTemperatureLabelY, "Warm",
-                             true);
+  drawerRenderer.text.render(labelFont, 20, lightTemperatureLabelY, "Cool", true);
+  const int warmWidth = drawerRenderer.text.getWidth(labelFont, "Warm");
+  drawerRenderer.text.render(labelFont, width - 40 - warmWidth, lightTemperatureLabelY, "Warm", true);
   drawLightTrack(drawerRenderer, lightTemperatureY, frontlight.colorTemperature());
   drawLightDrawerIndicator(drawerRenderer, width);
 }
