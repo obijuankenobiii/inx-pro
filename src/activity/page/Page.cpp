@@ -80,6 +80,19 @@ bool UiPage::menuInput() {
 }
 
 void UiPage::renderPage() {
+#ifndef SIMULATOR
+  const unsigned long now = millis();
+  if (lastPowerPollMs_ == 0 || now - lastPowerPollMs_ >= 1500) {
+    lastPowerPollMs_ = now;
+    const bool connected = gpio.isUsbConnected();
+    if (powerStateKnown_ && connected != lastExternalPower_) {
+      discardOverlayFrame();
+      updateRequired = true;
+    }
+    lastExternalPower_ = connected;
+    powerStateKnown_ = true;
+  }
+#endif
   if (!updateRequired) return;
   render();
   updateRequired = false;

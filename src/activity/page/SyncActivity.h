@@ -16,9 +16,9 @@ class SyncActivity final : public UiPage {
  public:
   SyncActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
                const std::function<void(NetworkMode)>& onModeSelected)
-      : UiPage("Device Management", renderer, mappedInput), onModeSelected(onModeSelected) {}
+      : UiPage("Device", renderer, mappedInput), onModeSelected(onModeSelected) {}
 
-  const char* name() const override { return "Device Management"; }
+  const char* name() const override { return "Device"; }
 
   void onEnter() override;
   void onExit() override;

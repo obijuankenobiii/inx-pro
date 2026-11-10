@@ -2,6 +2,7 @@
 
 #include <HalDisplay.h>
 #include <HalGPIO.h>
+#include <BatteryMonitor.h>
 
 #include <GfxRenderer.h>
 
@@ -29,10 +30,12 @@ void initialize(HalGPIO& gpio) {
 #endif
 
 #if FREEINK_DEVICE_PICCO
-  // FrontlightManager and Picco's touch controller share the I2C bus. Restore
-  // the touch bus after the frontlight probe has completed.
-  gpio.reinitializeTouch();
+  gpio.restoreTouchBusSettings();
 #endif
+
+  // Configure the charger after peripherals have finished their bus setup.
+  // The SDK gates board-specific writes; other boards return immediately.
+  if (BatteryMonitor::configureCharger()) INX_SERIAL.println("[PWR] Charger configured");
 }
 
 void beforeActivitySwitch(HalDisplay& display, GfxRenderer& renderer, MappedInputManager& input) {

@@ -49,10 +49,10 @@ constexpr int kCheckForUpdatesIndex = 5;
 constexpr int kDeviceInformationIndex = 6;
 constexpr int menuItemCount = 7;
 constexpr DeviceItem menuItems[menuItemCount] = {
-    {"Manage via wifi", "Manage books, settings, and files from your browser", DeviceManagementManageWifi},
-    {"Calibre File Transfer", "Send books to the device from Calibre", DeviceManagementCalibreTransfer},
-    {"USB File Transfer", "Transfer books directly over USB", DeviceManagementUsbTransfer},
-    {"Create hotspot", "Create a hotspot for wireless device management", DeviceManagementHotspot},
+    {"Wi-fi", "Manage books, settings, and files from your browser", DeviceManagementManageWifi},
+    {"Calibre", "Send books to the device from Calibre", DeviceManagementCalibreTransfer},
+    {"USB", "Transfer books directly over USB", DeviceManagementUsbTransfer},
+    {"Hotspot", "Create a hotspot for wireless device management", DeviceManagementHotspot},
     {"KOReader Sync", "Synchronize reading progress with KOReader", DeviceManagementKoreaderSync},
     {"Check for updates", "Check for firmware updates", DeviceManagementUpdates},
     {"Device Information", "View device and firmware information", DeviceManagementDeviceInfo},
@@ -64,9 +64,9 @@ constexpr int kCheckForUpdatesIndex = 4;
 constexpr int kDeviceInformationIndex = 5;
 constexpr int menuItemCount = 6;
 constexpr DeviceItem menuItems[menuItemCount] = {
-    {"Manage via wifi", "Manage books, settings, and files from your browser", DeviceManagementManageWifi},
-    {"Calibre File Transfer", "Send books to the device from Calibre", DeviceManagementCalibreTransfer},
-    {"Create hotspot", "Create a hotspot for wireless device management", DeviceManagementHotspot},
+    {"Wi-fi", "Manage books, settings, and files from your browser", DeviceManagementManageWifi},
+    {"Calibre", "Send books to the device from Calibre", DeviceManagementCalibreTransfer},
+    {"Hotspot", "Create a hotspot for wireless device management", DeviceManagementHotspot},
     {"KOReader Sync", "Synchronize reading progress with KOReader", DeviceManagementKoreaderSync},
     {"Check for updates", "Check for firmware updates", DeviceManagementUpdates},
     {"Device Information", "View device and firmware information", DeviceManagementDeviceInfo},

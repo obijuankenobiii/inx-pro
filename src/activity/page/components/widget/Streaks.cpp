@@ -250,8 +250,6 @@ void Streaks::renderContent(const int x, const int y, const int width, const int
           break;
         case DayState::Missed:
           drawGrayCircle(renderer_, cx, cy, circleRadius);
-          renderer_.text.render(calendarFont, cx - dateWidth / 2, cy - calendarLine / 2, dateText, true,
-                                EpdFontFamily::REGULAR);
           break;
         case DayState::Upcoming:
           renderer_.text.renderGray(calendarFont, cx - dateWidth / 2, cy - calendarLine / 2, dateText, true,

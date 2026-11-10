@@ -63,4 +63,7 @@ class UiPage : public Activity, public navigation::Menu {
   bool overlayFrameStored_ = false;
   bool overlayFrameActive_ = false;
   bool overlayFrameRestorePending_ = false;
+  unsigned long lastPowerPollMs_ = 0;
+  bool powerStateKnown_ = false;
+  bool lastExternalPower_ = false;
 };

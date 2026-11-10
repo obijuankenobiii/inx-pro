@@ -103,10 +103,9 @@ class WifiSelectionActivity final : public ActivityWithSubactivity {
   TaskHandle_t scanTaskHandle = nullptr;                    ///< Handle for the native Wi-Fi scan task
   SemaphoreHandle_t renderingMutex = nullptr;               ///< Mutex for rendering synchronization
   bool updateRequired = false;                              ///< Flag indicating screen needs update
-  bool networkListFullRefreshRequired = false;              ///< Clear the scanning screen before showing scan results
   WifiSelectionState state = WifiSelectionState::SCANNING;  ///< Current activity state
   int selectedNetworkIndex = 0;                             ///< Currently selected network index
-  bool selectedNetworkVisible = false;                       ///< Only show a highlight after navigation
+  bool selectedNetworkVisible = false;                      ///< Only show a highlight after navigation
   int networkPage = 0;                                       ///< Current page of saved/scanned networks
   std::vector<WifiNetworkInfo> networks;                    ///< List of found networks
   const std::function<void(bool connected)> onComplete;     ///< Connection completion callback
@@ -153,7 +152,7 @@ class WifiSelectionActivity final : public ActivityWithSubactivity {
   /**
    * @brief Renders the current screen content
    */
-  void render(bool fullRefresh) const;
+  void render() const;
 
   /**
    * @brief Renders the scanning state screen

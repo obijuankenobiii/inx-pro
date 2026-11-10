@@ -44,6 +44,7 @@ class ReaderPresetEditorActivity final : public ActivityWithSubactivity {
   void promptName();
   void renderSavePrompt();
   void handleSavePrompt();
+  void dismissSavePrompt();
 
   int presetIndex_;
   bool isNew_;

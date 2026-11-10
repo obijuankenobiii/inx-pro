@@ -1346,7 +1346,7 @@ bool Library::handleSidebarInput() {
   }
   PluginManager::LibraryMenuLink pluginMenu;
   const bool hasPluginMenu = PluginManager::findLibraryMenuPlugin(pluginMenu);
-  const size_t sidebarItemCount = hasPluginMenu ? 8 : 7;
+  const size_t sidebarItemCount = hasPluginMenu ? 9 : 8;
   if (mappedInput.hasTouch() && (mappedInput.wasTouchSwipeUp() || mappedInput.wasTouchSwipeDown())) {
     const int maxOffset = std::max(0, static_cast<int>(sidebarItemCount) - Sidebar::visibleRows(renderer));
     const int step = std::max(1, Sidebar::visibleRows(renderer) - 1);
@@ -1375,52 +1375,35 @@ bool Library::handleSidebarInput() {
   }
 
   const int item = Sidebar::hitTest(renderer, tapX, tapY, sidebarItemCount, sidebarScrollOffset_);
-  if (item == 0) {
+  if (item == 0 || item == 1) {
     discardOverlayFrame();
     stateFilter = StateFilter::None;
     pluginMode_ = false;
     metadataGroupKey_.clear();
-    if (allBooksMode) {
-      SETTINGS.libraryViewMode = SystemSetting::LIBRARY_VIEW_FOLDERS;
-      SETTINGS.saveToFile();
-      allBooksMode = false;
+    const bool showAllBooks = item == 0;
+    SETTINGS.libraryViewMode = showAllBooks ? SystemSetting::LIBRARY_VIEW_BOOKS
+                                           : SystemSetting::LIBRARY_VIEW_FOLDERS;
+    SETTINGS.saveToFile();
+    sidebarOpen = false;
+    if (path != "/") {
+      gThumbPage[path] = thumb.currentPage();
+      onGoToLibrary("/");
+      return true;
+    } else {
+      allBooksMode = showAllBooks;
       sortOpen = false;
       filterOpen = false;
       popupBook = -1;
       thumb.setPage(0);
       load();
-    } else {
-      const View selectedView = view;
-      SETTINGS.libraryMode = selectedView == View::List
-                                 ? SystemSetting::LIBRARY_LIST
-                                 : (selectedView == View::Grid ? SystemSetting::LIBRARY_GRID
-                                                               : SystemSetting::LIBRARY_THUMBNAIL);
-      SETTINGS.libraryViewMode = SystemSetting::LIBRARY_VIEW_BOOKS;
-      SETTINGS.saveToFile();
-      sidebarOpen = false;
-      updateRequired = true;
-      if (path != "/") {
-        gThumbPage[path] = thumb.currentPage();
-        onGoToLibrary("/");
-      } else {
-        allBooksMode = true;
-        sortOpen = false;
-        filterOpen = false;
-        popupBook = -1;
-        thumb.setPage(0);
-        load();
-        view = selectedView;
-      }
-      return true;
     }
-    sidebarOpen = false;
     updateRequired = true;
-  } else if (item == 1 || item == 2 || item == 3) {
+  } else if (item >= 2 && item <= 4) {
     discardOverlayFrame();
-    stateFilter = item == 1 ? StateFilter::Favorites
-                            : (item == 2 ? StateFilter::Reading : StateFilter::Finished);
-    SETTINGS.libraryViewMode = item == 1 ? SystemSetting::LIBRARY_VIEW_FAVORITES
-                                         : (item == 2 ? SystemSetting::LIBRARY_VIEW_READING
+    stateFilter = item == 2 ? StateFilter::Favorites
+                            : (item == 3 ? StateFilter::Reading : StateFilter::Finished);
+    SETTINGS.libraryViewMode = item == 2 ? SystemSetting::LIBRARY_VIEW_FAVORITES
+                                         : (item == 3 ? SystemSetting::LIBRARY_VIEW_READING
                                                       : SystemSetting::LIBRARY_VIEW_FINISHED);
     SETTINGS.saveToFile();
     pluginMode_ = false;
@@ -1433,12 +1416,12 @@ bool Library::handleSidebarInput() {
     sidebarOpen = false;
     load();
     updateRequired = true;
-  } else if (item >= 4 && item <= 6) {
+  } else if (item >= 5 && item <= 7) {
     discardOverlayFrame();
-    metadataKind_ = item == 4 ? MetadataIndex::Kind::Authors
-                              : (item == 5 ? MetadataIndex::Kind::Tags : MetadataIndex::Kind::Series);
-    SETTINGS.libraryViewMode = item == 4 ? SystemSetting::LIBRARY_VIEW_AUTHORS
-                                         : (item == 5 ? SystemSetting::LIBRARY_VIEW_TAGS
+    metadataKind_ = item == 5 ? MetadataIndex::Kind::Authors
+                              : (item == 6 ? MetadataIndex::Kind::Tags : MetadataIndex::Kind::Series);
+    SETTINGS.libraryViewMode = item == 5 ? SystemSetting::LIBRARY_VIEW_AUTHORS
+                                         : (item == 6 ? SystemSetting::LIBRARY_VIEW_TAGS
                                                       : SystemSetting::LIBRARY_VIEW_SERIES);
     SETTINGS.saveToFile();
     metadataGroupKey_.clear();
@@ -1459,7 +1442,7 @@ bool Library::handleSidebarInput() {
     sidebarScrollOffset_ = 0;
     load();
     updateRequired = true;
-  } else if (hasPluginMenu && item == 7) {
+  } else if (hasPluginMenu && item == 8) {
     discardOverlayFrame();
     pluginMenu_ = pluginMenu;
     pluginMode_ = true;
@@ -1484,11 +1467,11 @@ bool Library::handleSidebarInput() {
 void Library::drawSidebar() const {
   PluginManager::LibraryMenuLink pluginMenu;
   const bool hasPluginMenu = PluginManager::findLibraryMenuPlugin(pluginMenu);
-  const char* labels[8] = {allBooksMode ? "Folders" : "All books", "Favorites", "Reading", "Finished",
+  const char* labels[9] = {"All books", "Folders", "Favorites", "Reading", "Finished",
                            "Authors", "Tags", "Series", nullptr};
-  if (hasPluginMenu) labels[7] = pluginMenu.label.c_str();
+  if (hasPluginMenu) labels[8] = pluginMenu.label.c_str();
   Sidebar::renderFrame(renderer, "Library");
-  Sidebar::renderTextList(renderer, labels, hasPluginMenu ? 8 : 7, sidebarScrollOffset_);
+  Sidebar::renderTextList(renderer, labels, hasPluginMenu ? 9 : 8, sidebarScrollOffset_);
 }
 
 navigation::Menu::Action Library::centerTap(const int tapX, const int tapY) const {

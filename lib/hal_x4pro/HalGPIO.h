@@ -20,6 +20,7 @@
 
 #include <Arduino.h>
 #include <InputManager.h>
+#include "system/TouchGestureClassifier.h"
 
 class HalGPIO {
  public:
@@ -100,6 +101,7 @@ class HalGPIO {
 
  private:
   InputManager inputMgr;
+  TouchGestureClassifier touchGesture;
 
   uint8_t touchPressedEvents = 0;
   uint8_t touchReleasedEvents = 0;

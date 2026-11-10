@@ -32,6 +32,8 @@
 #include "system/Fonts.h"
 #include "system/LanguageManager.h"
 #include "system/MappedInputManager.h"
+#include "system/ClockTime.h"
+#include "system/NtpTimeSync.h"
 #include "system/TimeZoneAutoDetect.h"
 
 namespace {
@@ -91,24 +93,6 @@ bool performHttpGet(const std::string& url, ResponseContext& response) {
   return result == ESP_OK && statusCode == 200;
 }
 #endif
-
-bool parseUtcOffset(const char* value, int& quarterOffset) {
-  if (value == nullptr || (value[0] != '+' && value[0] != '-') || value[3] != ':' || value[6] != '\0') {
-    return false;
-  }
-  if (value[1] < '0' || value[1] > '9' || value[2] < '0' || value[2] > '9' || value[4] < '0' ||
-      value[4] > '9' || value[5] < '0' || value[5] > '9') {
-    return false;
-  }
-  const int hours = (value[1] - '0') * 10 + (value[2] - '0');
-  const int minutes = (value[4] - '0') * 10 + (value[5] - '0');
-  const int totalMinutes = (value[0] == '-' ? -1 : 1) * (hours * 60 + minutes);
-  if (totalMinutes < -12 * 60 || totalMinutes > 14 * 60 || totalMinutes % 15 != 0) {
-    return false;
-  }
-  quarterOffset = totalMinutes / 15 + 48;
-  return quarterOffset >= 0 && quarterOffset <= 104;
-}
 
 int timezoneKeyboardBottom(const GfxRenderer& renderer, const bool collapsed) {
   return collapsed ? renderer.getScreenHeight() - TIMEZONE_KEYBOARD_CONTROL_HEIGHT : renderer.getScreenHeight();
@@ -173,8 +157,7 @@ void renderTimezoneKeyboardControl(const GfxRenderer& renderer, const int y, con
                              iconSize, iconSize, iconSize, iconSize, BitmapRender::Orientation::Rotate270CW);
 }
 
-uint8_t weekdayFromTm(const tm& t) { return static_cast<uint8_t>(t.tm_wday == 0 ? 7 : t.tm_wday); }
-}
+}  // namespace
 
 void TimeSyncActivity::onEnter() {
   ActivityWithSubactivity::onEnter();
@@ -531,7 +514,7 @@ bool TimeSyncActivity::loadTimezoneOffset(const std::string& timezone, uint8_t& 
     return false;
   }
   int encoded = 0;
-  if (!parseUtcOffset(document["utc_offset"] | "", encoded)) {
+  if (!clock_time::parseUtcOffset(document["utc_offset"] | "", encoded)) {
     return false;
   }
   quarterOffset = static_cast<uint8_t>(encoded);
@@ -586,30 +569,10 @@ void TimeSyncActivity::performSync() {
   message = "Syncing from pool.ntp.org";
   render();
 
-  if (esp_sntp_enabled()) {
-    esp_sntp_stop();
-  }
-  sntp_set_sync_status(SNTP_SYNC_STATUS_RESET);
-  esp_sntp_setoperatingmode(ESP_SNTP_OPMODE_POLL);
-  esp_sntp_setservername(0, "pool.ntp.org");
-  esp_sntp_setservername(1, "time.google.com");
-  esp_sntp_init();
-
-  const uint32_t start = millis();
-  time_t utcNow = time(nullptr);
-  while (utcNow < 1704067200 || sntp_get_sync_status() != SNTP_SYNC_STATUS_COMPLETED) {
-    // Some ESP-IDF builds update the system clock before the SNTP status flag
-    // is published. Accept a sane epoch as soon as it is available instead of
-    // reporting a false timeout while waiting for that flag.
-    utcNow = time(nullptr);
-    if (utcNow >= 1704067200) break;
-    if (millis() - start >= NTP_TIMEOUT_MS) break;
-    vTaskDelay(pdMS_TO_TICKS(100));
-  }
-
-  if (utcNow < 1704067200) {
-    INX_SERIAL.printf("[%lu] [NTP] failed status=%d epoch=%lld\n", millis(), static_cast<int>(sntp_get_sync_status()),
-                      static_cast<long long>(utcNow));
+  time_t utcNow = 0;
+  if (!syncSystemClockWithNtp(utcNow, NTP_TIMEOUT_MS)) {
+    INX_SERIAL.printf("[%lu] [NTP] no fresh sync; system epoch=%lld\n", millis(),
+                      static_cast<long long>(time(nullptr)));
     state = State::FAILED;
     message = "NTP did not return time";
     wifiOff();
@@ -617,11 +580,7 @@ void TimeSyncActivity::performSync() {
     return;
   }
 
-  autoDetectTimeZone();
-
-  const time_t localEpoch = utcNow + SETTINGS.getTimeZoneOffsetMinutes() * 60;
-  tm local{};
-  if (gmtime_r(&localEpoch, &local) == nullptr) {
+  if (SETTINGS.timeZoneAutoDetectEnabled && !autoDetectTimeZone()) {
     state = State::FAILED;
     message = "Could not apply timezone";
     wifiOff();
@@ -629,34 +588,23 @@ void TimeSyncActivity::performSync() {
     return;
   }
 
-  struct SyncedDateTime {
-    uint16_t year;
-    uint8_t month;
-    uint8_t day;
-    uint8_t hour;
-    uint8_t minute;
-    uint8_t second;
-    uint8_t weekday;
-  } dt;
-  dt.year = static_cast<uint16_t>(local.tm_year + 1900);
-  dt.month = static_cast<uint8_t>(local.tm_mon + 1);
-  dt.day = static_cast<uint8_t>(local.tm_mday);
-  dt.hour = static_cast<uint8_t>(local.tm_hour);
-  dt.minute = static_cast<uint8_t>(local.tm_min);
-  dt.second = static_cast<uint8_t>(local.tm_sec);
-  dt.weekday = weekdayFromTm(local);
+  // Timezone HTTP lookup can take seconds. Sample the synchronized clock again
+  // immediately before writing the external RTC rather than saving stale time.
+  utcNow = time(nullptr);
+  const int offsetMinutes = SETTINGS.getTimeZoneOffsetMinutes();
+  HalGPIO::DateTime dt{};
+  if (!clock_time::toRtcDateTime(utcNow, offsetMinutes, dt)) {
+    state = State::FAILED;
+    message = "Could not apply timezone";
+    wifiOff();
+    render();
+    return;
+  }
 
   char buffer[40];
 #ifndef SIMULATOR
-  HalGPIO::DateTime rtcDateTime;
-  rtcDateTime.year = dt.year;
-  rtcDateTime.month = dt.month;
-  rtcDateTime.day = dt.day;
-  rtcDateTime.hour = dt.hour;
-  rtcDateTime.minute = dt.minute;
-  rtcDateTime.second = dt.second;
-  rtcDateTime.weekday = dt.weekday;
-  if (!gpio.writeDateTime(rtcDateTime)) {
+  const uint32_t rtcWriteStart = millis();
+  if (!gpio.writeDateTime(dt)) {
     INX_SERIAL.printf("[%lu] [RTC] write failed after NTP sync\n", millis());
     state = State::FAILED;
     message = "RTC write failed";
@@ -664,10 +612,9 @@ void TimeSyncActivity::performSync() {
     render();
     return;
   }
-  HalGPIO::DateTime storedDateTime;
-  if (!gpio.readDateTime(storedDateTime) || storedDateTime.year != rtcDateTime.year ||
-      storedDateTime.month != rtcDateTime.month || storedDateTime.day != rtcDateTime.day ||
-      storedDateTime.hour != rtcDateTime.hour || storedDateTime.minute != rtcDateTime.minute) {
+  HalGPIO::DateTime storedDateTime{};
+  if (!gpio.readDateTime(storedDateTime) ||
+      !clock_time::verifyRtcDateTime(storedDateTime, utcNow, offsetMinutes, millis() - rtcWriteStart)) {
     INX_SERIAL.printf("[%lu] [RTC] read-back verification failed\n", millis());
     state = State::FAILED;
     message = "RTC verification failed";
@@ -675,8 +622,12 @@ void TimeSyncActivity::performSync() {
     render();
     return;
   }
-  std::snprintf(buffer, sizeof(buffer), LanguageManager::translateText("%02u:%02u saved to RTC"), dt.hour,
-                dt.minute);
+  INX_SERIAL.printf("[%lu] [RTC] verified UTC=%lld offset_min=%d local=%04u-%02u-%02u %02u:%02u:%02u\n",
+                    millis(), static_cast<long long>(utcNow), offsetMinutes, storedDateTime.year,
+                    storedDateTime.month, storedDateTime.day, storedDateTime.hour, storedDateTime.minute,
+                    storedDateTime.second);
+  std::snprintf(buffer, sizeof(buffer), LanguageManager::translateText("%02u:%02u saved to RTC"),
+                storedDateTime.hour, storedDateTime.minute);
 #else
   {
     std::snprintf(buffer, sizeof(buffer), LanguageManager::translateText("%02u:%02u synced"), dt.hour, dt.minute);

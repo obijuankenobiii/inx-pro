@@ -100,7 +100,6 @@ void MurphyTouchDriver::update() {
     downPoint_ = point_;
     upPoint_ = point_;
     movedBeyondTapSlop_ = false;
-    movedBeyondReleaseSlop_ = false;
   } else {
     upPoint_ = point_;
   }
@@ -108,7 +107,6 @@ void MurphyTouchDriver::update() {
   const int dx = static_cast<int>(upPoint_.x) - static_cast<int>(downPoint_.x);
   const int dy = static_cast<int>(upPoint_.y) - static_cast<int>(downPoint_.y);
   if (std::abs(dx) > kTapSlopPx || std::abs(dy) > kTapSlopPx) movedBeyondTapSlop_ = true;
-  if (std::abs(dx) >= kSwipeMinPx || std::abs(dy) >= kSwipeMinPx) movedBeyondReleaseSlop_ = true;
 }
 
 bool MurphyTouchDriver::readFrame(uint8_t* frame, const size_t length) const {
@@ -153,7 +151,7 @@ bool MurphyTouchDriver::isHeldAt(float& nx, float& ny) const {
 }
 
 bool MurphyTouchDriver::wasTap(float& nx, float& ny) const {
-  if (!releasedEvent_ || suppressed_ || movedBeyondReleaseSlop_) return false;
+  if (!releasedEvent_ || suppressed_ || movedBeyondTapSlop_) return false;
   normalizePoint(downPoint_.x, downPoint_.y, nx, ny);
   return true;
 }

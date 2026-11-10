@@ -61,7 +61,9 @@ class MappedInputManager {
   bool wasTouchActivity() const { return gpio.wasTouchActivity(); }
   bool wasTouchPressedInScreen(const GfxRenderer& renderer, float& nx, float& ny) const;
   bool isTouchHeldInScreen(const GfxRenderer& renderer, float& nx, float& ny) const;
-  bool wasTouchTap(float& nx, float& ny) const { return gpio.wasTouchTap(nx, ny); }
+  bool wasTouchTap(float& nx, float& ny) const {
+    return !gpio.isTouchPressed() && gpio.touchSwipe() == HalGPIO::TouchSwipe::None && gpio.wasTouchTap(nx, ny);
+  }
   unsigned long lastTouchHeldMs() const { return gpio.lastTouchHeldMs(); }
   bool wasTouchSwipeUp() const { return swipeForDefaultOrientation() == HalGPIO::TouchSwipe::Up; }
   bool wasTouchSwipeDown() const { return swipeForDefaultOrientation() == HalGPIO::TouchSwipe::Down; }

@@ -72,6 +72,7 @@ constexpr unsigned long kPreparedPageIdleDelayMs = 120;
 constexpr bool kReaderHighQualityFastLut = true;
 constexpr int kWordSelectionHandleRadius = 11;
 constexpr int kWordSelectionActionGap = 14;
+constexpr int kWordSelectionActionBarPadding = 20;
 constexpr bool kWordSelectionActionBarVertical = true;
 
 bool pageImageFootprintAtLeastHalfScreen(const Page& page, const GfxRenderer& renderer, int marginLeft, int marginTop) {
@@ -770,7 +771,7 @@ std::vector<std::string> EpubActivity::currentWordActions() const {
     }
   }
   actions.push_back(selectionIsHighlighted ? "Remove highlight" : "Highlight");
-  actions.push_back(wordSelectionIsMultiple() ? "Add note" : "Add page note");
+  actions.push_back(wordSelectionIsMultiple() ? "Add note" : "Page note");
   std::string pluginId;
   std::string pluginLabel;
   std::string pluginFunction;
@@ -903,7 +904,7 @@ bool EpubActivity::wordSelectionActionBarBounds(const PageWordHit& word, int& x,
     return false;
   }
 
-  const int font = systemFontIdForPointSize(8);
+  const int font = systemFontId();
   const std::vector<std::string> actions = currentWordActions();
   if (actions.empty()) {
     return false;
@@ -916,19 +917,15 @@ bool EpubActivity::wordSelectionActionBarBounds(const PageWordHit& word, int& x,
     itemWidths->clear();
   }
   for (const std::string& action : actions) {
-    const int itemWidth = Button::width(renderer, action.c_str(), font);
+    const int itemWidth = kWordSelectionActionBarVertical
+                              ? renderer.text.getWidth(font, action.c_str()) + kWordSelectionActionBarPadding * 2
+                              : Button::width(renderer, action.c_str(), font);
     width = vertical ? std::max(width, itemWidth) : width + itemWidth;
     if (itemWidths) {
       itemWidths->push_back(itemWidth);
     }
   }
-  // Give the vertical action panel enough breathing room that it reads as a
-  // proper menu and does not crowd the system-font text at the right edge.
-  if (vertical) {
-    width += 20;
-  }
-
-  constexpr int margin = 15;
+  const int margin = 2;
   const int lineBottom = word.screenY + std::max(3, word.screenH);
   const int anchorX = word.screenX + std::max(1, word.screenW);
   x = anchorX - width / 2;
@@ -959,10 +956,10 @@ void EpubActivity::drawWordSelectionActionBar(const PageWordHit& word) {
   const int textHeight = renderer.text.getLineHeight(font);
   const int textY = y + (height - textHeight) / 2;
   if (vertical) {
-    constexpr int verticalTextPadding = 16;
     for (size_t i = 0; i < actions.size(); ++i) {
       const int rowY = y + static_cast<int>(i) * Button::height;
-      renderer.text.render(font, x + verticalTextPadding, rowY + (Button::height - textHeight) / 2,
+      renderer.text.render(font, x + kWordSelectionActionBarPadding,
+                           rowY + (Button::height - textHeight) / 2,
                            actions[i].c_str(), true,
                            EpdFontFamily::REGULAR);
       if (i + 1 < actions.size()) {

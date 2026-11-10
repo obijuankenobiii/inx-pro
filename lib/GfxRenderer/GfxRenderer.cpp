@@ -803,7 +803,7 @@ void GfxRenderer::removeFont(int fontId) {
   }
   for (const auto style :
        {EpdFontFamily::REGULAR, EpdFontFamily::BOLD, EpdFontFamily::ITALIC, EpdFontFamily::BOLD_ITALIC}) {
-    const EpdFontData* d = it->family.getData(style);
+    const EpdFontData* d = it->family.getLoadedData(style);
     if (d != nullptr) {
       streamingFontSlots.erase(std::remove_if(streamingFontSlots.begin(), streamingFontSlots.end(),
                                               [d](const StreamingFontSlot& slot) { return slot.data == d; }),
@@ -822,7 +822,7 @@ void GfxRenderer::removeAllStreamingFonts() {
     bool usesStreamingData = false;
     for (const auto style :
          {EpdFontFamily::REGULAR, EpdFontFamily::BOLD, EpdFontFamily::ITALIC, EpdFontFamily::BOLD_ITALIC}) {
-      const EpdFontData* data = it->family.getData(style);
+      const EpdFontData* data = it->family.getLoadedData(style);
       const auto streamIt = std::find_if(streamingFontSlots.begin(), streamingFontSlots.end(),
                                          [data](const StreamingFontSlot& slot) { return slot.data == data; });
       if (data != nullptr && streamIt != streamingFontSlots.end()) {

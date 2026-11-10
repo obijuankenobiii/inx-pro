@@ -346,7 +346,7 @@ void CategorySettingsActivity::setupMenu() {
       entry.valuePtr = nullptr;
       entry.valueRange = {0, 0, 0};
       entry.setting = settingPtr;
-      entry.getValueText = []() -> const char* { return "›"; };
+      entry.getValueText = []() -> const char* { return ""; };
       entry.change = [](int) {};
       menuItems.push_back(entry);
     } else {
@@ -1196,12 +1196,10 @@ void CategorySettingsActivity::render() {
       const int textY = centeredHeadingY(renderer, headingFont, itemY, itemHeight, entry.name);
       renderer.text.render(headingFont, textX, textY, entry.name, true);
 
-      const char* indicator = entry.getValueText();
-      if (indicator && indicator[0] != '\0') {
-        const int indicatorW = renderer.text.getWidth(headingFont, indicator);
-        const int indicatorY = centeredHeadingY(renderer, headingFont, itemY, itemHeight, indicator);
-        renderer.text.render(headingFont, pageWidth - indicatorW - 30, indicatorY, indicator, true);
-      }
+      constexpr int caretWidth = 32;
+      constexpr int caretHeight = 30;
+      renderer.bitmap.icon(LibraryFilterRight, pageWidth - 24 - caretWidth,
+                           itemY + (itemHeight - caretHeight) / 2, caretWidth, caretHeight);
 
       if (hasNextItem) {
         renderer.line.render(SettingsListLayout::kDividerInset, itemY + itemHeight - 1,

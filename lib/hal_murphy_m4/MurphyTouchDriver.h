@@ -11,6 +11,7 @@
 #include <Arduino.h>
 
 #include <cstdint>
+#include "system/TouchGestureClassifier.h"
 
 class MurphyTouchDriver {
  public:
@@ -50,7 +51,6 @@ class MurphyTouchDriver {
   bool releasedEvent_ = false;
   bool suppressed_ = false;
   bool movedBeyondTapSlop_ = false;
-  bool movedBeyondReleaseSlop_ = false;
   unsigned long nextReadAt_ = 0;
   unsigned long lastHeldMs_ = 0;
   TouchPoint point_;
@@ -59,8 +59,8 @@ class MurphyTouchDriver {
 
   static constexpr unsigned long kSampleDelayMs = 8;
   static constexpr unsigned long kStaleReleaseMs = 100;
-  static constexpr unsigned long kSwipeMaxMs = 700;
-  static constexpr int kTapSlopPx = 28;
-  static constexpr int kSwipeMinPx = 60;
+  static constexpr unsigned long kSwipeMaxMs = TouchGestureClassifier::swipeMaxMs;
+  static constexpr int kTapSlopPx = TouchGestureClassifier::tapSlopPx;
+  static constexpr int kSwipeMinPx = TouchGestureClassifier::swipeMinPx;
 };
 

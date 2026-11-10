@@ -71,7 +71,7 @@ void ScreenComponents::drawBattery(const GfxRenderer& renderer, const int left, 
   const bool charging = false;
 #else
   const uint16_t percentage = gpio.getBatteryPercentage();
-  const bool charging = gpio.isCharging();
+  const bool charging = gpio.isUsbConnected();
 #endif
   const int font = systemFontIdForPointSize(8);
   const auto percentageText = showPercentage ? std::to_string(percentage) + "%" : "";

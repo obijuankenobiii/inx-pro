@@ -1,4 +1,5 @@
 #include "Favorites.h"
+#include "FourBookCarouselLayout.h"
 
 #include <BitmapRender.h>
 #include <GfxRenderer.h>
@@ -50,34 +51,12 @@ void setRoundedOptions(ImageRender::Options& options) {
   }
 }
 
-struct CenteredCarouselLayout {
-  int centerX;
-  int centerY;
-  int centerWidth;
-  int centerHeight;
-  int sideX;
-  int sideY;
-  int sideWidth;
-  int sideHeight;
-  int gap;
-};
+using CenteredCarouselLayout = CenteredCarouselBounds;
 
 CenteredCarouselLayout centeredBounds(const int areaX, const int areaY, const int areaW, const int areaH,
                                       const bool fullHeight) {
-  constexpr int minimumSideWidth = 24;
-  const int gap = areaW >= 360 ? 12 : 6;
-  int centerWidth = std::min(204, std::max(40, areaW * 3 / 5));
-  int sideWidth = (areaW - centerWidth - gap * 2) / 2;
-  if (sideWidth < minimumSideWidth) {
-    centerWidth = std::max(40, areaW - gap * 2 - minimumSideWidth * 2);
-    sideWidth = minimumSideWidth;
-  }
-  const int centerHeight = std::min(312, std::max(50, areaH - (fullHeight ? 10 : 28)));
-  const int centerX = areaX + (areaW - centerWidth) / 2;
-  const int centerY = areaY + (areaH - centerHeight) / 2;
-  const int sideHeight = std::max(32, centerHeight * 9 / 10);
-  const int sideY = centerY + (centerHeight - sideHeight) / 2;
-  return {centerX, centerY, centerWidth, centerHeight, centerX - sideWidth - gap, sideY, sideWidth, sideHeight, gap};
+  return centeredCarouselBounds(areaX, areaY, areaW, areaH, fullHeight, 204, 312,
+                                 SETTINGS.hiddenMenu != 0 ? 5 : 0);
 }
 }
 
@@ -173,10 +152,10 @@ Favorites::CardBounds Favorites::cardBounds(const BookState::Book& book, const i
 
 void Favorites::renderCover(const BookState::Book& book, const CardBounds& bounds,
                             const bool cropToVisibleWidth, const HomeTheme::CarouselShadowStyle shadowStyle,
-                            const float cropAnchorX) const {
+                            const float cropAnchorX, const bool fitWholeCover) const {
   const std::string path = thumbnailPath(book.path);
   if (!path.empty()) {
-    if (cropToVisibleWidth || SETTINGS.thumbnailSize == SystemSetting::THUMBNAIL_EVEN) {
+    if (!fitWholeCover && (cropToVisibleWidth || SETTINGS.thumbnailSize == SystemSetting::THUMBNAIL_EVEN)) {
       ImageRender::Options options;
       setRoundedOptions(options);
       options.cropToFill = true;
@@ -203,10 +182,11 @@ void Favorites::renderCover(const BookState::Book& book, const CardBounds& bound
     const int imageY = bounds.y + (bounds.height - imageHeight) / 2;
     ImageRender::Options options;
     setRoundedOptions(options);
-    renderShadow(renderer_, imageX + 6, imageY + 6, imageWidth, imageHeight, shadowStyle);
-    renderer_.rectangle.fill(imageX, imageY, imageWidth, imageHeight, false);
+    const CardBounds frame = fitWholeCover ? bounds : CardBounds{imageX, imageY, imageWidth, imageHeight};
+    renderShadow(renderer_, frame.x + 6, frame.y + 6, frame.width, frame.height, shadowStyle);
+    renderer_.rectangle.fill(frame.x, frame.y, frame.width, frame.height, false);
     if (ImageRender::create(renderer_, path).render(imageX, imageY, imageWidth, imageHeight, options)) {
-      renderer_.rectangle.render(imageX, imageY, imageWidth, imageHeight, true,
+      renderer_.rectangle.render(frame.x, frame.y, frame.width, frame.height, true,
                                  SETTINGS.bitmapRoundedCorners != 0, SETTINGS.bitmapRoundedCorners == 2);
       return;
     }
@@ -228,13 +208,25 @@ void Favorites::renderCover(const BookState::Book& book, const CardBounds& bound
 void Favorites::render(const int index, const int x, const int y, const int width, const int height,
                        const bool background, const HomeTheme::CarouselStyle style, const bool showLabel,
                        const HomeTheme::CarouselLabelColor labelColor,
-                       const HomeTheme::CarouselShadowStyle shadowStyle, const bool fullHeight) const {
+                       const HomeTheme::CarouselShadowStyle shadowStyle, const bool fullHeight,
+                       const bool fourBooks) const {
   if (width <= 0 || height <= 0) return;
   load();
   renderBackground(x, y, width, height, background);
   const ContentArea content = contentArea(y, height, showLabel);
   if (showLabel) renderLabel(x, y, "Favorites", labelColor);
   if (style == HomeTheme::CarouselStyle::Centered) {
+    if (fourBooks && books_.size() >= 4) {
+      const int count = static_cast<int>(books_.size());
+      const int current = ((index % count) + count) % count;
+      for (const auto& card : fourBookCarouselLayout(x, content.y, width, content.height, fullHeight,
+                                                  SETTINGS.hiddenMenu != 0 ? 5 : 0)) {
+        const int book = (current + count + card.offset) % count;
+        renderCover(books_[static_cast<size_t>(book)], {card.coverX(), card.y, card.coverWidth, card.height},
+                    true, shadowStyle, card.cropAnchor, false);
+      }
+      return;
+    }
     renderCentered(index, x, content.y, width, content.height, shadowStyle, fullHeight);
     return;
   }
@@ -266,11 +258,22 @@ void Favorites::render(const int index, const int x, const int y, const int widt
 void Favorites::preview(const int x, const int y, const int width, const int height, const bool background,
                         const HomeTheme::CarouselStyle style, const bool showLabel,
                         const HomeTheme::CarouselLabelColor labelColor,
-                        const HomeTheme::CarouselShadowStyle shadowStyle, const bool fullHeight) const {
+                        const HomeTheme::CarouselShadowStyle shadowStyle, const bool fullHeight,
+                        const bool fourBooks) const {
   renderBackground(x, y, width, height, background);
   const ContentArea content = contentArea(y, height, showLabel);
   if (showLabel) renderLabel(x, y, "Favorites", labelColor);
   if (style == HomeTheme::CarouselStyle::Centered) {
+    if (fourBooks) {
+      for (const auto& card : fourBookCarouselLayout(x, content.y, width, content.height, fullHeight,
+                                                  SETTINGS.hiddenMenu != 0 ? 5 : 0)) {
+        renderShadow(renderer_, card.coverX() + 6, card.y + 6, card.coverWidth, card.height, shadowStyle);
+        renderer_.rectangle.fill(card.coverX(), card.y, card.coverWidth, card.height, false);
+        renderer_.rectangle.render(card.coverX(), card.y, card.coverWidth, card.height, true,
+                                   SETTINGS.bitmapRoundedCorners != 0, SETTINGS.bitmapRoundedCorners == 2);
+      }
+      return;
+    }
     previewCentered(x, content.y, width, content.height, shadowStyle, fullHeight);
     return;
   }
@@ -296,11 +299,21 @@ void Favorites::preview(const int x, const int y, const int width, const int hei
 
 int Favorites::hitTest(const int index, const int x, const int y, const int areaX, const int areaY, const int areaW,
                        const int areaH, const HomeTheme::CarouselStyle style, const bool showLabel,
-                       const HomeTheme::CarouselLabelColor /*labelColor*/, const bool fullHeight) const {
+                       const HomeTheme::CarouselLabelColor /*labelColor*/, const bool fullHeight,
+                       const bool fourBooks) const {
   if (!loaded_) load();
   if (books_.empty() || x < areaX || x >= areaX + areaW || y < areaY || y >= areaY + areaH) return -1;
   const ContentArea content = contentArea(areaY, areaH, showLabel);
   if (style == HomeTheme::CarouselStyle::Centered) {
+    if (fourBooks && books_.size() >= 4) {
+      const int count = static_cast<int>(books_.size());
+      const int current = ((index % count) + count) % count;
+      for (const auto& card : fourBookCarouselLayout(areaX, content.y, areaW, content.height, fullHeight,
+                                                  SETTINGS.hiddenMenu != 0 ? 5 : 0)) {
+        if (card.contains(x, y)) return (current + count + card.offset) % count;
+      }
+      return -1;
+    }
     return hitTestCentered(index, x, y, areaX, content.y, areaW, content.height, fullHeight);
   }
   const int current = ((index % static_cast<int>(books_.size())) + static_cast<int>(books_.size())) %
@@ -333,12 +346,11 @@ void Favorites::renderCentered(const int index, const int x, const int y, const 
     const CardBounds right{layout.centerX + layout.centerWidth + layout.gap, layout.sideY, layout.sideWidth,
                            layout.sideHeight};
     renderCover(books_[static_cast<size_t>((current + books_.size() - 1) % books_.size())], left, true, shadowStyle,
-                1.0f);
-    renderCover(books_[static_cast<size_t>((current + 1) % books_.size())], right, true, shadowStyle, 0.0f);
+                1.0f, false);
+    renderCover(books_[static_cast<size_t>((current + 1) % books_.size())], right, true, shadowStyle, 0.0f, false);
   }
   const CardBounds center{layout.centerX, layout.centerY, layout.centerWidth, layout.centerHeight};
-  renderCover(books_[static_cast<size_t>(current)], center,
-              SETTINGS.thumbnailSize == SystemSetting::THUMBNAIL_EVEN, shadowStyle);
+  renderCover(books_[static_cast<size_t>(current)], center, true, shadowStyle, 0.5f, false);
 }
 
 void Favorites::previewCentered(const int x, const int y, const int width, const int height,

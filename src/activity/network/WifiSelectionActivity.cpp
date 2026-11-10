@@ -127,15 +127,11 @@ void WifiSelectionActivity::onEnter() {
 
   renderingMutex = xSemaphoreCreateMutex();
 
-  renderer.syncWriteBufferFromActive();
-  renderer.cleanupGrayscaleWithFrameBuffer();
-
   INX_SERIAL.printf("[%lu] [WIFI] enter mutex=%p mode=%d status=%d scan=%d\n", millis(), renderingMutex,
                  static_cast<int>(WiFi.getMode()), static_cast<int>(WiFi.status()), WiFi.scanComplete());
 
   state = WifiSelectionState::SAVED_NETWORKS;
   updateRequired = true;
-  networkListFullRefreshRequired = false;
 
   selectedNetworkIndex = 0;
   networkPage = 0;
@@ -174,9 +170,12 @@ void WifiSelectionActivity::onEnter() {
   // Other Wi-Fi consumers keep the original behavior and scan immediately.
   if (!usesFileTransferLayout()) {
     startWifiScan();
+  } else {
+    // USB paints its first screen synchronously from onEnter(). Do the same
+    // for the saved-network landing state before the display task starts.
+    render();
+    updateRequired = false;
   }
-
-  updateRequired = true;
 
   const BaseType_t taskResult = xTaskCreateWithCaps(
       &WifiSelectionActivity::taskTrampoline, "WifiSelectionTask", WIFI_DISPLAY_TASK_STACK, this, 1,
@@ -256,7 +255,6 @@ void WifiSelectionActivity::startWifiScan() {
     xSemaphoreTake(renderingMutex, portMAX_DELAY);
     state = WifiSelectionState::NETWORK_LIST;
     updateRequired = true;
-    networkListFullRefreshRequired = false;
     xSemaphoreGive(renderingMutex);
   }
 }
@@ -340,7 +338,6 @@ void WifiSelectionActivity::scanTaskLoop() {
       networkPage = 0;
       selectedNetworkVisible = false;
       updateRequired = true;
-      networkListFullRefreshRequired = false;
       INX_SERIAL.printf("[%lu] [WIFI] native list published networks=%u\n", millis(),
                      static_cast<unsigned>(networks.size()));
     }
@@ -655,8 +652,7 @@ void WifiSelectionActivity::loop() {
 
   if (SubPage::closeInput(renderer, mappedInput, [this]() { onComplete(false); })) return;
 
-  if (mappedInput.wasPressed(MappedInputManager::Button::Back) ||
-      mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+  if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
     onComplete(false);
     return;
   }
@@ -680,12 +676,10 @@ void WifiSelectionActivity::loop() {
   }
 
   if (state == WifiSelectionState::FORGET_PROMPT) {
-    if (mappedInput.wasPressed(MappedInputManager::Button::Up) ||
-        mappedInput.wasPressed(MappedInputManager::Button::Left)) {
+    if (mappedInput.wasPressed(MappedInputManager::Button::Left)) {
       forgetPromptSelection = (forgetPromptSelection + 1) % 2;
       updateRequired = true;
-    } else if (mappedInput.wasPressed(MappedInputManager::Button::Down) ||
-               mappedInput.wasPressed(MappedInputManager::Button::Right)) {
+    } else if (mappedInput.wasPressed(MappedInputManager::Button::Right)) {
       forgetPromptSelection = (forgetPromptSelection + 1) % 2;
       updateRequired = true;
     } else if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
@@ -744,26 +738,6 @@ void WifiSelectionActivity::loop() {
       return;
     }
 
-    if (mappedInput.wasPressed(MappedInputManager::Button::Up)) {
-      if (!networks.empty()) {
-        selectedNetworkIndex = (selectedNetworkIndex + static_cast<int>(networks.size()) - 1) %
-                               static_cast<int>(networks.size());
-        const int panelHeight = std::max(1, landingPanelBottom(renderer, true) -
-                                             (UiLayout::PAGE_HEADER_HEIGHT + LANDING_IMAGE_HEIGHT));
-        networkPage = selectedNetworkIndex / landingVisibleRows(panelHeight);
-        selectedNetworkVisible = true;
-        updateRequired = true;
-      }
-    } else if (mappedInput.wasPressed(MappedInputManager::Button::Down)) {
-      if (!networks.empty()) {
-        selectedNetworkIndex = (selectedNetworkIndex + 1) % static_cast<int>(networks.size());
-        const int panelHeight = std::max(1, landingPanelBottom(renderer, true) -
-                                             (UiLayout::PAGE_HEADER_HEIGHT + LANDING_IMAGE_HEIGHT));
-        networkPage = selectedNetworkIndex / landingVisibleRows(panelHeight);
-        selectedNetworkVisible = true;
-        updateRequired = true;
-      }
-    }
   }
 
   if (state == WifiSelectionState::SAVED_NETWORKS) {
@@ -776,28 +750,6 @@ void WifiSelectionActivity::loop() {
       return;
     }
 
-    if (mappedInput.wasPressed(MappedInputManager::Button::Up) ||
-        mappedInput.wasPressed(MappedInputManager::Button::Left)) {
-      if (!networks.empty()) {
-        selectedNetworkIndex = (selectedNetworkIndex + static_cast<int>(networks.size()) - 1) %
-                               static_cast<int>(networks.size());
-        const int panelHeight = std::max(1, landingPanelBottom(renderer, true) -
-                                             (UiLayout::PAGE_HEADER_HEIGHT + LANDING_IMAGE_HEIGHT));
-        networkPage = selectedNetworkIndex / landingVisibleRows(panelHeight);
-        selectedNetworkVisible = true;
-        updateRequired = true;
-      }
-    } else if (mappedInput.wasPressed(MappedInputManager::Button::Down) ||
-               mappedInput.wasPressed(MappedInputManager::Button::Right)) {
-      if (!networks.empty()) {
-        selectedNetworkIndex = (selectedNetworkIndex + 1) % static_cast<int>(networks.size());
-        const int panelHeight = std::max(1, landingPanelBottom(renderer, true) -
-                                             (UiLayout::PAGE_HEADER_HEIGHT + LANDING_IMAGE_HEIGHT));
-        networkPage = selectedNetworkIndex / landingVisibleRows(panelHeight);
-        selectedNetworkVisible = true;
-        updateRequired = true;
-      }
-    }
     return;
   }
 }
@@ -816,11 +768,9 @@ void WifiSelectionActivity::displayTaskLoop() {
     if (state != WifiSelectionState::PASSWORD_ENTRY && updateRequired) {
       updateRequired = false;
       const WifiSelectionState renderState = state;
-      const bool fullRefresh = networkListFullRefreshRequired;
-      networkListFullRefreshRequired = false;
       const unsigned long renderStartedAt = millis();
       INX_SERIAL.printf("[%lu] [WIFI] render start state=%d\n", renderStartedAt, static_cast<int>(renderState));
-      render(fullRefresh);
+      render();
       INX_SERIAL.printf("[%lu] [WIFI] render complete state=%d elapsed=%lums stack-free=%u\n", millis(),
                      static_cast<int>(renderState), millis() - renderStartedAt,
                      static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
@@ -833,16 +783,8 @@ void WifiSelectionActivity::displayTaskLoop() {
 /**
  * @brief Renders the current screen content
  */
-void WifiSelectionActivity::render(const bool fullRefresh) const {
-  // This activity can be entered over a page that used grayscale/image passes.
-  // Start from the current panel frame, then clear both the BW framebuffer and
-  // any grayscale planes before composing the Wi-Fi screen. Otherwise the
-  // asynchronous child refresh can retain pixels from the previous page.
-  renderer.syncWriteBufferFromActive();
-  renderer.setRenderMode(GfxRenderer::BW);
-  renderer.setImageRendering(false);
+void WifiSelectionActivity::render() const {
   renderer.clearScreen();
-  renderer.cleanupGrayscaleWithFrameBuffer();
   const int screenWidth = renderer.getScreenWidth();
   const int screenHeight = renderer.getScreenHeight();
   const int startY = 0;
@@ -891,8 +833,7 @@ void WifiSelectionActivity::render(const bool fullRefresh) const {
       break;
   }
 
-  renderer.displayBufferAsync(fullRefresh ? HalDisplay::FULL_REFRESH : HalDisplay::FAST_REFRESH);
-  renderer.syncWriteBufferFromActive();
+  renderer.displayBuffer(HalDisplay::FAST_REFRESH);
 }
 
 void WifiSelectionActivity::renderSavedNetworks(const int screenWidth, const int screenHeight,
@@ -970,6 +911,7 @@ void WifiSelectionActivity::renderSavedNetworks(const int screenWidth, const int
       renderer.circle.render(toggleX, toggleY, 10, true);
       renderer.circle.render(toggleX, toggleY, 7, false);
       if (selected) renderer.circle.render(toggleX, toggleY, 4, true);
+
     }
     Paginator::render(renderer, activePage, pageCount, screenWidth - 10, listStartY,
                       maxVisibleNetworks * itemHeight + (maxVisibleNetworks - 1) * LANDING_CARD_GAP);
@@ -978,7 +920,7 @@ void WifiSelectionActivity::renderSavedNetworks(const int screenWidth, const int
   Button::render(renderer, refresh, "Refresh", false, systemFontId());
   const char* label = networks.empty() ? "Search" : "Connect";
   Button::render(renderer, connect, label, !networks.empty(), systemFontId());
-  mappedInput.mapLabels("« Back", label, "Up", "Down");
+  mappedInput.mapLabels("« Back", label, "", "");
 }
 
 void WifiSelectionActivity::renderConnectionCard(const int screenWidth, const int screenHeight) const {
@@ -1069,7 +1011,7 @@ void WifiSelectionActivity::renderConnectionCard(const int screenWidth, const in
   const int headingY = qrY + TRANSFER_QR_SIZE + 8;
   renderer.text.render(bodyFont, contentX, headingY, "Scan and connect", true, EpdFontFamily::BOLD);
   const int instructionY = headingY + bodyLine + 2;
-  renderer.text.render(bodyFont, contentX, instructionY, "Scan or connect to the following:", true,
+  renderer.text.render(bodyFont, contentX, instructionY, "Connect to the following:", true,
                        EpdFontFamily::REGULAR);
   const int linkY = instructionY + bodyLine + 2;
   renderer.text.render(bodyFont, contentX, linkY, "1. http://inx.local", true, EpdFontFamily::REGULAR);

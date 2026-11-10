@@ -34,10 +34,10 @@ constexpr int lightTrackX = 56;
 constexpr int lightTrackWidth = 368;
 constexpr int lightKnobRadius = 15;
 constexpr int lightKnobBorder = 2;
-constexpr int lightBrightnessLabelY = 90;
-constexpr int lightBrightnessY = 146;
-constexpr int lightTemperatureLabelY = 210;
-constexpr int lightTemperatureY = 256;
+constexpr int lightBrightnessLabelY = 110;
+constexpr int lightBrightnessY = 176;
+constexpr int lightTemperatureLabelY = 230;
+constexpr int lightTemperatureY = 296;
 constexpr int lightIndicatorWidth = 96;
 constexpr int lightIndicatorHeight = 6;
 constexpr int lightIndicatorBottomMargin = 20;
@@ -45,7 +45,7 @@ constexpr int lightIndicatorBottomMargin = 20;
 // Single-channel boards (the T5 S3) have no colour temperature to set, so the drawer ends
 // below the brightness slider, with the same bottom gap.
 bool hasTemperatureSlider() { return frontlight.hasColorTemperature(); }
-int lightDrawerHeight() { return hasTemperatureSlider() ? 330 : 240; }
+int lightDrawerHeight() { return hasTemperatureSlider() ? 380 : 240; }
 
 int lightValueFromTrack(const int tapX, const bool brightness) {
   const int clamped = std::max(lightTrackX, std::min(lightTrackX + lightTrackWidth, tapX));

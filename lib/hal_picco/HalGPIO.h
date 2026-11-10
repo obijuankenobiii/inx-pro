@@ -2,6 +2,9 @@
 
 #include <Arduino.h>
 #include <InputManager.h>
+#include "PiccoBatteryState.h"
+#include "PiccoCharger.h"
+#include "system/TouchGestureClassifier.h"
 
 /** Application GPIO/input interface for the BOOX/Onyx Picco. */
 class HalGPIO {
@@ -17,10 +20,9 @@ class HalGPIO {
   };
 
   void begin();
-  // FrontlightManager shares Picco's I2C bus and reinitializes Wire during
-  // setup. Re-run the touch bring-up afterwards so the TMA525C owns the bus
-  // with its required timeout and report state.
-  void reinitializeTouch();
+  // FrontlightManager shares the existing Wire bus and changes its timeout.
+  // Restore the touch timeout without deleting the bus or resetting touch.
+  void restoreTouchBusSettings();
   void update();
   void injectOneShotPress(uint8_t buttonIndex);
   bool isPressed(uint8_t buttonIndex) const;
@@ -74,6 +76,7 @@ class HalGPIO {
 
  private:
   InputManager inputMgr;
+  TouchGestureClassifier touchGesture;
   unsigned long nextTouchRetryMs = 0;
   uint8_t touchPressedEvents = 0;
   uint8_t touchReleasedEvents = 0;
@@ -81,20 +84,19 @@ class HalGPIO {
   float touchSwipeStartNx = 0.0f;
   float touchSwipeStartNy = 0.0f;
   bool lastTouchPressed = false;
-  bool touchGestureActive = false;
   bool suppressTouchUntilRelease = false;
-  InputManager::TouchPoint touchGestureStart = {false, 0, 0, 0};
-  InputManager::TouchPoint touchGestureLast = {false, 0, 0, 0};
-  mutable int batteryCachedPercent = 0;
-  mutable unsigned long batteryLastPollMs = 0;
-  static constexpr unsigned long BATTERY_POLL_MS = 1500;
-  bool batteryCachedCharging = false;
+  mutable PiccoBatteryState batteryState;
+  mutable picco_charger::PollSchedule batteryPoll;
+  mutable unsigned long batteryLastLogMs = 0;
+  mutable int16_t batteryLastLoggedCharger = -2;
+  mutable bool chargerProbeLogged = false;
   bool motionSensorInitialized = false;
   bool motionGestureInProgress = false;
   unsigned long motionLastPollMs = 0;
   unsigned long motionSensorStartedMs = 0;
   unsigned long motionLastGestureMs = 0;
   void serviceTouchGestures();
+  void pollBattery() const;
 };
 
 extern HalGPIO gpio;

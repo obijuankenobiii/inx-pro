@@ -11,6 +11,8 @@
 
 #include <esp_heap_caps.h>
 
+#include "TtfAllocator.h"
+
 #define STBTT_STATIC
 #define STB_TRUETYPE_IMPLEMENTATION
 #include "../../freeink-sdk/libs/book/FreeInkBook/third_party/stb/stb_truetype.h"
@@ -28,7 +30,7 @@ ExternalFont::GlyphBitmapCacheSlot* ExternalFont::s_bitmapCache = nullptr;
 uint32_t ExternalFont::s_bitmapCacheGen = 0;
 uint8_t ExternalFont::s_bitmapCacheUsers = 0;
 bool ExternalFont::s_bitmapCacheInPsram = false;
-ExternalFont::TtfSharedCacheSlot ExternalFont::s_ttfSharedCache[ExternalFont::kTtfSharedCacheSlots];
+std::vector<ExternalFont::TtfSharedCacheSlot> ExternalFont::s_ttfSharedCache;
 uint32_t ExternalFont::s_ttfSharedCacheGeneration = 0;
 
 namespace {
@@ -43,20 +45,12 @@ constexpr uint32_t kPackedFontVersion = 1u;
 // fail the load cleanly if it is unavailable instead of silently moving a TTF
 // into internal RAM.
 uint8_t* allocateTtfPsramBuffer(const size_t bytes) {
-#if defined(ARDUINO_ARCH_ESP32)
-  return static_cast<uint8_t*>(heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-#else
-  return static_cast<uint8_t*>(std::malloc(bytes));
-#endif
+  return inx::ttf::allocate(bytes);
 }
 
 void releaseFontBuffer(void* buffer) {
   if (!buffer) return;
-#if defined(ARDUINO_ARCH_ESP32)
-  heap_caps_free(buffer);
-#else
-  std::free(buffer);
-#endif
+  inx::ttf::release(buffer);
 }
 
 bool pathHasExtension(const char* path, const char* extension) {
@@ -350,7 +344,7 @@ bool ExternalFont::loadTtf(const char* path, const uint16_t pointSize) {
 
   m_filePath = path;
 
-  for (size_t i = 0; i < kTtfSharedCacheSlots; ++i) {
+  for (size_t i = 0; i < s_ttfSharedCache.size(); ++i) {
     auto& slot = s_ttfSharedCache[i];
     if (slot.data != nullptr && slot.path == path) {
       slot.users++;
@@ -358,7 +352,7 @@ bool ExternalFont::loadTtf(const char* path, const uint16_t pointSize) {
       m_ttfData = slot.data;
       m_ttfDataSize = slot.size;
       m_ttfDataInPsram = slot.inPsram;
-      m_ttfSharedCacheSlot = static_cast<int8_t>(i);
+      m_ttfSharedCacheSlot = static_cast<int32_t>(i);
       INX_SERIAL.printf("[ExternalFont] Reused cached TTF %s (%lu bytes, %upt)\n", path,
                         static_cast<unsigned long>(m_ttfDataSize), static_cast<unsigned>(pointSize));
       break;
@@ -381,6 +375,11 @@ bool ExternalFont::loadTtf(const char* path, const uint16_t pointSize) {
 
     m_ttfDataSize = static_cast<uint32_t>(fileSize);
     m_ttfData = allocateTtfPsramBuffer(m_ttfDataSize);
+    if (!m_ttfData) {
+      // Retired faces must not prevent loading the current system/reader face.
+      clearTtfCache();
+      m_ttfData = allocateTtfPsramBuffer(m_ttfDataSize);
+    }
     m_ttfDataInPsram = m_ttfData != nullptr;
     if (!m_ttfData) {
       INX_SERIAL.printf("[ExternalFont] Could not allocate %lu bytes for TTF/OTF %s\n",
@@ -408,14 +407,20 @@ bool ExternalFont::loadTtf(const char* path, const uint16_t pointSize) {
 
     int cacheSlot = -1;
     uint32_t oldest = UINT32_MAX;
-    for (size_t i = 0; i < kTtfSharedCacheSlots; ++i) {
+    for (size_t i = 0; i < s_ttfSharedCache.size(); ++i) {
       auto& slot = s_ttfSharedCache[i];
       if (slot.users == 0 && (slot.data == nullptr || slot.lastUsed < oldest)) {
         oldest = slot.lastUsed;
         cacheSlot = static_cast<int>(i);
       }
     }
-    if (cacheSlot >= 0) {
+    if (cacheSlot < 0) {
+      // Every live file must remain shareable across sizes and styles. A fixed
+      // eight-face table made additional sizes copy entire TTF files again.
+      cacheSlot = static_cast<int>(s_ttfSharedCache.size());
+      s_ttfSharedCache.emplace_back();
+    }
+    {
       auto& slot = s_ttfSharedCache[cacheSlot];
       releaseFontBuffer(slot.data);
       slot.path = path;
@@ -424,7 +429,7 @@ bool ExternalFont::loadTtf(const char* path, const uint16_t pointSize) {
       slot.lastUsed = ++s_ttfSharedCacheGeneration;
       slot.users = 1;
       slot.inPsram = m_ttfDataInPsram;
-      m_ttfSharedCacheSlot = static_cast<int8_t>(cacheSlot);
+      m_ttfSharedCacheSlot = cacheSlot;
     }
   }
 
@@ -472,7 +477,7 @@ bool ExternalFont::loadTtf(const char* path, const uint16_t pointSize) {
 
 /** Release the in-memory TrueType file and reusable glyph bitmap buffer. */
 void ExternalFont::releaseTtfResources() {
-  if (m_ttfSharedCacheSlot >= 0 && m_ttfSharedCacheSlot < static_cast<int8_t>(kTtfSharedCacheSlots)) {
+  if (m_ttfSharedCacheSlot >= 0 && static_cast<size_t>(m_ttfSharedCacheSlot) < s_ttfSharedCache.size()) {
     auto& slot = s_ttfSharedCache[static_cast<size_t>(m_ttfSharedCacheSlot)];
     if (slot.users > 0) {
       --slot.users;

@@ -71,7 +71,7 @@ void HalGPIO::serviceTouchGestures() {
   }
 
   float sx = 0.0f, sy = 0.0f, ex = 0.0f, ey = 0.0f;
-  if (inputMgr.wasSwipe(sx, sy, ex, ey)) {
+  if (touchGesture.wasSwipe(sx, sy, ex, ey)) {
     touchSwipeStartNx = sx;
     touchSwipeStartNy = sy;
     const float dx = ex - sx;
@@ -95,6 +95,8 @@ void HalGPIO::serviceTouchGestures() {
 
 void HalGPIO::update() {
   inputMgr.update();
+  const auto& touch = BoardConfig::ACTIVE.touch;
+  touchGesture.update(inputMgr, touch.rawMaxX - touch.rawMinX, touch.rawMaxY - touch.rawMinY);
   serviceTouchGestures();
 }
 
@@ -109,7 +111,7 @@ bool HalGPIO::isTouchHeldAt(float& nx, float& ny) const { return inputMgr.isTouc
 bool HalGPIO::wasTouchActivity() const { return inputMgr.wasTouchActivity(); }
 
 bool HalGPIO::wasTouchTap(float& nx, float& ny) const {
-  return inputMgr.wasTouchTap(nx, ny);
+  return touchGesture.wasTap(nx, ny);
 }
 
 bool HalGPIO::touchSwipeStart(float& nx, float& ny) const {
@@ -257,23 +259,18 @@ int HalGPIO::getBatteryPercentage() const {
 }
 
 bool HalGPIO::isCharging() const {
-  const int chargeStatusPin = BoardConfig::ACTIVE.batteryChargeStatus;
-  if (chargeStatusPin < 0) {
-    return false;
-  }
-  static bool chargeStatusConfigured = false;
-  if (!chargeStatusConfigured) {
-    pinMode(chargeStatusPin, INPUT_PULLUP);
-    chargeStatusConfigured = true;
-  }
-  return digitalRead(chargeStatusPin) == LOW;
+  static const BatteryMonitor battery;
+  return battery.isCharging();
 }
 
 bool HalGPIO::isUsbConnected() const {
-  if (BoardConfig::ACTIVE.usbDetect < 0) {
-    return false;
+  if (BoardConfig::ACTIVE.usbDetect >= 0) {
+    return digitalRead(BoardConfig::ACTIVE.usbDetect) == HIGH;
   }
-  return digitalRead(BoardConfig::ACTIVE.usbDetect) == HIGH;
+  static const BatteryMonitor battery;
+  bool known = false;
+  const bool present = battery.isExternalPowerPresent(&known);
+  return known ? present : battery.isCharging();
 }
 
 bool HalGPIO::readDateTime(DateTime& outDateTime) const {

@@ -454,6 +454,7 @@ void FontManager::cleanupFontData(SDFontEntry* entry) {
   entry->boldItalic = nullptr;
   entry->fontFamily = nullptr;
   entry->isLoaded = false;
+  entry->stylesAttempted = 0;
 }
 
 /**
@@ -539,18 +540,6 @@ bool FontManager::loadFontFromSD(int fontId, GfxRenderer& renderer, const bool e
     unloadLRUFont();
   }
 
-  auto loadOptionalStream = [&](const std::string& path, const char* label) -> std::unique_ptr<ExternalFont> {
-    if (path.empty()) {
-      return nullptr;
-    }
-    auto stream = std::unique_ptr<ExternalFont>(new ExternalFont());
-    if (!stream->load(path.c_str(), enableGlyphBitmapCache, static_cast<uint16_t>(entry->size))) {
-      INX_SERIAL.printf("[FontManager] Skipping %s (failed to load): %s\n", label, path.c_str());
-      return nullptr;
-    }
-    return stream;
-  };
-
   std::unique_ptr<ExternalFont> regularStream(new ExternalFont());
   if (!regularStream->load(entry->regularPath.c_str(), enableGlyphBitmapCache, static_cast<uint16_t>(entry->size))) {
     INX_SERIAL.printf("[FontManager] Failed to load regular: %s\n", entry->regularPath.c_str());
@@ -560,27 +549,19 @@ bool FontManager::loadFontFromSD(int fontId, GfxRenderer& renderer, const bool e
   entry->regularFont = new EpdFont(regularStream->getData());
   g_fontStorage.push_back(std::unique_ptr<EpdFont>(entry->regularFont));
 
-  std::unique_ptr<ExternalFont> boldStream = loadOptionalStream(entry->boldPath, "bold");
-  std::unique_ptr<ExternalFont> italicStream = loadOptionalStream(entry->italicPath, "italic");
-  std::unique_ptr<ExternalFont> boldItalicStream = loadOptionalStream(entry->boldItalicPath, "boldItalic");
-
-  entry->boldFont = nullptr;
-  entry->italicFont = nullptr;
-  entry->boldItalic = nullptr;
-  if (boldStream) {
-    entry->boldFont = new EpdFont(boldStream->getData());
-    g_fontStorage.push_back(std::unique_ptr<EpdFont>(entry->boldFont));
-  }
-  if (italicStream) {
-    entry->italicFont = new EpdFont(italicStream->getData());
-    g_fontStorage.push_back(std::unique_ptr<EpdFont>(entry->italicFont));
-  }
-  if (boldItalicStream) {
-    entry->boldItalic = new EpdFont(boldItalicStream->getData());
-    g_fontStorage.push_back(std::unique_ptr<EpdFont>(entry->boldItalic));
-  }
+  // Reserve tiny stable style handles, not font files or glyph caches. A
+  // system TTF and a reader TTF must not eagerly retain eight full faces.
+  entry->boldFont = new EpdFont(nullptr);
+  entry->italicFont = new EpdFont(nullptr);
+  entry->boldItalic = new EpdFont(nullptr);
+  g_fontStorage.emplace_back(entry->boldFont);
+  g_fontStorage.emplace_back(entry->italicFont);
+  g_fontStorage.emplace_back(entry->boldItalic);
+  entry->cacheGlyphBitmaps = enableGlyphBitmapCache;
+  entry->stylesAttempted = 1u << EpdFontFamily::REGULAR;
 
   entry->fontFamily = new EpdFontFamily(entry->regularFont, entry->boldFont, entry->italicFont, entry->boldItalic);
+  entry->fontFamily->setStyleLoader(&FontManager::loadFontStyle, entry);
   g_fontFamilyStorage.push_back(std::unique_ptr<EpdFontFamily>(entry->fontFamily));
 
   entry->isLoaded = true;
@@ -588,20 +569,29 @@ bool FontManager::loadFontFromSD(int fontId, GfxRenderer& renderer, const bool e
   g_loadedFontCount++;
 
   renderer.insertStreamingFont(entry->id, std::move(regularStream), *(entry->fontFamily));
-  if (boldStream) {
-    renderer.addStreamingFontStyle(entry->id, EpdFontFamily::BOLD, std::move(boldStream));
-  }
-  if (italicStream) {
-    renderer.addStreamingFontStyle(entry->id, EpdFontFamily::ITALIC, std::move(italicStream));
-  }
-  if (boldItalicStream) {
-    renderer.addStreamingFontStyle(entry->id, EpdFontFamily::BOLD_ITALIC, std::move(boldItalicStream));
-  }
 
   INX_SERIAL.printf("[FontManager] Loaded font ID %d: %s %dpt (SD/PSRAM font, %s, on-demand glyphs)\n", fontId,
                 entry->family.c_str(), entry->size, enableGlyphBitmapCache ? "cached" : "stream-only");
 
   return true;
+}
+
+void FontManager::loadFontStyle(void* context, const EpdFontFamily::Style style) {
+  auto* entry = static_cast<SDFontEntry*>(context);
+  if (!entry || !entry->isLoaded || !g_renderer || style == EpdFontFamily::REGULAR) return;
+  const uint8_t bit = 1u << style;
+  if (entry->stylesAttempted & bit) return;
+  entry->stylesAttempted |= bit;
+  const std::string& path = style == EpdFontFamily::BOLD ? entry->boldPath :
+                            style == EpdFontFamily::ITALIC ? entry->italicPath : entry->boldItalicPath;
+  if (path.empty()) return;
+  auto stream = std::make_unique<ExternalFont>();
+  if (!stream->load(path.c_str(), entry->cacheGlyphBitmaps, static_cast<uint16_t>(entry->size))) {
+    INX_SERIAL.printf("[FontManager] Could not load requested style %u: %s\n", static_cast<unsigned>(style),
+                      path.c_str());
+    return;
+  }
+  g_renderer->addStreamingFontStyle(entry->id, style, std::move(stream));
 }
 
 bool FontManager::ensureReaderLayoutFonts(int bodyFontId, GfxRenderer& renderer) {

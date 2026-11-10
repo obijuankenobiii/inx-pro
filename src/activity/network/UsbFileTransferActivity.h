@@ -19,7 +19,7 @@ class UsbFileTransferActivity final : public Activity {
  public:
   UsbFileTransferActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
                           const std::function<void()>& onBack)
-      : Activity("USB File Transfer", renderer, mappedInput), onBack(onBack) {}
+      : Activity("USB", renderer, mappedInput), onBack(onBack) {}
 
   void onEnter() override;
   void onExit() override;

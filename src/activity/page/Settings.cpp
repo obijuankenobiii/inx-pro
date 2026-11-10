@@ -5,7 +5,6 @@
 
 #include "Settings.h"
 
-#include <cmath>
 #include <cstdio>
 #include <GfxRenderer.h>
 #include <string>
@@ -28,66 +27,42 @@ extern void onGoToStatistics();
 namespace {
 
 constexpr int panelTabY = navigation::Menu::height + 20;
-constexpr int panelTabHeight = Button::height - 10;
-constexpr int panelTabWidth = 120;
-constexpr int panelTabGap = 0;
-constexpr int panelTabRight = 20;
+constexpr int panelTabHeight = Button::height + 10;
+constexpr int panelTabCount = 3;
 
-int panelPresetsX(const GfxRenderer& renderer) {
-  return renderer.getScreenWidth() - panelTabRight - panelTabWidth;
+int panelTabHorizontalPadding() {
+  // Larger UI fonts need more label room, so tighten the tab inset as the
+  // configured system text size grows instead of letting the label truncate.
+  switch (SETTINGS.systemTextSize) {
+    case SystemSetting::SYSTEM_TEXT_LARGE:
+      return 8;
+    case SystemSetting::SYSTEM_TEXT_MEDIUM:
+      return 12;
+    case SystemSetting::SYSTEM_TEXT_SMALL:
+    default:
+      return 16;
+  }
 }
 
-int panelReaderX(const GfxRenderer& renderer) {
-  return panelPresetsX(renderer) - panelTabWidth;
-}
-
-int panelSystemX(const GfxRenderer& renderer) {
-  return panelReaderX(renderer) - panelTabGap - panelTabWidth;
+int panelTabX(const GfxRenderer& renderer, const int index) {
+  return renderer.getScreenWidth() * index / panelTabCount;
 }
 
 void renderPanelTab(const GfxRenderer& renderer, const int x, const int y, const int width, const int height,
-                    const char* label, const bool selected, const bool roundLeft, const bool roundRight) {
-  constexpr int corner = 4;
-  const int tone = selected ? static_cast<int>(GfxRenderer::FillTone::Ink)
-                            : static_cast<int>(GfxRenderer::FillTone::Paper);
-
-  renderer.rectangle.fill(x, y, width, height, tone, false);
-  renderer.rectangle.render(x, y, width, height, true, false);
-
-  auto clearOutsideCorner = [&](const int cornerX, const int cornerY, const bool left, const bool top) {
-    for (int dy = 0; dy <= corner; ++dy) {
-      for (int dx = 0; dx <= corner; ++dx) {
-        const int distanceX = left ? dx - corner : dx;
-        const int distanceY = top ? dy - corner : dy;
-        if (distanceX * distanceX + distanceY * distanceY > corner * corner) {
-          renderer.drawPixel(cornerX + dx, cornerY + dy, false);
-        }
-      }
-    }
-
-    for (int offset = 0; offset <= corner; ++offset) {
-      const int span = static_cast<int>(std::sqrt(corner * corner - (corner - offset) * (corner - offset)));
-      const int arcX = left ? cornerX + corner - span : cornerX + span;
-      const int arcY = top ? cornerY + offset : cornerY + corner - offset;
-      renderer.drawPixel(arcX, arcY, true);
-    }
-  };
-
-  if (roundLeft) {
-    clearOutsideCorner(x, y, true, true);
-    clearOutsideCorner(x, y + height - corner - 1, true, false);
-  }
-  if (roundRight) {
-    clearOutsideCorner(x + width - corner - 1, y, false, true);
-    clearOutsideCorner(x + width - corner - 1, y + height - corner - 1, false, false);
-  }
-
+                    const char* label, const bool selected) {
   const int font = systemFontId();
-  const std::string shown = renderer.text.truncate(font, label ? label : "", std::max(1, width - 16));
-  const int textWidth = renderer.text.getUntranslatedWidth(font, shown.c_str());
+  const int horizontalPadding = panelTabHorizontalPadding();
+  const std::string shown = renderer.text.truncate(font, label ? label : "",
+                                                   std::max(1, width - horizontalPadding * 2));
+  const EpdFontFamily::Style style = selected ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR;
+  const int textWidth = renderer.text.getUntranslatedWidth(font, shown.c_str(), style);
   const int textY = y + (height - renderer.text.getLineHeight(font)) / 2;
   const int textX = x + (width - textWidth) / 2;
-  renderer.text.renderUntranslated(font, textX, textY, shown.c_str(), !selected, EpdFontFamily::REGULAR);
+  renderer.text.renderUntranslated(font, textX, textY, shown.c_str(), true, style);
+
+  if (selected) {
+    renderer.rectangle.fill(textX, y + height - 3, std::max(1, textWidth), 2, true);
+  }
 }
 
 std::vector<SettingInfo> buildSystemSettings() {
@@ -101,7 +76,7 @@ std::vector<SettingInfo> buildSystemSettings() {
                                          GroupType::DEVICE_DISPLAY));
   settings.push_back(SettingInfo::Enum(
       "Sleep Screen", &SystemSetting::sleepScreen,
-      {"Dark", "Light", "Custom", "Recent Book", "Transparent Cover", "None", "Widget"},
+      {"Dark", "Light", "Custom", "Recent Book", "Transparent", "None", "Widget"},
       {SystemSetting::DARK, SystemSetting::LIGHT, SystemSetting::CUSTOM, SystemSetting::COVER,
        SystemSetting::TRANSPARENT, SystemSetting::BLANK, SystemSetting::WIDGET},
       GroupType::DEVICE_DISPLAY));
@@ -149,7 +124,7 @@ std::vector<SettingInfo> buildSystemSettings() {
   settings.push_back(SettingInfo::Enum("Flick sensitivity", &SystemSetting::shakePageTurnSensitivity,
                                        {"Low", "Normal", "High"}, GroupType::DEVICE_ADVANCED));
 #endif
-  settings.push_back(SettingInfo::Enum("Short Press Power Button", &SystemSetting::shortPwrBtn,
+  settings.push_back(SettingInfo::Enum("Power Button", &SystemSetting::shortPwrBtn,
                                        {"Sleep", "Refresh"},
                                        {SystemSetting::SHORT_PWRBTN::SLEEP,
                                         SystemSetting::SHORT_PWRBTN::PAGE_REFRESH},
@@ -190,12 +165,25 @@ void Settings::onExit() {
 }
 
 void Settings::loop() {
-  if (!panelDetailOpen() && UiPage::menuInput()) return;
+  // The shared page shell normally consumes swipes for navigation before an
+  // embedded panel sees them. Let the presets panel own its bottom-edge close
+  // gesture first; ordinary swipes still go through the shared menu.
+  bool routedPresetCloseGesture = false;
+  if (!panelDetailOpen() && currentPanel == SettingsPanel::Presets && presetsPanel) {
+    float swipeStartNx = 0.0f;
+    float swipeStartNy = 0.0f;
+    if (mappedInput.wasTouchSwipeUpInScreen(renderer, swipeStartNx, swipeStartNy) && swipeStartNy >= 0.95f) {
+      presetsPanel->loop();
+      routedPresetCloseGesture = true;
+    }
+  }
+
+  if (!routedPresetCloseGesture && !panelDetailOpen() && UiPage::menuInput()) return;
 
   if (!panelDetailOpen() && panelTabsInput()) return;
 
   if (panel) {
-    panel->loop();
+    if (!routedPresetCloseGesture) panel->loop();
     if (runExternalNavigation()) return;
 
     if (panelDetailOpen()) {
@@ -321,24 +309,18 @@ bool Settings::panelTabsInput() {
   const int tapX = static_cast<int>(tapNx * renderer.getScreenWidth());
   const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
   const bool inHeader = tapY >= panelTabY && tapY < panelTabY + panelTabHeight;
-  const int systemX = panelSystemX(renderer);
-  const int readerX = panelReaderX(renderer);
-  const int presetsX = panelPresetsX(renderer);
-
   if (!inHeader) {
     mappedInput.restoreTouchTapInScreen(renderer, tapNx, tapNy);
     return false;
   }
 
-  if (tapX >= systemX && tapX < systemX + panelTabWidth) {
+  const int tappedTab = std::min(panelTabCount - 1, tapX * panelTabCount / renderer.getScreenWidth());
+  if (tappedTab == 0) {
     selectPanel(SettingsPanel::System);
-  } else if (tapX >= readerX && tapX < readerX + panelTabWidth) {
+  } else if (tappedTab == 1) {
     selectPanel(SettingsPanel::Reader);
-  } else if (tapX >= presetsX && tapX < presetsX + panelTabWidth) {
-    selectPanel(SettingsPanel::Presets);
   } else {
-    mappedInput.restoreTouchTapInScreen(renderer, tapNx, tapNy);
-    return false;
+    selectPanel(SettingsPanel::Presets);
   }
 
   if (pending != Pending::None) processPending();
@@ -347,14 +329,22 @@ bool Settings::panelTabsInput() {
 }
 
 void Settings::panelTabs() {
-  const int systemX = panelSystemX(renderer);
-  const int readerX = panelReaderX(renderer);
-  renderPanelTab(renderer, systemX, panelTabY, panelTabWidth, panelTabHeight, "System",
-                 currentPanel == SettingsPanel::System, true, false);
-  renderPanelTab(renderer, readerX, panelTabY, panelTabWidth, panelTabHeight, "Reader",
-                 currentPanel == SettingsPanel::Reader, false, false);
-  renderPanelTab(renderer, panelPresetsX(renderer), panelTabY, panelTabWidth, panelTabHeight, "Presets",
-                 currentPanel == SettingsPanel::Presets, false, true);
+  const int screenWidth = renderer.getScreenWidth();
+  renderer.line.render(0, panelTabY + panelTabHeight - 1, screenWidth - 1, panelTabY + panelTabHeight - 1, true,
+                       LineRender::Style::Dotted);
+  for (int index = 0; index < panelTabCount; ++index) {
+    const int x = panelTabX(renderer, index);
+    const int width = panelTabX(renderer, index + 1) - x;
+    renderPanelTab(renderer, x, panelTabY, width, panelTabHeight,
+                   index == 0 ? "System" : index == 1 ? "Reader" : "Presets",
+                   (index == 0 && currentPanel == SettingsPanel::System) ||
+                       (index == 1 && currentPanel == SettingsPanel::Reader) ||
+                       (index == 2 && currentPanel == SettingsPanel::Presets));
+    if (index > 0) {
+      renderer.line.render(x, panelTabY + 5, x, panelTabY + panelTabHeight - 5, true,
+                           LineRender::Style::Dotted);
+    }
+  }
 }
 
 void Settings::content() {

@@ -2,6 +2,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "EpdFontData.h"
 #include "SDCardManager.h"
@@ -69,7 +70,6 @@ class ExternalFont {
   static constexpr uint32_t kTtfBitmapOffsetSlotShift = 20;
   static constexpr uint32_t kTtfBitmapOffsetRelativeMask = (1u << kTtfBitmapOffsetSlotShift) - 1u;
   static constexpr size_t kTtfFontInfoBytes = 176;
-  static constexpr size_t kTtfSharedCacheSlots = 8;
 
   struct TtfSharedCacheSlot {
     std::string path;
@@ -79,7 +79,7 @@ class ExternalFont {
     uint8_t users = 0;
     bool inPsram = false;
   };
-  static TtfSharedCacheSlot s_ttfSharedCache[kTtfSharedCacheSlots];
+  static std::vector<TtfSharedCacheSlot> s_ttfSharedCache;
   static uint32_t s_ttfSharedCacheGeneration;
 
   static constexpr size_t kGlyphMetaCacheSlots = 512;
@@ -120,7 +120,7 @@ class ExternalFont {
   uint8_t* m_ttfData = nullptr;
   uint32_t m_ttfDataSize = 0;
   bool m_ttfDataInPsram = false;
-  int8_t m_ttfSharedCacheSlot = -1;
+  int32_t m_ttfSharedCacheSlot = -1;
   uint16_t m_ttfPointSize = 0;
   alignas(8) uint8_t m_ttfFontInfo[kTtfFontInfoBytes] = {};
   uint8_t* m_ttfBitmapBuffer = nullptr;

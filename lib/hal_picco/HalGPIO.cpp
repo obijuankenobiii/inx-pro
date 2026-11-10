@@ -3,6 +3,7 @@
 #include <BatteryMonitor.h>
 #include <BoardConfig.h>
 #include <Imu.h>
+#include <HWCDC.h>
 #include <PowerManager.h>
 #include <Rtc.h>
 #include <Wire.h>
@@ -11,18 +12,15 @@
 #include <esp_system.h>
 
 #include "system/Logging.h"
+#include "system/ClockTime.h"
+#include "state/SystemSetting.h"
+#include "PiccoCharger.h"
 
 #include <cmath>
 #include <ctime>
 
 
 namespace {
-// Keep the local fallback aligned with InputManager's tap/slop boundary. If
-// this is shorter, a normal finger roll can be reported as both a tap and a
-// swipe; Home then advances the carousel instead of opening the tapped book.
-constexpr int kPiccoSwipeMinPx = 60;
-constexpr unsigned long kPiccoSwipeMaxMs = 700;
-
 uint8_t weekdayFromCalendarDate(const uint16_t year, const uint8_t month, const uint8_t day) {
   if (year < 1900 || month < 1 || month > 12 || day < 1 || day > 31) return 0;
   static constexpr uint8_t offsets[] = {0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4};
@@ -43,6 +41,7 @@ void HalGPIO::begin() {
   INX_SERIAL.begin(115200);
   INX_SERIAL.printf("[PICCO][BOOT] reset_reason=%d\n", static_cast<int>(esp_reset_reason()));
   BoardConfig::holdPowerRails();
+  if (BoardConfig::ACTIVE.batteryAdc >= 0) pinMode(BoardConfig::ACTIVE.batteryAdc, INPUT);
   // Picco uses polled buttons. InputManager may report that the boot-time
   // power-button ISR service is absent while clearing its wake handler; do not
   // install the service here because ESP32-S3 performs that registration on
@@ -54,18 +53,20 @@ void HalGPIO::begin() {
                     BoardConfig::ACTIVE.touch.rawMinY, BoardConfig::ACTIVE.touch.rawMaxY);
 }
 
-void HalGPIO::reinitializeTouch() {
-  // FrontlightManager probes the Picco LED controller on the same SDA/SCL
-  // pins. Explicitly release Arduino's native bus handle before TMA525C opens
-  // it again; calling Wire.begin() over the old handle can leave the touch
-  // driver alive but unable to receive reports on ESP32-S3.
-  Wire.end();
-  delay(1);
-  inputMgr.begin();
-  nextTouchRetryMs = millis() + 1000;
-  lastTouchPressed = false;
-  touchGestureActive = false;
-  INX_SERIAL.printf("[PICCO] touch reinitialized after frontlight: enabled=%d\n", inputMgr.hasTouch() ? 1 : 0);
+void HalGPIO::restoreTouchBusSettings() {
+  // Arduino Wire.begin() reuses an already-started master bus. The frontlight
+  // changes only its timeout; retain that bus and every initialized peripheral.
+  Wire.setTimeOut(10);
+  auto& config = BoardConfig::ACTIVE.batteryGauge;
+  const uint8_t expectedAddress = config.chargerAddr;
+  const uint8_t detectedAddress = picco_charger::findAddress(Wire, expectedAddress);
+  if (detectedAddress != 0) {
+    config.chargerAddr = detectedAddress;
+    LOG_INF("PICCO-I2C", "charger identified addr=0x%02X profile_addr=0x%02X", detectedAddress, expectedAddress);
+  } else {
+    LOG_ERR("PICCO-I2C", "charger identity not found at factory addresses 0x01..0x07; profile_addr=0x%02X",
+            expectedAddress);
+  }
 }
 
 void HalGPIO::serviceTouchGestures() {
@@ -80,40 +81,8 @@ void HalGPIO::serviceTouchGestures() {
   }
   if (!inputMgr.hasTouch()) return;
 
-  // The shared SDK classifier uses a 60 px swipe threshold. That is reasonable
-  // for the larger panels, but edge gestures on Picco's smaller 480x800 glass
-  // are commonly shorter. Keep the SDK result when available and only add a
-  // Picco-local fallback for a completed single-contact gesture.
-  if (inputMgr.isTouchPressed()) {
-    const InputManager::TouchPoint point = inputMgr.getTouchPoint();
-    if (point.valid) {
-      if (!touchGestureActive) {
-        touchGestureStart = point;
-        touchGestureActive = true;
-      }
-      touchGestureLast = point;
-    }
-  }
-
   float sx = 0.0f, sy = 0.0f, ex = 0.0f, ey = 0.0f;
-  bool swipe = inputMgr.wasSwipe(sx, sy, ex, ey);
-  if (!swipe && inputMgr.wasTouchReleased() && touchGestureActive) {
-    const int dx = static_cast<int>(touchGestureLast.x) - static_cast<int>(touchGestureStart.x);
-    const int dy = static_cast<int>(touchGestureLast.y) - static_cast<int>(touchGestureStart.y);
-    const int dominant = std::max(std::abs(dx), std::abs(dy));
-    if (dominant >= kPiccoSwipeMinPx &&
-        millis() - touchGestureStart.timestamp <= kPiccoSwipeMaxMs) {
-      const auto& touch = BoardConfig::ACTIVE.touch;
-      sx = touch.rawMaxX > 0 ? static_cast<float>(touchGestureStart.x) / touch.rawMaxX : 0.0f;
-      sy = touch.rawMaxY > 0 ? static_cast<float>(touchGestureStart.y) / touch.rawMaxY : 0.0f;
-      ex = touch.rawMaxX > 0 ? static_cast<float>(touchGestureLast.x) / touch.rawMaxX : 0.0f;
-      ey = touch.rawMaxY > 0 ? static_cast<float>(touchGestureLast.y) / touch.rawMaxY : 0.0f;
-      swipe = true;
-      INX_SERIAL.printf("[INPUT] Picco short-swipe fallback dx=%d dy=%d\n", dx, dy);
-    }
-  }
-  if (inputMgr.wasTouchReleased()) touchGestureActive = false;
-  if (!swipe) return;
+  if (!touchGesture.wasSwipe(sx, sy, ex, ey)) return;
   touchSwipeStartNx = sx;
   touchSwipeStartNy = sy;
   const float dx = ex - sx;
@@ -143,12 +112,14 @@ void HalGPIO::update() {
       inputMgr.begin();
       if (inputMgr.hasTouch()) {
         lastTouchPressed = false;
-        touchGestureActive = false;
+        touchGesture = {};
         INX_SERIAL.println("[PICCO][TOUCH] initialization recovered");
       }
     }
   }
   inputMgr.update();
+  const auto& touch = BoardConfig::ACTIVE.touch;
+  touchGesture.update(inputMgr, touch.rawMaxX - touch.rawMinX, touch.rawMaxY - touch.rawMinY);
   const bool touchPressed = inputMgr.isTouchPressed();
   if (touchPressed != lastTouchPressed) {
     float nx = 0.0f;
@@ -190,7 +161,7 @@ bool HalGPIO::isTouchPressed() const { return inputMgr.isTouchPressed(); }
 bool HalGPIO::wasTouchPressedAt(float& nx, float& ny) const { return inputMgr.wasTouchPressedAt(nx, ny); }
 bool HalGPIO::isTouchHeldAt(float& nx, float& ny) const { return inputMgr.isTouchHeldAt(nx, ny); }
 bool HalGPIO::wasTouchActivity() const { return inputMgr.wasTouchActivity(); }
-bool HalGPIO::wasTouchTap(float& nx, float& ny) const { return inputMgr.wasTouchTap(nx, ny); }
+bool HalGPIO::wasTouchTap(float& nx, float& ny) const { return touchGesture.wasTap(nx, ny); }
 unsigned long HalGPIO::lastTouchHeldMs() const { return inputMgr.lastTouchHeldMs(); }
 
 bool HalGPIO::touchSwipeStart(float& nx, float& ny) const {
@@ -202,6 +173,8 @@ bool HalGPIO::touchSwipeStart(float& nx, float& ny) const {
 
 void HalGPIO::ignoreCurrentTouchUntilRelease() {
   if (!inputMgr.isTouchPressed()) return;
+  inputMgr.suppressTouchContact();
+  touchGesture = {};
   suppressTouchUntilRelease = true;
   touchSwipeDirection = TouchSwipe::None;
   touchPressedEvents = 0;
@@ -291,35 +264,53 @@ void HalGPIO::startDeepSleep(const bool wakeOnToggle) {
   freeink::PowerManager::deepSleepUntilPowerButton();
 }
 
-int HalGPIO::getBatteryPercentage() const {
+void HalGPIO::pollBattery() const {
   const unsigned long now = millis();
-  if (batteryLastPollMs != 0 && now - batteryLastPollMs < BATTERY_POLL_MS) return batteryCachedPercent;
+  if (!batteryPoll.due(now)) return;
   static const BatteryMonitor battery;
-  uint16_t percent = 0;
-  if (BoardConfig::isPicco()) {
-    // Picco's charger shares SDA/SCL with the TMA525C touch controller. The
-    // normal BatteryMonitor percentage call also samples the charger over I2C,
-    // which can invalidate the shared Arduino Wire handle and stop touch.
-    // Keep the normal UI battery read ADC-only; charger state is not safe to
-    // poll from the main loop until it has a dedicated bus owner.
-    const uint16_t millivolts = battery.readMillivolts();
-    if (millivolts >= 2500 && millivolts <= 4500) {
-      batteryCachedPercent = BatteryMonitor::percentageFromMillivolts(millivolts);
-    }
-  } else if (battery.readPercentageChecked(percent)) {
-    batteryCachedPercent = percent;
+  const auto sample = battery.readStatus();
+  if (!sample.externalPowerKnown && !chargerProbeLogged) {
+    // An empty write probes the address without modifying charger registers.
+    // Wire maps a missing ACK to 2, distinguishing it from a failed register
+    // read/driver state. Run once, never reset the bus in response to a failure.
+    const auto& config = BoardConfig::ACTIVE.batteryGauge;
+    Wire.beginTransmission(config.chargerAddr);
+    const uint8_t probe = Wire.endTransmission();
+    LOG_INF("PICCO-I2C", "charger=0x%02X probe=%u sda=%d scl=%d hz=%lu timeout_ms=%u pins=%d,%d",
+            config.chargerAddr, probe, config.i2cSda, config.i2cScl,
+            static_cast<unsigned long>(Wire.getClock()), Wire.getTimeOut(),
+            gpio_get_level(static_cast<gpio_num_t>(config.i2cSda)),
+            gpio_get_level(static_cast<gpio_num_t>(config.i2cScl)));
+    chargerProbeLogged = true;
   }
-  batteryLastPollMs = now;
-  return batteryCachedPercent;
+  batteryState.update(sample, batteryPoll.elapsed(now));
+  // Log once on startup, charger-state changes, or every 30 seconds. Include
+  // validity flags: an unread charger is different from a disconnected cable.
+  if (!batteryPoll.sampled() || sample.chargerStatus != batteryLastLoggedCharger || now - batteryLastLogMs >= 30000) {
+    LOG_INF("PICCO-PWR", "mv=%u mv_ok=%d raw_pct=%u pct=%u reg08=%d usb=%d usb_ok=%d "
+                         "charging=%d charge_ok=%d full=%d full_ok=%d",
+            sample.millivolts, sample.millivoltsKnown, sample.percentage, batteryState.percentage(),
+            sample.chargerStatus, sample.externalPower, sample.externalPowerKnown, sample.charging,
+            sample.chargingKnown, sample.chargeComplete, sample.chargeCompleteKnown);
+    batteryLastLogMs = now;
+    batteryLastLoggedCharger = sample.chargerStatus;
+  }
+  batteryPoll.complete(now, sample.externalPowerKnown);
+}
+
+int HalGPIO::getBatteryPercentage() const {
+  pollBattery();
+  return batteryState.percentage();
 }
 
 bool HalGPIO::isCharging() const {
-  return batteryCachedCharging;
+  pollBattery();
+  return batteryState.isCharging();
 }
 
 bool HalGPIO::isUsbConnected() const {
-  const int8_t pin = BoardConfig::ACTIVE.usbDetect;
-  return pin >= 0 && digitalRead(pin) == HIGH;
+  pollBattery();
+  return batteryState.isUsbConnected(HWCDC::isPlugged());
 }
 
 bool HalGPIO::readDateTime(DateTime& outDateTime) const {
@@ -352,19 +343,8 @@ bool HalGPIO::writeDateTime(const DateTime& dateTime) const {
 }
 
 bool HalGPIO::syncRtcFromSystemTime() const {
-  const time_t now = time(nullptr);
-  if (now < 1704067200) return false;
-  struct tm localTime {};
-  if (!localtime_r(&now, &localTime)) return false;
-  DateTime dt;
-  dt.year = static_cast<uint16_t>(localTime.tm_year + 1900);
-  dt.month = static_cast<uint8_t>(localTime.tm_mon + 1);
-  dt.day = static_cast<uint8_t>(localTime.tm_mday);
-  dt.hour = static_cast<uint8_t>(localTime.tm_hour);
-  dt.minute = static_cast<uint8_t>(localTime.tm_min);
-  dt.second = static_cast<uint8_t>(localTime.tm_sec);
-  dt.weekday = static_cast<uint8_t>(localTime.tm_wday == 0 ? 7 : localTime.tm_wday);
-  return writeDateTime(dt);
+  DateTime dt{};
+  return clock_time::toRtcDateTime(time(nullptr), SETTINGS.getTimeZoneOffsetMinutes(), dt) && writeDateTime(dt);
 }
 
 HalGPIO::WakeupReason HalGPIO::getWakeupReason() const {

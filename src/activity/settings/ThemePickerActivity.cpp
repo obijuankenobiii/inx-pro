@@ -730,7 +730,7 @@ void ThemePickerActivity::renderWidgetPreview(const HomeTheme::Widget widget, co
   switch (widget) {
     case HomeTheme::Widget::Carousel:
       carousel_.preview(x, y, width, height, background, style, showLabel, labelColor, shadowStyle,
-                        carouselShowProgress, carouselFullHeight);
+                        carouselShowProgress, carouselFullHeight, layout_ == HomeTheme::Layout::OneByThree);
       break;
     case HomeTheme::Widget::Recent:
       recent_.preview(x, y, width, height, background, style, showLabel, labelColor, shadowStyle, recentShowTitle,
@@ -777,7 +777,7 @@ void ThemePickerActivity::renderWidgetPreview(const HomeTheme::Widget widget, co
       break;
     case HomeTheme::Widget::Favorites:
       favorites_.preview(x, y, width, height, background, style, showLabel, labelColor, shadowStyle,
-                         carouselFullHeight);
+                         carouselFullHeight, layout_ == HomeTheme::Layout::OneByThree);
       break;
     case HomeTheme::Widget::Heatmap:
       heatmap_.preview(x, y, width, height, HomeTheme::HeatmapView::Monthly, false, labelColor,

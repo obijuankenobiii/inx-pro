@@ -56,7 +56,7 @@ const Item regularItems[regularItemCount] = {
     {Recent, navigation::Menu::Action::Home, "Home"},
     {Library, navigation::Menu::Action::Library, "Library"},
     {Setting, navigation::Menu::Action::Settings, "Settings"},
-    {Sync, navigation::Menu::Action::Sync, "Manage"},
+    {Sync, navigation::Menu::Action::Sync, "Device"},
     {Apps, navigation::Menu::Action::Apps, "Apps"},
     {Search, navigation::Menu::Action::Search, "Search"},
 };
@@ -68,7 +68,7 @@ const Item hiddenItems[hiddenItemCount] = {
     {Recent, navigation::Menu::Action::Home, "Home"},
     {Library, navigation::Menu::Action::Library, "Library"},
     {Setting, navigation::Menu::Action::Settings, "Settings"},
-    {Sync, navigation::Menu::Action::Sync, "Manage"},
+    {Sync, navigation::Menu::Action::Sync, "Device"},
     {Apps, navigation::Menu::Action::Apps, "Apps"},
     {StatisticsIcon, navigation::Menu::Action::Stats, "Statistics"},
     {Search, navigation::Menu::Action::Search, "Search"},
@@ -162,7 +162,8 @@ bool current(const navigation::Menu& menu, const navigation::Menu::Action action
       return std::strcmp(page, "Stats") == 0 || std::strcmp(page, "Statistics") == 0 ||
              std::strcmp(page, "Reading Stats") == 0;
     case navigation::Menu::Action::Sync:
-      return std::strcmp(page, "Sync") == 0 || std::strcmp(page, "Device Management") == 0 ||
+      return std::strcmp(page, "Sync") == 0 || std::strcmp(page, "Device") == 0 ||
+             std::strcmp(page, "Device Management") == 0 ||
              std::strcmp(page, "Network Settings") == 0;
     case navigation::Menu::Action::Search:
       return std::strcmp(page, "Search") == 0;

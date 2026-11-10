@@ -110,6 +110,8 @@ class FontManager {
     EpdFontFamily* fontFamily;
     bool isLanguage;
     bool isLoaded;
+    bool cacheGlyphBitmaps = true;
+    uint8_t stylesAttempted = 0;
     uint32_t lastUsed;
   };
 
@@ -124,5 +126,6 @@ class FontManager {
 
   static void updateFontLRU(int fontId);
   static void cleanupFontData(SDFontEntry* entry);
+  static void loadFontStyle(void* context, EpdFontFamily::Style style);
   static void rebuildSdReaderFamilyList();
 };

@@ -111,6 +111,21 @@ int drawerTabHeight(const bool embedded) { return tabSize + tabVerticalPadding(e
 int drawerListTop(const bool embedded) {
   return drawerTabHeight(embedded) + ((FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO) ? 5 : 1);
 }
+
+int systemSizedDrawerRowHeight(const GfxRenderer& renderer) {
+  // Give the larger system font enough vertical breathing room in the preset
+  // editor so labels and controls do not collide.
+  constexpr int verticalPadding = 48;
+  return std::max(LIST_ITEM_HEIGHT, renderer.text.getLineHeight(systemFontId()) + verticalPadding);
+}
+
+int settingsValueAreaLeft(const GfxRenderer& renderer, const int drawerX, const int drawerWidth,
+                          const int valueColumnRight, const char* label) {
+  constexpr int labelValueGap = 12;
+  const int defaultLeft = drawerX + drawerWidth * 40 / 100;
+  const int labelRight = drawerX + 23 + renderer.text.getWidth(systemFontId(), label ? label : "");
+  return std::min(valueColumnRight - 48, std::max(defaultLeft, labelRight + labelValueGap));
+}
 constexpr int kDrawerListBottomPadding = 12;
 
 struct SelectorBounds {
@@ -142,35 +157,34 @@ bool isLandscapeReader(const GfxRenderer& gfx) {
 
 void drawSettingsDropdown(const GfxRenderer& renderer, int left, int right, int itemY, int itemHeight,
                           const char* value) {
-  constexpr int kPadX = 10;
-  const int boxY = itemY + 8;
-  const int boxH = itemHeight - 16;
-  renderer.rectangle.render(left, boxY, right - left, boxH, true, false);
-
-  const int textMaxW = std::max(1, right - left - 32);
-  const std::string shown = renderer.text.truncate(systemFontIdForPointSize(8), value ? value : "", textMaxW,
+  constexpr int iconSize = 30;
+  constexpr int valueCaretGap = 20;
+  const int caretX = right - iconSize;
+  const int valueRight = caretX - valueCaretGap;
+  const int textMaxW = std::max(1, valueRight - left);
+  const std::string shown = renderer.text.truncate(systemFontId(), value ? value : "", textMaxW,
                                                     EpdFontFamily::REGULAR);
-  const int textY = boxY + (boxH - renderer.text.getLineHeight(systemFontIdForPointSize(8))) / 2;
-  renderer.text.render(systemFontIdForPointSize(8), left + kPadX, textY, shown.c_str(), true,
+  const int valueWidth = renderer.text.getWidth(systemFontId(), shown.c_str(), EpdFontFamily::REGULAR);
+  const int textY = itemY + (itemHeight - renderer.text.getLineHeight(systemFontId())) / 2;
+  renderer.text.render(systemFontId(), valueRight - valueWidth, textY, shown.c_str(), true,
                        EpdFontFamily::REGULAR);
-
-  const int chevronX = right - 14;
-  const int chevronY = boxY + boxH / 2 - 2;
-  renderer.line.render(chevronX - 3, chevronY, chevronX, chevronY + 3, true);
-  renderer.line.render(chevronX, chevronY + 3, chevronX + 3, chevronY, true);
+  renderer.bitmap.icon(LibraryFilterRight, caretX, itemY + (itemHeight - iconSize) / 2, iconSize, iconSize);
 }
 
 void drawValueStepper(GfxRenderer& renderer, const char* value, int left, int right, int itemY, int itemHeight) {
   constexpr int iconSize = 30;
   constexpr int gap = 8;
-  const int valueW = renderer.text.getWidth(systemFontIdForPointSize(10), value, EpdFontFamily::REGULAR);
+  const int maxTextWidth = std::max(1, right - left - iconSize * 2 - gap * 2);
+  const std::string shown = renderer.text.truncate(systemFontId(), value ? value : "", maxTextWidth,
+                                                    EpdFontFamily::REGULAR);
+  const int valueW = renderer.text.getWidth(systemFontId(), shown.c_str(), EpdFontFamily::REGULAR);
   const int width = iconSize + gap + valueW + gap + iconSize;
   const int x = std::max(left, right - width);
   const int iconY = itemY + (itemHeight - iconSize) / 2 + 5;
-  const int textY = itemY + (itemHeight - renderer.text.getLineHeight(systemFontIdForPointSize(10))) / 2;
+  const int textY = itemY + (itemHeight - renderer.text.getLineHeight(systemFontId())) / 2;
 
   renderer.bitmap.icon(LibraryFilterLeft, x, iconY, iconSize, iconSize);
-  renderer.text.render(systemFontIdForPointSize(10), x + iconSize + gap, textY, value, true, EpdFontFamily::REGULAR);
+  renderer.text.render(systemFontId(), x + iconSize + gap, textY, shown.c_str(), true, EpdFontFamily::REGULAR);
   renderer.bitmap.icon(LibraryFilterRight, x + iconSize + gap + valueW + gap, iconY, iconSize, iconSize);
 }
 
@@ -268,7 +282,7 @@ SettingsDrawer::SettingsDrawer(GfxRenderer& renderer, BookSettings& settings, st
       onSettingsChanged(onSettingsChanged),
       lastInputTime(0),
       settingsUpdated(false) {
-  itemHeight = LIST_ITEM_HEIGHT;
+  itemHeight = systemSizedDrawerRowHeight(renderer);
   syncLayoutFromRenderer();
 
   selectedIndex = 0;
@@ -292,18 +306,20 @@ void SettingsDrawer::setEmbeddedRegion(int x, int y, int w, int h) {
   drawerY = y;
   drawerWidth = w;
   drawerHeight = h;
+  itemHeight = systemSizedDrawerRowHeight(renderer);
   itemsPerPage = std::max(1, (drawerHeight - drawerListTop(embedded_) - kDrawerListBottomPadding) / itemHeight);
   setupMenu();
 }
 
 int SettingsDrawer::snapEmbeddedHeight(int maxHeight) const {
-  const int usable = maxHeight - drawerListTop(embedded_) - kDrawerListBottomPadding;
-  const int rows = std::min(5, std::max(1, usable / LIST_ITEM_HEIGHT));
-  return drawerListTop(embedded_) + rows * LIST_ITEM_HEIGHT + kDrawerListBottomPadding;
+  const int usable = maxHeight - drawerListTop(true) - kDrawerListBottomPadding;
+  const int rowHeight = systemSizedDrawerRowHeight(renderer);
+  const int rows = std::min(5, std::max(1, usable / rowHeight));
+  return drawerListTop(true) + rows * rowHeight + kDrawerListBottomPadding;
 }
 
 void SettingsDrawer::syncLayoutFromRenderer() {
-  itemHeight = LIST_ITEM_HEIGHT;
+  itemHeight = systemSizedDrawerRowHeight(renderer);
   if (embedded_) {
     itemsPerPage = std::max(1, (drawerHeight - drawerListTop(embedded_) - kDrawerListBottomPadding) / itemHeight);
     return;
@@ -529,7 +545,7 @@ void SettingsDrawer::setupMenu() {
     MenuEntry pageAutoTurnEntry;
     pageAutoTurnEntry.item = MenuItem::PageAutoTurn;
     pageAutoTurnEntry.group = GroupType::CONTROLS;
-    pageAutoTurnEntry.name = "Page Auto Turn";
+    pageAutoTurnEntry.name = "Auto Turn";
     pageAutoTurnEntry.getValueText = [](const BookSettings& s) -> const char* {
       static char buf[12];
       if (s.pageAutoTurnSeconds == 0) return "Off";
@@ -596,7 +612,7 @@ void SettingsDrawer::setupMenu() {
     MenuEntry statusLeftEntry;
     statusLeftEntry.item = MenuItem::StatusBarLeft;
     statusLeftEntry.group = GroupType::STATUS_BAR;
-    statusLeftEntry.name = "Left Section";
+    statusLeftEntry.name = "Left";
     statusLeftEntry.getValueText = [](const BookSettings& s) -> const char* {
       return statusBarItemName(s.statusBarLeft.item);
     };
@@ -612,7 +628,7 @@ void SettingsDrawer::setupMenu() {
     MenuEntry statusMiddleEntry;
     statusMiddleEntry.item = MenuItem::StatusBarMiddle;
     statusMiddleEntry.group = GroupType::STATUS_BAR;
-    statusMiddleEntry.name = "Middle Section";
+    statusMiddleEntry.name = "Middle";
     statusMiddleEntry.getValueText = [](const BookSettings& s) -> const char* {
       return statusBarItemName(s.statusBarMiddle.item);
     };
@@ -628,7 +644,7 @@ void SettingsDrawer::setupMenu() {
     MenuEntry statusRightEntry;
     statusRightEntry.item = MenuItem::StatusBarRight;
     statusRightEntry.group = GroupType::STATUS_BAR;
-    statusRightEntry.name = "Right Section";
+    statusRightEntry.name = "Right";
     statusRightEntry.getValueText = [](const BookSettings& s) -> const char* {
       return statusBarItemName(s.statusBarRight.item);
     };
@@ -842,8 +858,8 @@ void SettingsDrawer::drawMarginEditor() {
   for (int i = 0; i < 4; ++i) {
     const int itemY = startY + i * rowHeight;
     renderer.rectangle.fill(drawerX, itemY, drawerWidth, rowHeight, false);
-    const int textY = itemY + (rowHeight - renderer.text.getLineHeight(systemFontIdForPointSize(10))) / 2;
-    renderer.text.render(systemFontIdForPointSize(10), controlsLeft, textY, labels[i], true);
+    const int textY = itemY + (rowHeight - renderer.text.getLineHeight(systemFontId())) / 2;
+    renderer.text.render(systemFontId(), controlsLeft, textY, labels[i], true);
     char value[12];
     snprintf(value, sizeof(value), "%u px", values[i]);
     const int valueAreaLeft = controlsLeft + drawerWidth * 10 / 100;
@@ -858,11 +874,11 @@ void SettingsDrawer::drawMarginEditor() {
   constexpr int iconSize = 30;
   constexpr int gap = 8;
   const int valueColumnRight = drawerX + drawerWidth - 24;
-  const int textWidth = renderer.text.getWidth(systemFontIdForPointSize(10), "Back", EpdFontFamily::REGULAR);
+  const int textWidth = renderer.text.getWidth(systemFontId(), "Back", EpdFontFamily::REGULAR);
   const int iconX = embedded_ ? controlsLeft : valueColumnRight - iconSize - gap - textWidth;
-  const int textY = backY + (actualBackHeight - renderer.text.getLineHeight(systemFontIdForPointSize(10))) / 2;
+  const int textY = backY + (actualBackHeight - renderer.text.getLineHeight(systemFontId())) / 2;
   renderer.bitmap.icon(LibraryFilterLeft, iconX, backY + (actualBackHeight - iconSize) / 2, iconSize, iconSize);
-  renderer.text.render(systemFontIdForPointSize(10), iconX + iconSize + gap, textY, "Back", true);
+  renderer.text.render(systemFontId(), iconX + iconSize + gap, textY, "Back", true);
 
   if (!embedded_) {
     drawMarginPreview(drawerX, startY, std::max(1, controlsLeft - drawerX - 8), contentHeight);
@@ -1002,7 +1018,7 @@ bool SettingsDrawer::handleMarginEditorInput(MappedInputManager& input) {
         snprintf(value, sizeof(value), "%u px", current[row]);
         constexpr int iconSize = 30;
         constexpr int gap = 8;
-        const int valueW = renderer.text.getWidth(systemFontIdForPointSize(10), value, EpdFontFamily::REGULAR);
+        const int valueW = renderer.text.getWidth(systemFontId(), value, EpdFontFamily::REGULAR);
         const int x = std::max(valueAreaLeft, valueColumnRight - (iconSize + gap + valueW + gap + iconSize));
         const int rightX = x + iconSize + gap + valueW + gap;
         if (tapX >= x && tapX < x + iconSize) {
@@ -1265,13 +1281,13 @@ void SettingsDrawer::drawMenuItemRow(int visibleRow, int menuIndex) {
   if (entry.item == MenuItem::Separator || entry.item == MenuItem::StatusBarSeparator ||
       entry.item == MenuItem::StatusBarFullSeparator) {
     const int textX = drawerX + 15;
-    const int textY = itemY + (itemHeight - renderer.text.getLineHeight(systemFontIdForPointSize(10))) / 2;
-    renderer.text.render(systemFontIdForPointSize(10), textX, textY, entry.name, isSelected ? 0 : 1);
+    const int textY = itemY + (itemHeight - renderer.text.getLineHeight(systemFontId())) / 2;
+    renderer.text.render(systemFontId(), textX, textY, entry.name, isSelected ? 0 : 1);
 
     const char* indicator = entry.getValueText(settings);
     if (indicator && indicator[0] != '\0') {
-      const int indicatorW = renderer.text.getWidth(systemFontIdForPointSize(10), indicator);
-      renderer.text.render(systemFontIdForPointSize(10), drawerX + drawerWidth - indicatorW - 30, textY, indicator,
+      const int indicatorW = renderer.text.getWidth(systemFontId(), indicator);
+      renderer.text.render(systemFontId(), drawerX + drawerWidth - indicatorW - 30, textY, indicator,
                            isSelected ? 0 : 1, EpdFontFamily::BOLD);
     }
 
@@ -1281,11 +1297,16 @@ void SettingsDrawer::drawMenuItemRow(int visibleRow, int menuIndex) {
   }
 
   const int textX = drawerX + 23;
-  const int textY = itemY + (itemHeight - renderer.text.getLineHeight(systemFontIdForPointSize(10))) / 2;
-  renderer.text.render(systemFontIdForPointSize(10), textX, textY, entry.name, isSelected ? 0 : 1);
+  const int textY = itemY + (itemHeight - renderer.text.getLineHeight(systemFontId())) / 2;
+  renderer.text.render(systemFontId(), textX, textY, entry.name, isSelected ? 0 : 1);
 
   const int valueColumnRight = drawerX + drawerWidth - 24;
-  const int valueAreaLeft = drawerX + drawerWidth * 40 / 100;
+  const int labelValueGap = 12;
+  const int labelRight = textX + renderer.text.getWidth(systemFontId(), entry.name);
+  // Large system text can extend into the normal 40% value column. Move the
+  // select box right in that case, shortening it instead of letting it cover
+  // the label.
+  const int valueAreaLeft = settingsValueAreaLeft(renderer, drawerX, drawerWidth, valueColumnRight, entry.name);
   if (entry.item == MenuItem::Margins) {
     constexpr int kIconSize = 30;
     renderer.bitmap.icon(LibraryFilterRight, valueColumnRight - kIconSize, itemY + (itemHeight - kIconSize) / 2, kIconSize,
@@ -1338,8 +1359,10 @@ void SettingsDrawer::drawMenuItemRow(int visibleRow, int menuIndex) {
     } else {
       const char* val = entry.getValueText(settings);
       if (val && val[0] != '\0') {
-        const int valW = renderer.text.getWidth(systemFontIdForPointSize(10), val);
-        renderer.text.render(systemFontIdForPointSize(10), valueColumnRight - valW, textY, val, isSelected ? 0 : 1);
+        const int maxValueWidth = std::max(1, valueColumnRight - labelRight - labelValueGap);
+        const std::string shown = renderer.text.truncate(systemFontId(), val, maxValueWidth);
+        const int valW = renderer.text.getWidth(systemFontId(), shown.c_str());
+        renderer.text.render(systemFontId(), valueColumnRight - valW, textY, shown.c_str(), isSelected ? 0 : 1);
       }
     }
   }
@@ -1435,13 +1458,9 @@ void SettingsDrawer::openSelector(const int menuIndex) {
   selectorMenuIndex_ = menuIndex;
   selectorSelected_ = std::max(0, std::min(current, static_cast<int>(selectorOptions_.size()) - 1));
   selectorGroup_ = selectedGroup_;
-  const int requestedRows = std::min(selectorRows, static_cast<int>(selectorOptions_.size()));
-  const int selectedRow = selectorMenuIndex_ - scrollOffset;
-  const int fieldY = drawerY + drawerListTop(embedded_) + selectedRow * itemHeight;
-  const SelectorBounds box =
-      selectorBounds(drawerX, drawerWidth, fieldY, itemHeight, renderer.getScreenHeight(), requestedRows,
-                     selectorOpensUpward());
-  selectorScroll_ = std::max(0, selectorSelected_ - (box.rows - 1));
+  const int contentHeight = std::max(1, drawerHeight - drawerListTop(embedded_));
+  const int visibleRows = std::max(1, (contentHeight - itemHeight) / itemHeight);
+  selectorScroll_ = std::max(0, selectorSelected_ - (visibleRows - 1));
   selectorOpen_ = true;
   captureSelectorFrame();
 }
@@ -1544,47 +1563,51 @@ void SettingsDrawer::drawSelectorPopup() {
     return;
   }
 
-  const int requestedRows = std::min(selectorRows, static_cast<int>(selectorOptions_.size()));
-  const int selectedRow = selectorMenuIndex_ - scrollOffset;
-  const int fieldY = drawerY + drawerListTop(embedded_) + selectedRow * itemHeight;
-  const SelectorBounds box =
-      selectorBounds(drawerX, drawerWidth, fieldY, itemHeight, renderer.getScreenHeight(), requestedRows,
-                     selectorOpensUpward());
+  const int startY = drawerY + drawerListTop(embedded_);
+  const int contentHeight = std::max(1, drawerHeight - drawerListTop(embedded_));
+  const int visibleRows = std::max(1, (contentHeight - itemHeight) / itemHeight);
+  const int optionRows = std::min(visibleRows, static_cast<int>(selectorOptions_.size()));
+  const int backY = drawerY + drawerHeight - itemHeight;
 
-  renderer.rectangle.fill(box.x, box.y, box.width, box.height, false);
-
-  for (int i = 0; i < box.rows; ++i) {
+  renderer.rectangle.fill(drawerX, startY, drawerWidth, contentHeight, false);
+  for (int i = 0; i < optionRows; ++i) {
     const int optionIndex = selectorScroll_ + i;
-    const int rowY = box.y + i * selectorRowHeight;
+    const int rowY = startY + i * itemHeight;
     if (optionIndex < static_cast<int>(selectorOptions_.size())) {
-      const bool selected = optionIndex == selectorSelected_;
-      if (selected) {
-        renderer.rectangle.fill(box.x + 1, rowY, box.width - 2, selectorRowHeight,
-                                static_cast<int>(GfxRenderer::FillTone::Ink));
-      }
-      const int textY = rowY + (selectorRowHeight - renderer.text.getLineHeight(systemFontIdForPointSize(10))) / 2;
-      renderer.text.render(systemFontIdForPointSize(10), box.x + 12, textY,
-                           selectorOptions_[static_cast<size_t>(optionIndex)].c_str(), selected ? 0 : 1);
+      const int textY = rowY + (itemHeight - renderer.text.getLineHeight(systemFontId())) / 2;
+      const std::string shown = renderer.text.truncate(systemFontId(),
+                                                        selectorOptions_[static_cast<size_t>(optionIndex)].c_str(),
+                                                        std::max(1, drawerWidth - 52));
+      renderer.text.render(systemFontId(), drawerX + 23, textY, shown.c_str(), true);
     }
-    if (i + 1 < box.rows) {
-      renderer.line.render(box.x, rowY + selectorRowHeight, box.x + box.width, rowY + selectorRowHeight, true,
+    if (i + 1 < optionRows) {
+      renderer.line.render(drawerX + 20, rowY + itemHeight - 1, drawerX + drawerWidth - 20,
+                           rowY + itemHeight - 1, true,
                            LineRender::Style::Dotted);
     }
   }
 
-  if (static_cast<int>(selectorOptions_.size()) > box.rows) {
-    const int trackX = box.x + box.width - 5;
-    const int trackY = box.y + 2;
-    const int trackHeight = std::max(1, box.height - 5);
+  if (static_cast<int>(selectorOptions_.size()) > visibleRows) {
+    const int trackX = drawerX + drawerWidth - 8;
+    const int trackY = startY + 2;
+    const int trackHeight = std::max(1, visibleRows * itemHeight - 5);
     const int totalOptions = static_cast<int>(selectorOptions_.size());
-    const int thumbHeight = std::max(8, trackHeight * box.rows / totalOptions);
-    const int scrollRange = std::max(1, totalOptions - box.rows);
+    const int thumbHeight = std::max(8, trackHeight * visibleRows / totalOptions);
+    const int scrollRange = std::max(1, totalOptions - visibleRows);
     const int thumbRange = std::max(0, trackHeight - thumbHeight);
     const int thumbY = trackY + thumbRange * selectorScroll_ / scrollRange;
     renderer.rectangle.fill(trackX, thumbY, 2, thumbHeight, true);
   }
 
-  renderer.rectangle.render(box.x, box.y, box.width, box.height, true);
+  renderer.line.render(drawerX, backY, drawerX + drawerWidth, backY, true, LineRender::Style::Dotted);
+  const int controlsLeft = embedded_ ? drawerX + 20 : drawerX + drawerWidth * 48 / 100;
+  constexpr int iconSize = 30;
+  constexpr int gap = 8;
+  const int textWidth = renderer.text.getWidth(systemFontId(), "Back", EpdFontFamily::REGULAR);
+  const int iconX = embedded_ ? controlsLeft : drawerX + drawerWidth - 24 - iconSize - gap - textWidth;
+  const int textY = backY + (itemHeight - renderer.text.getLineHeight(systemFontId())) / 2;
+  renderer.bitmap.icon(LibraryFilterLeft, iconX, backY + (itemHeight - iconSize) / 2, iconSize, iconSize);
+  renderer.text.render(systemFontId(), iconX + iconSize + gap, textY, "Back", true);
 }
 
 bool SettingsDrawer::handleSelectorInput(MappedInputManager& input) {
@@ -1598,16 +1621,14 @@ bool SettingsDrawer::handleSelectorInput(MappedInputManager& input) {
 
   const int screenW = renderer.getScreenWidth();
   const int screenH = renderer.getScreenHeight();
-  const int requestedRows = std::min(selectorRows, static_cast<int>(selectorOptions_.size()));
-  const int selectedRow = selectorMenuIndex_ - scrollOffset;
-  const int fieldY = drawerY + drawerListTop(embedded_) + selectedRow * itemHeight;
-  const SelectorBounds box =
-      selectorBounds(drawerX, drawerWidth, fieldY, itemHeight, screenH, requestedRows, selectorOpensUpward());
+  const int startY = drawerY + drawerListTop(embedded_);
+  const int contentHeight = std::max(1, drawerHeight - drawerListTop(embedded_));
+  const int visibleRows = std::max(1, (contentHeight - itemHeight) / itemHeight);
+  const int backY = drawerY + drawerHeight - itemHeight;
 
-  if (input.hasTouch() &&
-      (input.wasTouchSwipeUpForRenderer(renderer) || input.wasTouchSwipeDownForRenderer(renderer))) {
-    const int maxScroll = std::max(0, static_cast<int>(selectorOptions_.size()) - box.rows);
-    const int page = std::max(1, box.rows);
+  if (input.wasTouchSwipeUpForRenderer(renderer) || input.wasTouchSwipeDownForRenderer(renderer)) {
+    const int maxScroll = std::max(0, static_cast<int>(selectorOptions_.size()) - visibleRows);
+    const int page = std::max(1, visibleRows);
     if (input.wasTouchSwipeUpForRenderer(renderer)) {
       selectorScroll_ = std::min(selectorScroll_ + page, maxScroll);
     } else {
@@ -1619,18 +1640,24 @@ bool SettingsDrawer::handleSelectorInput(MappedInputManager& input) {
 
   float tapNx = 0.0f;
   float tapNy = 0.0f;
-  if (input.hasTouch() && input.wasTouchTapInScreen(renderer, tapNx, tapNy)) {
+  if (input.wasTouchTapInScreen(renderer, tapNx, tapNy)) {
     const int tapX = static_cast<int>(tapNx * screenW);
     const int tapY = static_cast<int>(tapNy * screenH);
-    const int optionY = tapY - box.y;
-    if (tapX >= box.x && tapX < box.x + box.width && optionY >= 0 && optionY < box.rows * selectorRowHeight) {
-      const int optionIndex = selectorScroll_ + optionY / selectorRowHeight;
+    const int optionY = tapY - startY;
+    if (tapX >= drawerX && tapX < drawerX + drawerWidth && optionY >= 0 && optionY < visibleRows * itemHeight) {
+      const int optionIndex = selectorScroll_ + optionY / itemHeight;
       if (optionIndex >= 0 && optionIndex < static_cast<int>(selectorOptions_.size())) {
         selectorSelected_ = optionIndex;
         commitSelectorSelection();
         renderWithRefresh(HalDisplay::FAST_REFRESH);
         return true;
       }
+    }
+
+    if (tapX >= drawerX && tapX < drawerX + drawerWidth && tapY >= backY && tapY < drawerY + drawerHeight) {
+      closeSelector();
+      renderWithRefresh(HalDisplay::FAST_REFRESH);
+      return true;
     }
 
     const int listTop = drawerY + drawerListTop(embedded_);
@@ -1665,7 +1692,9 @@ bool SettingsDrawer::handleSelectorInput(MappedInputManager& input) {
     const int direction = input.wasPressed(MappedInputManager::Button::Up) ? -1 : 1;
     selectorSelected_ = (selectorSelected_ + direction + count) % count;
     if (selectorSelected_ < selectorScroll_) selectorScroll_ = selectorSelected_;
-    if (selectorSelected_ >= selectorScroll_ + box.rows) selectorScroll_ = selectorSelected_ - box.rows + 1;
+    if (selectorSelected_ >= selectorScroll_ + visibleRows) {
+      selectorScroll_ = selectorSelected_ - visibleRows + 1;
+    }
     renderWithRefresh(HalDisplay::FAST_REFRESH);
     return true;
   }
@@ -1902,12 +1931,16 @@ void SettingsDrawer::handleInput(MappedInputManager& input) {
           bool appliedTouchPosition = false;
           if (selectedItem == MenuItem::FontSize || selectedItem == MenuItem::LineHeight ||
               selectedItem == MenuItem::TextSpace) {
-            const char* value = menuItems[static_cast<size_t>(selectedIndex)].getValueText(settings);
+            const auto& entry = menuItems[static_cast<size_t>(selectedIndex)];
+            const char* value = entry.getValueText(settings);
             constexpr int iconSize = 30;
             constexpr int gap = 8;
-            const int valueAreaLeft = drawerX + drawerWidth * 40 / 100;
             const int valueColumnRight = drawerX + drawerWidth - 24;
-            const int valueW = renderer.text.getWidth(systemFontIdForPointSize(10), value, EpdFontFamily::REGULAR);
+            const int valueAreaLeft = settingsValueAreaLeft(renderer, drawerX, drawerWidth, valueColumnRight, entry.name);
+            const int maxTextWidth = std::max(1, valueColumnRight - valueAreaLeft - iconSize * 2 - gap * 2);
+            const std::string shown = renderer.text.truncate(systemFontId(), value ? value : "", maxTextWidth,
+                                                              EpdFontFamily::REGULAR);
+            const int valueW = renderer.text.getWidth(systemFontId(), shown.c_str(), EpdFontFamily::REGULAR);
             const int width = iconSize + gap + valueW + gap + iconSize;
             const int x = std::max(valueAreaLeft, valueColumnRight - width);
             const int rightX = x + iconSize + gap + valueW + gap;
@@ -1919,8 +1952,9 @@ void SettingsDrawer::handleInput(MappedInputManager& input) {
               appliedTouchPosition = true;
             }
           } else if (selectedItem == MenuItem::Alignment) {
-            const int valueAreaLeft = drawerX + drawerWidth * 40 / 100;
             const int valueColumnRight = drawerX + drawerWidth - 24;
+            const auto& entry = menuItems[static_cast<size_t>(selectedIndex)];
+            const int valueAreaLeft = settingsValueAreaLeft(renderer, drawerX, drawerWidth, valueColumnRight, entry.name);
             if (tapX >= valueAreaLeft && tapX <= valueColumnRight) {
               constexpr int segmentCount = 5;
               const int segmentWidth = std::max(1, (valueColumnRight - valueAreaLeft) / segmentCount);

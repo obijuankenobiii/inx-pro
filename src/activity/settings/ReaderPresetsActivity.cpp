@@ -18,7 +18,7 @@
 #include "activity/page/components/global/PopUp.h"
 #include "activity/page/components/global/Toggle.h"
 #include "images/Close.h"
-#include "images/Download.h"
+#include "images/LibraryFilterRight.h"
 #include "ReaderFontSettingsDraw.h"
 #include "ReaderPresetEditorActivity.h"
 #include "ButtonMappingActivity.h"
@@ -33,7 +33,7 @@ namespace {
 constexpr int kRowValueRightInset = 30;
 constexpr int kEmbeddedListTopExtra = 30;
 constexpr int kPresetVisibleCount = 7;  // Six requested rows plus one additional row using the spare space.
-constexpr int kAddPresetButtonRaise = 30;
+constexpr int kAddPresetButtonRaise = 10;
 constexpr int kPresetListGap = 20;
 constexpr const char* kAddPresetButtonLabel = "New preset +";
 
@@ -99,11 +99,24 @@ const char* dailyReadingGoalLabel() {
 
 void renderOpenNavigationIcon(const GfxRenderer& renderer, const int screenW, const int itemY, const int rowHeight,
                               const bool invert) {
-  constexpr int iconSize = 40;
-  const int iconX = screenW - kRowValueRightInset - iconSize;
-  const int iconY = itemY + (rowHeight - iconSize) / 2;
-  renderer.bitmap.iconScaled(Download, iconX, iconY, iconSize, iconSize, iconSize, iconSize,
-                             BitmapRender::Orientation::Rotate270CW, invert);
+  constexpr int iconWidth = 32;
+  constexpr int iconHeight = 30;
+  const int iconX = screenW - kRowValueRightInset - iconWidth;
+  const int iconY = itemY + (rowHeight - iconHeight) / 2;
+  renderer.bitmap.icon(LibraryFilterRight, iconX, iconY, iconWidth, iconHeight,
+                       BitmapRender::Orientation::None, invert);
+}
+
+void renderNavigationRowDivider(const GfxRenderer& renderer, const int screenW, const int itemY,
+                                const int rowHeight) {
+  constexpr int iconWidth = 32;
+  constexpr int iconGap = 5;
+  const int iconX = screenW - kRowValueRightInset - iconWidth;
+  const int y = itemY + rowHeight - 1;
+  renderer.line.render(SettingsListLayout::kDividerInset, y, iconX - iconGap, y, true,
+                       LineRender::Style::Dotted);
+  renderer.line.render(iconX + iconWidth + iconGap, y, screenW - SettingsListLayout::kDividerInset, y, true,
+                       LineRender::Style::Dotted);
 }
 
 }
@@ -135,7 +148,8 @@ void ReaderPresetsActivity::onEnter() {
   const int screenH = renderer.getScreenHeight();
   const int listTop = navigation::Menu::height + 20 + UiPage::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra;
   const int contentBottom = screenH - navigation::Menu::bottomInset() - 10;
-  listItemHeight_ = kListItemHeight;
+  // Keep preset rows readable at every configured system text size.
+  listItemHeight_ = std::max(kListItemHeight, renderer.text.getLineHeight(systemFontId()) + 24);
   if (!presetsOnly_) {
     const int rows = rowCount();
     const int availableHeight = std::max(0, contentBottom - listTop);
@@ -278,9 +292,7 @@ void ReaderPresetsActivity::render() {
       renderer.text.render(systemFontId(), 20, textY, label, isSelected ? 0 : 1);
       renderOpenNavigationIcon(renderer, screenW, itemY, listItemHeight_, isSelected);
       if (hasNextItem) {
-        renderer.line.render(SettingsListLayout::kDividerInset, itemY + listItemHeight_ - 1,
-                             screenW - SettingsListLayout::kDividerInset, itemY + listItemHeight_ - 1, true,
-                             LineRender::Style::Dotted);
+        renderNavigationRowDivider(renderer, screenW, itemY, listItemHeight_);
       }
       continue;
     }
@@ -293,9 +305,7 @@ void ReaderPresetsActivity::render() {
       renderer.text.render(systemFontId(), 20, textY, label, isSelected ? 0 : 1);
       renderOpenNavigationIcon(renderer, screenW, itemY, listItemHeight_, isSelected);
       if (hasNextItem) {
-        renderer.line.render(SettingsListLayout::kDividerInset, itemY + listItemHeight_ - 1,
-                             screenW - SettingsListLayout::kDividerInset, itemY + listItemHeight_ - 1, true,
-                             LineRender::Style::Dotted);
+        renderNavigationRowDivider(renderer, screenW, itemY, listItemHeight_);
       }
       continue;
     }
@@ -511,6 +521,12 @@ void ReaderPresetsActivity::renderActionSelectorOverlay() {
 }
 
 void ReaderPresetsActivity::openEditor(int presetIndex) {
+  // The edit action is opened from a touch-driven overlay. Clear the overlay's
+  // consumed edges before the new editor starts receiving input.
+  mappedInput.discardPendingButtonEdges();
+  mappedInput.discardPendingTouchTap();
+  mappedInput.discardPendingSwipe();
+  mappedInput.ignoreCurrentTouch();
   enterNewActivity(
       new ReaderPresetEditorActivity(renderer, mappedInput, presetIndex, [this]() { subFinished_ = true; }));
 }
@@ -625,6 +641,19 @@ void ReaderPresetsActivity::handleListInput() {
     return;
   }
 
+  float swipeStartNx = 0.0f;
+  float swipeStartNy = 0.0f;
+  // A swipe-up from the bottom edge is the page-close gesture. Keep the
+  // start-band guard so ordinary swipes in the list remain pagination.
+  if (mappedInput.wasTouchSwipeUpInScreen(renderer, swipeStartNx, swipeStartNy) && swipeStartNy >= 0.95f) {
+    if (onHardwareBack_) {
+      onHardwareBack_();
+    } else {
+      onGoBack_();
+    }
+    return;
+  }
+
   if (mappedInput.hasTouch()) {
     const bool swipeUp = mappedInput.wasTouchSwipeUpForRenderer(renderer);
     const bool swipeDown = mappedInput.wasTouchSwipeDownForRenderer(renderer);
@@ -692,6 +721,9 @@ void ReaderPresetsActivity::handleListInput() {
 }
 
 void ReaderPresetsActivity::finishSubActivity() {
+  mappedInput.discardPendingButtonEdges();
+  mappedInput.discardPendingTouchTap();
+  mappedInput.discardPendingSwipe();
   exitActivity();
   if (pendingRenameIndex_ >= 0) {
     READER_PRESETS.rename(pendingRenameIndex_, pendingRenameName_);
