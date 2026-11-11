@@ -241,6 +241,32 @@ bool ReaderPresetStore::remove(int index) {
   return save();
 }
 
+bool ReaderPresetStore::remapFontFamilySlots(const std::vector<std::string>& oldLabels,
+                                             const std::vector<std::string>& newLabels) {
+  load();
+  if (oldLabels.empty() || newLabels.empty()) {
+    return false;
+  }
+
+  bool changed = false;
+  for (ReaderPreset& preset : userPresets_) {
+    const uint8_t oldSlot = preset.settings.fontFamily;
+    if (oldSlot >= oldLabels.size()) {
+      continue;
+    }
+    const auto it = std::find(newLabels.begin(), newLabels.end(), oldLabels[oldSlot]);
+    if (it == newLabels.end()) {
+      continue;
+    }
+    const uint8_t newSlot = static_cast<uint8_t>(std::distance(newLabels.begin(), it));
+    if (newSlot != oldSlot) {
+      preset.settings.fontFamily = newSlot;
+      changed = true;
+    }
+  }
+  return changed ? save() : true;
+}
+
 void ReaderPresetStore::applyToBook(int index, BookSettings& book) {
   load();
   if (index <= 0) {

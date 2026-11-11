@@ -234,7 +234,7 @@ body{background:var(--inx-page)!important;color:var(--inx-ink)!important;font-fa
   } else if (page.indexOf("Inx — Fonts") >= 0 || page.indexOf("Inx - Fonts") >= 0) {
     label = "Fonts";
     active = "/font-manager";
-  } else if (page.indexOf("Inx — Language Manager") >= 0 || page.indexOf("Inx - Language Manager") >= 0) {
+  } else if (page.indexOf("Inx — Language") >= 0 || page.indexOf("Inx - Language") >= 0) {
     label = "Language";
     active = "/language-manager";
   } else if (page.indexOf("Inx — Settings") >= 0 || page.indexOf("Inx - Settings") >= 0) {

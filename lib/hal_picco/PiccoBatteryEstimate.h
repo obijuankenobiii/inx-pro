@@ -35,7 +35,7 @@ class PiccoBatteryEstimate {
       else
         power = sample.charging ? Power::Charging : Power::External;
     }
-    if (sample.percentage >= 99 && sample.millivolts >= 4305) {
+    if (sample.percentage >= 100) {
       power = Power::Full;
     }
 

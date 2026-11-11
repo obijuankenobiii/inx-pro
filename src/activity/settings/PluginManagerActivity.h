@@ -35,12 +35,11 @@ class PluginManagerActivity final : public ActivityWithSubactivity {
   volatile size_t total_ = 0;
   volatile bool updateRequired_ = false;
   volatile bool shuttingDown_ = false;
-  bool showCompletionCheck_ = false;
-  volatile uint32_t completionCheckExpiresAt_ = 0;
   TaskHandle_t workerTask_ = nullptr;
   TaskHandle_t displayTask_ = nullptr;
   SemaphoreHandle_t renderingMutex_ = nullptr;
   volatile int lastPercent_ = -1;
+  volatile bool installing_ = false;
 
   void loadPackages();
   void installSelected();

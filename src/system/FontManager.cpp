@@ -991,12 +991,20 @@ int FontManager::getMaxFontId(int currentFontId) {
 }
 
 void FontManager::rebuildSdReaderFamilyList() {
-  g_sdFamiliesSorted.clear();
   std::set<std::string> uniq;
   for (const auto& e : g_sdFonts) {
     uniq.insert(e.family);
   }
-  g_sdFamiliesSorted.assign(uniq.begin(), uniq.end());
+
+  std::vector<std::string> ordered;
+  ordered.reserve(uniq.size());
+  for (const std::string& family : g_sdFamiliesSorted) {
+    if (uniq.erase(family) > 0) {
+      ordered.push_back(family);
+    }
+  }
+  ordered.insert(ordered.end(), uniq.begin(), uniq.end());
+  g_sdFamiliesSorted = std::move(ordered);
 }
 
 uint32_t FontManager::readerFontFamilyOptionCount() {

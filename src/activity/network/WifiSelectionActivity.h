@@ -113,7 +113,7 @@ class WifiSelectionActivity final : public ActivityWithSubactivity {
   const std::string headerMode;                             ///< Optional gray mode for the requesting service
 
   /** @brief Returns whether this caller should use the file-transfer landing UI. */
-  bool usesFileTransferLayout() const { return headerTitle == "File Transfer"; }
+  bool usesFileTransferLayout() const { return headerTitle == "File Transfer" || headerTitle == "Download"; }
 
   std::string selectedSSID;               ///< SSID of selected network
   bool selectedRequiresPassword = false;  ///< Whether selected network requires password

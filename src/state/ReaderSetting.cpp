@@ -17,6 +17,7 @@
 
 #include <cstring>
 #include <algorithm>
+#include <cstdlib>
 #include <string>
 
 #ifndef INX_SIMULATOR_WEB_ONLY
@@ -34,6 +35,7 @@ constexpr uint8_t READER_SETTINGS_LEGACY_VERSION = 1;
 constexpr uint8_t READER_SETTINGS_COUNT = 38;
 constexpr uint8_t READER_SETTINGS_LEGACY_COUNT = 35;
 constexpr char READER_SETTINGS_FILE[] = "/.system/reader_settings.bin";
+constexpr char READER_FONT_FAMILY_FILE[] = "/.system/reader_font_family.txt";
 constexpr uint32_t FNV1A_OFFSET = 2166136261UL;
 constexpr uint32_t FNV1A_PRIME = 16777619UL;
 
@@ -74,6 +76,43 @@ bool hashFile(const char* path, uint32_t& hash) {
   }
   file.close();
   return true;
+}
+
+struct PersistedReaderFont {
+  std::string family;
+  int pointSize = 0;
+};
+
+PersistedReaderFont loadReaderFontSelection() {
+  FsFile file;
+  if (!SdMan.openFileForRead("CPR", READER_FONT_FAMILY_FILE, file)) {
+    return {};
+  }
+  char value[96] = {0};
+  const int count = file.read(reinterpret_cast<uint8_t*>(value), sizeof(value) - 1);
+  file.close();
+  if (count <= 0) {
+    return {};
+  }
+  value[count] = '\0';
+  PersistedReaderFont result;
+  result.family = value;
+  const char* separator = strchr(value, '\n');
+  if (separator != nullptr) {
+    result.family.assign(value, static_cast<size_t>(separator - value));
+    result.pointSize = atoi(separator + 1);
+  }
+  return result;
+}
+
+void saveReaderFontSelection(const std::string& family, const uint8_t pointSize) {
+  FsFile file;
+  if (!SdMan.openFileForWrite("CPR", READER_FONT_FAMILY_FILE, file)) {
+    return;
+  }
+  const std::string value = family + "\n" + std::to_string(pointSize);
+  file.write(reinterpret_cast<const uint8_t*>(value.c_str()), value.size());
+  file.close();
 }
 
 uint32_t readerSettingsHash(const ReaderSetting& settings, const uint8_t fontFamilyToSave) {
@@ -143,6 +182,10 @@ bool ReaderSetting::saveToFile() const {
   } else if (mutableSettings->fontSize >= SystemSetting::FONT_SIZE_COUNT) {
     mutableSettings->fontSize = FontManager::legacyReaderSizeForPointSize(mutableSettings->fontSize);
   }
+#endif
+
+#ifndef INX_SIMULATOR_WEB_ONLY
+  saveReaderFontSelection(FontManager::readerFontFamilyLabel(fontFamilyToSave), fontSize);
 #endif
 
   const uint32_t currentHash = readerSettingsHash(*this, fontFamilyToSave);
@@ -422,6 +465,19 @@ bool ReaderSetting::loadFromFile() {
   inputFile.close();
 
 #ifndef INX_SIMULATOR_WEB_ONLY
+  const PersistedReaderFont persistedFont = loadReaderFontSelection();
+  if (!persistedFont.family.empty()) {
+    const std::vector<std::string> families = FontManager::readerFontFamilyEnumLabels();
+    const auto familyIt = std::find(families.begin(), families.end(), persistedFont.family);
+    if (familyIt != families.end()) {
+      fontFamily = static_cast<uint8_t>(std::distance(families.begin(), familyIt));
+      if (persistedFont.pointSize >= FontManager::OUTLINE_FONT_MIN_POINT_SIZE &&
+          persistedFont.pointSize <= FontManager::OUTLINE_FONT_MAX_POINT_SIZE &&
+          FontManager::isOutlineFontFamily(persistedFont.family)) {
+        fontSize = static_cast<uint8_t>(persistedFont.pointSize);
+      }
+    }
+  }
   FontManager::clampReaderFontFamilySlot(fontFamily);
   if (FontManager::isOutlineFontFamilySlot(fontFamily)) {
     if (fontSize < FontManager::OUTLINE_FONT_MIN_POINT_SIZE ||

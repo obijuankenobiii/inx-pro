@@ -305,7 +305,7 @@ void ReaderPresetsActivity::render() {
       renderer.rectangle.fill(
           0, itemY, screenW, listItemHeight_,
           isSelected ? static_cast<int>(GfxRenderer::FillTone::Ink) : static_cast<int>(GfxRenderer::FillTone::Paper));
-      const char* label = "Font Manager";
+      const char* label = "Font";
       renderer.text.render(systemFontId(), 20, textY, label, isSelected ? 0 : 1);
       renderOpenNavigationIcon(renderer, screenW, itemY, listItemHeight_, isSelected);
       if (hasNextItem) {

@@ -13,16 +13,24 @@
 #include "activity/network/WifiSelectionActivity.h"
 #include "activity/page/components/global/Button.h"
 #include "activity/page/components/global/Paginator.h"
-#include "images/Check.h"
+#include "activity/page/components/widget/BaseCarousel.h"
 #include "images/Download.h"
 #include "images/LibraryFilterRight.h"
 #include "images/Trash.h"
+#include "state/ReaderPreset.h"
 #include "state/ReaderSetting.h"
 #include "system/FontManager.h"
 #include "system/FontPreviews.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
 #include "util/StringUtils.h"
+#if FREEINK_DEVICE_X4PRO
+#include "images/X4ProWifiTransferSetup.h"
+#elif FREEINK_DEVICE_STICKY || FREEINK_DEVICE_MURPHY_M4
+#include "images/MurphyStickyWifiTransferSetup.h"
+#else
+#include "images/WifiTransferSetup.h"
+#endif
 
 namespace {
 // Rendering the font list can traverse preview glyphs, build several strings,
@@ -36,11 +44,31 @@ constexpr int kActionIconSize = 40;
 constexpr int kScrollCaretSize = 40;
 constexpr int kCategoryFilterWidth = 220;
 constexpr int kCategoryFilterRowHeight = UiLayout::LIST_ITEM_HEIGHT;
+constexpr int kTransferImageWidth = 400;
+constexpr int kTransferImageHeight = 200;
+constexpr int kTransferImageGap = 15;
+constexpr int kTransferCardPadding = 20;
+constexpr int kTransferCardGap = 12;
+constexpr int kTransferPanelButtonGap = 20;
+constexpr int kTransferTextGap = 20;
 // Only a swipe that starts at the physical bottom edge closes this page.  A
 // normal upward swipe in the font list remains a list-page navigation gesture.
 constexpr float kBottomEdgeSwipeStartNy = 0.95f;
 
+uint8_t fontFamilySlotForLabel(const std::vector<std::string>& labels, const std::string& label) {
+  const auto it = std::find(labels.begin(), labels.end(), label);
+  return it == labels.end() ? 0 : static_cast<uint8_t>(std::distance(labels.begin(), it));
+}
+
 int pageBodyTop() { return FREEINK_DEVICE_X4PRO ? 80 : 70; }
+
+#if FREEINK_DEVICE_X4PRO
+const uint8_t* const kTransferImage = X4ProWifiTransferSetup;
+#elif FREEINK_DEVICE_STICKY || FREEINK_DEVICE_MURPHY_M4
+const uint8_t* const kTransferImage = MurphyStickyWifiTransferSetup;
+#else
+const uint8_t* const kTransferImage = WifiTransferSetup;
+#endif
 
 bool contains(const ButtonBounds& bounds, const int x, const int y) {
   return x >= bounds.x && x < bounds.x + bounds.width && y >= bounds.y && y < bounds.y + bounds.height;
@@ -133,9 +161,11 @@ void FontManagerActivity::onEnter() {
   progressTotal_ = 0;
   updateRequired_ = false;
   shuttingDown_ = false;
-  showCompletionCheck_ = false;
-  completionCheckExpiresAt_ = 0;
+  installingFont_ = false;
   fontCatalogNeedsRescan_ = false;
+  fontFamilyLabelsBeforeInstall_.clear();
+  globalFontFamilyBeforeInstall_.clear();
+  systemFontFamilyBeforeInstall_.clear();
   lastProgressPercent_ = -1;
   lastProgressUpdateMs_ = 0;
   loadPackages();
@@ -163,8 +193,7 @@ void FontManagerActivity::onExit() {
     renderingMutex_ = nullptr;
   }
   if (fontCatalogNeedsRescan_) {
-    FontManager::scanSDFonts("/fonts", true);
-    fontCatalogNeedsRescan_ = false;
+    rescanFontCatalogPreservingSettings();
   }
 }
 
@@ -284,15 +313,24 @@ void FontManagerActivity::installSelected() {
   }
 
   if (WiFi.status() != WL_CONNECTED || WiFi.localIP() == IPAddress(0, 0, 0, 0)) {
+    if (fontFamilyLabelsBeforeInstall_.empty()) {
+      fontFamilyLabelsBeforeInstall_ = FontManager::readerFontFamilyEnumLabels();
+      globalFontFamilyBeforeInstall_ = FontManager::readerFontFamilyLabel(READER_SETTINGS.fontFamily);
+      systemFontFamilyBeforeInstall_ = FontManager::readerFontFamilyLabel(SETTINGS.systemFontFamily);
+    }
     launchWifiSelection();
     return;
   }
 
+  if (fontFamilyLabelsBeforeInstall_.empty()) {
+    fontFamilyLabelsBeforeInstall_ = FontManager::readerFontFamilyEnumLabels();
+    globalFontFamilyBeforeInstall_ = FontManager::readerFontFamilyLabel(READER_SETTINGS.fontFamily);
+    systemFontFamilyBeforeInstall_ = FontManager::readerFontFamilyLabel(SETTINGS.systemFontFamily);
+  }
   state_ = State::Downloading;
   status_ = "Downloading and installing...";
   installingPackageIndex_ = packageIndex;
-  showCompletionCheck_ = false;
-  completionCheckExpiresAt_ = 0;
+  installingFont_ = false;
   progressDownloaded_ = 0;
   progressTotal_ = 0;
   lastProgressPercent_ = -1;
@@ -353,8 +391,6 @@ void FontManagerActivity::removeSelected() {
     READER_SETTINGS.fontFamily = SystemSetting::MONTSERRAT;
     READER_SETTINGS.saveToFile();
   }
-  showCompletionCheck_ = false;
-  completionCheckExpiresAt_ = 0;
   selectedVisible_ = false;
   status_ = "Font removed.";
   updateDisplay();
@@ -394,12 +430,6 @@ void FontManagerActivity::startInstallation() {
 void FontManagerActivity::displayTaskLoop() {
   INX_SERIAL.printf("[%lu] [FONT-UI] display task started\n", millis());
   while (true) {
-    if (showCompletionCheck_ && completionCheckExpiresAt_ != 0 &&
-        static_cast<int32_t>(millis() - completionCheckExpiresAt_) >= 0) {
-      showCompletionCheck_ = false;
-      completionCheckExpiresAt_ = 0;
-      updateRequired_ = true;
-    }
     if (updateRequired_) {
       updateRequired_ = false;
       if (renderingMutex_ && xSemaphoreTake(renderingMutex_, pdMS_TO_TICKS(100)) == pdTRUE) {
@@ -418,12 +448,14 @@ void FontManagerActivity::installTaskLoop() {
   const int packageIndex = installingPackageIndex_;
   std::string error;
   bool installed = false;
+  installingFont_ = false;
   if (packageIndex >= 0 && packageIndex < static_cast<int>(packages_.size())) {
     installed = FontPackageManager::install(
         packages_[static_cast<size_t>(packageIndex)], error,
         [this](const size_t downloaded, const size_t total) {
           progressDownloaded_ = downloaded;
           progressTotal_ = total;
+          if (total > 0 && downloaded >= total) installingFont_ = true;
           const int percent = total > 0 ? static_cast<int>((downloaded * 100) / total) : 0;
           const unsigned long now = millis();
           if (percent != lastProgressPercent_ || now - lastProgressUpdateMs_ >= 750) {
@@ -433,21 +465,23 @@ void FontManagerActivity::installTaskLoop() {
           }
         },
         false);
-    if (installed) fontCatalogNeedsRescan_ = true;
+    if (installed) {
+      fontCatalogNeedsRescan_ = true;
+      if (renderingMutex_ && xSemaphoreTake(renderingMutex_, portMAX_DELAY) == pdTRUE) {
+        rescanFontCatalogPreservingSettings();
+        xSemaphoreGive(renderingMutex_);
+      }
+    }
   }
 
   if (!shuttingDown_) {
     if (installed) {
       state_ = State::Ready;
       status_ = "Font installed.";
-      showCompletionCheck_ = true;
-      completionCheckExpiresAt_ = millis() + 2000;
       selectedVisible_ = false;
     } else {
       state_ = State::Failed;
       status_ = error.empty() ? "Font installation failed." : error;
-      showCompletionCheck_ = false;
-      completionCheckExpiresAt_ = 0;
     }
     updateRequired_ = true;
   }
@@ -455,6 +489,29 @@ void FontManagerActivity::installTaskLoop() {
                     static_cast<int>(state_));
   installTaskHandle_ = nullptr;
   vTaskDeleteWithCaps(nullptr);
+}
+
+void FontManagerActivity::rescanFontCatalogPreservingSettings() {
+  if (!fontCatalogNeedsRescan_) return;
+
+  const std::vector<std::string> oldLabels = fontFamilyLabelsBeforeInstall_.empty()
+                                                 ? FontManager::readerFontFamilyEnumLabels()
+                                                 : fontFamilyLabelsBeforeInstall_;
+  const std::string globalFamily = globalFontFamilyBeforeInstall_.empty()
+                                       ? FontManager::readerFontFamilyLabel(READER_SETTINGS.fontFamily)
+                                       : globalFontFamilyBeforeInstall_;
+  const std::string systemFamily = systemFontFamilyBeforeInstall_.empty()
+                                       ? FontManager::readerFontFamilyLabel(SETTINGS.systemFontFamily)
+                                       : systemFontFamilyBeforeInstall_;
+  if (!FontManager::scanSDFonts("/fonts", true)) return;
+
+  const std::vector<std::string> newLabels = FontManager::readerFontFamilyEnumLabels();
+  READER_SETTINGS.fontFamily = fontFamilySlotForLabel(newLabels, globalFamily);
+  READER_SETTINGS.saveToFile();
+  SETTINGS.systemFontFamily = fontFamilySlotForLabel(newLabels, systemFamily);
+  SETTINGS.saveToFile();
+  READER_PRESETS.remapFontFamilySlots(oldLabels, newLabels);
+  fontCatalogNeedsRescan_ = false;
 }
 
 void FontManagerActivity::updateDisplay() {
@@ -468,7 +525,8 @@ void FontManagerActivity::updateDisplay() {
 
 void FontManagerActivity::launchWifiSelection() {
   enterNewActivity(new WifiSelectionActivity(renderer, mappedInput,
-                                             [this](const bool connected) { onWifiSelectionComplete(connected); }));
+                                             [this](const bool connected) { onWifiSelectionComplete(connected); },
+                                             "Download", "Fonts"));
 }
 
 void FontManagerActivity::onWifiSelectionComplete(const bool connected) {
@@ -482,9 +540,8 @@ void FontManagerActivity::onWifiSelectionComplete(const bool connected) {
     render();
     return;
   }
-  renderer.syncWriteBufferFromActive();
-  render();
   INX_SERIAL.printf("[%lu] [FONT-WIFI] starting font install\n", millis());
+  renderer.syncWriteBufferFromActive();
   installSelected();
 }
 
@@ -495,41 +552,57 @@ void FontManagerActivity::render() {
   // before replacing it with the Font Manager screen.
   renderer.syncWriteBufferFromActive();
   renderer.clearScreen();
-  const int bodyTop = SubPage::header(renderer, "Font Manager");
+  const int bodyTop = SubPage::header(renderer, "Font");
   const int fontListTop = listTop(bodyTop);
   const int font = systemFontId();
   const int screenW = renderer.getScreenWidth();
   const int screenH = renderer.getScreenHeight();
 
   if (state_ == State::Downloading) {
-    const int centerY = bodyTop + (screenH - bodyTop - 80) / 2;
-    renderer.text.centered(font, centerY - 72, "DOWNLOADING FONT", true, EpdFontFamily::BOLD);
     const int packageIndex = installingPackageIndex_;
     const std::string packageName = packageIndex >= 0 && packageIndex < static_cast<int>(packages_.size())
                                         ? displayFontName(packages_[static_cast<size_t>(packageIndex)].name)
                                         : "Font";
-    const int previewFont = packageIndex >= 0 && packageIndex < static_cast<int>(packages_.size())
-                                ? FontPreviews::fontIdForFamily(packages_[static_cast<size_t>(packageIndex)].installFamily)
-                                : -1;
-    const int nameFont = previewFont >= 0 ? previewFont : font;
-    const std::string name = renderer.text.truncate(nameFont, packageName.c_str(), screenW - 60);
-    renderer.text.centered(nameFont, centerY - 34, name.c_str(), true, EpdFontFamily::REGULAR);
-    renderer.text.centered(font, centerY + 4, "Installing font package", true, EpdFontFamily::REGULAR);
-
     const size_t downloaded = progressDownloaded_;
     const size_t total = progressTotal_;
     const int percent = total > 0 ? std::max(0, std::min(100, static_cast<int>((downloaded * 100) / total))) : 0;
+    const int imageX = (screenW - kTransferImageWidth) / 2;
+    const int imageY = bodyTop;
+    renderer.bitmap.icon(kTransferImage, imageX, imageY, kTransferImageWidth, kTransferImageHeight);
+    const int panelY = imageY + kTransferImageHeight + kTransferImageGap;
+    const int panelBottom = std::max(panelY + 1, screenH - kTransferPanelButtonGap);
+    for (int py = panelY; py < panelBottom; py += 2) {
+      const int offset = ((py - panelY) & 2) != 0 ? 0 : 1;
+      for (int px = offset; px < screenW; px += 2) renderer.drawPixel(px, py, true);
+    }
+    const int cardX = kTransferCardPadding;
+    const int cardY = panelY + 10;
+    const int cardWidth = screenW - 2 * kTransferCardPadding;
+    const int lineHeight = renderer.text.getLineHeight(font);
+    const int headerY = cardY + kTransferCardPadding;
+    const int nameY = headerY + lineHeight + kTransferTextGap;
+    const int firstRowY = nameY + lineHeight + kTransferTextGap;
+    const int barY = firstRowY + lineHeight + 2;
+    const int secondRowY = barY + 14;
+    const int cardHeight = std::min(panelBottom - cardY, secondRowY - cardY + lineHeight + kTransferCardPadding);
+    const bool rounded = SETTINGS.bitmapRoundedCorners != 0;
+    BaseCarousel::renderShadow(renderer, cardX + 4, cardY + 4, cardWidth, cardHeight,
+                               HomeTheme::CarouselShadowStyle::Gray);
+    renderer.rectangle.fill(cardX, cardY, cardWidth, cardHeight, false, rounded);
+    renderer.rectangle.render(cardX, cardY, cardWidth, cardHeight, true, rounded);
+    const int contentX = cardX + kTransferCardPadding;
+    renderer.text.render(font, contentX, headerY, "Font download", true, EpdFontFamily::BOLD);
+    const std::string displayName = renderer.text.truncate(font, packageName.c_str(), cardWidth - 2 * kTransferCardPadding);
+    renderer.text.render(font, contentX, nameY, displayName.c_str(), true);
+    renderer.text.render(font, contentX, firstRowY, "Download", true);
     char percentText[8];
     std::snprintf(percentText, sizeof(percentText), "%d%%", percent);
-    constexpr int barHeight = 6;
-    constexpr int barWidth = 260;
     const int percentWidth = renderer.text.getWidth(font, percentText);
-    const int groupWidth = barWidth + 14 + percentWidth;
-    const int groupX = (screenW - groupWidth) / 2;
-    drawProgressBar(renderer, groupX, centerY + 36, barWidth, barHeight, percent);
-    renderer.text.render(font, groupX + barWidth + 14,
-                         centerY + 36 + (barHeight - renderer.text.getLineHeight(font)) / 2, percentText, true,
-                         EpdFontFamily::REGULAR);
+    renderer.text.render(font, cardX + cardWidth - kTransferCardPadding - percentWidth, firstRowY, percentText, true);
+    drawProgressBar(renderer, contentX, barY, cardWidth - 2 * kTransferCardPadding, 6, percent);
+    renderer.text.render(font, cardX + cardWidth - kTransferCardPadding -
+                                  renderer.text.getWidth(font, installingFont_ ? "Installing" : "Waiting"),
+                         secondRowY, installingFont_ ? "Installing" : "Waiting", true);
     mappedInput.mapLabels("\xC2\xAB Back", "", "", "");
     renderer.displayBuffer();
     return;
@@ -593,8 +666,7 @@ void FontManagerActivity::render() {
                              y + (kRowHeight - renderer.text.getLineHeight(font)) / 2, percentText.c_str(),
                              !selected, EpdFontFamily::REGULAR);
       } else if (installed) {
-        const bool showCheck = showCompletionCheck_ && packageIndex == installingPackageIndex_;
-        renderer.bitmap.icon(showCheck ? Check : Trash, deleteIconX, iconY, kActionIconSize, kActionIconSize,
+        renderer.bitmap.icon(Trash, deleteIconX, iconY, kActionIconSize, kActionIconSize,
                              BitmapRender::Orientation::None, selected);
       } else {
         renderer.bitmap.icon(Download, deleteIconX, iconY, kActionIconSize, kActionIconSize,

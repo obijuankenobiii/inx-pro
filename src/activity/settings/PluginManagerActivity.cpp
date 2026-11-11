@@ -11,8 +11,8 @@
 #include "activity/network/WifiSelectionActivity.h"
 #include "activity/page/SubPage.h"
 #include "activity/page/components/global/Button.h"
+#include "DownloadTransferUi.h"
 #include "images/Anki.h"
-#include "images/Check.h"
 #include "images/Download.h"
 #include "images/Trash.h"
 #include "images/XtcConverter.h"
@@ -21,7 +21,7 @@
 
 namespace {
 constexpr uint32_t kTaskStack = 8192;
-constexpr int kRowHeight = SettingsListLayout::kRowHeight;
+constexpr int kRowHeight = 100;
 constexpr int kSideMargin = 20;
 constexpr int kLogoX = 24;
 constexpr int kTextX = 88;
@@ -42,11 +42,10 @@ void PluginManagerActivity::onEnter() {
   selectedPackage_ = 0;
   downloaded_ = 0;
   total_ = 0;
-  showCompletionCheck_ = false;
-  completionCheckExpiresAt_ = 0;
   updateRequired_ = false;
   shuttingDown_ = false;
   lastPercent_ = -1;
+  installing_ = false;
   loadPackages();
 }
 
@@ -87,8 +86,6 @@ void PluginManagerActivity::installSelected() {
   std::string error;
   if (PluginManager::isInstalled(package)) {
     if (PluginManager::remove(package, error)) {
-      showCompletionCheck_ = false;
-      completionCheckExpiresAt_ = 0;
       status_ = "Plugin disabled. Card data was kept.";
       render();
     } else {
@@ -106,9 +103,8 @@ void PluginManagerActivity::installSelected() {
   status_ = "Downloading and installing...";
   downloaded_ = 0;
   total_ = 0;
-  showCompletionCheck_ = false;
-  completionCheckExpiresAt_ = 0;
   lastPercent_ = -1;
+  installing_ = false;
   startInstallation();
 }
 
@@ -122,7 +118,7 @@ void PluginManagerActivity::startInstallation() {
     return;
   }
   if (!displayTask_ &&
-      xTaskCreatePinnedToCoreWithCaps(&PluginManagerActivity::displayTaskTrampoline, "PluginDisplayTask", 4096, this,
+      xTaskCreatePinnedToCoreWithCaps(&PluginManagerActivity::displayTaskTrampoline, "PluginDisplayTask", 8192, this,
                                       1, &displayTask_, 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
     state_ = State::Failed;
     status_ = "Could not start download.";
@@ -141,7 +137,8 @@ void PluginManagerActivity::startInstallation() {
 
 void PluginManagerActivity::launchWifiSelection() {
   enterNewActivity(new WifiSelectionActivity(renderer, mappedInput,
-                                             [this](const bool connected) { onWifiSelectionComplete(connected); }));
+                                             [this](const bool connected) { onWifiSelectionComplete(connected); },
+                                             "Download", "Plugins"));
 }
 
 void PluginManagerActivity::onWifiSelectionComplete(const bool connected) {
@@ -171,6 +168,7 @@ void PluginManagerActivity::displayTaskTrampoline(void* param) {
                                        [this](const size_t downloaded, const size_t total) {
       downloaded_ = downloaded;
       total_ = total;
+      if (total > 0 && downloaded >= total) installing_ = true;
       const int percent = total > 0 ? static_cast<int>((downloaded * 100) / total) : 0;
       if (percent != lastPercent_) {
         lastPercent_ = percent;
@@ -180,8 +178,6 @@ void PluginManagerActivity::displayTaskTrampoline(void* param) {
   }
   if (!shuttingDown_) {
     state_ = installed ? State::Ready : State::Failed;
-    showCompletionCheck_ = installed;
-    completionCheckExpiresAt_ = installed ? millis() + 2000 : 0;
     status_ = installed ? "Plugin installed." : (error.empty() ? "Plugin installation failed." : error);
     updateRequired_ = true;
   }
@@ -192,12 +188,6 @@ void PluginManagerActivity::displayTaskTrampoline(void* param) {
 
 [[noreturn]] void PluginManagerActivity::displayTaskLoop() {
   while (true) {
-    if (showCompletionCheck_ && completionCheckExpiresAt_ != 0 &&
-        static_cast<int32_t>(millis() - completionCheckExpiresAt_) >= 0) {
-      showCompletionCheck_ = false;
-      completionCheckExpiresAt_ = 0;
-      updateRequired_ = true;
-    }
     if (updateRequired_) {
       updateRequired_ = false;
       if (renderingMutex_ && xSemaphoreTake(renderingMutex_, pdMS_TO_TICKS(100)) == pdTRUE) {
@@ -211,33 +201,13 @@ void PluginManagerActivity::displayTaskTrampoline(void* param) {
 
 void PluginManagerActivity::render() {
   renderer.clearScreen();
-  const int top = SubPage::header(renderer, "Plugin Manager");
-  const int screenW = renderer.getScreenWidth();
+  const int top = SubPage::header(renderer, "Plugins");
+  const int screenW = renderer.getScreenWidth();  
   const int screenH = renderer.getScreenHeight();
   const int font = systemFontId();
   if (state_ == State::Downloading) {
     const auto& package = packages_[std::min(selectedPackage_, packages_.size() - 1)];
-    constexpr int listTopGap = 20;
-    const int rowY = top + listTopGap;
-    const int percent = total_ > 0 ? std::max(0, std::min(100, static_cast<int>((downloaded_ * 100) / total_))) : 0;
-    const std::string percentText = std::to_string(percent) + "%";
-    const int percentWidth = renderer.text.getWidth(font, percentText.c_str());
-    const int descriptionMaxWidth = std::max(1, screenW - kTextX - kSideMargin - percentWidth - 20);
-    const std::string description = renderer.text.truncate(
-        systemFontIdForPointSize(8), package.description.c_str(), descriptionMaxWidth, EpdFontFamily::REGULAR);
-    const int descriptionFont = systemFontIdForPointSize(8);
-    const int contentHeight = renderer.text.getLineHeight(font) + 5 + renderer.text.getLineHeight(descriptionFont);
-    const int titleY = rowY + (kRowHeight - contentHeight) / 2;
-    const int descriptionY = titleY + renderer.text.getLineHeight(font) + 5;
-    const int maxNameWidth = screenW - kTextX - kSideMargin - percentWidth - 20;
-    const std::string name = renderer.text.truncate(font, package.name.c_str(), maxNameWidth);
-    renderer.bitmap.icon(packageIcon(package), kLogoX, rowY + (kRowHeight - kLogoSize) / 2, kLogoSize, kLogoSize);
-    renderer.text.render(font, kTextX, titleY, name.c_str(), true, EpdFontFamily::BOLD);
-    renderer.text.render(descriptionFont, kTextX, descriptionY, description.c_str(), true,
-                         EpdFontFamily::REGULAR);
-    renderer.text.render(font, screenW - kSideMargin - percentWidth,
-                         rowY + (kRowHeight - renderer.text.getLineHeight(font)) / 2, percentText.c_str(), true,
-                         EpdFontFamily::REGULAR);
+    DownloadTransferUi::render(renderer, top, font, "Plugin download", package.name, downloaded_, total_, installing_);
     mappedInput.mapLabels("\xC2\xAB Back", "", "", "");
     renderer.displayBuffer();
     return;
@@ -247,7 +217,7 @@ void PluginManagerActivity::render() {
     const int iconX = screenW - kSideMargin - kIconSize;
     for (size_t index = 0; index < packages_.size(); ++index) {
       const auto& package = packages_[index];
-      const int y = top + 20 + static_cast<int>(index) * kRowHeight;
+      const int y = top + static_cast<int>(index) * kRowHeight;
       const bool installed = PluginManager::isInstalled(package);
       const int descriptionMaxWidth = std::max(1, iconX - kTextX - 16);
       const std::string description = renderer.text.truncate(
@@ -257,11 +227,10 @@ void PluginManagerActivity::render() {
       const int titleY = y + (kRowHeight - contentHeight) / 2;
       const int descriptionY = titleY + renderer.text.getLineHeight(font) + 5;
       renderer.bitmap.icon(packageIcon(package), kLogoX, y + (kRowHeight - kLogoSize) / 2, kLogoSize, kLogoSize);
-      renderer.text.render(font, kTextX, titleY, package.name.c_str(), true, EpdFontFamily::BOLD);
+      renderer.text.render(font, kTextX, titleY, package.name.c_str(), true, EpdFontFamily::REGULAR);
       renderer.text.render(descriptionFont, kTextX, descriptionY, description.c_str(), true,
                            EpdFontFamily::REGULAR);
-      renderer.bitmap.icon(installed && index == selectedPackage_ && showCompletionCheck_ ? Check
-                                                                                           : (installed ? Trash : Download),
+      renderer.bitmap.icon(installed ? Trash : Download,
                            iconX, y + (kRowHeight - kIconSize) / 2, kIconSize, kIconSize);
       if (index + 1 < packages_.size()) {
         renderer.line.render(SettingsListLayout::kDividerInset, y + kRowHeight - 1,
@@ -291,9 +260,9 @@ void PluginManagerActivity::loop() {
     float ny = 0.0f;
     if (mappedInput.wasTouchTapInScreen(renderer, nx, ny)) {
       const int y = static_cast<int>(ny * renderer.getScreenHeight());
-      const int top = SubPage::header(renderer, "Plugin Manager");
-      if (y >= top + 20 && y < top + 20 + static_cast<int>(packages_.size()) * kRowHeight) {
-        const size_t index = static_cast<size_t>((y - top - 20) / kRowHeight);
+      const int top = SubPage::header(renderer, "Plugins");
+      if (y >= top && y < top + static_cast<int>(packages_.size()) * kRowHeight) {
+        const size_t index = static_cast<size_t>((y - top) / kRowHeight);
         if (index < packages_.size()) {
           selectedPackage_ = index;
           installSelected();

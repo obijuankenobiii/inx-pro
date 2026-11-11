@@ -16,7 +16,10 @@
 #include <cstdio>
 #include <cctype>
 #include <cstring>
+#include <cstdlib>
+#include <algorithm>
 #include <string>
+#include <vector>
 
 #ifndef INX_SIMULATOR_WEB_ONLY
 #include "system/FontManager.h"
@@ -44,6 +47,7 @@ namespace {
 constexpr uint8_t SETTINGS_FILE_VERSION = 1;
 constexpr uint8_t SETTINGS_COUNT = 47;
 constexpr char SETTINGS_FILE[] = "/.system/settings.bin";
+constexpr char SYSTEM_FONT_SELECTION_FILE[] = "/.system/system_font_selection.txt";
 constexpr uint32_t FNV1A_OFFSET = 2166136261UL;
 constexpr uint32_t FNV1A_PRIME = 16777619UL;
 
@@ -84,6 +88,47 @@ bool hashFile(const char* path, uint32_t& hash) {
   }
   file.close();
   return true;
+}
+
+struct PersistedSystemFont {
+  std::string family;
+  int pointSize = 0;
+};
+
+PersistedSystemFont loadSystemFontSelection() {
+  FsFile file;
+  if (!SdMan.openFileForRead("CPS", SYSTEM_FONT_SELECTION_FILE, file)) return {};
+  char value[96] = {0};
+  const int count = file.read(reinterpret_cast<uint8_t*>(value), sizeof(value) - 1);
+  file.close();
+  if (count <= 0) return {};
+  value[count] = '\0';
+  PersistedSystemFont result;
+  result.family = value;
+  const char* separator = strchr(value, '\n');
+  if (separator != nullptr) {
+    result.family.assign(value, static_cast<size_t>(separator - value));
+    result.pointSize = atoi(separator + 1);
+  }
+  return result;
+}
+
+void saveSystemFontSelection(const std::string& family, const int pointSize) {
+  FsFile file;
+  if (!SdMan.openFileForWrite("CPS", SYSTEM_FONT_SELECTION_FILE, file)) return;
+  const std::string value = family + "\n" + std::to_string(pointSize);
+  file.write(reinterpret_cast<const uint8_t*>(value.c_str()), value.size());
+  file.close();
+}
+
+int systemFontPointSize(const uint8_t size) {
+  return size == SystemSetting::SYSTEM_TEXT_MEDIUM ? 12 : size == SystemSetting::SYSTEM_TEXT_LARGE ? 14 : 10;
+}
+
+uint8_t systemTextSizeForPointSize(const int pointSize) {
+  if (pointSize >= 13) return SystemSetting::SYSTEM_TEXT_LARGE;
+  if (pointSize >= 11) return SystemSetting::SYSTEM_TEXT_MEDIUM;
+  return SystemSetting::SYSTEM_TEXT_SMALL;
 }
 
 void sanitizeSleepCustomBmp(char* buf) {
@@ -235,6 +280,8 @@ bool SystemSetting::saveToFile() const {
     if (mut->thumbnailSize >= THUMBNAIL_SIZE_COUNT) mut->thumbnailSize = THUMBNAIL_ACTUAL;
     if (mut->piccoToggleMode >= PICCO_TOGGLE_MODE_COUNT) mut->piccoToggleMode = PICCO_TOGGLE_LIGHT;
   }
+
+  saveSystemFontSelection(FontManager::readerFontFamilyLabel(systemFontFamily), systemFontPointSize(systemTextSize));
 
   const uint32_t currentHash = settingsHash(*this);
   uint32_t storedHash = 0;
@@ -570,6 +617,19 @@ bool SystemSetting::loadFromFile() {
   if (systemTextSize >= SYSTEM_TEXT_SIZE_COUNT) systemTextSize = SYSTEM_TEXT_SMALL;
 #ifndef INX_SIMULATOR_WEB_ONLY
   FontManager::clampReaderFontFamilySlot(systemFontFamily);
+  const PersistedSystemFont persistedFont = loadSystemFontSelection();
+  if (!persistedFont.family.empty()) {
+    const std::vector<std::string> families = FontManager::readerFontFamilyEnumLabels();
+    const auto familyIt = std::find(families.begin(), families.end(), persistedFont.family);
+    if (familyIt != families.end()) {
+      systemFontFamily = static_cast<uint8_t>(std::distance(families.begin(), familyIt));
+      if (persistedFont.pointSize >= FontManager::OUTLINE_FONT_MIN_POINT_SIZE &&
+          persistedFont.pointSize <= FontManager::OUTLINE_FONT_MAX_POINT_SIZE &&
+          FontManager::isOutlineFontFamily(persistedFont.family)) {
+        systemTextSize = systemTextSizeForPointSize(persistedFont.pointSize);
+      }
+    }
+  }
 #endif
   if (darkMode > 1) darkMode = 0;
   if (hideThumbnailTitles > 1) hideThumbnailTitles = 0;

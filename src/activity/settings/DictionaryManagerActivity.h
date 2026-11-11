@@ -46,6 +46,7 @@ class DictionaryManagerActivity final : public ActivityWithSubactivity {
   volatile bool shuttingDown_ = false;
   volatile int lastProgressPercent_ = -1;
   volatile unsigned long lastProgressUpdateMs_ = 0;
+  volatile bool installing_ = false;
 
   void loadPackages();
   void installSelected();
