@@ -39,6 +39,8 @@ class HalGPIO {
   HalGPIO() = default;
 
   void begin();
+  /** Poll touch while the panel waveform is blocking the normal main loop. */
+  void updateDuringDisplay();
   void update();
   void injectOneShotPress(uint8_t buttonIndex);
   bool isPressed(uint8_t buttonIndex) const;
@@ -128,6 +130,7 @@ class HalGPIO {
   void serviceTouchGestures();
 
   bool suppressTouchUntilRelease = false;
+  bool touchSwipeLatchedDuringDisplay = false;
 };
 
 extern HalGPIO gpio;

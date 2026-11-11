@@ -137,7 +137,6 @@ class EpubActivity final : public ActivityWithSubactivity {
     bool highQuality = false;
     bool mediumImageGrayscale = false;
     bool textAntiAlias = false;
-    bool imagePlaceholder = false;
   };
   PreparedPage preparedPage_;
   int preparedPageSpineIndex_ = -1;

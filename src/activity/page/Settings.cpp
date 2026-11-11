@@ -165,8 +165,8 @@ void Settings::onExit() {
 }
 
 void Settings::loop() {
-#if FREEINK_DEVICE_PICCO
-  // Picco's rotated panel reports a screen bottom-to-top gesture as raw left.
+#if FREEINK_DEVICE_PICCO || FREEINK_DEVICE_MURPHY_M4
+  // Picco and Murphy can report a screen bottom-to-top gesture as raw left.
   // MappedInputManager has already converted it to screen-up; consume that
   // edge gesture before the menu or embedded list can reinterpret it.
   if (mappedInput.hasTouch()) {

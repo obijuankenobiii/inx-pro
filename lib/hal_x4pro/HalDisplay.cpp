@@ -55,6 +55,7 @@ void requestRedriveScrub(EInkDisplay& display) {
 bool x4ProBusyWaitSlice(const int8_t busyPin, const uint8_t busyLevel) {
   (void)busyPin;
   (void)busyLevel;
+  gpio.updateDuringDisplay();
   delay(1);
   return true;
 }

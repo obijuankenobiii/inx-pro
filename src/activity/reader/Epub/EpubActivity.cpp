@@ -1900,7 +1900,10 @@ bool EpubActivity::composePreparedForwardPage() {
       (highImageMode && !highQuality && textAa);
   const bool needsImageGrayscale = mediumImageGrayscale || highQuality;
   const ImageRenderMode imageMode = readerImageTwoBit ? ImageRenderMode::TwoBit : ImageRenderMode::OneBit;
-  const bool skipImagesInBase = needsImageGrayscale && highQuality;
+  // Decode grayscale images into the prepared B/W frame as well. This keeps
+  // the first refresh useful instead of showing a placeholder while the HQ
+  // pass is being prepared.
+  constexpr bool skipImagesInBase = false;
 
   renderer.setRenderMode(GfxRenderer::BW);
   renderer.clearScreen(0xFF);
@@ -1913,13 +1916,6 @@ bool EpubActivity::composePreparedForwardPage() {
     drawBookmarkIndicator();
   }
 
-  const bool highQualityCacheReady =
-      highQuality && page->allGrayscaleImagesCachedTwoBit(renderer, info.totalMarginLeft, info.totalMarginTop,
-                                                          /*quality=*/true);
-  const bool imagePlaceholder = highQuality && !highQualityCacheReady;
-  if (imagePlaceholder) {
-    page->fillImageRects(renderer, info.totalMarginLeft, info.totalMarginTop, true, /*onlyGrayscale=*/true);
-  }
 
   const bool hasImages = pageHasImages;
   const bool hasLargeImage =
@@ -1946,7 +1942,6 @@ bool EpubActivity::composePreparedForwardPage() {
   preparedPage_.highQuality = highQuality;
   preparedPage_.mediumImageGrayscale = mediumImageGrayscale;
   preparedPage_.textAntiAlias = textAa;
-  preparedPage_.imagePlaceholder = imagePlaceholder;
   section->currentPage = savedPage;
 
   return true;
@@ -2467,7 +2462,10 @@ void EpubActivity::renderContents(Page* page, const int orientedMarginTop,
   const int periodicRefreshPages = READER_SETTINGS.getRefreshFrequency();
   const bool periodicRefreshEnabled = periodicRefreshPages > 0;
 
-  const bool skipImagesInPageRender = needsImageGrayscale && highQuality;
+  // Render a decoded B/W image in the initial page frame. The later HQ pass
+  // upgrades it in place, so the reader never needs to show an image
+  // placeholder first.
+  constexpr bool skipImagesInPageRender = false;
   if (skipImagesInPageRender) {
     renderer.clearScreen(0xFF);
   }
@@ -2485,7 +2483,7 @@ void EpubActivity::renderContents(Page* page, const int orientedMarginTop,
     drawPageNoteIndicator();
   }
 
-  const bool bwStored = (skipImagesInPageRender || mediumImageGrayscale || (needsTextAntiAliasPass && !highQuality)) &&
+  const bool bwStored = (highQuality || mediumImageGrayscale || (needsTextAntiAliasPass && !highQuality)) &&
                         renderer.storeBwBuffer();
   const bool displayWithQualityPass = highQuality && bwStored;
   GfxRenderer::DisplayRegion imageRegion{};
@@ -2523,13 +2521,6 @@ void EpubActivity::renderContents(Page* page, const int orientedMarginTop,
     }
   };
 
-  const bool highQualityCacheReady =
-      displayWithQualityPass &&
-      page->allGrayscaleImagesCachedTwoBit(renderer, orientedMarginLeft, orientedMarginTop, /*quality=*/true);
-  const bool displayImagePlaceholder = displayWithQualityPass && !highQualityCacheReady;
-  if (displayImagePlaceholder) {
-    page->fillImageRects(renderer, orientedMarginLeft, orientedMarginTop, true, /*onlyGrayscale=*/true);
-  }
   if (skipBasePageRefresh || skipPiccoBasePageRefresh) {
     // Windowed Sticky/Murphy and absolute Picco HQ image passes must not be
     // preceded by a redundant full-panel refresh. X4Pro deliberately keeps

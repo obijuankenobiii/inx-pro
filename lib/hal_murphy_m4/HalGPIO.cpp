@@ -127,6 +127,12 @@ void HalGPIO::serviceTouchGestures() {
 }
 
 void HalGPIO::update() {
+  if (touchSwipeLatchedDuringDisplay) {
+    // Preserve the swipe detected by the BUSY-wait poll for the first normal
+    // input cycle after the waveform completes.
+    touchSwipeLatchedDuringDisplay = false;
+    return;
+  }
   inputMgr.update();
   touchDriver.update();
   float pressedNx = 0.0f;
@@ -147,6 +153,12 @@ void HalGPIO::update() {
                    touchDriver.lastHeldMs());
   }
   serviceTouchGestures();
+}
+
+void HalGPIO::updateDuringDisplay() {
+  if (touchSwipeLatchedDuringDisplay) return;
+  update();
+  touchSwipeLatchedDuringDisplay = touchSwipeDirection != TouchSwipe::None;
 }
 
 bool HalGPIO::hasTouch() const { return touchDriver.hasTouch(); }

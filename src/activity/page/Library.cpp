@@ -408,6 +408,8 @@ void Library::onEnter() {
   filterOpen = false;
   controlModalOpen = false;
   controlTab = ControlTab::View;
+  listThumbDeferImageDecode_ = view == View::ListThumb;
+  listThumbWarmupPending_ = false;
   popupBook = -1;
   folderDeleteConfirm = false;
   sidebarOpen = false;
@@ -855,6 +857,14 @@ void Library::loop() {
     return;
   }
 
+  // The first thumbnail-list frame intentionally uses placeholders. Let it
+  // reach the panel before decoding covers, just like Home's widget layout.
+  if (listThumbWarmupPending_ && !mappedInput.wasTouchActivity()) {
+    listThumbWarmupPending_ = false;
+    updateRequired = true;
+    renderPage();
+  }
+
   bool handled = false;
   switch (view) {
     case View::List:
@@ -871,6 +881,12 @@ void Library::loop() {
       break;
   }
   if (handled) {
+    if (view == View::ListThumb) {
+      // A page change should get the same deferred first render as the
+      // initial list. This also keeps a newly loaded page responsive.
+      listThumbDeferImageDecode_ = true;
+      listThumbWarmupPending_ = false;
+    }
     updateRequired = true;
     return;
   }
@@ -911,7 +927,13 @@ void Library::content() {
       grid.render();
       break;
     case View::ListThumb:
+      renderer.setDeferImageDecode(listThumbDeferImageDecode_);
       listThumb.render();
+      renderer.setDeferImageDecode(false);
+      if (listThumbDeferImageDecode_) {
+        listThumbDeferImageDecode_ = false;
+        listThumbWarmupPending_ = true;
+      }
       break;
     case View::Thumb:
       thumb.render();
@@ -1624,6 +1646,10 @@ void Library::resetViews() {
   list.reset();
   listThumb.reset();
   thumb.reset();
+  if (view == View::ListThumb) {
+    listThumbDeferImageDecode_ = true;
+    listThumbWarmupPending_ = false;
+  }
 }
 
 void Library::sortDropdown() const {

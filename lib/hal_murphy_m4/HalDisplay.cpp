@@ -80,6 +80,7 @@ void primeMurphyUpdateControl1(EInkDisplay& display, const HalDisplay::RefreshMo
 bool murphyBusyWaitSlice(const int8_t busyPin, const uint8_t busyLevel) {
   (void)busyPin;
   (void)busyLevel;
+  gpio.updateDuringDisplay();
   delay(1);
   return true;
 }
