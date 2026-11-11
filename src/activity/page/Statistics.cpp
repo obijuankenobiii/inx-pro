@@ -1234,10 +1234,12 @@ void Statistics::menu() {
   if (statsTab_ != 0) {
     const char* pageTitle = statsTab_ == 1 ? "Week" : (statsTab_ == 2 ? "Books" : "Book");
     SubPage::header(renderer, pageTitle);
+    drawHeaderStatus(80);
     drawStatisticsRefreshButton(renderer);
     return;
   }
   title();
+  drawHeaderStatus(80);
   drawStatisticsRefreshButton(renderer);
   renderer.bitmap.icon(Close, renderer.getScreenWidth() - 60, navigation::Menu::topPadding, 40, 40);
   if (controlDrawerOpen_) drawControlDrawer();

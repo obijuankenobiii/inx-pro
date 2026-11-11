@@ -198,6 +198,34 @@ void Menu::drawBattery(const GfxRenderer& renderer) const {
   ScreenComponents::drawBattery(renderer, x, y, showPercentage);
 }
 
+void Menu::drawHeaderStatus(const int rightMargin) const {
+#if INX_HAS_FRONTLIGHT || FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
+  if (isLightDrawerOpen()) return;
+#endif
+  const bool showPercentage = SETTINGS.hideBatteryPercentage != SystemSetting::HIDE_BATTERY_PERCENTAGE::HIDE_ALWAYS;
+  const int textWidth = showPercentage ? menuRenderer.text.getWidth(systemFontIdForPointSize(8), "100%") : 0;
+  const int batteryWidth = showPercentage
+                               ? ScreenComponents::BATTERY_ICON_WIDTH + ScreenComponents::BATTERY_TEXT_GAP + textWidth
+                               : ScreenComponents::BATTERY_ICON_WIDTH;
+  // ScreenComponents adds the 8px artwork offset internally, so this places
+  // the visible battery and clock group 20px from the top edge.
+  constexpr int top = 22;
+  const int right = menuRenderer.getScreenWidth() - rightMargin;
+  if (!SETTINGS.showMenuClock || SETTINGS.hideMenuClock) {
+    ScreenComponents::drawBatteryRightAligned(menuRenderer, right, top, showPercentage);
+    return;
+  }
+
+  int clockLeft = 0;
+  if (!ScreenComponents::drawMenuClockRightAligned(menuRenderer, right, top, &clockLeft)) {
+    ScreenComponents::drawBatteryRightAligned(menuRenderer, right, top, showPercentage);
+    return;
+  }
+
+  constexpr int clockBatteryGap = 10;
+  ScreenComponents::drawBattery(menuRenderer, clockLeft - clockBatteryGap - batteryWidth, top, showPercentage);
+}
+
 void Menu::handleTabNavigation(const bool leftPressed, const bool rightPressed) {
   if (leftPressed) {
     tabSelectorIndex = (tabSelectorIndex - 1 + tabCount) % tabCount;
@@ -248,6 +276,7 @@ void Menu::render() const {
   navigation();
   bottom();
   popup();
+  drawHeaderStatus();
 }
 
 void Menu::title() const {

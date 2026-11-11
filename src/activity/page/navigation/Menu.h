@@ -86,6 +86,7 @@ class Menu {
   MappedInputManager::Button itemPrevButton() const;
   MappedInputManager::Button itemNextButton() const;
   void drawBattery(const GfxRenderer& renderer) const;
+  void drawHeaderStatus(int rightMargin = 20) const;
   virtual void navigateToSelectedMenu() {}
   void handleTabNavigation(bool leftPressed, bool rightPressed);
   bool handleTabBarTouch(MappedInputManager& mappedInput, const GfxRenderer& renderer);

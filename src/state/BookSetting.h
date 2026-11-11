@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <cstring>
 #include <string>
+#include <vector>
 
 #include "state/ReaderSetting.h"
 #include "state/SystemSetting.h"
@@ -185,6 +186,38 @@ struct BookSettings {
   void markCustomSettings() {
     useCustomSettings = true;
     readerPresetIndex = kNoReaderPreset;
+  }
+
+  /**
+   * Remaps the persisted reader font-family slot after the installed-font catalog changes.
+   * Family names are stable; the numeric slot is not guaranteed to be stable across a rescan.
+   */
+  bool remapFontFamilySlot(const std::vector<std::string>& oldLabels,
+                           const std::vector<std::string>& newLabels) {
+    if (oldLabels.empty() || newLabels.empty() || fontFamily >= oldLabels.size()) {
+      return false;
+    }
+
+    const auto familyIt = std::find(newLabels.begin(), newLabels.end(), oldLabels[fontFamily]);
+    if (familyIt == newLabels.end()) {
+      return false;
+    }
+
+    const uint8_t newFamily = static_cast<uint8_t>(std::distance(newLabels.begin(), familyIt));
+    if (newFamily == fontFamily) {
+      return false;
+    }
+
+    const bool wasOutline = FontManager::isOutlineFontFamily(oldLabels[fontFamily]);
+    const bool isOutline = FontManager::isOutlineFontFamilySlot(newFamily);
+    if (isOutline && !wasOutline) {
+      fontSize = static_cast<uint8_t>(FontManager::pointSizeForLegacyReaderSize(fontSize));
+    } else if (!isOutline && wasOutline) {
+      fontSize = FontManager::legacyReaderSizeForPointSize(fontSize);
+    }
+    fontFamily = newFamily;
+    normalize();
+    return true;
   }
 
   void normalize() {

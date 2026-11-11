@@ -102,6 +102,20 @@ void ScreenComponents::drawBattery(const GfxRenderer& renderer, const int left, 
   }
 }
 
+void ScreenComponents::drawBatteryRightAligned(const GfxRenderer& renderer, const int right, const int top,
+                                               const bool showPercentage) {
+#ifdef SIMULATOR
+  const uint16_t percentage = 100;
+#else
+  const uint16_t percentage = gpio.getBatteryPercentage();
+#endif
+  const int font = systemFontIdForPointSize(8);
+  const std::string percentageText = showPercentage ? std::to_string(percentage) + "%" : "";
+  const int textWidth = showPercentage ? renderer.text.getWidth(font, percentageText.c_str()) : 0;
+  const int width = showPercentage ? BATTERY_ICON_WIDTH + BATTERY_TEXT_GAP + textWidth : BATTERY_ICON_WIDTH;
+  drawBattery(renderer, right - width, top, showPercentage);
+}
+
 bool ScreenComponents::drawMenuClock(const GfxRenderer& renderer, const int left, const int top) {
   char clockText[10] = {};
   if (!formatMenuClock(clockText, sizeof(clockText))) {

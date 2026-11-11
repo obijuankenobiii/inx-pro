@@ -24,7 +24,6 @@
 #include "state/SystemSetting.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
-#include "system/ScreenComponents.h"
 
 extern void openReaderFromCallback(const std::string& path, std::function<void()> returnToCaller);
 extern void onGoToHome();
@@ -37,33 +36,6 @@ extern void onGoToHeatmapReport(HomeTheme::HeatmapView view);
 namespace {
 
 constexpr unsigned long longPressMs = 500;
-void drawHomeClockAndBattery(const GfxRenderer& renderer) {
-  constexpr int clockRightMargin = 20;
-  constexpr int batteryClockGap = 10;
-  const bool showPercentage = SETTINGS.hideBatteryPercentage != SystemSetting::HIDE_BATTERY_PERCENTAGE::HIDE_ALWAYS;
-  const int textWidth = showPercentage ? renderer.text.getWidth(systemFontIdForPointSize(8), "100%") : 0;
-  const int batteryWidth = showPercentage
-                               ? ScreenComponents::BATTERY_ICON_WIDTH + ScreenComponents::BATTERY_TEXT_GAP + textWidth
-                               : ScreenComponents::BATTERY_ICON_WIDTH;
-  const int top = navigation::Menu::topPadding + (navigation::Menu::iconSize - 18) / 2;
-  if (!SETTINGS.showMenuClock || SETTINGS.hideMenuClock) {
-    const int batteryLeft = renderer.getScreenWidth() - ScreenComponents::BATTERY_RIGHT_MARGIN - batteryWidth;
-    ScreenComponents::drawBattery(renderer, batteryLeft, top, showPercentage);
-    return;
-  }
-
-  int clockLeft = 0;
-  const bool clockDrawn = ScreenComponents::drawMenuClockRightAligned(
-      renderer, renderer.getScreenWidth() - clockRightMargin, top, &clockLeft);
-  if (!clockDrawn) {
-    const int batteryLeft = renderer.getScreenWidth() - ScreenComponents::BATTERY_RIGHT_MARGIN - batteryWidth;
-    ScreenComponents::drawBattery(renderer, batteryLeft, top, showPercentage);
-    return;
-  }
-
-  const int batteryLeft = clockLeft - batteryClockGap - batteryWidth;
-  ScreenComponents::drawBattery(renderer, batteryLeft, top, showPercentage);
-}
 
 std::string cachePath(const RecentBook& book) {
   if (!book.cachePath.empty()) return book.cachePath;
@@ -122,11 +94,6 @@ void Home::onEnter() {
 
 void Home::menu() {
   UiPage::menu();
-#if INX_HAS_FRONTLIGHT || FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
-  if (!isLightDrawerOpen()) drawHomeClockAndBattery(renderer);
-#else
-  drawHomeClockAndBattery(renderer);
-#endif
 }
 
 void Home::title() const {

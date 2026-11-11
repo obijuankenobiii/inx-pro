@@ -44,6 +44,8 @@ class ScreenComponents {
   };
 
   static void drawBattery(const GfxRenderer& renderer, int left, int top, bool showPercentage = true);
+  static void drawBatteryRightAligned(const GfxRenderer& renderer, int right, int top,
+                                      bool showPercentage = true);
   static bool drawMenuClock(const GfxRenderer& renderer, int left, int top);
   static bool drawMenuClockRightAligned(const GfxRenderer& renderer, int right, int top, int* outLeft = nullptr);
   static void drawMenuClockAndBattery(const GfxRenderer& renderer, int batteryLeft, int top,

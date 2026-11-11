@@ -60,6 +60,35 @@ uint8_t fontFamilySlotForLabel(const std::vector<std::string>& labels, const std
   return it == labels.end() ? 0 : static_cast<uint8_t>(std::distance(labels.begin(), it));
 }
 
+void remapStoredBookSettings(const std::vector<std::string>& oldLabels,
+                             const std::vector<std::string>& newLabels) {
+  FsFile root = SdMan.open("/.metadata/epub");
+  if (!root || !root.isDirectory()) {
+    if (root) root.close();
+    return;
+  }
+
+  root.rewindDirectory();
+  char name[128] = {};
+  while (true) {
+    FsFile entry = root.openNextFile();
+    if (!entry) break;
+
+    const bool isDirectory = entry.isDirectory();
+    if (isDirectory) entry.getName(name, sizeof(name));
+    entry.close();
+    if (!isDirectory) continue;
+
+    const std::string cachePath = std::string("/.metadata/epub/") + name;
+    BookSettings settings;
+    if (!settings.loadFromFile(cachePath)) continue;
+    if (settings.remapFontFamilySlot(oldLabels, newLabels)) {
+      settings.saveToFile(cachePath);
+    }
+  }
+  root.close();
+}
+
 int pageBodyTop() { return FREEINK_DEVICE_X4PRO ? 80 : 70; }
 
 #if FREEINK_DEVICE_X4PRO
@@ -511,7 +540,11 @@ void FontManagerActivity::rescanFontCatalogPreservingSettings() {
   SETTINGS.systemFontFamily = fontFamilySlotForLabel(newLabels, systemFamily);
   SETTINGS.saveToFile();
   READER_PRESETS.remapFontFamilySlots(oldLabels, newLabels);
+  remapStoredBookSettings(oldLabels, newLabels);
   fontCatalogNeedsRescan_ = false;
+  fontFamilyLabelsBeforeInstall_.clear();
+  globalFontFamilyBeforeInstall_.clear();
+  systemFontFamilyBeforeInstall_.clear();
 }
 
 void FontManagerActivity::updateDisplay() {

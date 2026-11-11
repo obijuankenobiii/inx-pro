@@ -17,6 +17,7 @@
 #include "util/MetadataIndex.h"
 #include "views/Library/Grid.h"
 #include "views/Library/List.h"
+#include "views/Library/ThumbnailList.h"
 #include "views/Library/Thumb.h"
 
 class Library final : public UiPage {
@@ -41,7 +42,8 @@ class Library final : public UiPage {
 
  private:
   enum class Sort { TitleAZ, TitleZA, FolderAZ, FolderZA, AuthorAZ, AuthorZA };
-  enum class View { List, Grid, Thumb };
+  enum class View { List, Grid, Thumb, ListThumb };
+  enum class ControlTab { View, Sort, Filter };
   enum class FilterCategory : uint8_t { Categories, Title, Type, Author, Series, Tags, Options };
   enum class StateFilter { None, Favorites, Reading, Finished, Metadata, Plugin };
 
@@ -67,9 +69,9 @@ class Library final : public UiPage {
     MetadataPathCounts pathMatchCounts;
   };
 
-  static constexpr int buttonSize = 40;
-  static constexpr int buttonGap = 25;
-  static constexpr int refreshTouchPadding = 16;
+  static constexpr int buttonSize = 60;
+  static constexpr int buttonGap = 0;
+  static constexpr int refreshTouchPadding = 10;
 
   std::string path;
   PluginManager::LibraryMenuLink pluginMenu_;
@@ -78,6 +80,7 @@ class Library final : public UiPage {
   std::vector<LibraryIndex::Book> books;
   views::library::Grid grid;
   views::library::List list;
+  views::library::ThumbnailList listThumb;
   views::library::Thumb thumb;
   Sort sort = Sort::TitleAZ;
   View view = View::Grid;
@@ -94,6 +97,8 @@ class Library final : public UiPage {
   int filterScrollOffset_ = 0;
   bool sortOpen = false;
   bool filterOpen = false;
+  bool controlModalOpen = false;
+  ControlTab controlTab = ControlTab::View;
   bool refreshing = false;
   bool loading = false;
   int popupBook = -1;
@@ -126,8 +131,12 @@ class Library final : public UiPage {
   void eraseFolder(const LibraryIndex::Book& folder);
   void sortDropdown() const;
   void filterPopup() const;
+  void controlModal() const;
+  bool controlModalInput();
+  void viewDropdown() const;
   void handleSortTap(int tapX, int tapY);
   void handleFilterTap(int tapX, int tapY);
+  void applyView(int index);
   void applySort(int index);
   void applyFilter(int index);
   void applyTypeFilter(int index);
@@ -141,8 +150,8 @@ class Library final : public UiPage {
   static const char* filterCategoryLabel(FilterCategory category);
   static const char* typeFilterLabel(int index);
   static const char* typeFilterCategory(int index);
-  int buttonX(int index) const;
-  int buttonY() const;
+  int miniMenuX() const;
+  int miniMenuY() const;
   int sortCount() const;
   int sortIndex() const;
   const uint8_t* viewIcon() const;

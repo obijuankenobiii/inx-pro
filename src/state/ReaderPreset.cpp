@@ -250,19 +250,7 @@ bool ReaderPresetStore::remapFontFamilySlots(const std::vector<std::string>& old
 
   bool changed = false;
   for (ReaderPreset& preset : userPresets_) {
-    const uint8_t oldSlot = preset.settings.fontFamily;
-    if (oldSlot >= oldLabels.size()) {
-      continue;
-    }
-    const auto it = std::find(newLabels.begin(), newLabels.end(), oldLabels[oldSlot]);
-    if (it == newLabels.end()) {
-      continue;
-    }
-    const uint8_t newSlot = static_cast<uint8_t>(std::distance(newLabels.begin(), it));
-    if (newSlot != oldSlot) {
-      preset.settings.fontFamily = newSlot;
-      changed = true;
-    }
+    changed = preset.settings.remapFontFamilySlot(oldLabels, newLabels) || changed;
   }
   return changed ? save() : true;
 }

@@ -294,6 +294,7 @@ class SystemSetting {
     LIBRARY_LIST = 0,  ///< Compact list browser
     LIBRARY_GRID = 1,  ///< 3x4 icon grid browser
     LIBRARY_THUMBNAIL = 2,  ///< Cover thumbnail browser with a 3x3 layout
+    LIBRARY_LIST_THUMBNAIL = 3,  ///< Statistics-style list with cover thumbnails
     LIBRARY_MODE_COUNT
   };
 
