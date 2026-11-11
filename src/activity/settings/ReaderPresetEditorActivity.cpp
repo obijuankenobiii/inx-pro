@@ -585,12 +585,22 @@ void ReaderPresetEditorActivity::loop() {
 
   float swipeStartNx = 0.0f;
   float swipeStartNy = 0.0f;
-  const bool swipeUpFromBottomEdge =
-      mappedInput.wasTouchSwipeUpInScreen(renderer, swipeStartNx, swipeStartNy) && swipeStartNy >= 0.95f;
-  if (swipeUpFromBottomEdge) {
-    // Treat swipe-up like the editor's Back button. Existing presets save on
-    // exit; new presets show the existing Save/Discard prompt.
-    beginExit();
+  const bool swipeUp = mappedInput.wasTouchSwipeUpInScreen(renderer, swipeStartNx, swipeStartNy);
+  if (swipeUp) {
+    const bool fromBottomEdge = swipeStartNy >= 0.85f;
+    INX_SERIAL.printf("[PRESET_EDITOR][TOUCH] swipe-up start=(%.3f,%.3f) edge=%d\n", swipeStartNx,
+                      swipeStartNy, fromBottomEdge ? 1 : 0);
+    // Only the bottom edge closes the editor. Upward swipes elsewhere belong
+    // to the embedded settings drawer and must not be dropped by the editor.
+    if (fromBottomEdge) {
+      // Treat swipe-up like the editor's Back button. Existing presets save on
+      // exit; new presets show the existing Save/Discard prompt.
+      INX_SERIAL.println("[PRESET_EDITOR][TOUCH] bottom-edge swipe -> close editor");
+      beginExit();
+    } else if (drawer_) {
+      INX_SERIAL.println("[PRESET_EDITOR][TOUCH] body swipe -> drawer");
+      drawer_->handleInput(mappedInput);
+    }
     return;
   }
 

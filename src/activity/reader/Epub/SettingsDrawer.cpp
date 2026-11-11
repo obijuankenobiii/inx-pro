@@ -16,6 +16,7 @@
 #include <esp_heap_caps.h>
 #endif
 
+#include "../../settings/SettingsListLayout.h"
 #include "../../settings/ReaderFontSettingsDraw.h"
 #include "StatusBar.h"
 #include "images/AlignCenter.h"
@@ -23,6 +24,7 @@
 #include "images/AlignJustify.h"
 #include "images/AlignLeft.h"
 #include "images/AlignRight.h"
+#include "images/Check.h"
 #if INX_HAS_FRONTLIGHT || FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO || \
     FREEINK_DEVICE_LILYGO
 #include <BoardConfig.h>
@@ -113,10 +115,8 @@ int drawerListTop(const bool embedded) {
 }
 
 int systemSizedDrawerRowHeight(const GfxRenderer& renderer) {
-  // Give the larger system font enough vertical breathing room in the preset
-  // editor so labels and controls do not collide.
-  constexpr int verticalPadding = 48;
-  return std::max(LIST_ITEM_HEIGHT, renderer.text.getLineHeight(systemFontId()) + verticalPadding);
+  (void)renderer;
+  return SettingsListLayout::kRowHeight;
 }
 
 int settingsValueAreaLeft(const GfxRenderer& renderer, const int drawerX, const int drawerWidth,
@@ -875,7 +875,7 @@ void SettingsDrawer::drawMarginEditor() {
   constexpr int gap = 8;
   const int valueColumnRight = drawerX + drawerWidth - 24;
   const int textWidth = renderer.text.getWidth(systemFontId(), "Back", EpdFontFamily::REGULAR);
-  const int iconX = embedded_ ? controlsLeft : valueColumnRight - iconSize - gap - textWidth;
+  const int iconX = valueColumnRight - iconSize - gap - textWidth;
   const int textY = backY + (actualBackHeight - renderer.text.getLineHeight(systemFontId())) / 2;
   renderer.bitmap.icon(LibraryFilterLeft, iconX, backY + (actualBackHeight - iconSize) / 2, iconSize, iconSize);
   renderer.text.render(systemFontId(), iconX + iconSize + gap, textY, "Back", true);
@@ -1273,6 +1273,7 @@ void SettingsDrawer::drawMenuItemRow(int visibleRow, int menuIndex) {
   const int itemY = startY + (visibleRow * itemHeight);
   const auto& entry = menuItems[static_cast<size_t>(menuIndex)];
   const bool isSelected = false;
+  const bool isLastMenuItem = menuIndex + 1 >= static_cast<int>(menuItems.size());
 
   renderer.rectangle.fill(
       drawerX, itemY, drawerWidth, itemHeight,
@@ -1291,8 +1292,10 @@ void SettingsDrawer::drawMenuItemRow(int visibleRow, int menuIndex) {
                            isSelected ? 0 : 1, EpdFontFamily::BOLD);
     }
 
-    renderer.line.render(drawerX, itemY + itemHeight - 1, drawerX + drawerWidth, itemY + itemHeight - 1, true,
-                         LineRender::Style::Dotted);
+    if (!isLastMenuItem) {
+      renderer.line.render(drawerX, itemY + itemHeight - 1, drawerX + drawerWidth, itemY + itemHeight - 1, true,
+                           LineRender::Style::Dotted);
+    }
     return;
   }
 
@@ -1367,8 +1370,10 @@ void SettingsDrawer::drawMenuItemRow(int visibleRow, int menuIndex) {
     }
   }
 
-  renderer.line.render(drawerX, itemY + itemHeight - 1, drawerX + drawerWidth, itemY + itemHeight - 1, true,
-                       LineRender::Style::Dotted);
+  if (!isLastMenuItem) {
+    renderer.line.render(drawerX, itemY + itemHeight - 1, drawerX + drawerWidth, itemY + itemHeight - 1, true,
+                         LineRender::Style::Dotted);
+  }
 }
 
 bool SettingsDrawer::isDropdownItem(const MenuItem item) const {
@@ -1553,7 +1558,8 @@ void SettingsDrawer::commitSelectorSelection() {
     settings.markCustomSettings();
     settingsUpdated = true;
   }
-  closeSelector();
+  // Keep the selector open after a valid choice. This lets the preset editor
+  // apply and preview several values without reopening the same row each time.
   if (onSettingsChanged) onSettingsChanged();
 }
 
@@ -1568,6 +1574,9 @@ void SettingsDrawer::drawSelectorPopup() {
   const int visibleRows = std::max(1, (contentHeight - itemHeight) / itemHeight);
   const int optionRows = std::min(visibleRows, static_cast<int>(selectorOptions_.size()));
   const int backY = drawerY + drawerHeight - itemHeight;
+  constexpr int selectionCheckSize = 40;
+  constexpr int selectionCheckRightInset = 20;
+  const int selectionCheckX = drawerX + drawerWidth - selectionCheckRightInset - selectionCheckSize;
 
   renderer.rectangle.fill(drawerX, startY, drawerWidth, contentHeight, false);
   for (int i = 0; i < optionRows; ++i) {
@@ -1575,10 +1584,15 @@ void SettingsDrawer::drawSelectorPopup() {
     const int rowY = startY + i * itemHeight;
     if (optionIndex < static_cast<int>(selectorOptions_.size())) {
       const int textY = rowY + (itemHeight - renderer.text.getLineHeight(systemFontId())) / 2;
+      const int textRight = selectionCheckX - 20;
       const std::string shown = renderer.text.truncate(systemFontId(),
                                                         selectorOptions_[static_cast<size_t>(optionIndex)].c_str(),
-                                                        std::max(1, drawerWidth - 52));
+                                                        std::max(1, textRight - (drawerX + 23)));
       renderer.text.render(systemFontId(), drawerX + 23, textY, shown.c_str(), true);
+      if (optionIndex == selectorSelected_) {
+        renderer.bitmap.icon(Check, selectionCheckX, rowY + (itemHeight - selectionCheckSize) / 2,
+                             selectionCheckSize, selectionCheckSize);
+      }
     }
     if (i + 1 < optionRows) {
       renderer.line.render(drawerX + 20, rowY + itemHeight - 1, drawerX + drawerWidth - 20,
@@ -1600,11 +1614,10 @@ void SettingsDrawer::drawSelectorPopup() {
   }
 
   renderer.line.render(drawerX, backY, drawerX + drawerWidth, backY, true, LineRender::Style::Dotted);
-  const int controlsLeft = embedded_ ? drawerX + 20 : drawerX + drawerWidth * 48 / 100;
   constexpr int iconSize = 30;
   constexpr int gap = 8;
   const int textWidth = renderer.text.getWidth(systemFontId(), "Back", EpdFontFamily::REGULAR);
-  const int iconX = embedded_ ? controlsLeft : drawerX + drawerWidth - 24 - iconSize - gap - textWidth;
+  const int iconX = drawerX + drawerWidth - 24 - iconSize - gap - textWidth;
   const int textY = backY + (itemHeight - renderer.text.getLineHeight(systemFontId())) / 2;
   renderer.bitmap.icon(LibraryFilterLeft, iconX, backY + (itemHeight - iconSize) / 2, iconSize, iconSize);
   renderer.text.render(systemFontId(), iconX + iconSize + gap, textY, "Back", true);
@@ -1833,7 +1846,11 @@ void SettingsDrawer::handleInput(MappedInputManager& input) {
     }
   }
 
-  if (currentTime - lastInputTime < pdMS_TO_TICKS(150)) {
+  // The preset editor is embedded and its tab buttons are expected to feel
+  // immediate. Keep a short guard there for touch bounce, while retaining the
+  // longer debounce for the standalone reader drawer.
+  const TickType_t inputDebounce = embedded_ ? pdMS_TO_TICKS(40) : pdMS_TO_TICKS(150);
+  if (currentTime - lastInputTime < inputDebounce) {
     return;
   }
 

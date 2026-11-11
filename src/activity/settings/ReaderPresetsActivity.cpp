@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <vector>
 
 #include "../util/KeyboardEntryActivity.h"
 #include "GfxRenderer.h"
@@ -31,6 +32,7 @@
 
 namespace {
 constexpr int kRowValueRightInset = 30;
+constexpr int kNavigationRightInset = 24;
 constexpr int kEmbeddedListTopExtra = 30;
 constexpr int kPresetVisibleCount = 7;  // Six requested rows plus one additional row using the spare space.
 constexpr int kAddPresetButtonRaise = 10;
@@ -101,7 +103,7 @@ void renderOpenNavigationIcon(const GfxRenderer& renderer, const int screenW, co
                               const bool invert) {
   constexpr int iconWidth = 32;
   constexpr int iconHeight = 30;
-  const int iconX = screenW - kRowValueRightInset - iconWidth;
+  const int iconX = screenW - kNavigationRightInset - iconWidth;
   const int iconY = itemY + (rowHeight - iconHeight) / 2;
   renderer.bitmap.icon(LibraryFilterRight, iconX, iconY, iconWidth, iconHeight,
                        BitmapRender::Orientation::None, invert);
@@ -111,7 +113,7 @@ void renderNavigationRowDivider(const GfxRenderer& renderer, const int screenW, 
                                 const int rowHeight) {
   constexpr int iconWidth = 32;
   constexpr int iconGap = 5;
-  const int iconX = screenW - kRowValueRightInset - iconWidth;
+  const int iconX = screenW - kNavigationRightInset - iconWidth;
   const int y = itemY + rowHeight - 1;
   renderer.line.render(SettingsListLayout::kDividerInset, y, iconX - iconGap, y, true,
                        LineRender::Style::Dotted);
@@ -148,8 +150,9 @@ void ReaderPresetsActivity::onEnter() {
   const int screenH = renderer.getScreenHeight();
   const int listTop = navigation::Menu::height + 20 + UiPage::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra;
   const int contentBottom = screenH - navigation::Menu::bottomInset() - 10;
-  // Keep preset rows readable at every configured system text size.
-  listItemHeight_ = std::max(kListItemHeight, renderer.text.getLineHeight(systemFontId()) + 24);
+  // Keep the main Reader page on the same fixed row height as the other
+  // settings pages. The Add/Edit preset editor owns its own compact sizing.
+  listItemHeight_ = kListItemHeight;
   if (!presetsOnly_) {
     const int rows = rowCount();
     const int availableHeight = std::max(0, contentBottom - listTop);
@@ -227,6 +230,7 @@ void ReaderPresetsActivity::render() {
 
   const int listTop = navigation::Menu::height + 20 + UiPage::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra;
   const int presetListTop = listTop - kAddPresetButtonRaise + listItemHeight_ + kPresetListGap;
+  std::vector<int> navigationDividerYs;
 
   if (presetsOnly_) {
     const int buttonWidth = Button::width(renderer, kAddPresetButtonLabel, systemFontId());
@@ -292,7 +296,7 @@ void ReaderPresetsActivity::render() {
       renderer.text.render(systemFontId(), 20, textY, label, isSelected ? 0 : 1);
       renderOpenNavigationIcon(renderer, screenW, itemY, listItemHeight_, isSelected);
       if (hasNextItem) {
-        renderNavigationRowDivider(renderer, screenW, itemY, listItemHeight_);
+        navigationDividerYs.push_back(itemY + listItemHeight_ - 1);
       }
       continue;
     }
@@ -305,7 +309,7 @@ void ReaderPresetsActivity::render() {
       renderer.text.render(systemFontId(), 20, textY, label, isSelected ? 0 : 1);
       renderOpenNavigationIcon(renderer, screenW, itemY, listItemHeight_, isSelected);
       if (hasNextItem) {
-        renderNavigationRowDivider(renderer, screenW, itemY, listItemHeight_);
+        navigationDividerYs.push_back(itemY + listItemHeight_ - 1);
       }
       continue;
     }
@@ -330,6 +334,11 @@ void ReaderPresetsActivity::render() {
                            screenW - SettingsListLayout::kDividerInset, itemY + listItemHeight_ - 1, true,
                            LineRender::Style::Dotted);
     }
+  }
+  for (const int dividerY : navigationDividerYs) {
+    renderer.line.render(SettingsListLayout::kDividerInset, dividerY,
+                         screenW - SettingsListLayout::kDividerInset, dividerY, true,
+                         LineRender::Style::Dotted);
   }
   if (presetsOnly_) {
     drawScrollBar(renderer, screenW - 8, presetListTop, itemsPerPage_ * listItemHeight_, rows, itemsPerPage_, scrollOffset_);

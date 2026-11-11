@@ -1173,12 +1173,15 @@ void TextRender::renderScaledChar(const EpdFontFamily& fontFamily, const uint32_
           sx1 = std::min<int>(sx1, width);
           const int screenX = *x + scaledLeft + outX;
           if (is2Bit) {
-            uint8_t rawMax = 0;
+            uint16_t rawSum = 0;
+            int sampleCount = 0;
             for (int sx = sx0; sx < sx1; ++sx) {
               const uint8_t raw = read2BitRowPixel(rowBuf, rowPixelOffset, sx);
-              if (raw > rawMax) rawMax = raw;
+              rawSum += raw;
+              ++sampleCount;
             }
-            const uint8_t bmpVal = 3 - rawMax;
+            const uint8_t rawAverage = static_cast<uint8_t>((rawSum + sampleCount / 2) / sampleCount);
+            const uint8_t bmpVal = 3 - rawAverage;
             if (gray && gfx.renderMode == GfxRenderer::BW && bmpVal < 3) {
               if (((screenX + screenY) & 1) == 0) {
                 gfx.drawPixel(screenX, screenY, pixelState);
@@ -1191,13 +1194,15 @@ void TextRender::renderScaledChar(const EpdFontFamily& fontFamily, const uint32_
               renderMediumTextPlanePixel(gfx, screenX, screenY, imageLevelFromFontBmpVal(bmpVal));
             }
           } else {
-            bool ink = false;
+            int inkCount = 0;
+            int sampleCount = 0;
             for (int sx = sx0; sx < sx1; ++sx) {
               if ((rowBuf[sx / 8] >> (7 - (sx % 8))) & 1) {
-                ink = true;
-                break;
+                ++inkCount;
               }
+              ++sampleCount;
             }
+            const bool ink = inkCount * 2 >= sampleCount;
             if (ink && (!gray || ((screenX + screenY) & 1) == 0)) {
               renderSolidTextPixel(gfx, screenX, screenY, pixelState);
             }
@@ -1223,15 +1228,18 @@ void TextRender::renderScaledChar(const EpdFontFamily& fontFamily, const uint32_
         sx1 = std::min<int>(sx1, width);
         const int screenX = *x + scaledLeft + outX;
         if (is2Bit) {
-          uint8_t rawMax = 0;
+          uint16_t rawSum = 0;
+          int sampleCount = 0;
           for (int sy = sy0; sy < sy1; ++sy) {
             for (int sx = sx0; sx < sx1; ++sx) {
               const int pp = sy * width + sx;
               const uint8_t raw = (bitmap[pp / 4] >> ((3 - (pp % 4)) * 2)) & 0x3;
-              if (raw > rawMax) rawMax = raw;
+              rawSum += raw;
+              ++sampleCount;
             }
           }
-          const uint8_t bmpVal = 3 - rawMax;
+          const uint8_t rawAverage = static_cast<uint8_t>((rawSum + sampleCount / 2) / sampleCount);
+          const uint8_t bmpVal = 3 - rawAverage;
           if (gray && gfx.renderMode == GfxRenderer::BW && bmpVal < 3) {
             if (((screenX + screenY) & 1) == 0) {
               gfx.drawPixel(screenX, screenY, pixelState);
@@ -1244,16 +1252,18 @@ void TextRender::renderScaledChar(const EpdFontFamily& fontFamily, const uint32_
             renderMediumTextPlanePixel(gfx, screenX, screenY, imageLevelFromFontBmpVal(bmpVal));
           }
         } else {
-          bool ink = false;
-          for (int sy = sy0; sy < sy1 && !ink; ++sy) {
+          int inkCount = 0;
+          int sampleCount = 0;
+          for (int sy = sy0; sy < sy1; ++sy) {
             for (int sx = sx0; sx < sx1; ++sx) {
               const int pp = sy * width + sx;
               if ((bitmap[pp / 8] >> (7 - (pp % 8))) & 1) {
-                ink = true;
-                break;
+                ++inkCount;
               }
+              ++sampleCount;
             }
           }
+          const bool ink = inkCount * 2 >= sampleCount;
           if (ink && (!gray || ((screenX + screenY) & 1) == 0)) {
             renderSolidTextPixel(gfx, screenX, screenY, pixelState);
           }

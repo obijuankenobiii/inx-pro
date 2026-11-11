@@ -280,7 +280,6 @@ void Settings::processPending() {
   pending = Pending::None;
 
   if (action == Pending::SwapPanel) {
-    SETTINGS.saveToFile();
     currentPanel = nextPanel;
     openPanel();
     updateRequired = true;
@@ -340,10 +339,6 @@ void Settings::panelTabs() {
                    (index == 0 && currentPanel == SettingsPanel::System) ||
                        (index == 1 && currentPanel == SettingsPanel::Reader) ||
                        (index == 2 && currentPanel == SettingsPanel::Presets));
-    if (index > 0) {
-      renderer.line.render(x, panelTabY + 5, x, panelTabY + panelTabHeight - 5, true,
-                           LineRender::Style::Dotted);
-    }
   }
 }
 

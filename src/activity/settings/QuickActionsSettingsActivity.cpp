@@ -97,7 +97,9 @@ void QuickActionsSettingsActivity::loop() {
   const std::vector<uint8_t> actions = eligibleActions();
   const int total = static_cast<int>(actions.size());
   const int bodyTop = pageBodyTop();
-  const int visibleRows = std::max(1, (renderer.getScreenHeight() - kBottomMargin - bodyTop) / kRowH);
+  // The final row still fits above the bottom controls; keep one additional
+  // quick action visible, matching the other settings lists.
+  const int visibleRows = std::max(1, (renderer.getScreenHeight() - kBottomMargin - bodyTop) / kRowH + 1);
   const int maxScroll = std::max(0, total - visibleRows);
 
   if (mappedInput.hasTouch()) {
@@ -187,7 +189,8 @@ void QuickActionsSettingsActivity::render() {
   }
 
   const int listBottom = screenH - kBottomMargin;
-  const int visibleRows = std::max(1, (listBottom - bodyTop) / kRowH);
+  // Keep one additional quick action visible in the available list area.
+  const int visibleRows = std::max(1, (listBottom - bodyTop) / kRowH + 1);
   if (selectedIndex_ < scrollOffset_) {
     scrollOffset_ = selectedIndex_;
   } else if (selectedIndex_ >= scrollOffset_ + visibleRows) {

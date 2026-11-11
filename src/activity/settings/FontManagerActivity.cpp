@@ -34,7 +34,7 @@ constexpr int kBottomMargin = 44;
 constexpr int kSideMargin = 20;
 constexpr int kActionIconSize = 40;
 constexpr int kScrollCaretSize = 40;
-constexpr int kCategoryFilterWidth = 150;
+constexpr int kCategoryFilterWidth = 220;
 constexpr int kCategoryFilterRowHeight = UiLayout::LIST_ITEM_HEIGHT;
 
 int pageBodyTop() { return FREEINK_DEVICE_X4PRO ? 80 : 70; }
@@ -83,6 +83,25 @@ void drawProgressBar(const GfxRenderer& renderer, const int x, const int y, cons
 ButtonBounds scrollCaretBounds(const GfxRenderer& renderer) {
   return {renderer.getScreenWidth() - kSideMargin - kScrollCaretSize, renderer.getScreenHeight() - kBottomMargin + 2,
           kScrollCaretSize, kScrollCaretSize};
+}
+
+void renderListDivider(const GfxRenderer& renderer, const int y) {
+  constexpr int inset = SettingsListLayout::kDividerInset;
+  const ButtonBounds caret = scrollCaretBounds(renderer);
+  const int right = renderer.getScreenWidth() - inset;
+  if (y >= caret.y && y < caret.y + caret.height) {
+    constexpr int gap = 2;
+    const int leftEnd = caret.x - gap;
+    const int rightStart = caret.x + caret.width + gap;
+    if (leftEnd > inset) {
+      renderer.line.render(inset, y, leftEnd, y, true, LineRender::Style::Dotted);
+    }
+    if (rightStart < right) {
+      renderer.line.render(rightStart, y, right, y, true, LineRender::Style::Dotted);
+    }
+    return;
+  }
+  renderer.line.render(inset, y, right, y, true, LineRender::Style::Dotted);
 }
 
 }
@@ -159,7 +178,8 @@ void FontManagerActivity::loadPackages() {
 }
 
 int FontManagerActivity::visibleRowCount(const int bodyTop) const {
-  return std::max(1, (renderer.getScreenHeight() - kBottomMargin - bodyTop) / kRowHeight);
+  // The lower paginator/caret area still leaves room for one additional row.
+  return std::max(1, (renderer.getScreenHeight() - kBottomMargin - bodyTop) / kRowHeight + 1);
 }
 
 int FontManagerActivity::visiblePackageCount() const {
@@ -578,9 +598,7 @@ void FontManagerActivity::render() {
                              BitmapRender::Orientation::None, selected);
       }
       if (index + 1 < end) {
-        renderer.line.render(SettingsListLayout::kDividerInset, y + kRowHeight - 1,
-                             screenW - SettingsListLayout::kDividerInset, y + kRowHeight - 1, true,
-                             LineRender::Style::Dotted);
+        renderListDivider(renderer, y + kRowHeight - 1);
       }
     }
     Paginator::render(renderer, paginatorPage_, pageCount, screenW - 10, fontListTop,

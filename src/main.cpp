@@ -80,6 +80,10 @@ bool isBookReaderActivity(const Activity* activity) {
   // activities consume horizontal swipes for TOC/page navigation.
   return activity && std::strcmp(activity->getName(), "Reader") == 0;
 }
+
+bool isSettingsActivity(const Activity* activity) {
+  return activity && std::strcmp(activity->getName(), "Settings") == 0;
+}
 }  // namespace
 
 unsigned long t1 = 0;
@@ -489,7 +493,10 @@ void loop() {
     return;
   }
 
-  const bool allowGlobalExitGesture = !isHomeActivity(currentActivity) && !isBookReaderActivity(currentActivity);
+  // Settings pages, including the embedded preset editor, own their bottom
+  // edge swipe. Do not let the global handler intercept it first.
+  const bool allowGlobalExitGesture = !isHomeActivity(currentActivity) && !isBookReaderActivity(currentActivity) &&
+                                      !isSettingsActivity(currentActivity);
   // The reader owns vertical swipes: swipe-down opens its book settings drawer.
   // Keep servicing an already-open global drawer so its touch controls remain usable.
   if (globalGestureHandler.handleInput(input, allowGlobalExitGesture, !isBookReaderActivity(currentActivity),
