@@ -84,6 +84,11 @@ constexpr int kFrontlightKnobRadius = 15;
 constexpr int kFrontlightKnobBorder = 2;
 constexpr int kFrontlightControlPadding = 20;
 
+bool landscapeDrawer(const GfxRenderer& renderer) {
+  const auto orientation = renderer.getOrientation();
+  return orientation == GfxRenderer::LandscapeClockwise || orientation == GfxRenderer::LandscapeCounterClockwise;
+}
+
 uint8_t* allocateSelectorFrame(const size_t size) {
 #if defined(ARDUINO_ARCH_ESP32)
   if (void* memory = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)) {
@@ -330,7 +335,12 @@ void SettingsDrawer::syncLayoutFromRenderer() {
   drawerWidth = sw;
   drawerY = 0;
 
-  const int maxRows = std::max(1, (sh - drawerListTop(embedded_)) / itemHeight);
+  int bottomReserve = 24;
+#if INX_HAS_FRONTLIGHT || FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO || \
+    FREEINK_DEVICE_LILYGO
+  if (!landscapeDrawer(renderer) && frontlight.present()) bottomReserve = kBottomControlHeight;
+#endif
+  const int maxRows = std::max(1, (sh - drawerListTop(embedded_) - bottomReserve) / itemHeight);
   itemsPerPage = std::min(standaloneRows, maxRows);
   drawerHeight = drawerListTop(embedded_) + itemsPerPage * itemHeight + 1;
 }
@@ -1089,7 +1099,7 @@ int frontlightPercentFromTrack(const int x, const int left, const int width, con
 void SettingsDrawer::drawFrontlightBar() {
 #if INX_HAS_FRONTLIGHT || FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO || \
     FREEINK_DEVICE_LILYGO
-  if (embedded_ || !frontlight.present()) return;
+  if (embedded_ || !frontlight.present() || landscapeDrawer(renderer)) return;
 
   const int barY = renderer.getScreenHeight() - kBottomControlHeight;
   renderer.rectangle.fill(drawerX, barY, drawerWidth, kBottomControlHeight, false);
@@ -1143,7 +1153,7 @@ void SettingsDrawer::drawFrontlightBar() {
 bool SettingsDrawer::handleFrontlightInput(MappedInputManager& input, const uint32_t currentTime) {
 #if INX_HAS_FRONTLIGHT || FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO || \
     FREEINK_DEVICE_LILYGO
-  if (embedded_ || !frontlight.present()) return false;
+  if (embedded_ || !frontlight.present() || landscapeDrawer(renderer)) return false;
 
   const int barY = renderer.getScreenHeight() - kBottomControlHeight;
   const int barBottom = renderer.getScreenHeight();
