@@ -75,16 +75,23 @@ void HalGPIO::serviceTouchGestures() {
   touchSwipeDirection = TouchSwipe::None;
   touchSwipeStartNx = 0.0f;
   touchSwipeStartNy = 0.0f;
+  touchSwipeEndNx = 0.0f;
+  touchSwipeEndNy = 0.0f;
   if (suppressTouchUntilRelease) {
     if (!inputMgr.isTouchPressed()) suppressTouchUntilRelease = false;
     return;
   }
-  if (!inputMgr.hasTouch()) return;
+  // Publish a Picco gesture only on the controller's release edge. Keeping
+  // the latch out of the held-contact updates prevents a swipe from being
+  // reinterpreted as a tap by a page that is rendered during the drag.
+  if (!inputMgr.hasTouch() || !inputMgr.wasTouchReleased()) return;
 
   float sx = 0.0f, sy = 0.0f, ex = 0.0f, ey = 0.0f;
   if (!touchGesture.wasSwipe(sx, sy, ex, ey)) return;
   touchSwipeStartNx = sx;
   touchSwipeStartNy = sy;
+  touchSwipeEndNx = ex;
+  touchSwipeEndNy = ey;
   const float dx = ex - sx;
   const float dy = ey - sy;
   if (std::fabs(dy) > std::fabs(dx)) {
@@ -103,7 +110,17 @@ void HalGPIO::serviceTouchGestures() {
           sx, sy, ex, ey);
 }
 
+void HalGPIO::updateDuringDisplay() {
+  if (touchSwipeLatchedDuringDisplay) return;
+  update();
+  touchSwipeLatchedDuringDisplay = touchSwipeDirection != TouchSwipe::None;
+}
+
 void HalGPIO::update() {
+  if (touchSwipeLatchedDuringDisplay) {
+    touchSwipeLatchedDuringDisplay = false;
+    return;
+  }
   if (!inputMgr.hasTouch()) {
     const unsigned long now = millis();
     if (now >= nextTouchRetryMs) {
@@ -161,13 +178,23 @@ bool HalGPIO::isTouchPressed() const { return inputMgr.isTouchPressed(); }
 bool HalGPIO::wasTouchPressedAt(float& nx, float& ny) const { return inputMgr.wasTouchPressedAt(nx, ny); }
 bool HalGPIO::isTouchHeldAt(float& nx, float& ny) const { return inputMgr.isTouchHeldAt(nx, ny); }
 bool HalGPIO::wasTouchActivity() const { return inputMgr.wasTouchActivity(); }
-bool HalGPIO::wasTouchTap(float& nx, float& ny) const { return touchGesture.wasTap(nx, ny); }
+bool HalGPIO::wasTouchTap(float& nx, float& ny) const {
+  if (suppressTouchUntilRelease || inputMgr.isTouchPressed() || !inputMgr.wasTouchReleased()) return false;
+  return touchGesture.wasTap(nx, ny);
+}
 unsigned long HalGPIO::lastTouchHeldMs() const { return inputMgr.lastTouchHeldMs(); }
 
 bool HalGPIO::touchSwipeStart(float& nx, float& ny) const {
   if (touchSwipeDirection == TouchSwipe::None) return false;
   nx = touchSwipeStartNx;
   ny = touchSwipeStartNy;
+  return true;
+}
+
+bool HalGPIO::touchSwipeEnd(float& nx, float& ny) const {
+  if (touchSwipeDirection == TouchSwipe::None) return false;
+  nx = touchSwipeEndNx;
+  ny = touchSwipeEndNy;
   return true;
 }
 

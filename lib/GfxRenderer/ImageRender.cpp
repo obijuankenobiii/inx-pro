@@ -182,6 +182,11 @@ bool ImageRender::render(int x, int y, int width, int height, const Options& opt
     }
   }
 
+  // Let the first Home frame reach the panel without blocking on SD image
+  // decoding. The caller can render its normal placeholder and warm the cache
+  // on the following idle frame.
+  if (renderer_.shouldDeferImageDecode()) return false;
+
   bool ok = false;
   {
     SdIoMutex::Lock ioLock;

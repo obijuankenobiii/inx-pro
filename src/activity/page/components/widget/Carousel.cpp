@@ -241,6 +241,17 @@ void Carousel::render(const int index, const int x, const int y, const int width
     return;
   }
 
+  if (fourBooks && showLabel && count >= 4) {
+    for (const auto& card : fiveBookCarouselLayout(x, content.y, width, content.height, fullHeight)) {
+      const RecentBook& book = books[visibleBookIndex(books, index + card.offset, hideFirst)];
+      renderCover(renderer_, book, card.coverX(), card.y, card.coverWidth, card.height, systemFontIdForPointSize(12),
+                  card.cropAnchor, true, shadowStyle, true);
+      if (showProgress && (card.offset == 0 || card.offset == 1)) {
+        renderProgressTag(renderer_, book, card.coverX(), card.y, card.coverWidth, card.height);
+      }
+    }
+    return;
+  }
   if (fourBooks && count >= 4) {
     for (const auto& card : fourBookCarouselLayout(x, content.y, width, content.height, fullHeight,
                                                 SETTINGS.hiddenMenu != 0 ? 5 : 0)) {
@@ -358,6 +369,15 @@ void Carousel::preload(const int index, const int x, const int y, const int widt
     return;
   }
 
+  if (fourBooks && showLabel && count >= 4) {
+    for (size_t current = 0; current < count; ++current) {
+      for (const auto& card : fiveBookCarouselLayout(x, content.y, width, content.height, fullHeight)) {
+        const auto& book = books[visibleBookIndex(books, static_cast<int>(current) + card.offset, hideFirst)];
+        preloadCover(renderer_, book, card.coverX(), card.y, card.coverWidth, card.height, card.cropAnchor, true);
+      }
+    }
+    return;
+  }
   if (fourBooks && count >= 4) {
     for (size_t current = 0; current < count; ++current) {
       for (const auto& card : fourBookCarouselLayout(x, content.y, width, content.height, fullHeight,
@@ -415,6 +435,11 @@ void Carousel::preview(const int x, const int y, const int width, const int heig
     }
   };
 
+  if (fourBooks && showLabel) {
+    for (const auto& card : fiveBookCarouselLayout(x, content.y, width, content.height, fullHeight))
+      renderCoverPlaceholder(card.coverX(), card.y, card.coverWidth, card.height, card.offset == 0 || card.offset == 1);
+    return;
+  }
   if (fourBooks) {
     for (const auto& card : fourBookCarouselLayout(x, content.y, width, content.height, fullHeight,
                                                 SETTINGS.hiddenMenu != 0 ? 5 : 0))
@@ -466,6 +491,12 @@ int Carousel::hitTest(const int index, const int count, const int x, const int y
   const auto& books = RECENT_BOOKS.getBooks();
   const int visibleCount = std::min(count, static_cast<int>(visibleBookCount(books, hideFirst)));
   if (visibleCount <= 0) return -1;
+  if (fourBooks && showLabel && visibleCount >= 4) {
+    for (const auto& card : fiveBookCarouselLayout(areaX, content.y, areaW, content.height, fullHeight)) {
+      if (card.contains(x, y)) return static_cast<int>(visibleBookIndex(books, index + card.offset, hideFirst));
+    }
+    return static_cast<int>(visibleBookIndex(books, index, hideFirst));
+  }
   if (fourBooks && visibleCount >= 4) {
     for (const auto& card : fourBookCarouselLayout(areaX, content.y, areaW, content.height, fullHeight,
                                                 SETTINGS.hiddenMenu != 0 ? 5 : 0)) {

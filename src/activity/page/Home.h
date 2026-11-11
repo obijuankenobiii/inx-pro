@@ -46,6 +46,8 @@ class Home final : public UiPage {
   int recentGridPageIndex = 0;
   int flowIndex = 0;
   bool carouselThumbnailsPreloaded = false;
+  bool deferThumbnailDecode_ = true;
+  bool thumbnailWarmupPending_ = false;
   int popupBook = -1;
   bool favoritePopupOpen = false;
   bool heatmapPopupOpen = false;

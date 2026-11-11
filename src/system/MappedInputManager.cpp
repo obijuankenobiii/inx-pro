@@ -7,6 +7,7 @@
 #include "system/ScreenComponents.h"
 
 #include <algorithm>
+#include <cmath>
 #include <HardwareSerial.h>
 #include <utility>
 
@@ -18,6 +19,27 @@
 
 namespace {
 using ButtonIndex = uint8_t;
+
+const char* touchSwipeName(const HalGPIO::TouchSwipe swipe) {
+  switch (swipe) {
+    case HalGPIO::TouchSwipe::Up: return "up";
+    case HalGPIO::TouchSwipe::Down: return "down";
+    case HalGPIO::TouchSwipe::Left: return "left";
+    case HalGPIO::TouchSwipe::Right: return "right";
+    case HalGPIO::TouchSwipe::None: return "none";
+  }
+  return "unknown";
+}
+
+const char* orientationName(const GfxRenderer::Orientation orientation) {
+  switch (orientation) {
+    case GfxRenderer::Orientation::Portrait: return "portrait";
+    case GfxRenderer::Orientation::LandscapeClockwise: return "landscape-cw";
+    case GfxRenderer::Orientation::PortraitInverted: return "portrait-inverted";
+    case GfxRenderer::Orientation::LandscapeCounterClockwise: return "landscape-ccw";
+  }
+  return "unknown";
+}
 
 struct FrontLayoutMap {
   ButtonIndex back;
@@ -141,7 +163,45 @@ bool MappedInputManager::wasAnyPressed() const { return gpio.wasAnyPressed(); }
 bool MappedInputManager::wasAnyReleased() const { return gpio.wasAnyReleased(); }
 
 HalGPIO::TouchSwipe MappedInputManager::swipeForRenderer(const GfxRenderer& renderer) const {
-  return inx::touch::forOrientation(renderer.getOrientation(), gpio.touchSwipe());
+  const auto raw = gpio.touchSwipe();
+  auto mapped = inx::touch::forOrientation(renderer.getOrientation(), raw);
+#if FREEINK_DEVICE_PICCO
+  // TMA525C reports its direction in the panel-native frame.  That frame is
+  // rotated relative to the UI, and the enum alone loses the actual gesture
+  // geometry at the bottom edge. Transform both endpoints into screen space
+  // and classify the gesture there.
+  float startX = 0.0f;
+  float startY = 0.0f;
+  float endX = 0.0f;
+  float endY = 0.0f;
+  if (raw != HalGPIO::TouchSwipe::None && gpio.touchSwipeStart(startX, startY) &&
+      gpio.touchSwipeEnd(endX, endY)) {
+    float screenStartX = 0.0f;
+    float screenStartY = 0.0f;
+    float screenEndX = 0.0f;
+    float screenEndY = 0.0f;
+    inx::touch::nativeToScreen(renderer.getOrientation(), startX, startY, screenStartX, screenStartY);
+    inx::touch::nativeToScreen(renderer.getOrientation(), endX, endY, screenEndX, screenEndY);
+    const float dx = screenEndX - screenStartX;
+    const float dy = screenEndY - screenStartY;
+    if (std::fabs(dy) >= std::fabs(dx)) {
+      mapped = dy < 0.0f ? HalGPIO::TouchSwipe::Up : HalGPIO::TouchSwipe::Down;
+    } else {
+      mapped = dx < 0.0f ? HalGPIO::TouchSwipe::Left : HalGPIO::TouchSwipe::Right;
+    }
+  }
+#endif
+#if FREEINK_DEVICE_PICCO
+  static HalGPIO::TouchSwipe lastRaw = HalGPIO::TouchSwipe::None;
+  if (raw == HalGPIO::TouchSwipe::None) {
+    lastRaw = HalGPIO::TouchSwipe::None;
+  } else if (raw != lastRaw) {
+    INX_SERIAL.printf("[%lu] [TOUCH-ORIENTATION] raw=%s renderer=%s mapped=%s\n", millis(), touchSwipeName(raw),
+                      orientationName(renderer.getOrientation()), touchSwipeName(mapped));
+    lastRaw = raw;
+  }
+#endif
+  return mapped;
 }
 
 bool MappedInputManager::wasTouchSwipeUpForRenderer(const GfxRenderer& renderer) const {

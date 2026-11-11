@@ -29,9 +29,9 @@ struct DeviceItem {
   const char* label;
   const char* description;
   const uint8_t* icon;
+  const char* tag;
 };
 
-constexpr int kCalibreIndex = 1;
 constexpr int kIconSize = 40;
 constexpr int kSideMargin = 20;
 constexpr int kIconX = 24;
@@ -42,6 +42,7 @@ constexpr int kCompactRowHeight = 92;
 
 int rowHeight() { return SETTINGS.hiddenMenu == 0 ? kCompactRowHeight : kRowHeight; }
 #if FREEINK_CAP_USB_MSC
+constexpr int kCalibreIndex = 1;
 constexpr int kUsbFileTransferIndex = 2;
 constexpr int kCreateHotspotIndex = 3;
 constexpr int kKoReaderSyncIndex = 4;
@@ -49,27 +50,28 @@ constexpr int kCheckForUpdatesIndex = 5;
 constexpr int kDeviceInformationIndex = 6;
 constexpr int menuItemCount = 7;
 constexpr DeviceItem menuItems[menuItemCount] = {
-    {"Wi-fi", "Manage books, settings, and files from your browser", DeviceManagementManageWifi},
-    {"Calibre", "Send books to the device from Calibre", DeviceManagementCalibreTransfer},
-    {"USB", "Transfer books directly over USB", DeviceManagementUsbTransfer},
-    {"Hotspot", "Create a hotspot for wireless device management", DeviceManagementHotspot},
-    {"KOReader Sync", "Synchronize reading progress with KOReader", DeviceManagementKoreaderSync},
-    {"Check for updates", "Check for firmware updates", DeviceManagementUpdates},
-    {"Device Information", "View device and firmware information", DeviceManagementDeviceInfo},
+    {"Wi-fi", "Manage books, settings, and files from your browser", DeviceManagementManageWifi, "File transfer"},
+    {"Calibre", "Send books to the device from Calibre", DeviceManagementCalibreTransfer, "File transfer"},
+    {"USB", "Transfer books directly over USB", DeviceManagementUsbTransfer, "File transfer"},
+    {"Hotspot", "Create a hotspot for wireless device management", DeviceManagementHotspot, "File transfer"},
+    {"KOReader Sync", "Synchronize reading progress with KOReader", DeviceManagementKoreaderSync, nullptr},
+    {"Check for updates", "Check for firmware updates", DeviceManagementUpdates, nullptr},
+    {"Device Information", "View device and firmware information", DeviceManagementDeviceInfo, nullptr},
 };
 #else
+constexpr int kCalibreIndex = 1;
 constexpr int kCreateHotspotIndex = 2;
 constexpr int kKoReaderSyncIndex = 3;
 constexpr int kCheckForUpdatesIndex = 4;
 constexpr int kDeviceInformationIndex = 5;
 constexpr int menuItemCount = 6;
 constexpr DeviceItem menuItems[menuItemCount] = {
-    {"Wi-fi", "Manage books, settings, and files from your browser", DeviceManagementManageWifi},
-    {"Calibre", "Send books to the device from Calibre", DeviceManagementCalibreTransfer},
-    {"Hotspot", "Create a hotspot for wireless device management", DeviceManagementHotspot},
-    {"KOReader Sync", "Synchronize reading progress with KOReader", DeviceManagementKoreaderSync},
-    {"Check for updates", "Check for firmware updates", DeviceManagementUpdates},
-    {"Device Information", "View device and firmware information", DeviceManagementDeviceInfo},
+    {"Wi-fi", "Manage books, settings, and files from your browser", DeviceManagementManageWifi, "File transfer"},
+    {"Calibre", "Send books to the device from Calibre", DeviceManagementCalibreTransfer, "File transfer"},
+    {"Hotspot", "Create a hotspot for wireless device management", DeviceManagementHotspot, "File transfer"},
+    {"KOReader Sync", "Synchronize reading progress with KOReader", DeviceManagementKoreaderSync, nullptr},
+    {"Check for updates", "Check for firmware updates", DeviceManagementUpdates, nullptr},
+    {"Device Information", "View device and firmware information", DeviceManagementDeviceInfo, nullptr},
 };
 #endif
 }
@@ -177,6 +179,8 @@ void SyncActivity::content() {
   const int contentHeight = titleHeight + kSubtitleGap + subtitleHeight;
   const int contentBottom = screenHeight - navigation::Menu::bottomInset() - 10;
 
+  const int tagFont = systemFontIdForPointSize(8);
+  const int tagLineHeight = renderer.text.getLineHeight(tagFont);
   for (int index = 0; index < menuItemCount; ++index) {
     const int itemY = listStartY + index * currentRowHeight;
     if (itemY >= contentBottom || itemY + currentRowHeight <= listStartY) continue;
@@ -186,6 +190,12 @@ void SyncActivity::content() {
                          itemY + (currentRowHeight - kIconSize) / 2, kIconSize,
                          kIconSize);
     renderer.text.render(titleFont, kTextX, titleY, menuItems[index].label, true, EpdFontFamily::REGULAR);
+    if (menuItems[index].tag != nullptr) {
+      const int labelWidth = renderer.text.getWidth(titleFont, menuItems[index].label);
+      renderer.text.renderGray(tagFont, kTextX + labelWidth + 12,
+                               titleY + (titleHeight - tagLineHeight) / 2, menuItems[index].tag, true,
+                               EpdFontFamily::REGULAR);
+    }
     const std::string subtitle = renderer.text.truncate(subtitleFont, menuItems[index].description, maxTextWidth);
     renderer.text.render(subtitleFont, kTextX, titleY + titleHeight + kSubtitleGap, subtitle.c_str(), true,
                          EpdFontFamily::REGULAR);

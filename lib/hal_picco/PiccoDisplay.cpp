@@ -1,6 +1,9 @@
 #include "PiccoDisplay.h"
 
 #include <BoardConfig.h>
+#include <HalGPIO.h>
+
+extern HalGPIO gpio;
 
 namespace {
 EInkDisplay::RefreshMode convertRefreshMode(const uint8_t mode) {
@@ -16,6 +19,7 @@ EInkDisplay::RefreshMode convertRefreshMode(const uint8_t mode) {
 // while registering the GPIO interrupt. Keep Picco on the bounded polling path
 // instead. This is local to the Picco HAL and does not alter other devices.
 bool piccoBusyWaitSlice(const int8_t, const uint8_t) {
+  gpio.updateDuringDisplay();
   delay(1);
   return true;
 }

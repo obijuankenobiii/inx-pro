@@ -27,7 +27,7 @@ extern void onGoToStatistics();
 namespace {
 
 constexpr int panelTabY = navigation::Menu::height + 20;
-constexpr int panelTabHeight = Button::height + 10;
+constexpr int panelTabHeight = Button::height + 20;
 constexpr int panelTabCount = 3;
 
 int panelTabHorizontalPadding() {
@@ -165,6 +165,24 @@ void Settings::onExit() {
 }
 
 void Settings::loop() {
+#if FREEINK_DEVICE_PICCO
+  // Picco's rotated panel reports a screen bottom-to-top gesture as raw left.
+  // MappedInputManager has already converted it to screen-up; consume that
+  // edge gesture before the menu or embedded list can reinterpret it.
+  if (mappedInput.hasTouch()) {
+    float swipeStartNx = 0.0f;
+    float swipeStartNy = 0.0f;
+    if (mappedInput.wasTouchSwipeUpInScreen(renderer, swipeStartNx, swipeStartNy) && swipeStartNy >= 0.95f) {
+      if (panelDetailOpen() && panel) {
+        panel->loop();
+      } else {
+        back();
+      }
+      return;
+    }
+  }
+#endif
+
   // The shared page shell normally consumes swipes for navigation before an
   // embedded panel sees them. Let the presets panel own its bottom-edge close
   // gesture first; ordinary swipes still go through the shared menu.

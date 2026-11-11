@@ -111,6 +111,8 @@ void Home::onEnter() {
   flowIndex = 0;
   widgetLayout.invalidateFavorites();
   carouselThumbnailsPreloaded = false;
+  deferThumbnailDecode_ = true;
+  thumbnailWarmupPending_ = false;
   popupBook = -1;
   favoritePopupOpen = false;
   heatmapPopupOpen = false;
@@ -148,6 +150,15 @@ void Home::loop() {
     return;
   }
 
+  // The first Home frame intentionally uses thumbnail placeholders. Warm all
+  // image caches only after that frame has been displayed and the device is
+  // idle, so entering Home never waits on SD decoding.
+  if (thumbnailWarmupPending_ && !mappedInput.wasTouchActivity()) {
+    thumbnailWarmupPending_ = false;
+    updateRequired = true;
+    renderPage();
+  }
+
   if (widgetLayout.needsRefresh(HomeTheme::active())) updateRequired = true;
   // Let the first Home frame reach the panel before doing carousel I/O and
   // thumbnail decoding. The preload is still done on the next idle loop, so
@@ -156,11 +167,17 @@ void Home::loop() {
   if (handleSwipe()) return;
   if (handleTap()) return;
   renderPage();
-  if (!renderedThisLoop && !mappedInput.hasTouch()) preloadCarousel();
+  if (!renderedThisLoop && !mappedInput.wasTouchActivity()) preloadCarousel();
 }
 
 void Home::content() {
+  renderer.setDeferImageDecode(deferThumbnailDecode_);
   widgetLayout.render(HomeTheme::active(), carouselIndex, favoriteIndex, widgetPageIndex, recentGridPageIndex, flowIndex);
+  renderer.setDeferImageDecode(false);
+  if (deferThumbnailDecode_) {
+    deferThumbnailDecode_ = false;
+    thumbnailWarmupPending_ = true;
+  }
   if (popupBook >= 0 || favoritePopupOpen || heatmapPopupOpen) popup();
 }
 
@@ -289,6 +306,10 @@ void Home::preloadCarousel() {
 }
 
 bool Home::handleTap() {
+  if (mappedInput.isTouchPressed()) {
+    tapRejectLogged_ = false;
+    return false;
+  }
   if (!mappedInput.hasTouch()) {
     tapRejectLogged_ = false;
     return false;

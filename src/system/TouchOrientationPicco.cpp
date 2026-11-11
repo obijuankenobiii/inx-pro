@@ -2,9 +2,8 @@
  * @file TouchOrientationPicco.cpp
  * @brief BOOX/Onyx Picco touch orientation transforms.
  *
- * Picco's TMA525C is physically portrait-mounted while the panel RAM is
- * 800x480 landscape. BoardConfig maps the digitizer into the panel-native
- * landscape frame; this file maps that frame into the app's portrait UI.
+ * Picco's TMA525C reports the touch frame rotated 90 degrees relative to the
+ * logical portrait UI. Apply the panel-to-portrait transform globally here.
  */
 
 #include "TouchOrientation.h"
@@ -57,7 +56,14 @@ HalGPIO::TouchSwipe forOrientation(const GfxRenderer::Orientation orientation, c
       }
       break;
     case GfxRenderer::Orientation::LandscapeCounterClockwise:
-      return swipe;
+      switch (swipe) {
+        case HalGPIO::TouchSwipe::Up: return HalGPIO::TouchSwipe::Up;
+        case HalGPIO::TouchSwipe::Down: return HalGPIO::TouchSwipe::Down;
+        case HalGPIO::TouchSwipe::Left: return HalGPIO::TouchSwipe::Left;
+        case HalGPIO::TouchSwipe::Right: return HalGPIO::TouchSwipe::Right;
+        case HalGPIO::TouchSwipe::None: return HalGPIO::TouchSwipe::None;
+      }
+      break;
   }
   return HalGPIO::TouchSwipe::None;
 }

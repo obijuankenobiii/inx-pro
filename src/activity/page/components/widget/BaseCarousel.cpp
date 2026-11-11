@@ -33,7 +33,7 @@ BaseCarousel::ContentArea BaseCarousel::contentArea(const int y, const int heigh
   if (!showLabel) return {y, std::max(1, height - bottomInset)};
   // The widget title is drawn in the top band. Keep thumbnails and content
   // below that band instead of letting their top edge cover the label.
-  constexpr int labelBandHeight = 24;
+  const int labelBandHeight = std::max(24, renderer_.text.getLineHeight(systemFontId()) + 10);
   return {y + labelBandHeight, std::max(1, height - labelBandHeight - bottomInset)};
 }
 

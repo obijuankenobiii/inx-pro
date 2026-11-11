@@ -36,6 +36,9 @@ constexpr int kActionIconSize = 40;
 constexpr int kScrollCaretSize = 40;
 constexpr int kCategoryFilterWidth = 220;
 constexpr int kCategoryFilterRowHeight = UiLayout::LIST_ITEM_HEIGHT;
+// Only a swipe that starts at the physical bottom edge closes this page.  A
+// normal upward swipe in the font list remains a list-page navigation gesture.
+constexpr float kBottomEdgeSwipeStartNy = 0.95f;
 
 int pageBodyTop() { return FREEINK_DEVICE_X4PRO ? 80 : 70; }
 
@@ -629,6 +632,18 @@ void FontManagerActivity::loop() {
   }
 
   if (SubPage::closeInput(renderer, mappedInput, goBack_, false)) return;
+
+  if (state_ != State::Downloading && mappedInput.hasTouch()) {
+    float swipeStartNx = 0.0f;
+    float swipeStartNy = 0.0f;
+    if (mappedInput.wasTouchSwipeUpInScreen(renderer, swipeStartNx, swipeStartNy) &&
+        swipeStartNy >= kBottomEdgeSwipeStartNy) {
+      INX_SERIAL.printf("[%lu] [FONT-UI] bottom-edge swipe exit start=(%.3f,%.3f) state=%d\n", millis(),
+                        swipeStartNx, swipeStartNy, static_cast<int>(state_));
+      goBack_();
+      return;
+    }
+  }
 
   if (state_ == State::Ready && !packages_.empty() && mappedInput.hasTouch()) {
     const int bodyTop = pageBodyTop();

@@ -20,6 +20,7 @@ class HalGPIO {
   };
 
   void begin();
+  void updateDuringDisplay();
   // FrontlightManager shares the existing Wire bus and changes its timeout.
   // Restore the touch timeout without deleting the bus or resetting touch.
   void restoreTouchBusSettings();
@@ -51,6 +52,7 @@ class HalGPIO {
   enum class TouchSwipe : uint8_t { None, Up, Down, Left, Right };
   TouchSwipe touchSwipe() const { return touchSwipeDirection; }
   bool touchSwipeStart(float& nx, float& ny) const;
+  bool touchSwipeEnd(float& nx, float& ny) const;
 
   enum class MotionGesture : uint8_t { None, Previous, Next };
   MotionGesture readMotionGesture(uint8_t orientation, uint8_t mode, uint8_t sensitivity);
@@ -83,8 +85,11 @@ class HalGPIO {
   TouchSwipe touchSwipeDirection = TouchSwipe::None;
   float touchSwipeStartNx = 0.0f;
   float touchSwipeStartNy = 0.0f;
+  float touchSwipeEndNx = 0.0f;
+  float touchSwipeEndNy = 0.0f;
   bool lastTouchPressed = false;
   bool suppressTouchUntilRelease = false;
+  bool touchSwipeLatchedDuringDisplay = false;
   mutable PiccoBatteryState batteryState;
   mutable picco_charger::PollSchedule batteryPoll;
   mutable unsigned long batteryLastLogMs = 0;

@@ -159,13 +159,6 @@ void WifiSelectionActivity::onEnter() {
   networkPage = 0;
   selectedNetworkVisible = !networks.empty();
 
-  uint8_t mac[6];
-  WiFi.macAddress(mac);
-  char macStr[32];
-  snprintf(macStr, sizeof(macStr), LanguageManager::translateText("MAC address: %02x-%02x-%02x-%02x-%02x-%02x"),
-           mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-  cachedMacAddress = std::string(macStr);
-
   // The saved-network landing page is reserved for file-transfer services.
   // Other Wi-Fi consumers keep the original behavior and scan immediately.
   if (!usesFileTransferLayout()) {
@@ -206,8 +199,6 @@ void WifiSelectionActivity::onExit() {
   connectedIP.clear();
   connectionError.clear();
   enteredPassword.clear();
-  cachedMacAddress.clear();
-
   if (displayTaskHandle) {
     vTaskDeleteWithCaps(displayTaskHandle);
     displayTaskHandle = nullptr;
@@ -1126,7 +1117,6 @@ void WifiSelectionActivity::renderNetworkList(int screenWidth, int screenHeight,
                            listStartY + maxVisibleNetworks * LIST_ITEM_HEIGHT, "v");
     }
 
-    renderer.text.render(systemFontId(), 20, screenHeight - 90, cachedMacAddress.c_str());
   }
 
   const auto labels = mappedInput.mapLabels("« Back", "Connect", "", "");

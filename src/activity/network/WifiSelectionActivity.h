@@ -122,8 +122,6 @@ class WifiSelectionActivity final : public ActivityWithSubactivity {
   std::string connectionError;  ///< Error message if connection failed
 
   std::string enteredPassword;   ///< Password entered by user or from saved credentials
-  std::string cachedMacAddress;  ///< Cached MAC address for display
-
   bool usedSavedPassword = false;  ///< Whether the connection used a saved password
   bool completionNotified = false; ///< Prevents duplicate success callbacks while the connected card is shown
 

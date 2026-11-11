@@ -413,7 +413,10 @@ void CalibreConnectActivity::renderServerRunning(int screenWidth, int screenHeig
   const std::vector<WrappedInstructionLine> sendLines = wrapInstruction(
       renderer, font, "2. Choose Send to device in Calibre.", instructionWidth, listIndent);
   const int instructionLineCount = static_cast<int>(installLines.size() + sendLines.size());
-  const int instructionCardHeight = CARD_PADDING * 2 + lineHeight + 8 +
+  const int statusTagFont = systemFontIdForPointSize(12);
+  const int statusTagLine = renderer.text.getLineHeight(statusTagFont);
+  const int statusTagHeight = statusTagLine + 8;
+  const int instructionCardHeight = CARD_PADDING * 2 + std::max(lineHeight, statusTagHeight) + 8 +
                                     instructionLineCount * lineHeight;
   const int listStartY = showInstructions ? instructionCardY + instructionCardHeight + CARD_GAP
                                           : panelY + CARD_PADDING;
@@ -429,6 +432,16 @@ void CalibreConnectActivity::renderServerRunning(int screenWidth, int screenHeig
     renderer.rectangle.fill(cardX, instructionCardY, cardWidth, instructionCardHeight, false, rounded);
     renderer.rectangle.render(cardX, instructionCardY, cardWidth, instructionCardHeight, true, rounded);
     renderer.text.render(font, contentX, instructionCardY + CARD_PADDING, "Instructions", true,
+                         EpdFontFamily::BOLD);
+    constexpr int statusTagPaddingX = 12;
+    const int statusTagWidth = renderer.text.getWidth(statusTagFont, "Ready", EpdFontFamily::BOLD) +
+                               statusTagPaddingX * 2;
+    const int statusTagX = cardX + cardWidth - CARD_PADDING - statusTagWidth;
+    const int statusTagY = instructionCardY + CARD_PADDING;
+    renderer.rectangle.fill(statusTagX, statusTagY, statusTagWidth, statusTagHeight,
+                            static_cast<int>(GfxRenderer::FillTone::Ink), true);
+    renderer.text.render(statusTagFont, statusTagX + statusTagPaddingX,
+                         statusTagY + (statusTagHeight - statusTagLine) / 2, "Ready", false,
                          EpdFontFamily::BOLD);
     int instructionY = instructionCardY + CARD_PADDING + lineHeight + 4;
     for (const auto& line : installLines) {

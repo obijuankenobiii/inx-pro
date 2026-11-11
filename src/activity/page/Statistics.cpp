@@ -1816,8 +1816,20 @@ void Statistics::renderSingleBookMiddleChart(const int bookIdx) const {
     }
   }
 
+  // The history file is normally chronological, but older files and merged
+  // records are not guaranteed to be. Keep only dates with actual reading
+  // time and sort those dates before laying them out on the chart. This avoids
+  // creating a long zero-filled tail after a book has been completed.
+  points.erase(std::remove_if(points.begin(), points.end(), [](const Point& point) {
+                return point.dateKey == 0 || point.readingTimeMs == 0;
+              }),
+              points.end());
+  std::sort(points.begin(), points.end(), [](const Point& left, const Point& right) {
+    return readingDateToDay(left.dateKey) < readingDateToDay(right.dateKey);
+  });
+
   // Keep the most recent dates readable on the compact 1x3 chart while retaining
-  // the chronological order stored by the history manager.
+  // only the active dates in the history.
   constexpr size_t kMaxChartPoints = 14;
   if (points.size() > kMaxChartPoints) {
     points.erase(points.begin(), points.begin() + static_cast<int>(points.size() - kMaxChartPoints));

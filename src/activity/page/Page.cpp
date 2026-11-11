@@ -38,6 +38,7 @@ bool UiPage::menuInput() {
   if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
     if (isOpen()) {
       close();
+      restoreOverlayFrameOnClose();
       updateRequired = true;
       return true;
     }
@@ -124,7 +125,13 @@ void UiPage::discardOverlayFrame() {
 bool UiPage::routeMenuAction(const navigation::Menu::Action action) {
   switch (action) {
     case navigation::Menu::Action::Opened:
+      // Capture the underlying page only on the initial open. Selection
+      // changes while the drawer is already open also return Opened.
+      if (!overlayFrameStored_) storeOverlayFrame();
+      updateRequired = true;
+      break;
     case navigation::Menu::Action::Closed:
+      restoreOverlayFrameOnClose();
       updateRequired = true;
       break;
     case navigation::Menu::Action::Search:

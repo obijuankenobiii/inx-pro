@@ -59,6 +59,7 @@ class GfxRenderer {
   Orientation orientation;
   bool darkMode = false;
   bool imageRendering = false;
+  bool deferImageDecode = false;
   uint16_t panelWidth = HalDisplay::DISPLAY_WIDTH;
   uint16_t panelHeight = HalDisplay::DISPLAY_HEIGHT;
   uint16_t panelWidthBytes = HalDisplay::DISPLAY_WIDTH_BYTES;
@@ -111,6 +112,9 @@ class GfxRenderer {
   bool isDarkMode() const { return darkMode; }
   void setImageRendering(bool rendering) { imageRendering = rendering; }
   bool isImageRendering() const { return imageRendering; }
+  /** Skip synchronous image decoding for a first-pass UI frame. */
+  void setDeferImageDecode(bool defer) { deferImageDecode = defer; }
+  bool shouldDeferImageDecode() const { return deferImageDecode; }
 
   int getScreenWidth() const;
   int getScreenHeight() const;
