@@ -72,10 +72,11 @@ ThumbnailList::ThumbnailList(GfxRenderer& renderer, MappedInputManager& mappedIn
                              std::function<void(int, bool)> select,
                              std::function<bool(const LibraryIndex::Book&)> isFavorite,
                              std::function<void(int, int)> outsideTap,
-                             std::function<std::string(const LibraryIndex::Book&)> customThumbnail)
+                             std::function<std::string(const LibraryIndex::Book&)> customThumbnail,
+                             std::function<bool()> stripLeadingFolderSlash)
     : renderer(renderer), mappedInput(mappedInput), items(items), books(books), select(std::move(select)),
       isFavorite(std::move(isFavorite)), outsideTap(std::move(outsideTap)),
-      customThumbnail(std::move(customThumbnail)) {}
+      customThumbnail(std::move(customThumbnail)), stripLeadingFolderSlash(std::move(stripLeadingFolderSlash)) {}
 
 void ThumbnailList::reset() { page = 0; }
 
@@ -191,11 +192,12 @@ void ThumbnailList::render() const {
   const int start = page * rows;
   const int end = std::min(static_cast<int>(items.size()), start + rows);
   const int width = renderer.getScreenWidth();
-  const int titleFont = systemFontIdForPointSize(14);
+  const int titleFont = systemFontId();
   const int descriptionFont = systemFontIdForPointSize(10);
   const int caretX = width - sideMargin - caretSize;
   const int textX = sideMargin + thumbnailWidth + textGap;
   const int textWidth = std::max(40, caretX - textX - textGap);
+  const bool stripSlash = stripLeadingFolderSlash && stripLeadingFolderSlash();
 
   for (int index = start; index < end; ++index) {
     const int row = index - start;
@@ -204,11 +206,13 @@ void ThumbnailList::render() const {
     renderThumbnail(book, sideMargin, rowY + (currentRowHeight - thumbnailHeight) / 2);
 
     const std::string title = renderer.text.truncate(titleFont, titleFor(book).c_str(), textWidth,
-                                                     EpdFontFamily::BOLD);
+                                                     EpdFontFamily::REGULAR);
     const int titleY = rowY + 23;
-    renderer.text.render(titleFont, textX, titleY, title.c_str(), true, EpdFontFamily::BOLD);
+    renderer.text.render(titleFont, textX, titleY, title.c_str(), true, EpdFontFamily::REGULAR);
 
-    const std::string description = renderer.text.truncate(descriptionFont, folderFor(book).c_str(), textWidth);
+    std::string folder = folderFor(book);
+    if (stripSlash && folder.size() > 1 && folder.front() == '/') folder.erase(folder.begin());
+    const std::string description = renderer.text.truncate(descriptionFont, folder.c_str(), textWidth);
     const int descriptionY = titleY + renderer.text.getLineHeight(titleFont) + 12;
     renderer.text.render(descriptionFont, textX, descriptionY, description.c_str(), true,
                          EpdFontFamily::REGULAR);

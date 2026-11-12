@@ -89,8 +89,8 @@ struct ControlModalLayout {
 };
 
 ControlModalLayout controlModalLayout(const GfxRenderer& renderer) {
-  constexpr int horizontalScreenMargin = 12;
-  constexpr int bottomMargin = 12;
+  constexpr int horizontalScreenMargin = 20;
+  constexpr int bottomMargin = 20;
   const int screenHeight = renderer.getScreenHeight();
   const int screenWidth = renderer.getScreenWidth();
   const int x = horizontalScreenMargin;
@@ -156,19 +156,25 @@ FilterFooterLayout filterFooterLayout(const GfxRenderer& renderer, const FilterD
 }
 
 void renderControlTab(const GfxRenderer& renderer, const ControlModalLayout& modal, const int index,
-                      const char* label, const bool selected) {
+                      const char* label, const uint8_t* icon, const bool selected) {
   const int font = systemFontId();
   const int x = modal.x + modal.width * index / 3;
   const int nextX = modal.x + modal.width * (index + 1) / 3;
   const int width = nextX - x;
   const int textWidth = renderer.text.getWidth(font, label, selected ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR);
+  constexpr int iconSize = 24;
+  constexpr int iconGap = 6;
+  const int contentWidth = iconSize + iconGap + textWidth;
   const int tabCenterY = modal.tabY + modal.tabHeight / 2;
   const int textY = tabCenterY - renderer.text.getLineHeight(font) / 2;
-  const int textX = x + (width - textWidth) / 2;
+  const int contentX = x + (width - contentWidth) / 2;
+  const int iconY = tabCenterY - iconSize / 2;
+  renderer.bitmap.iconScaled(icon, contentX, iconY, 40, 40, iconSize, iconSize);
+  const int textX = contentX + iconSize + iconGap;
   renderer.text.render(font, textX, textY, label, true,
                        selected ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR);
   if (selected) {
-    renderer.rectangle.fill(textX, modal.tabY + modal.tabHeight - 3, std::max(1, textWidth), 2, true);
+    renderer.rectangle.fill(contentX, modal.tabY + modal.tabHeight - 3, std::max(1, contentWidth), 2, true);
   }
 }
 }
@@ -370,7 +376,8 @@ Library::Library(GfxRenderer& renderer, MappedInputManager& mappedInput, std::st
                 [this](const LibraryIndex::Book& book) {
                   const std::vector<std::string> covers = groupCovers(book, 1);
                   return covers.empty() ? std::string() : covers.front();
-                }),
+                },
+                [this] { return stateFilter != StateFilter::None; }),
       thumb(renderer, mappedInput, items, books,
             [this](const int index, const bool longPress) { select(index, longPress); },
             [this](const LibraryIndex::Book& book) { return isFavorite(book); },
@@ -1301,7 +1308,14 @@ void Library::center() const {
   const int containerWidth = std::min(screenWidth - x, buttonSize);
   const int containerHeight = buttonSize * 2 + buttonGap;
   renderer.rectangle.fill(x, y, containerWidth, containerHeight, false);
-  renderer.rectangle.render(x, y, containerWidth, containerHeight, true);
+  // Round the two outer left corners of the connected controls. The right
+  // edge remains square against the display edge.
+  renderer.rectangle.render(x, y, containerWidth, containerHeight, true, true);
+  constexpr int rightCornerRestore = 4;
+  renderer.line.render(x + std::max(0, containerWidth - rightCornerRestore), y,
+                       x + containerWidth - 1, y, true);
+  renderer.line.render(x + std::max(0, containerWidth - rightCornerRestore), y + containerHeight - 1,
+                       x + containerWidth - 1, y + containerHeight - 1, true);
   renderer.line.render(x, y + buttonSize, x + containerWidth, y + buttonSize, true);
   const int caretX = x + (buttonSize - kCaretIconSize) / 2;
   const int caretY = y + (buttonSize - kCaretIconSize) / 2;
@@ -1515,9 +1529,10 @@ void Library::controlModal() const {
   renderer.rectangle.fill(modal.x, modal.y, modal.width, modal.height, false);
   renderer.line.render(modal.x, modal.tabY + modal.tabHeight, modal.x + modal.width - 1,
                        modal.tabY + modal.tabHeight, true);
-  renderControlTab(renderer, modal, 0, "View", controlTab == ControlTab::View);
-  renderControlTab(renderer, modal, 1, "Sort", controlTab == ControlTab::Sort);
-  renderControlTab(renderer, modal, 2, "Filter", controlTab == ControlTab::Filter);
+  const uint8_t* sortIcon = sort == Sort::TitleZA || sort == Sort::FolderZA || sort == Sort::AuthorZA ? SortDesc : SortAsc;
+  renderControlTab(renderer, modal, 0, "View", viewIcon(), controlTab == ControlTab::View);
+  renderControlTab(renderer, modal, 1, "Sort", sortIcon, controlTab == ControlTab::Sort);
+  renderControlTab(renderer, modal, 2, "Filter", Filter, controlTab == ControlTab::Filter);
 
   switch (controlTab) {
     case ControlTab::View:

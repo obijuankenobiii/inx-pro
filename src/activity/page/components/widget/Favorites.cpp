@@ -55,8 +55,31 @@ using CenteredCarouselLayout = CenteredCarouselBounds;
 
 CenteredCarouselLayout centeredBounds(const int areaX, const int areaY, const int areaW, const int areaH,
                                       const bool fullHeight) {
-  return centeredCarouselBounds(areaX, areaY, areaW, areaH, fullHeight, 204, 312,
+  return centeredCarouselBounds(areaX, areaY, areaW, areaH, fullHeight, 200, 300,
                                  SETTINGS.hiddenMenu != 0 ? 5 : 0);
+}
+
+CenteredCarouselLayout twoBookBounds(const int areaX, const int areaY, const int areaW, const int areaH,
+                                     const bool fullHeight) {
+  constexpr int leftMargin = 20;
+  const int gap = 20;
+  const auto center = carouselCoverSize(std::min(204, std::max(40, areaW * 3 / 5)),
+                                        std::min(312, std::max(50, areaH - (fullHeight ? 10 : 28))));
+  const int centerWidth = center.width;
+  const int centerHeight = center.height;
+  const auto originalSide = carouselCoverSize(centerWidth, centerHeight * 9 / 10);
+  const int sideHeight = originalSide.height;
+  const int sideWidth = originalSide.width;
+  const int centerX = areaX + leftMargin;
+  const int centerY = areaY + (areaH - centerHeight) / 2;
+  const int sideReduction = kCarouselSideReduction + (SETTINGS.hiddenMenu != 0 ? 5 : 0);
+  const auto smallerSide = carouselCoverSize(sideWidth, sideHeight - sideReduction);
+  const int smallerSideHeight = smallerSide.height;
+  const int smallerSideWidth = smallerSide.width;
+  const int sideY = centerY + centerHeight - smallerSideHeight;
+  return reduceCarouselCenter({centerX, centerY, centerWidth, centerHeight,
+          centerX + centerWidth + gap + (sideWidth - smallerSideWidth) / 2, sideY,
+          smallerSideWidth, smallerSideHeight, gap});
 }
 }
 
@@ -340,6 +363,14 @@ void Favorites::renderCentered(const int index, const int x, const int y, const 
   }
   const int current = ((index % static_cast<int>(books_.size())) + static_cast<int>(books_.size())) %
                       static_cast<int>(books_.size());
+  if (books_.size() == 2) {
+    const CenteredCarouselLayout layout = twoBookBounds(x, y, width, height, fullHeight);
+    const CardBounds center{layout.centerX, layout.centerY, layout.centerWidth, layout.centerHeight};
+    const CardBounds side{layout.sideX, layout.sideY, layout.sideWidth, layout.sideHeight};
+    renderCover(books_[static_cast<size_t>(current)], center, true, shadowStyle, 0.5f, false);
+    renderCover(books_[static_cast<size_t>((current + 1) % 2)], side, true, shadowStyle, 0.0f, false);
+    return;
+  }
   const CenteredCarouselLayout layout = centeredBounds(x, y, width, height, fullHeight);
   if (books_.size() > 1) {
     const CardBounds left{layout.sideX, layout.sideY, layout.sideWidth, layout.sideHeight};
@@ -373,6 +404,16 @@ int Favorites::hitTestCentered(const int index, const int x, const int y, const 
   if (books_.empty()) return -1;
   const int current = ((index % static_cast<int>(books_.size())) + static_cast<int>(books_.size())) %
                       static_cast<int>(books_.size());
+  if (books_.size() == 2) {
+    const CenteredCarouselLayout layout = twoBookBounds(areaX, areaY, areaW, areaH, fullHeight);
+    const CardBounds center{layout.centerX, layout.centerY, layout.centerWidth, layout.centerHeight};
+    if (x >= center.x && x < center.x + center.width && y >= center.y && y < center.y + center.height) return current;
+    const CardBounds side{layout.sideX, layout.sideY, layout.sideWidth, layout.sideHeight};
+    if (x >= side.x && x < side.x + side.width && y >= side.y && y < side.y + side.height) {
+      return (current + 1) % 2;
+    }
+    return current;
+  }
   const CenteredCarouselLayout layout = centeredBounds(areaX, areaY, areaW, areaH, fullHeight);
   const CardBounds center{layout.centerX, layout.centerY, layout.centerWidth, layout.centerHeight};
   if (x >= center.x && x < center.x + center.width && y >= center.y && y < center.y + center.height) return current;

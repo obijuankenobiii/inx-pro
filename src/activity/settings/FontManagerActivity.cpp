@@ -20,7 +20,6 @@
 #include "state/ReaderPreset.h"
 #include "state/ReaderSetting.h"
 #include "system/FontManager.h"
-#include "system/FontPreviews.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
 #include "util/StringUtils.h"
@@ -585,7 +584,7 @@ void FontManagerActivity::render() {
   // before replacing it with the Font Manager screen.
   renderer.syncWriteBufferFromActive();
   renderer.clearScreen();
-  const int bodyTop = SubPage::header(renderer, "Font");
+  const int bodyTop = SubPage::header(renderer, "Download", "Font");
   const int fontListTop = listTop(bodyTop);
   const int font = systemFontId();
   const int screenW = renderer.getScreenWidth();
@@ -677,13 +676,10 @@ void FontManagerActivity::render() {
                                    ? screenW - (kSideMargin * 2) - percentWidth - 20
                                    : screenW - (kSideMargin * 2) - kActionIconSize - 20;
       const std::string displayName = displayFontName(packages_[static_cast<size_t>(packageIndex)].name);
-      // FontPackageManager rescans and unloads SD streaming fonts when the
-      // install finishes. Keep the download UI on the built-in system font so
-      // it cannot render a preview font while that catalog is being replaced.
-      const int previewFont = state_ == State::Downloading
-                                  ? -1
-                                  : FontPreviews::fontIdForFamily(packages_[static_cast<size_t>(packageIndex)].installFamily);
-      const int nameFont = previewFont >= 0 ? previewFont : font;
+      // Keep the Store download list on the configured system font. Package
+      // names used to switch to a preview font here, which made this page
+      // ignore Settings -> Display -> System Font.
+      const int nameFont = font;
       const int textY = y + (kRowHeight - renderer.text.getLineHeight(nameFont)) / 2;
       const std::string packageName = renderer.text.truncate(nameFont, displayName.c_str(), maxNameWidth,
                                                               EpdFontFamily::REGULAR);

@@ -216,7 +216,7 @@ void DictionaryManagerActivity::onWifiSelectionComplete(const bool connected) {
 
 void DictionaryManagerActivity::render() {
   renderer.clearScreen();
-  const int bodyTop = SubPage::header(renderer, "Dictionary");
+  const int bodyTop = SubPage::header(renderer, "Download", "Dictionary");
   const int font = systemFontId();
   const int screenW = renderer.getScreenWidth();
   const int screenH = renderer.getScreenHeight();

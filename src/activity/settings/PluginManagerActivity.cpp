@@ -201,7 +201,7 @@ void PluginManagerActivity::displayTaskTrampoline(void* param) {
 
 void PluginManagerActivity::render() {
   renderer.clearScreen();
-  const int top = SubPage::header(renderer, "Plugins");
+  const int top = SubPage::header(renderer, "Download", "Plugin");
   const int screenW = renderer.getScreenWidth();  
   const int screenH = renderer.getScreenHeight();
   const int font = systemFontId();
@@ -260,7 +260,7 @@ void PluginManagerActivity::loop() {
     float ny = 0.0f;
     if (mappedInput.wasTouchTapInScreen(renderer, nx, ny)) {
       const int y = static_cast<int>(ny * renderer.getScreenHeight());
-      const int top = SubPage::header(renderer, "Plugins");
+      const int top = SubPage::header(renderer, "Download", "Plugin");
       if (y >= top && y < top + static_cast<int>(packages_.size()) * kRowHeight) {
         const size_t index = static_cast<size_t>((y - top) / kRowHeight);
         if (index < packages_.size()) {

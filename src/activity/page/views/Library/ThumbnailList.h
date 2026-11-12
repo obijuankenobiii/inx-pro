@@ -20,7 +20,8 @@ class ThumbnailList final {
                 std::function<void(int, bool)> select,
                 std::function<bool(const LibraryIndex::Book&)> isFavorite,
                 std::function<void(int, int)> outsideTap,
-                std::function<std::string(const LibraryIndex::Book&)> customThumbnail);
+                std::function<std::string(const LibraryIndex::Book&)> customThumbnail,
+                std::function<bool()> stripLeadingFolderSlash);
 
   void reset();
   bool handleInput();
@@ -44,6 +45,7 @@ class ThumbnailList final {
   std::function<bool(const LibraryIndex::Book&)> isFavorite;
   std::function<void(int, int)> outsideTap;
   std::function<std::string(const LibraryIndex::Book&)> customThumbnail;
+  std::function<bool()> stripLeadingFolderSlash;
   int page = 0;
 
   int top() const;

@@ -158,7 +158,7 @@ size_t visibleBookIndex(const std::vector<RecentBook>& books, const int index, c
 }
 
 LeftCardBounds leftCardBounds(const RecentBook& book, const int cardX, const int y, const int width, const int height,
-                              const bool fullHeight) {
+                              const bool fullHeight, const int alignedBottom = -1) {
   constexpr int horizontalPadding = kLeftCardMargin;
   const int topPadding = fullHeight ? 5 : 20;
   const int bottomPadding = fullHeight ? 5 : 20;
@@ -173,8 +173,26 @@ LeftCardBounds leftCardBounds(const RecentBook& book, const int cardX, const int
   const int cardHeight =
       std::max(24, std::min(contentHeight,
                             static_cast<int>(std::lround(static_cast<float>(cardWidth) * sourceHeight / sourceWidth))));
-  const int cardY = y + height - bottomPadding - cardHeight;
+  const int cardY = (alignedBottom >= 0 ? alignedBottom : y + height - bottomPadding) - cardHeight;
   return {cardX, cardY, cardWidth, cardHeight};
+}
+
+int leftCardAlignedBottom(const std::vector<RecentBook>& books, const int current, const int visible,
+                          const bool hideFirst, const int y, const int width, const int height,
+                          const bool fullHeight, const bool centerNoMenu) {
+  const int topPadding = fullHeight ? 5 : 20;
+  const int bottomPadding = fullHeight ? 5 : 20;
+  const int defaultBottom = y + height - bottomPadding;
+  if (!centerNoMenu || visible <= 0) return defaultBottom;
+
+  int maxCardHeight = 0;
+  for (int offset = 0; offset < visible; ++offset) {
+    const size_t bookIndex = visibleBookIndex(books, current + offset, hideFirst);
+    maxCardHeight = std::max(maxCardHeight,
+                             leftCardBounds(books[bookIndex], 0, y, width, height, fullHeight).height);
+  }
+  const int usableHeight = std::max(0, height - topPadding - bottomPadding);
+  return y + topPadding + (usableHeight + maxCardHeight) / 2;
 }
 
 CarouselBounds bounds(const int areaX, const int areaY, const int areaW, const int areaH, const bool fullHeight) {
@@ -226,12 +244,13 @@ void Carousel::render(const int index, const int x, const int y, const int width
                       const bool background, const HomeTheme::CarouselStyle style, const bool showLabel,
                       const HomeTheme::CarouselLabelColor labelColor, const HomeTheme::CarouselShadowStyle shadowStyle,
                       const bool showProgress, const bool hideFirst, const bool fullHeight,
-                      const bool fourBooks) const {
+                      const bool fourBooks, const bool centerLeftNoMenu) const {
   renderBackground(x, y, width, height, background);
   const ContentArea content = contentArea(y, height, showLabel);
   if (showLabel) renderLabel(x, y, "Continue Reading", labelColor);
   if (style == HomeTheme::CarouselStyle::Left) {
-    renderLeft(index, x, content.y, width, content.height, shadowStyle, showProgress, hideFirst, fullHeight);
+    renderLeft(index, x, content.y, width, content.height, shadowStyle, showProgress, hideFirst, fullHeight,
+               centerLeftNoMenu);
     return;
   }
   const auto& books = RECENT_BOOKS.getBooks();
@@ -310,7 +329,7 @@ void Carousel::render(const int index, const int x, const int y, const int width
 
 void Carousel::renderLeft(const int index, const int x, const int y, const int width, const int height,
                           const HomeTheme::CarouselShadowStyle shadowStyle, const bool showProgress,
-                          const bool hideFirst, const bool fullHeight) const {
+                          const bool hideFirst, const bool fullHeight, const bool centerNoMenu) const {
   const auto& books = RECENT_BOOKS.getBooks();
   const size_t count = visibleBookCount(books, hideFirst);
   if (count == 0) {
@@ -321,10 +340,12 @@ void Carousel::renderLeft(const int index, const int x, const int y, const int w
   const int current = ((index % static_cast<int>(count)) + static_cast<int>(count)) % static_cast<int>(count);
   const bool even = evenThumbnails();
   const int visible = std::min(4, static_cast<int>(count));
+  const int alignedBottom = leftCardAlignedBottom(books, current, visible, hideFirst, y, width, height, fullHeight,
+                                                  centerNoMenu);
   int cardX = x + kLeftCardMargin;
   for (int offset = 0; offset < visible; ++offset) {
     const size_t bookIndex = visibleBookIndex(books, current + offset, hideFirst);
-    const LeftCardBounds card = leftCardBounds(books[bookIndex], cardX, y, width, height, fullHeight);
+    const LeftCardBounds card = leftCardBounds(books[bookIndex], cardX, y, width, height, fullHeight, alignedBottom);
     if (card.x >= x + width) break;
     const int visibleWidth = std::min(card.width, x + width - card.x);
     if (visibleWidth <= 0) break;
@@ -341,7 +362,7 @@ void Carousel::renderLeft(const int index, const int x, const int y, const int w
 void Carousel::preload(const int index, const int x, const int y, const int width, const int height,
                        const HomeTheme::CarouselStyle style, const bool showLabel,
                        const HomeTheme::CarouselLabelColor /*labelColor*/, const bool hideFirst,
-                       const bool fullHeight, const bool fourBooks) const {
+                       const bool fullHeight, const bool fourBooks, const bool centerLeftNoMenu) const {
   const auto& books = RECENT_BOOKS.getBooks();
   const size_t count = visibleBookCount(books, hideFirst);
   if (count == 0 || width <= 0 || height <= 0) return;
@@ -352,10 +373,12 @@ void Carousel::preload(const int index, const int x, const int y, const int widt
     for (size_t current = 0; current < count; ++current) {
       int cardX = x + kLeftCardMargin;
       const int visible = std::min(4, static_cast<int>(count));
+      const int alignedBottom = leftCardAlignedBottom(books, static_cast<int>(current), visible, hideFirst,
+                                                      content.y, width, content.height, fullHeight, centerLeftNoMenu);
       for (int offset = 0; offset < visible; ++offset) {
         const size_t bookIndex = visibleBookIndex(books, static_cast<int>(current) + offset, hideFirst);
         const LeftCardBounds card = leftCardBounds(books[bookIndex], cardX, content.y, width, content.height,
-                                                   fullHeight);
+                                                   fullHeight, alignedBottom);
         if (card.x >= x + width) break;
         const int visibleWidth = std::min(card.width, x + width - card.x);
         if (visibleWidth > 0) {
@@ -482,11 +505,12 @@ void Carousel::previewLeft(const int x, const int y, const int width, const int 
 int Carousel::hitTest(const int index, const int count, const int x, const int y, const int areaX, const int areaY,
                       const int areaW, const int areaH, const HomeTheme::CarouselStyle style, const bool showLabel,
                       const HomeTheme::CarouselLabelColor /*labelColor*/, const bool hideFirst,
-                      const bool fullHeight, const bool fourBooks) const {
+                      const bool fullHeight, const bool fourBooks, const bool centerLeftNoMenu) const {
   if (count <= 0 || x < areaX || x >= areaX + areaW || y < areaY || y >= areaY + areaH) return -1;
   const ContentArea content = contentArea(areaY, areaH, showLabel);
   if (style == HomeTheme::CarouselStyle::Left) {
-    return hitTestLeft(index, count, x, y, areaX, content.y, areaW, content.height, hideFirst, fullHeight);
+    return hitTestLeft(index, count, x, y, areaX, content.y, areaW, content.height, hideFirst, fullHeight,
+                       centerLeftNoMenu);
   }
   const auto& books = RECENT_BOOKS.getBooks();
   const int visibleCount = std::min(count, static_cast<int>(visibleBookCount(books, hideFirst)));
@@ -536,16 +560,20 @@ int Carousel::hitTest(const int index, const int count, const int x, const int y
 }
 
 int Carousel::hitTestLeft(const int index, const int count, const int x, const int y, const int areaX, const int areaY,
-                          const int areaW, const int areaH, const bool hideFirst, const bool fullHeight) const {
+                          const int areaW, const int areaH, const bool hideFirst, const bool fullHeight,
+                          const bool centerNoMenu) const {
   const auto& books = RECENT_BOOKS.getBooks();
   const int visibleCount = std::min(count, static_cast<int>(visibleBookCount(books, hideFirst)));
   if (visibleCount <= 0) return -1;
   const int current = ((index % visibleCount) + visibleCount) % visibleCount;
   const int visible = std::min(4, visibleCount);
+  const int alignedBottom = leftCardAlignedBottom(books, current, visible, hideFirst, areaY, areaW, areaH, fullHeight,
+                                                  centerNoMenu);
   int cardX = areaX + kLeftCardMargin;
   for (int offset = 0; offset < visible; ++offset) {
     const size_t bookIndex = visibleBookIndex(books, current + offset, hideFirst);
-    const LeftCardBounds card = leftCardBounds(books[bookIndex], cardX, areaY, areaW, areaH, fullHeight);
+    const LeftCardBounds card = leftCardBounds(books[bookIndex], cardX, areaY, areaW, areaH, fullHeight,
+                                               alignedBottom);
     if (x >= card.x && x < card.x + card.width && y >= card.y && y < card.y + card.height) {
       return static_cast<int>(bookIndex);
     }

@@ -64,7 +64,8 @@ void HomeWidgetLayout::preloadCarousel(const HomeTheme::Theme& theme, const int 
     const Bounds bounds = slotBounds(layout, slot);
     carousel_.preload(carouselIndex, bounds.x, bounds.y, bounds.width, bounds.height, theme.carouselStyles[slot],
                       theme.carouselLabels[slot] != 0, theme.carouselLabelColors[slot], hideFirst,
-                      theme.carouselFullHeight[slot] != 0, theme.layout == HomeTheme::Layout::OneByThree);
+                      theme.carouselFullHeight[slot] != 0, theme.layout == HomeTheme::Layout::OneByThree,
+                      theme.layout == HomeTheme::Layout::OneByTwo && SETTINGS.hiddenMenu != 0);
   }
 }
 
@@ -250,7 +251,8 @@ void HomeWidgetLayout::renderSlot(const HomeTheme::Theme& theme, const int slot,
       carousel_.render(carouselIndex, bounds.x, bounds.y, bounds.width, bounds.height, theme.backgrounds[slot] != 0,
                        theme.carouselStyles[slot], theme.carouselLabels[slot] != 0, theme.carouselLabelColors[slot],
                        theme.carouselShadowStyles[slot], theme.carouselProgress[slot] != 0, hideFirst,
-                       theme.carouselFullHeight[slot] != 0, theme.layout == HomeTheme::Layout::OneByThree);
+                       theme.carouselFullHeight[slot] != 0, theme.layout == HomeTheme::Layout::OneByThree,
+                       theme.layout == HomeTheme::Layout::OneByTwo && SETTINGS.hiddenMenu != 0);
       break;
     case HomeTheme::Widget::Shortcuts: shortcut_.render(bounds.x, bounds.y, bounds.width, bounds.height); break;
     case HomeTheme::Widget::ListShortcuts: shortcutList_.render(bounds.x, bounds.y, bounds.width, bounds.height); break;
@@ -431,7 +433,8 @@ int HomeWidgetLayout::carouselAt(const HomeTheme::Theme& theme, const int carous
   return carousel_.hitTest(carouselIndex, count, x, y, bounds.x, bounds.y, bounds.width, bounds.height,
                            theme.carouselStyles[slot], theme.carouselLabels[slot] != 0, theme.carouselLabelColors[slot],
                            hideFirst, theme.carouselFullHeight[slot] != 0,
-                           theme.layout == HomeTheme::Layout::OneByThree);
+                           theme.layout == HomeTheme::Layout::OneByThree,
+                           theme.layout == HomeTheme::Layout::OneByTwo && SETTINGS.hiddenMenu != 0);
 }
 
 bool HomeWidgetLayout::hideFirstCarouselBook(const HomeTheme::Theme& theme) const {

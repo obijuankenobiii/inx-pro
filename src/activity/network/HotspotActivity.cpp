@@ -333,17 +333,19 @@ void HotspotActivity::renderServerRunning() const {
   const int labelFont = systemFontIdForPointSize(8);
   const int titleFont = systemFontIdForPointSize(14);
   const int bodyFont = systemFontId();
+  const int bodyLineHeight = renderer.text.getLineHeight(bodyFont);
+  const int ipOffset = 61 + bodyLineHeight + 8;
 
   renderer.text.render(labelFont, textX, wifiY, "STEP 1", true, EpdFontFamily::BOLD);
   renderer.text.render(titleFont, textX, wifiY + 24, "Join WiFi", true, EpdFontFamily::BOLD);
   renderer.text.render(bodyFont, textX, wifiY + 61, truncateString(connectedSSID, 20).c_str(), true);
-  renderer.text.render(systemFontIdForPointSize(8), textX, wifiY + 86, connectedIP.c_str());
+  renderer.text.render(systemFontIdForPointSize(8), textX, wifiY + ipOffset, connectedIP.c_str());
   drawQRCode(qrX, wifiY, "WIFI:S:" + connectedSSID + ";;");
 
   renderer.text.render(labelFont, textX, webY, "STEP 2", true, EpdFontFamily::BOLD);
   renderer.text.render(titleFont, textX, webY + 24, "Open Transfer", true, EpdFontFamily::BOLD);
   renderer.text.render(bodyFont, textX, webY + 61, hostnameUrl.c_str(), true);
-  renderer.text.render(systemFontIdForPointSize(8), textX, webY + 86, ipUrl.c_str());
+  renderer.text.render(systemFontIdForPointSize(8), textX, webY + ipOffset, ipUrl.c_str());
   drawQRCode(qrX, webY, hostnameUrl);
 
   auto labels = mappedInput.mapLabels("« Back", "", "", "");
