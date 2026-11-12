@@ -814,7 +814,8 @@ bool ImageDisplayCache::hasCombinedTwoBit(GfxRenderer& renderer, const std::stri
 bool ImageDisplayCache::renderCombinedTwoBit(GfxRenderer& renderer, const std::string& sourcePath, const int x,
                                              const int y, const int width, const int height,
                                              const ImageDisplayCacheOptions& options, const bool quality,
-                                             const bool fastQuality, const std::function<void()>& overlay) {
+                                             const bool fastQuality, const std::function<void()>& overlay,
+                                             const bool allowWindowedQualityWithOverlay) {
   SdIoMutex::Lock ioLock;
   const unsigned long hqStartedAt = millis();
   unsigned long hqFileReadMs = 0;
@@ -893,7 +894,8 @@ bool ImageDisplayCache::renderCombinedTwoBit(GfxRenderer& renderer, const std::s
   file.close();
   hqFileReadMs = millis() - hqStartedAt;
 
-  const bool useWindow = quality && renderer.supportsWindowedQuality() && !overlay;
+  const bool useWindow = quality && renderer.supportsWindowedQuality() &&
+                         (!overlay || allowWindowedQualityWithOverlay);
   const GfxRenderer::DisplayRegion window{x, y, width, height};
   if (quality) {
     if (useWindow) renderer.prepareQualityGrayscaleWindow(window);

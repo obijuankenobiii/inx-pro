@@ -213,13 +213,27 @@ void EpubImageViewerUi::render(EpubActivity& activity) {
 
   const ImageRender image = ImageRender::create(activity.renderer, path);
   if (options.mode == ImageRenderMode::TwoBit) {
-    const auto drawOverlay = [this, &activity, isPng, options, x, y, width, height] {
+    const bool useWindowedQuality = !isPng && options.quality && activity.renderer.supportsWindowedQuality();
+    options.allowWindowedQualityWithOverlay = useWindowedQuality;
+    const auto capturePlane = [this, &activity, x, y, width, height] {
+      if (zoomLevel == 1) {
+        captureGrayscalePlane(activity.renderer, x, y, width, height);
+      }
+    };
+    const auto drawOverlay = [this, &activity, isPng, x, y, width, height] {
       if (!isPng && zoomLevel == 1) {
         captureGrayscalePlane(activity.renderer, x, y, width, height);
       }
       buttons(activity);
     };
-    image.displayGrayscale(x, y, width, height, options, options.quality, drawOverlay);
+    if (useWindowedQuality) {
+      image.displayGrayscale(x, y, width, height, options, options.quality, capturePlane);
+    } else {
+      image.displayGrayscale(x, y, width, height, options, options.quality, drawOverlay);
+    }
+    if (useWindowedQuality) {
+      renderButtonsAfterWindow(activity);
+    }
   } else if (image.render(x, y, width, height, options)) {
     fitX = (screenWidth - fitWidth) / 2;
     fitY = (screenHeight - fitHeight) / 2;
@@ -250,6 +264,8 @@ void EpubImageViewerUi::releaseRasterCache() {
   }
   rasterCacheBytes = 0;
   grayscaleCacheBytes = 0;
+  grayscaleLsbHasInk = false;
+  grayscaleMsbHasInk = false;
   rasterWidth = 0;
   rasterHeight = 0;
 }
@@ -344,6 +360,8 @@ bool EpubImageViewerUi::captureGrayscalePlane(const GfxRenderer& renderer, const
       grayscaleLsbCache = nullptr;
       grayscaleMsbCache = nullptr;
       grayscaleCacheBytes = 0;
+    grayscaleLsbHasInk = false;
+    grayscaleMsbHasInk = false;
       return false;
     }
     grayscaleCacheBytes = bytes;
@@ -362,9 +380,18 @@ bool EpubImageViewerUi::captureGrayscalePlane(const GfxRenderer& renderer, const
     default:
       return false;
   }
+  bool* hasInk = target == grayscaleLsbCache ? &grayscaleLsbHasInk : &grayscaleMsbHasInk;
+  *hasInk = false;
   for (int row = 0; row < height; ++row) {
-    if (!renderer.readPackedRow1bpp(x, y + row, width, target + static_cast<size_t>(row) * rowBytes)) {
+    uint8_t* rowTarget = target + static_cast<size_t>(row) * rowBytes;
+    if (!renderer.readPackedRow1bpp(x, y + row, width, rowTarget)) {
       return false;
+    }
+    for (size_t byte = 0; byte < rowBytes; ++byte) {
+      if (rowTarget[byte] != 0) {
+        *hasInk = true;
+        break;
+      }
     }
   }
   return true;
@@ -372,8 +399,8 @@ bool EpubImageViewerUi::captureGrayscalePlane(const GfxRenderer& renderer, const
 
 bool EpubImageViewerUi::renderCachedGrayscaleZoom(EpubActivity& activity, const int x, const int y, const int width,
                                                   const int height, const ImageRender::Options& options) const {
-  if (zoomLevel <= 1 || !grayscaleLsbCache || !grayscaleMsbCache || grayscaleCacheBytes == 0 || fitWidth <= 0 ||
-      fitHeight <= 0 || width <= 0 || height <= 0) {
+  if (zoomLevel <= 1 || !grayscaleLsbCache || !grayscaleMsbCache || grayscaleCacheBytes == 0 ||
+      (!grayscaleLsbHasInk && !grayscaleMsbHasInk) || fitWidth <= 0 || fitHeight <= 0 || width <= 0 || height <= 0) {
     return false;
   }
 
@@ -388,12 +415,22 @@ bool EpubImageViewerUi::renderCachedGrayscaleZoom(EpubActivity& activity, const 
   const int visibleWidth = right - left;
   const size_t sourceRowBytes = (static_cast<size_t>(fitWidth) + 7u) / 8u;
   std::vector<uint8_t> scaledRow((static_cast<size_t>(visibleWidth) + 7u) / 8u, 0);
+  // Picco's partial waveform is safe for the initial source render, but a
+  // zoomed cache can extend beyond the panel and has a clipped logical
+  // window. Use the full HQ framebuffer path here so the cached pixels are
+  // transferred with the controller's normal full-frame baseline handling.
+  const bool useWindowedQuality = false;
+  const GfxRenderer::DisplayRegion window{x, y, width, height};
   const bool wasImageRendering = activity.renderer.isImageRendering();
   activity.renderer.setImageRendering(true);
   activity.renderer.renderGrayscalePasses(
       options.quality, /*preserveText=*/false,
       [&] {
-        activity.renderer.clearScreen(options.quality ? 0xFF : 0x00);
+        if (useWindowedQuality) {
+          activity.renderer.clearRect(window, 0xFF);
+        } else {
+          activity.renderer.clearScreen(options.quality ? 0xFF : 0x00);
+        }
         const bool lsb = activity.renderer.getRenderMode() == GfxRenderer::GRAY2_LSB ||
                         activity.renderer.getRenderMode() == GfxRenderer::GRAYSCALE_LSB;
         const uint8_t* source = lsb ? grayscaleLsbCache : grayscaleMsbCache;
@@ -410,11 +447,29 @@ bool EpubImageViewerUi::renderCachedGrayscaleZoom(EpubActivity& activity, const 
           }
           activity.renderer.drawPackedRow1bpp(left, screenY, visibleWidth, scaledRow.data());
         }
-        buttons(activity);
+        if (!useWindowedQuality) {
+          buttons(activity);
+        }
       },
-      options.fastQuality);
+      options.fastQuality, useWindowedQuality ? &window : nullptr);
   activity.renderer.setImageRendering(wasImageRendering);
+  if (useWindowedQuality) {
+    renderButtonsAfterWindow(activity);
+  }
   return true;
+}
+
+void EpubImageViewerUi::renderButtonsAfterWindow(EpubActivity& activity) const {
+  GfxRenderer& renderer = activity.renderer;
+  renderer.syncWriteBufferFromActive();
+  buttons(activity);
+  const GfxRenderer::DisplayRegion region{
+      rotateX(renderer) - closeHitPadding,
+      closeMargin - closeHitPadding,
+      closeSize * 2 + buttonGap + closeHitPadding * 2,
+      closeSize + closeHitPadding * 2,
+  };
+  renderer.displayWindow(region, HalDisplay::FAST_REFRESH);
 }
 
 void EpubImageViewerUi::zoom(EpubActivity& activity) {

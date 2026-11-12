@@ -325,7 +325,8 @@ bool ImageRender::displayGrayscale(int x, int y, int width, int height, const Op
   const bool effectiveQuality = quality && format_ != Format::Png;
   // An overlay may draw outside the image rectangle (for example image-viewer
   // controls), so keep the existing full-frame path whenever one is present.
-  const bool useWindowedQuality = effectiveQuality && !overlay && renderer_.supportsWindowedQuality();
+  const bool useWindowedQuality = effectiveQuality && renderer_.supportsWindowedQuality() &&
+                                  (!overlay || options.allowWindowedQualityWithOverlay);
   const GfxRenderer::DisplayRegion imageRegion{x, y, width, height};
   Options opt = options;
   opt.mode = ImageRenderMode::TwoBit;
@@ -341,7 +342,8 @@ bool ImageRender::displayGrayscale(int x, int y, int width, int height, const Op
 
   if (options.useDisplayCache &&
       ImageDisplayCache::renderCombinedTwoBit(renderer_, path_, x, y, width, height, combinedCacheOptions,
-                                              effectiveQuality, opt.fastQuality, overlay)) {
+                                              effectiveQuality, opt.fastQuality, overlay,
+                                              options.allowWindowedQualityWithOverlay)) {
     return true;
   }
 

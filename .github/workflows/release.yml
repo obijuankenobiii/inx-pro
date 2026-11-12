@@ -60,14 +60,6 @@ jobs:
           test -s "${GITHUB_WORKSPACE}/.pio/build/picco/firmware.bin"
           cp "${GITHUB_WORKSPACE}/.pio/build/picco/firmware.bin" "${GITHUB_WORKSPACE}/release/picco.bin"
 
-      - name: Build Picco recovery
-        run: |
-          pio run -e picco-recovery
-          test -s "${GITHUB_WORKSPACE}/.pio/build/picco-recovery/firmware.bin"
-          test -s "${GITHUB_WORKSPACE}/.pio/build/picco-recovery/firmware.factory.bin"
-          cp "${GITHUB_WORKSPACE}/.pio/build/picco-recovery/firmware.bin" "${GITHUB_WORKSPACE}/release/picco-recovery.bin"
-          cp "${GITHUB_WORKSPACE}/.pio/build/picco-recovery/firmware.factory.bin" "${GITHUB_WORKSPACE}/release/picco-recovery-merged.bin"
-
       - name: Build T5 S3
         run: |
           pio run -e t5s3
@@ -81,8 +73,6 @@ jobs:
           test -s "${GITHUB_WORKSPACE}/release/x4pro.bin"
           test -s "${GITHUB_WORKSPACE}/release/murphy_m4.bin"
           test -s "${GITHUB_WORKSPACE}/release/picco.bin"
-          test -s "${GITHUB_WORKSPACE}/release/picco-recovery.bin"
-          test -s "${GITHUB_WORKSPACE}/release/picco-recovery-merged.bin"
           test -s "${GITHUB_WORKSPACE}/release/t5s3.bin"
 
       - name: Upload build artifacts
@@ -95,20 +85,17 @@ jobs:
             release/x4pro.bin
             release/murphy_m4.bin
             release/picco.bin
-            release/picco-recovery.bin
-            release/picco-recovery-merged.bin
             release/t5s3.bin
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
+          prerelease: true
           files: |
             release/sticky.bin
             release/sticky-merged.bin
             release/x4pro.bin
             release/murphy_m4.bin
             release/picco.bin
-            release/picco-recovery.bin
-            release/picco-recovery-merged.bin
             release/t5s3.bin

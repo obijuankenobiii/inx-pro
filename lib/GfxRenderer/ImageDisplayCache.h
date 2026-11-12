@@ -48,7 +48,8 @@ class ImageDisplayCache {
    * contract as displayTwoBitIfAvailable() - single SD open instead of two. */
   static bool renderCombinedTwoBit(GfxRenderer& renderer, const std::string& sourcePath, int x, int y, int width,
                                    int height, const ImageDisplayCacheOptions& options, bool quality,
-                                   bool fastQuality, const std::function<void()>& overlay = {});
+                                   bool fastQuality, const std::function<void()>& overlay = {},
+                                   bool allowWindowedQualityWithOverlay = false);
   /** Captures the plane currently in the framebuffer into an in-memory scratch slot (call once per pass,
    * right after rendering it, before the next pass overwrites the framebuffer). */
   static bool captureTwoBitPlane(GfxRenderer& renderer, int x, int y, int width, int height, bool isMsbPlane);

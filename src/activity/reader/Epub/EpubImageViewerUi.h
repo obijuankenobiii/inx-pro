@@ -32,6 +32,7 @@ class EpubImageViewerUi {
   bool captureGrayscalePlane(const GfxRenderer& renderer, int x, int y, int width, int height);
   bool renderCachedGrayscaleZoom(EpubActivity& activity, int x, int y, int width, int height,
                                  const ImageRender::Options& options) const;
+  void renderButtonsAfterWindow(EpubActivity& activity) const;
   void buttons(EpubActivity& activity) const;
   bool closeAt(EpubActivity& activity, int x, int y) const;
   bool rotateAt(EpubActivity& activity, int x, int y) const;
@@ -61,5 +62,7 @@ class EpubImageViewerUi {
   uint8_t* grayscaleLsbCache = nullptr;
   uint8_t* grayscaleMsbCache = nullptr;
   size_t grayscaleCacheBytes = 0;
+  bool grayscaleLsbHasInk = false;
+  bool grayscaleMsbHasInk = false;
   bool cleanRefreshRequired = false;
 };

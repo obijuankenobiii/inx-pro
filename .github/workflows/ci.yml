@@ -34,4 +34,4 @@ jobs:
         run: PATH="/usr/lib/llvm-21/bin:$PATH" ./bin/clang-format-fix && git diff --exit-code || (echo "Please run 'bin/clang-format-fix' to fix formatting issues" && exit 1)
 
       - name: Build Inx
-        run: pio run -e sticky -e x4pro -e murphy_m4 -e picco -e picco-recovery -e t5s3
+        run: pio run -e sticky -e x4pro -e murphy_m4 -e picco -e t5s3
