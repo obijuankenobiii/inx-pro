@@ -33,7 +33,7 @@ namespace {
 
 // Keep Theme's mode/theme lists aligned with the shared Settings list geometry.
 constexpr int kRowHeight = SettingsListLayout::kRowHeight;
-constexpr int kThemeListGap = 20;
+constexpr int kBottomButtonMargin = 20;
 // SubPage::header leaves a 20pt gap below the header icon before page content.
 constexpr int kThemeContentTop = navigation::Menu::topPadding + navigation::Menu::iconSize + 20;
 
@@ -48,6 +48,13 @@ PreviewBounds widgetPreviewBounds(const GfxRenderer& renderer) {
   const int contentTop = kThemeContentTop;
   const int previewHeight = std::max(1, renderer.getScreenHeight() - contentTop - 20);
   return {0, contentTop, renderer.getScreenWidth(), previewHeight};
+}
+
+ButtonBounds newThemeButtonBounds(const GfxRenderer& renderer, const int font) {
+  constexpr const char* label = "New theme +";
+  const int width = Button::width(renderer, label, font);
+  const int y = renderer.getScreenHeight() - navigation::Menu::bottomInset() - kBottomButtonMargin - Button::height;
+  return {renderer.getScreenWidth() - 20 - width, y, width, Button::height};
 }
 
 int layoutIndex(const HomeTheme::Layout layout) {
@@ -414,14 +421,11 @@ void ThemePickerActivity::renderList() {
   const int font = systemFontId();
   const int width = renderer.getScreenWidth();
   const int themeCount = sleepMode_ ? HomeTheme::sleepCount() : HomeTheme::count();
-  const int newY = contentTop;
-  renderer.rectangle.fill(0, newY, width, kRowHeight, static_cast<int>(GfxRenderer::FillTone::Paper));
   constexpr const char* newThemeLabel = "New theme +";
-  const int buttonWidth = Button::width(renderer, newThemeLabel, font);
-  const ButtonBounds button{width - 20 - buttonWidth, newY, buttonWidth, Button::height};
+  const ButtonBounds button = newThemeButtonBounds(renderer, font);
   Button::render(renderer, button, newThemeLabel, false, font);
 
-  const int themeListTop = contentTop + kRowHeight + kThemeListGap;
+  const int themeListTop = contentTop;
   for (int i = 0; i < themeCount; ++i) {
     const int y = themeListTop + i * kRowHeight;
     const HomeTheme::Theme& theme = sleepMode_ ? HomeTheme::sleepAt(i) : HomeTheme::at(i);
@@ -1449,11 +1453,13 @@ void ThemePickerActivity::handleTouch(const int x, const int y) {
       handleThemeAction(std::min(2, optionY / box.row));
       return;
     }
-    if (y >= contentTop && y < contentTop + kRowHeight) {
+    const ButtonBounds newThemeButton = newThemeButtonBounds(renderer, systemFontId());
+    if (x >= newThemeButton.x && x < newThemeButton.x + newThemeButton.width && y >= newThemeButton.y &&
+        y < newThemeButton.y + newThemeButton.height) {
       beginNewTheme();
       return;
     }
-    const int themeListTop = contentTop + kRowHeight + kThemeListGap;
+    const int themeListTop = contentTop;
     const int themeCount = sleepMode_ ? HomeTheme::sleepCount() : HomeTheme::count();
     if (y >= themeListTop && y < themeListTop + themeCount * kRowHeight) {
       const int index = (y - themeListTop) / kRowHeight;

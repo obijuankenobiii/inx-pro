@@ -26,22 +26,12 @@ extern void onGoToStatistics();
 
 namespace {
 
-constexpr int panelTabY = navigation::Menu::height + 20;
-constexpr int panelTabHeight = Button::height + 20;
+constexpr int panelTabY = navigation::Menu::height + 10;
+constexpr int panelTabHeight = Button::height + 25;
 constexpr int panelTabCount = 3;
 
 int panelTabHorizontalPadding() {
-  // Larger UI fonts need more label room, so tighten the tab inset as the
-  // configured system text size grows instead of letting the label truncate.
-  switch (SETTINGS.systemTextSize) {
-    case SystemSetting::SYSTEM_TEXT_LARGE:
-      return 8;
-    case SystemSetting::SYSTEM_TEXT_MEDIUM:
-      return 12;
-    case SystemSetting::SYSTEM_TEXT_SMALL:
-    default:
-      return 16;
-  }
+  return 20;
 }
 
 int panelTabX(const GfxRenderer& renderer, const int index) {
@@ -49,7 +39,7 @@ int panelTabX(const GfxRenderer& renderer, const int index) {
 }
 
 void renderPanelTab(const GfxRenderer& renderer, const int x, const int y, const int width, const int height,
-                    const char* label, const bool selected) {
+                    const char* label, const int alignment, const bool selected) {
   const int font = systemFontId();
   const int horizontalPadding = panelTabHorizontalPadding();
   const std::string shown = renderer.text.truncate(font, label ? label : "",
@@ -57,7 +47,9 @@ void renderPanelTab(const GfxRenderer& renderer, const int x, const int y, const
   const EpdFontFamily::Style style = selected ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR;
   const int textWidth = renderer.text.getUntranslatedWidth(font, shown.c_str(), style);
   const int textY = y + (height - renderer.text.getLineHeight(font)) / 2;
-  const int textX = x + (width - textWidth) / 2;
+  const int textX = alignment == 0       ? x + horizontalPadding
+                    : alignment == 2 ? x + width - horizontalPadding - textWidth
+                                     : x + (width - textWidth) / 2;
   renderer.text.renderUntranslated(font, textX, textY, shown.c_str(), true, style);
 
   if (selected) {
@@ -354,6 +346,7 @@ void Settings::panelTabs() {
     const int width = panelTabX(renderer, index + 1) - x;
     renderPanelTab(renderer, x, panelTabY, width, panelTabHeight,
                    index == 0 ? "System" : index == 1 ? "Reader" : "Presets",
+                   index,
                    (index == 0 && currentPanel == SettingsPanel::System) ||
                        (index == 1 && currentPanel == SettingsPanel::Reader) ||
                        (index == 2 && currentPanel == SettingsPanel::Presets));
