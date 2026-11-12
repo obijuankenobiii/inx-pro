@@ -131,6 +131,11 @@ class HalGPIO {
 
   bool suppressTouchUntilRelease = false;
   bool touchSwipeLatchedDuringDisplay = false;
+  mutable bool suppressPostSwipeTap = false;
+  // Keep a rejected post-swipe tap rejected if more than one activity queries
+  // the same release event in the current input frame.
+  mutable bool postSwipeTapBlockedThisFrame = false;
+  unsigned long swipeDetectedAtMs = 0;
 };
 
 extern HalGPIO gpio;

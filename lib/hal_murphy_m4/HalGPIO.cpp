@@ -112,6 +112,8 @@ void HalGPIO::serviceTouchGestures() {
   if (touchDriver.wasSwipe(sx, sy, ex, ey)) {
     touchSwipeStartNx = sx;
     touchSwipeStartNy = sy;
+    suppressPostSwipeTap = true;
+    swipeDetectedAtMs = millis();
     const float dx = ex - sx;
     const float dy = ey - sy;
     if (std::fabs(dy) > std::fabs(dx)) {
@@ -133,6 +135,9 @@ void HalGPIO::update() {
     touchSwipeLatchedDuringDisplay = false;
     return;
   }
+  // Start a fresh query window. All callers in the previous release frame
+  // must observe the same suppressed result.
+  postSwipeTapBlockedThisFrame = false;
   inputMgr.update();
   touchDriver.update();
   float pressedNx = 0.0f;
@@ -172,8 +177,24 @@ bool HalGPIO::isTouchHeldAt(float& nx, float& ny) const { return touchDriver.isH
 bool HalGPIO::wasTouchActivity() const { return touchDriver.wasActivity(); }
 
 bool HalGPIO::wasTouchTap(float& nx, float& ny) const {
-  if (suppressTouchUntilRelease) return false;
+  if (suppressTouchUntilRelease || touchDriver.isPressed() || postSwipeTapBlockedThisFrame) return false;
   const bool tapped = touchDriver.wasTap(nx, ny);
+  if (tapped && suppressPostSwipeTap) {
+    // Murphy can remain in the panel BUSY interval after a swipe. A duplicate
+    // short contact may arrive after that interval and must not become a tap.
+    constexpr unsigned long kPostSwipeTapWindowMs = 3000;
+    constexpr unsigned long kPostSwipeTapMaxHoldMs = 300;
+    const unsigned long elapsed = millis() - swipeDetectedAtMs;
+    const unsigned long heldMs = touchDriver.lastHeldMs();
+    const bool shortTap = heldMs <= kPostSwipeTapMaxHoldMs;
+    suppressPostSwipeTap = false;
+    if (elapsed <= kPostSwipeTapWindowMs && shortTap) {
+      postSwipeTapBlockedThisFrame = true;
+      INX_SERIAL.printf("[MURPHY_M4] suppressed post-swipe tap nx=%.3f ny=%.3f held=%lums elapsed=%lums\n", nx, ny,
+                        heldMs, elapsed);
+      return false;
+    }
+  }
   if (tapped) {
     INX_SERIAL.printf("[MURPHY_M4] wasTouchTap() -> nx=%.3f ny=%.3f\n", nx, ny);
   }
@@ -224,6 +245,7 @@ void HalGPIO::ignoreCurrentTouchUntilRelease() {
 
 void HalGPIO::discardTouchSwipe() {
   touchSwipeDirection = TouchSwipe::None;
+  // Keep the one-shot post-swipe tap guard across the activity transition.
   touchPressedEvents = 0;
   touchReleasedEvents = 0;
 }
