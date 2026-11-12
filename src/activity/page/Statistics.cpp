@@ -36,9 +36,12 @@
 #include "images/Calendar.h"
 #include "images/DeviceDisplay.h"
 #include "images/LibraryFilterRight.h"
+#include "images/Morning.h"
 #include "images/Refresh.h"
 #include "images/StatsPie.h"
 #include "images/StatisticsPeriodToggle.h"
+#include "images/Moon.h"
+#include "images/Sun.h"
 #include <Epub/BookMetadataCache.h>
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
@@ -197,10 +200,11 @@ struct SingleBookLayout {
 };
 
 SingleBookLayout singleBookLayout(const GfxRenderer& renderer) {
+  constexpr int kTopToMiddleTransferPx = 12;
   const int areaY = kStatsContentTop;
   const int areaH = std::max(0, renderer.getScreenHeight() - areaY - kStatsContentBottomPadding);
   const int baseH = areaH / 3;
-  const int topH = std::max(1, (baseH * 90) / 100);
+  const int topH = std::max(1, (baseH * 85) / 100 - kTopToMiddleTransferPx);
   const int transferredH = baseH - topH;
   const int middleH = baseH + transferredH;
   const int bottomH = std::max(0, areaH - topH - middleH);
@@ -576,20 +580,28 @@ static void drawGlobalAllItemsGaugeRow(const GfxRenderer& renderer, int innerLef
   const int innerW = innerRight - innerLeft;
   const char* line1 = "of your books";
   const char* line2 = "are finished.";
-  const int font = systemFontId();
-  const int textW = std::max(renderer.text.getWidth(font, line1), renderer.text.getWidth(font, line2));
-  const int groupW = kGlobalAllItemsDonutR * 2 + kGlobalAllItemsDonutTextGap + textW;
+  int font = systemFontId();
+  int textW = std::max(renderer.text.getWidth(font, line1), renderer.text.getWidth(font, line2));
+  int groupW = kGlobalAllItemsDonutR * 2 + kGlobalAllItemsDonutTextGap + textW;
+  for (const int fallbackSize : {12, 10, 8}) {
+    if (groupW <= innerW) break;
+    font = systemFontIdForPointSize(fallbackSize);
+    textW = std::max(renderer.text.getWidth(font, line1), renderer.text.getWidth(font, line2));
+    groupW = kGlobalAllItemsDonutR * 2 + kGlobalAllItemsDonutTextGap + textW;
+  }
   const int groupX = alignLeft ? innerLeft : innerLeft + std::max(0, (innerW - groupW) / 2);
   const int cx = groupX + kGlobalAllItemsDonutR;
   const int cy = y + kGlobalAllItemsDonutPadT + kGlobalAllItemsDonutR;
   const int xText = cx + kGlobalAllItemsDonutR + kGlobalAllItemsDonutTextGap;
-  const int yText0 = y + (g.rowH - g.kCaptionStackH) / 2;
+  const int captionLine = renderer.text.getLineHeight(font);
+  const int captionStack = captionLine * 2 + 6;
+  const int yText0 = y + (g.rowH - captionStack) / 2;
 
   char pct[16];
   snprintf(pct, sizeof(pct), "%.0f%%", finishedRatio01 * 100.f);
   drawFullDonutGauge(renderer, cx, cy, kGlobalAllItemsDonutR, kGlobalAllItemsDonutThick, finishedRatio01, pct);
   renderer.text.render(font, xText, yText0, line1);
-  renderer.text.render(font, xText, yText0 + g.lhSans, line2);
+  renderer.text.render(font, xText, yText0 + captionLine, line2);
 }
 
 /**
@@ -1010,13 +1022,13 @@ bool Statistics::ensureBookStatsLoaded(const int bookIdx) {
 }
 
 void Statistics::renderCover(const std::string& bookPath, int x, int y, int width, int height,
-                                    const std::string& title, const std::string& author) const {
+                             const std::string& title, const std::string& author, const bool cropToFill) const {
   const std::string coverJpegPath = bookPath + "/thumb.jpg";
   const std::string coverPngPath = bookPath + "/thumb.png";
   const std::string coverBmpPath = bookPath + "/thumb.bmp";
   bool coverDrawn = false;
   ImageRender::Options imageOptions;
-  imageOptions.cropToFill = true;
+  imageOptions.cropToFill = cropToFill;
   imageOptions.asyncDisplayCache = true;
   imageOptions.roundedOutside = SETTINGS.bitmapRoundedCorners != 0 ? BitmapRender::RoundedOutside::PaperOutside
                                                                    : BitmapRender::RoundedOutside::None;
@@ -1752,23 +1764,73 @@ void Statistics::renderSingleBookTopSection(const int bookIdx) const {
   }
 
   const BookReadingStats& book = allBooksStats[static_cast<size_t>(bookIdx)];
-  constexpr int kPanelPadding = 20;
+  constexpr int kPanelPaddingX = 12;
+  constexpr int kPanelPaddingTop = 0;
+  constexpr int kPanelPaddingBottom = 12;
   const SingleBookLayout layout = singleBookLayout(renderer);
   const int panelW = renderer.getScreenWidth();
   if (panelW <= 0 || layout.topH <= 0) return;
 
   renderer.rectangle.fill(0, layout.areaY, panelW, layout.topH, false);
 
-  const int coverH = std::max(1, layout.topH - kPanelPadding * 2);
-  const int coverW = std::max(140, std::min(180, panelW * 30 / 100));
-  renderCover(book.path, kPanelPadding, layout.areaY + kPanelPadding, coverW, coverH, book.title, book.author);
+  const int coverH = std::max(1, layout.topH - kPanelPaddingTop - kPanelPaddingBottom + 10);
+  const int coverW = std::max(150, std::min(190, panelW * 30 / 100 + 10));
+  // Contain the cover in the taller frame so the full artwork remains visible.
+  renderCover(book.path, kPanelPaddingX, layout.areaY + kPanelPaddingTop, coverW, coverH, book.title, book.author, false);
 
-  const int radialLeft = kPanelPadding + coverW + 28;
-  const int radialRight = panelW - kPanelPadding;
+  constexpr int kTimeListGap = 0;
+  constexpr int kTimeListWidth = 70;
+  constexpr int kTimeItemGap = 6;
+  const int timeListX = kPanelPaddingX + coverW + kTimeListGap;
+
+  uint32_t morningMs = 0;
+  uint32_t noonMs = 0;
+  uint32_t eveningMs = 0;
+  getBookReadingTimeOfDay(book.path, morningMs, noonMs, eveningMs);
+  const uint32_t timeValues[] = {morningMs, noonMs, eveningMs};
+  const uint8_t* timeIcons[] = {Morning, Sun, Moon};
+  int selectedTime = -1;
+  uint32_t largestTime = 0;
+  for (int index = 0; index < 3; ++index) {
+    if (timeValues[index] > largestTime) {
+      largestTime = timeValues[index];
+      selectedTime = index;
+    }
+  }
+
+  const int timeListTop = layout.areaY + kPanelPaddingTop;
+  const int timeListBottom = layout.areaY + layout.topH - kPanelPaddingBottom;
+  const int timeItemHeight = std::max(1, (timeListBottom - timeListTop - kTimeItemGap * 2) / 3);
+  for (int index = 0; index < 3; ++index) {
+    const int itemY = timeListTop + index * (timeItemHeight + kTimeItemGap);
+    const bool selected = index == selectedTime;
+    constexpr int kSelectedTimeHorizontalInset = 10;
+    const int iconSize = std::max(1, std::min(40, timeItemHeight - 8));
+    const int iconX = timeListX + kSelectedTimeHorizontalInset + 7;
+    const int iconY = itemY + (timeItemHeight - iconSize) / 2;
+    if (selected) {
+      const int circleRadius = std::max(1, std::min(24, timeItemHeight / 2));
+      renderer.circle.render(iconX + iconSize / 2, itemY + timeItemHeight / 2, circleRadius, true);
+    }
+    renderer.bitmap.iconScaled(timeIcons[index], iconX, iconY, 40, 40, iconSize, iconSize,
+                               BitmapRender::Orientation::None, selected);
+  }
+
+  constexpr int kTimeToRadialGap = 8;
+  const int radialLeft = timeListX + kTimeListWidth + kTimeToRadialGap;
+  const int radialRight = panelW - kPanelPaddingX;
   const int radialWidth = std::max(1, radialRight - radialLeft);
-  const int radius = std::max(20, std::min(radialWidth / 2 - 8, layout.topH / 2 - 12));
-  const int centerX = radialLeft + radialWidth / 2;
-  const int centerY = layout.areaY + layout.topH / 2;
+  const int radialTop = layout.areaY + kPanelPaddingTop;
+  // Let the radial use the full top-section height; this changes only the
+  // radial bounds and leaves the cover/time-of-day layout untouched.
+  const int radialBottom = layout.areaY + layout.topH;
+  const int radialHeight = std::max(1, radialBottom - radialTop);
+  constexpr int kRadialRadiusIncrease = 30;
+  const int baseRadius = std::min(radialWidth / 2 - 8, radialHeight / 2 - 16);
+  const int maxRadius = std::min(radialWidth / 2 - 2, radialHeight / 2);
+  const int radius = std::max(20, std::min(baseRadius + kRadialRadiusIncrease, maxRadius));
+  const int centerX = radialLeft + radius;
+  const int centerY = radialTop + radialHeight / 2;
   const float progress = book.progressPercent >= 0.0f
                              ? std::min(1.0f, std::max(0.0f, book.progressPercent / 100.0f))
                              : 0.0f;
@@ -1786,7 +1848,7 @@ void Statistics::renderSingleBookMiddleChart(const int bookIdx) const {
   constexpr int kPanelPaddingX = 20;
   constexpr int kSummaryTopPadding = 6;
   constexpr int kSummaryChartGap = 6;
-  constexpr int kChartBottomLabelHeight = 30;
+  constexpr int kChartBottomLabelHeight = 52;
   constexpr int kMiddleBottomPadding = 20;
   const SingleBookLayout layout = singleBookLayout(renderer);
   const int panelX = 0;
@@ -1858,11 +1920,12 @@ void Statistics::renderSingleBookMiddleChart(const int bookIdx) const {
   renderer.text.renderGray(labelFont, kPanelPaddingX, summaryLabelY, "Total Hours", true,
                            EpdFontFamily::REGULAR);
   const int averageWidth = renderer.text.getWidth(valueFont, averageText, EpdFontFamily::BOLD);
-  const int averageX = halfW + (panelW - halfW - averageWidth) / 2;
+  const int rightContentEdge = panelW - kPanelPaddingX;
+  const int averageX = rightContentEdge - averageWidth;
   renderer.text.render(valueFont, averageX, summaryValueY, averageText, true, EpdFontFamily::BOLD);
   const char* averageLabel = "Average / Session";
   const int averageLabelWidth = renderer.text.getWidth(labelFont, averageLabel);
-  renderer.text.renderGray(labelFont, halfW + (panelW - halfW - averageLabelWidth) / 2, summaryLabelY,
+  renderer.text.renderGray(labelFont, rightContentEdge - averageLabelWidth, summaryLabelY,
                            averageLabel, true, EpdFontFamily::REGULAR);
 
   const int plotTop = summaryLabelY + labelLine + kSummaryChartGap;
@@ -1871,7 +1934,7 @@ void Statistics::renderSingleBookMiddleChart(const int bookIdx) const {
   if (plotBottom <= plotTop + 8) return;
 
   const int gridLeft = kPanelPaddingX;
-  const int gridRight = panelW - kPanelPaddingX;
+  const int gridRight = panelW - kPanelPaddingX - 1;
   const int plotWidth = std::max(1, gridRight - gridLeft);
   const int plotHeight = plotBottom - plotTop;
   uint32_t maximum = 0;
@@ -1914,8 +1977,8 @@ void Statistics::renderSingleBookMiddleChart(const int bookIdx) const {
                             pointSize, static_cast<int>(GfxRenderer::FillTone::Gray), true);
 
     const std::string dateLabel = formatBookHistoryDate(points[static_cast<size_t>(index)].dateKey);
-    const int labelX = std::max(0, pointX - labelLine / 2);
-    const int labelBaseY = contentBottom - 2;
+    const int labelX = std::max(kPanelPaddingX, pointX - labelLine / 2);
+    const int labelBaseY = contentBottom + 8;
     renderer.text.rotated90CW(labelFont, labelX, labelBaseY, dateLabel.c_str(), true, EpdFontFamily::REGULAR);
   }
 }
@@ -1926,7 +1989,8 @@ void Statistics::renderSingleBookBottomGrid(const int bookIdx) const {
   }
   const BookReadingStats& book = allBooksStats[static_cast<size_t>(bookIdx)];
   const SingleBookLayout layout = singleBookLayout(renderer);
-  constexpr int kPanelPad = 10;
+  constexpr int kPanelPadX = 20;
+  constexpr int kPanelPadY = 10;
   constexpr int kCardGap = 12;
   const int panelX = 0;
   const int panelW = renderer.getScreenWidth();
@@ -1971,15 +2035,15 @@ void Statistics::renderSingleBookBottomGrid(const int bookIdx) const {
   const int valueLine = renderer.text.getLineHeight(valueFont);
   const int labelLine = renderer.text.getLineHeight(labelFont);
   const int groupH = valueLine + 4 + labelLine;
-  const int cardW = (panelW - kPanelPad * 2 - kCardGap) / 2;
-  const int cardH = (panelH - kPanelPad * 2 - kCardGap) / 2;
+  const int cardW = (panelW - kPanelPadX * 2 - kCardGap) / 2;
+  const int cardH = (panelH - kPanelPadY * 2 - kCardGap) / 2;
   const bool rounded = SETTINGS.bitmapRoundedCorners != 0;
 
   for (int index = 0; index < 4; ++index) {
     const int row = index / 2;
     const int col = index % 2;
-    const int cardX = panelX + kPanelPad + col * (cardW + kCardGap);
-    const int cardY = panelY + kPanelPad + row * (cardH + kCardGap);
+    const int cardX = panelX + kPanelPadX + col * (cardW + kCardGap);
+    const int cardY = panelY + kPanelPadY + row * (cardH + kCardGap);
     BaseCarousel::renderShadow(renderer, cardX + 4, cardY + 4, cardW, cardH,
                                 HomeTheme::CarouselShadowStyle::Gray);
     renderer.rectangle.fill(cardX, cardY, cardW, cardH, false, rounded,
@@ -2629,8 +2693,10 @@ void Statistics::renderBooksView(const int contentTop, const int contentBottom) 
 
     const int caretY = rowY + (rowHeight - caretSize) / 2;
     renderer.bitmap.icon(LibraryFilterRight, caretX, caretY, caretSize, caretSize);
-    renderer.line.render(sideMargin, rowY + rowHeight - 1, width - sideMargin, rowY + rowHeight - 1, true,
-                         LineRender::Style::Dotted);
+    if (index + 1 < pageEnd) {
+      renderer.line.render(sideMargin, rowY + rowHeight - 1, width - sideMargin, rowY + rowHeight - 1, true,
+                           LineRender::Style::Dotted);
+    }
   }
 
   if (pageCount > 1 && visibleHeight > 0) {

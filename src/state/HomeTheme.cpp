@@ -164,7 +164,7 @@ void ensureLoaded() {
   if (!loaded) load();
 }
 
-bool validLayout(const uint8_t value) { return value <= static_cast<uint8_t>(Layout::OneByThree); }
+bool validLayout(const uint8_t value) { return value <= static_cast<uint8_t>(Layout::HalfBottom); }
 
 bool validWidget(const uint8_t value) {
   return value <= static_cast<uint8_t>(Widget::Streaks);
@@ -1082,6 +1082,12 @@ const char* layoutLabel(const Layout layout) {
       return "1 x 1";
     case Layout::OneByThree:
       return "1 x 3";
+    case Layout::HalfTop:
+      return "40 | 30 | 30";
+    case Layout::HalfMiddle:
+      return "30 | 40 | 30";
+    case Layout::HalfBottom:
+      return "30 | 30 | 40";
     default:
       return "Unknown";
   }
@@ -1186,7 +1192,8 @@ const char* heatmapViewLabel(const HeatmapView view) {
 
 int slotCount(const Layout layout) {
   return layout == Layout::TwoByTwo || layout == Layout::OneByOne ? 4
-       : layout == Layout::OneByThree                         ? 3
+       : layout == Layout::OneByThree || layout == Layout::HalfTop || layout == Layout::HalfMiddle ||
+                 layout == Layout::HalfBottom                 ? 3
        : layout == Layout::OneByTwo                            ? 2
                                                                : 0;
 }

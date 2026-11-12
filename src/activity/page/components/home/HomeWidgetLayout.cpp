@@ -7,7 +7,37 @@
 namespace {
 
 int gridRows(const HomeTheme::Layout layout) {
-  return layout == HomeTheme::Layout::OneByThree ? 3 : 2;
+  return layout == HomeTheme::Layout::OneByThree || layout == HomeTheme::Layout::HalfTop ||
+                 layout == HomeTheme::Layout::HalfMiddle || layout == HomeTheme::Layout::HalfBottom
+             ? 3
+             : 2;
+}
+
+bool isHalfStackLayout(const HomeTheme::Layout layout) {
+  return layout == HomeTheme::Layout::HalfTop || layout == HomeTheme::Layout::HalfMiddle ||
+         layout == HomeTheme::Layout::HalfBottom;
+}
+
+bool isCompactLayout(const HomeTheme::Layout layout) {
+  return layout == HomeTheme::Layout::OneByThree || isHalfStackLayout(layout);
+}
+
+int halfStackRowHeight(const HomeTheme::Layout layout, const int areaH, const int gap, const int row) {
+  const int availableHeight = std::max(0, areaH - gap * 2);
+  const int smallHeight = availableHeight * 30 / 100;
+  const int bigHeight = availableHeight - smallHeight * 2;
+  const bool bigRow = (layout == HomeTheme::Layout::HalfTop && row == 0) ||
+                      (layout == HomeTheme::Layout::HalfMiddle && row == 1) ||
+                      (layout == HomeTheme::Layout::HalfBottom && row == 2);
+  return bigRow ? bigHeight : smallHeight;
+}
+
+int halfStackRowY(const HomeTheme::Layout layout, const int areaY, const int areaH, const int gap, const int row) {
+  int y = areaY;
+  for (int previous = 0; previous < row; ++previous) {
+    y += halfStackRowHeight(layout, areaH, gap, previous) + gap;
+  }
+  return y;
 }
 
 }  // namespace
@@ -42,6 +72,9 @@ void HomeWidgetLayout::render(const HomeTheme::Theme& theme, const int carouselI
     case HomeTheme::Layout::OneByTwo:
     case HomeTheme::Layout::OneByThree:
     case HomeTheme::Layout::TwoByTwo:
+    case HomeTheme::Layout::HalfTop:
+    case HomeTheme::Layout::HalfMiddle:
+    case HomeTheme::Layout::HalfBottom:
       renderGrid(theme, carouselIndex, favoriteIndex);
       return;
     case HomeTheme::Layout::OneByOne:
@@ -64,7 +97,7 @@ void HomeWidgetLayout::preloadCarousel(const HomeTheme::Theme& theme, const int 
     const Bounds bounds = slotBounds(layout, slot);
     carousel_.preload(carouselIndex, bounds.x, bounds.y, bounds.width, bounds.height, theme.carouselStyles[slot],
                       theme.carouselLabels[slot] != 0, theme.carouselLabelColors[slot], hideFirst,
-                      theme.carouselFullHeight[slot] != 0, theme.layout == HomeTheme::Layout::OneByThree,
+                      theme.carouselFullHeight[slot] != 0, isCompactLayout(theme.layout),
                       theme.layout == HomeTheme::Layout::OneByTwo && SETTINGS.hiddenMenu != 0);
   }
 }
@@ -150,10 +183,15 @@ HomeWidgetLayout::Grid HomeWidgetLayout::grid(const HomeTheme::Layout layout, co
   }
 
   return {columns,        rows, centeredX,   centeredY,        centeredWidth,
-          centeredHeight, gap,  baseColumns, slotColumnOffset, slotRowOffset};
+          centeredHeight, gap,  baseColumns, slotColumnOffset, slotRowOffset, layout};
 }
 
 HomeWidgetLayout::Bounds HomeWidgetLayout::slotBounds(const Grid& layout, const int slot) const {
+  if (isHalfStackLayout(layout.layout)) {
+    const int row = std::min(2, std::max(0, slot));
+    return {layout.areaX, halfStackRowY(layout.layout, layout.areaY, layout.areaH, layout.gap, row), layout.areaW,
+            halfStackRowHeight(layout.layout, layout.areaH, layout.gap, row)};
+  }
   const int cellWidth = (layout.areaW - layout.gap * (layout.columns - 1)) / layout.columns;
   const int cellHeight = (layout.areaH - layout.gap * (layout.rows - 1)) / layout.rows;
   const int column = slot % layout.slotColumns - layout.slotColumnOffset;
@@ -251,17 +289,17 @@ void HomeWidgetLayout::renderSlot(const HomeTheme::Theme& theme, const int slot,
       carousel_.render(carouselIndex, bounds.x, bounds.y, bounds.width, bounds.height, theme.backgrounds[slot] != 0,
                        theme.carouselStyles[slot], theme.carouselLabels[slot] != 0, theme.carouselLabelColors[slot],
                        theme.carouselShadowStyles[slot], theme.carouselProgress[slot] != 0, hideFirst,
-                       theme.carouselFullHeight[slot] != 0, theme.layout == HomeTheme::Layout::OneByThree,
+                       theme.carouselFullHeight[slot] != 0, isCompactLayout(theme.layout),
                        theme.layout == HomeTheme::Layout::OneByTwo && SETTINGS.hiddenMenu != 0);
       break;
     case HomeTheme::Widget::Shortcuts: shortcut_.render(bounds.x, bounds.y, bounds.width, bounds.height); break;
     case HomeTheme::Widget::ListShortcuts: shortcutList_.render(bounds.x, bounds.y, bounds.width, bounds.height); break;
     case HomeTheme::Widget::Clock:
-      clock_.render(bounds.x, bounds.y, bounds.width, bounds.height, theme.layout == HomeTheme::Layout::OneByThree);
+      clock_.render(bounds.x, bounds.y, bounds.width, bounds.height, isCompactLayout(theme.layout));
       break;
     case HomeTheme::Widget::Calendar:
       calendar_.render(bounds.x, bounds.y, bounds.width, bounds.height,
-                       theme.layout == HomeTheme::Layout::OneByThree);
+                       isCompactLayout(theme.layout));
       break;
     case HomeTheme::Widget::Recent:
       recent_.render(bounds.x, bounds.y, bounds.width, bounds.height, theme.backgrounds[slot] != 0,
@@ -286,26 +324,26 @@ void HomeWidgetLayout::renderSlot(const HomeTheme::Theme& theme, const int slot,
 #endif
     case HomeTheme::Widget::TodaysReading:
       todaysReading_.render(bounds.x, bounds.y, bounds.width, bounds.height,
-                            theme.layout == HomeTheme::Layout::OneByThree);
+                            isCompactLayout(theme.layout));
       break;
     case HomeTheme::Widget::Statistics:
       weeklyStatistics_.render(bounds.x, bounds.y, bounds.width, bounds.height,
-                               theme.layout == HomeTheme::Layout::OneByThree,
+                               isCompactLayout(theme.layout),
                                theme.carouselStyles[slot] == HomeTheme::CarouselStyle::Left,
                                theme.statisticsSummary[slot] != 0);
       break;
     case HomeTheme::Widget::Streaks:
       {
-        const bool compact = theme.layout == HomeTheme::Layout::OneByThree || theme.streakCompact[slot] != 0;
+        const bool compact = isCompactLayout(theme.layout) || theme.streakCompact[slot] != 0;
         streaks_.render(bounds.x, bounds.y, bounds.width, bounds.height,
-                        theme.layout == HomeTheme::Layout::OneByTwo && !compact);
+                        theme.layout == HomeTheme::Layout::OneByTwo && !compact, compact);
       }
       break;
     case HomeTheme::Widget::Favorites:
       favorites_.render(favoriteIndex, bounds.x, bounds.y, bounds.width, bounds.height, theme.backgrounds[slot] != 0,
                         theme.carouselStyles[slot], theme.carouselLabels[slot] != 0, theme.carouselLabelColors[slot],
                         theme.carouselShadowStyles[slot], theme.carouselFullHeight[slot] != 0,
-                        theme.layout == HomeTheme::Layout::OneByThree);
+                        isCompactLayout(theme.layout));
       break;
     case HomeTheme::Widget::Heatmap:
       heatmap_.render(bounds.x, bounds.y, bounds.width, bounds.height, HomeTheme::HeatmapView::Monthly, false,
@@ -314,7 +352,7 @@ void HomeWidgetLayout::renderSlot(const HomeTheme::Theme& theme, const int slot,
     case HomeTheme::Widget::Library:
       library_.render(bounds.x, bounds.y, bounds.width, bounds.height, theme.libraryFolders[slot],
                       theme.backgrounds[slot] != 0, theme.carouselLabels[slot] != 0,
-                      theme.layout == HomeTheme::Layout::OneByThree);
+                      isCompactLayout(theme.layout));
       break;
     case HomeTheme::Widget::Description:
       description_.render(descriptionRecentIndex, bounds.x, bounds.y, bounds.width, bounds.height,
@@ -322,7 +360,7 @@ void HomeWidgetLayout::renderSlot(const HomeTheme::Theme& theme, const int slot,
                           theme.carouselLabelColors[slot], theme.carouselShadowStyles[slot],
                           theme.descriptionTitles[slot] != 0, theme.descriptionAuthors[slot] != 0,
                           theme.descriptionProgress[slot] != 0, theme.descriptionRatings[slot] != 0,
-                          theme.layout == HomeTheme::Layout::OneByThree);
+                          isCompactLayout(theme.layout));
       break;
     case HomeTheme::Widget::Empty:
     default: break;
@@ -330,6 +368,31 @@ void HomeWidgetLayout::renderSlot(const HomeTheme::Theme& theme, const int slot,
 }
 
 void HomeWidgetLayout::renderBorders(const HomeTheme::Theme& theme, const Grid& layout) const {
+  if (isHalfStackLayout(theme.layout)) {
+    for (int row = 1; row < 3; ++row) {
+      const HomeTheme::Border border = theme.borders[row - 1];
+      const int dividerY = halfStackRowY(layout.layout, layout.areaY, layout.areaH, layout.gap, row);
+      switch (border) {
+        case HomeTheme::Border::Subtle:
+          renderer_.line.render(layout.areaX, dividerY, layout.areaX + layout.areaW, dividerY, true,
+                                LineRender::Style::Dotted);
+          break;
+        case HomeTheme::Border::Normal:
+          renderer_.line.render(layout.areaX, dividerY, layout.areaX + layout.areaW, dividerY, true);
+          break;
+        case HomeTheme::Border::Thick:
+          for (int offset = -1; offset <= 1; ++offset) {
+            renderer_.line.render(layout.areaX, dividerY + offset, layout.areaX + layout.areaW, dividerY + offset,
+                                  true);
+          }
+          break;
+        case HomeTheme::Border::None:
+        default:
+          break;
+      }
+    }
+    return;
+  }
   if (theme.layout == HomeTheme::Layout::OneByThree && layout.columns == 1 && layout.rows == 3) {
     const int cellHeight = (layout.areaH - layout.gap * (layout.rows - 1)) / layout.rows;
     for (int row = 1; row < layout.rows; ++row) {
@@ -433,7 +496,7 @@ int HomeWidgetLayout::carouselAt(const HomeTheme::Theme& theme, const int carous
   return carousel_.hitTest(carouselIndex, count, x, y, bounds.x, bounds.y, bounds.width, bounds.height,
                            theme.carouselStyles[slot], theme.carouselLabels[slot] != 0, theme.carouselLabelColors[slot],
                            hideFirst, theme.carouselFullHeight[slot] != 0,
-                           theme.layout == HomeTheme::Layout::OneByThree,
+                           isCompactLayout(theme.layout),
                            theme.layout == HomeTheme::Layout::OneByTwo && SETTINGS.hiddenMenu != 0);
 }
 
@@ -580,7 +643,7 @@ int HomeWidgetLayout::favoritesAt(const HomeTheme::Theme& theme, const int carou
     const int hit = favorites_.hitTest(carouselIndex, x, y, bounds.x, bounds.y, bounds.width, bounds.height,
                                        theme.carouselStyles[slot], theme.carouselLabels[slot] != 0,
                                        theme.carouselLabelColors[slot], theme.carouselFullHeight[slot] != 0,
-                                       theme.layout == HomeTheme::Layout::OneByThree);
+                                       isCompactLayout(theme.layout));
     if (hit >= 0) return hit;
   }
   return -1;
@@ -593,7 +656,7 @@ int HomeWidgetLayout::todaysReadingAt(const HomeTheme::Theme& theme, const int x
     if (theme.widgets[slot] != HomeTheme::Widget::TodaysReading) continue;
     const Bounds bounds = slotBounds(layout, slot);
     if (todaysReading_.buttonHitTest(x, y, bounds.x, bounds.y, bounds.width, bounds.height,
-                                     theme.layout == HomeTheme::Layout::OneByThree))
+                                     isCompactLayout(theme.layout)))
       return slot;
   }
   return -1;

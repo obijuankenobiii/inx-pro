@@ -72,6 +72,7 @@ void HalGPIO::serviceTouchGestures() {
     touchSwipeStartNx = sx;
     touchSwipeStartNy = sy;
     suppressPostSwipeTap = true;
+    postSwipeDuplicateBlockedUntilMs = 0;
     swipeDetectedAtMs = millis();
     const float dx = ex - sx;
     const float dy = ey - sy;
@@ -140,21 +141,42 @@ bool HalGPIO::wasTouchTap(float& nx, float& ny) const {
   if (suppressTouchUntilRelease || inputMgr.isTouchPressed() || !inputMgr.wasTouchReleased()) return false;
   if (postSwipeTapBlockedThisFrame) return false;
   const bool tapped = touchGesture.wasTap(nx, ny);
-  if (tapped && suppressPostSwipeTap) {
+  if (tapped) {
     // X4 Pro can spend more than a second in the panel BUSY waveform after a
-    // swipe.  The controller may then report one short duplicate contact, so
-    // keep the guard alive across that display interval.
+    // swipe. The controller may then report one short duplicate contact,
+    // followed by a second release from the same stale contact. Suppress the
+    // first one during the long waveform window, but keep the follow-up guard
+    // short so normal taps remain responsive.
     constexpr unsigned long kPostSwipeTapWindowMs = 3000;
     constexpr unsigned long kPostSwipeTapMaxHoldMs = 300;
-    const unsigned long elapsed = millis() - swipeDetectedAtMs;
-    const bool shortTap = inputMgr.lastTouchHeldMs() <= kPostSwipeTapMaxHoldMs;
-    suppressPostSwipeTap = false;
-    if (elapsed <= kPostSwipeTapWindowMs && shortTap) {
-      postSwipeTapBlockedThisFrame = true;
-      INX_SERIAL.printf("[X4PRO] suppressed post-swipe tap nx=%.3f ny=%.3f held=%lums elapsed=%lums\n", nx, ny,
-                        inputMgr.lastTouchHeldMs(), elapsed);
-      return false;
+    constexpr unsigned long kPostSwipeDuplicateWindowMs = 500;
+    constexpr float kPostSwipeSamePointTolerance = 0.05f;
+    const unsigned long now = millis();
+    const unsigned long elapsed = now - swipeDetectedAtMs;
+    const unsigned long heldMs = inputMgr.lastTouchHeldMs();
+    const bool shortTap = heldMs <= kPostSwipeTapMaxHoldMs;
+    const bool sameSwipeStart = std::fabs(nx - touchSwipeStartNx) <= kPostSwipeSamePointTolerance &&
+                                std::fabs(ny - touchSwipeStartNy) <= kPostSwipeSamePointTolerance;
+    if (shortTap) {
+      // A genuine follow-up tap may be anywhere on the page (for example on
+      // a sidebar item). Only suppress a short contact that returns to the
+      // swipe's original point, which is how the X4 Pro's stale swipe tail
+      // presents itself.
+      if (suppressPostSwipeTap && elapsed <= kPostSwipeTapWindowMs && sameSwipeStart) {
+        suppressPostSwipeTap = false;
+        postSwipeDuplicateBlockedUntilMs = now + kPostSwipeDuplicateWindowMs;
+        postSwipeTapBlockedThisFrame = true;
+        INX_SERIAL.printf("[X4PRO] suppressed post-swipe tap nx=%.3f ny=%.3f held=%lums elapsed=%lums\n", nx, ny,
+                          heldMs, elapsed);
+        return false;
+      }
+      if (now < postSwipeDuplicateBlockedUntilMs) {
+        postSwipeTapBlockedThisFrame = true;
+        INX_SERIAL.printf("[X4PRO] suppressed duplicate tap nx=%.3f ny=%.3f held=%lums\n", nx, ny, heldMs);
+        return false;
+      }
     }
+    suppressPostSwipeTap = false;
   }
   if (tapped) {
     INX_SERIAL.printf("[X4PRO] wasTouchTap() -> nx=%.3f ny=%.3f\n", nx, ny);
@@ -202,9 +224,8 @@ void HalGPIO::ignoreCurrentTouchUntilRelease() {
 
 void HalGPIO::discardTouchSwipe() {
   touchSwipeDirection = TouchSwipe::None;
-  // Keep the one-shot post-swipe tap guard.  Activities call this immediately
-  // after consuming the swipe; clearing it here lets the duplicate release
-  // become a tap in the newly active page.
+  // Keep the post-swipe tap guard. Activities call this immediately after
+  // consuming the swipe, while duplicate contacts may still be pending.
   touchPressedEvents = 0;
   touchReleasedEvents = 0;
 }

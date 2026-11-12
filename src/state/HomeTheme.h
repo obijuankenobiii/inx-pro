@@ -10,6 +10,9 @@ enum class Layout : uint8_t {
   TwoByTwo = 2,
   OneByOne = 3,
   OneByThree = 4,
+  HalfTop = 5,
+  HalfMiddle = 6,
+  HalfBottom = 7,
 };
 
 enum class Widget : uint8_t {

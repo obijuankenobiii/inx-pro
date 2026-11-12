@@ -223,7 +223,6 @@ void LightDrawer::render() const {
   drawerRenderer.rectangle.fill(0, 0, width, lightDrawerHeight(),
                                 static_cast<int>(GfxRenderer::FillTone::Paper));
   drawerRenderer.rectangle.render(0, 0, width, lightDrawerHeight(), true);
-  drawerRenderer.line.render(0, lightDrawerHeight() - 2, width - 1, lightDrawerHeight() - 2, true);
   const int titleFont = systemFontIdForPointSize(16);
   const int titleY = Menu::topPadding + (Menu::iconSize - drawerRenderer.text.getLineHeight(titleFont)) / 2;
   drawerRenderer.text.render(titleFont, Menu::leftMargin, titleY, "Light", true, EpdFontFamily::BOLD);

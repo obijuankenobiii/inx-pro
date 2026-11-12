@@ -69,6 +69,7 @@ class HomeWidgetLayout final {
     int slotColumns;
     int slotColumnOffset;
     int slotRowOffset;
+    HomeTheme::Layout layout;
   };
 
   Grid grid(const HomeTheme::Layout layout, bool sleep = false, const HomeTheme::Theme* theme = nullptr) const;

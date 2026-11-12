@@ -42,9 +42,14 @@ constexpr int hiddenSidebarRowGap = 8;
 constexpr int hiddenSidebarIconSourceSize = 40;
 constexpr int hiddenSidebarIconSize = 32;
 constexpr int hiddenSidebarIconLabelGap = 16;
-// Allow for the small edge offset reported by some digitizers while still
-// requiring the gesture to originate at the left side of the screen.
+// Sticky's touch panel reports a less consistent swipe start point near the
+// bezel, so give it a wider left-side activation band. Other devices retain
+// the narrower edge-only gesture guard.
+#if FREEINK_DEVICE_STICKY
+constexpr float hiddenSidebarSwipeStartNx = 0.30f;
+#else
 constexpr float hiddenSidebarSwipeStartNx = 0.12f;
+#endif
 
 struct Item {
   const uint8_t* icon;

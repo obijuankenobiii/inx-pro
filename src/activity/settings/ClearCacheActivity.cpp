@@ -451,6 +451,8 @@ void ClearCacheActivity::clearCache() {
     tryRemoveFile("/.system/book_list.bin.tmp");
     tryRemoveFile("/.system/reading_history_books.bin");
     tryRemoveFile("/.system/reading_history_books.bin.tmp");
+    tryRemoveFile("/.system/reading_time_of_day.bin");
+    tryRemoveFile("/.system/reading_time_of_day.bin.tmp");
     clearBookStatisticsFiles("/.metadata/epub");
     clearBookStatisticsFiles("/.metadata/xtc");
     clearReadingStatisticsState();

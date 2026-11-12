@@ -29,6 +29,11 @@ constexpr uint8_t READING_HISTORY_BOOKS_VERSION = 1;
 constexpr size_t MAX_READING_HISTORY_BOOK_ENTRIES = 2048;
 constexpr char readingHistoryBooksFile[] = "/.system/reading_history_books.bin";
 constexpr char readingHistoryBooksTempFile[] = "/.system/reading_history_books.bin.tmp";
+constexpr uint32_t READING_TIME_OF_DAY_MAGIC = 0x52544F44;
+constexpr uint8_t READING_TIME_OF_DAY_VERSION = 1;
+constexpr size_t MAX_READING_TIME_OF_DAY_ENTRIES = 4096;
+constexpr char readingTimeOfDayFile[] = "/.system/reading_time_of_day.bin";
+constexpr char readingTimeOfDayTempFile[] = "/.system/reading_time_of_day.bin.tmp";
 constexpr uint32_t BOOK_LIST_METADATA_MAGIC = 0x424C5354;
 constexpr uint8_t BOOK_LIST_METADATA_VERSION = 1;
 constexpr uint32_t MAX_BOOK_LIST_METADATA_ENTRIES = 4096;
@@ -42,6 +47,17 @@ bool readingHistoryDirty = false;
 std::vector<ReadingHistoryBookEntry> readingHistoryBooks;
 bool readingHistoryBooksLoaded = false;
 bool readingHistoryBooksDirty = false;
+
+struct ReadingTimeOfDayEntry {
+  std::string bookPath;
+  uint32_t morningMs = 0;
+  uint32_t noonMs = 0;
+  uint32_t eveningMs = 0;
+};
+
+std::vector<ReadingTimeOfDayEntry> readingTimeOfDay;
+bool readingTimeOfDayLoaded = false;
+bool readingTimeOfDayDirty = false;
 
 /**
  * RAII wrapper for FsFile that ensures file is closed when object goes out of scope.
@@ -60,6 +76,110 @@ class FileGuard {
   FileGuard(const FileGuard&) = delete;
   FileGuard& operator=(const FileGuard&) = delete;
 };
+
+void loadReadingTimeOfDay() {
+  if (readingTimeOfDayLoaded) return;
+  readingTimeOfDayLoaded = true;
+  readingTimeOfDay.clear();
+
+  FsFile file;
+  FileGuard guard(file);
+  if (!SdMan.openFileForRead("RTOD", readingTimeOfDayFile, file)) return;
+
+  uint32_t magic = 0;
+  uint8_t version = 0;
+  uint8_t reserved[3] = {};
+  uint32_t entryCount = 0;
+  if (file.read(&magic, sizeof(magic)) != sizeof(magic) ||
+      file.read(&version, sizeof(version)) != sizeof(version) ||
+      file.read(reserved, sizeof(reserved)) != sizeof(reserved) ||
+      file.read(&entryCount, sizeof(entryCount)) != sizeof(entryCount) ||
+      magic != READING_TIME_OF_DAY_MAGIC || version != READING_TIME_OF_DAY_VERSION ||
+      entryCount > MAX_READING_TIME_OF_DAY_ENTRIES) {
+    readingTimeOfDay.clear();
+    return;
+  }
+
+  for (uint32_t index = 0; index < entryCount; ++index) {
+    ReadingTimeOfDayEntry entry;
+    uint32_t pathLength = 0;
+    if (file.read(&pathLength, sizeof(pathLength)) != sizeof(pathLength) || pathLength == 0 || pathLength > 1024 ||
+        file.read(&entry.morningMs, sizeof(entry.morningMs)) != sizeof(entry.morningMs) ||
+        file.read(&entry.noonMs, sizeof(entry.noonMs)) != sizeof(entry.noonMs) ||
+        file.read(&entry.eveningMs, sizeof(entry.eveningMs)) != sizeof(entry.eveningMs)) {
+      readingTimeOfDay.clear();
+      return;
+    }
+    entry.bookPath.resize(pathLength);
+    if (file.read(&entry.bookPath[0], pathLength) != pathLength) {
+      readingTimeOfDay.clear();
+      return;
+    }
+    readingTimeOfDay.push_back(std::move(entry));
+  }
+}
+
+void saveReadingTimeOfDay() {
+  if (!readingTimeOfDayDirty) return;
+  SdMan.mkdir(STATS_DIR);
+
+  FsFile file;
+  bool writeOk = false;
+  {
+    FileGuard guard(file);
+    if (SdMan.openFileForWrite("RTOD", readingTimeOfDayTempFile, file)) {
+      const uint32_t entryCount = std::min<uint32_t>(readingTimeOfDay.size(), MAX_READING_TIME_OF_DAY_ENTRIES);
+      const uint8_t reserved[3] = {};
+      const uint32_t magic = READING_TIME_OF_DAY_MAGIC;
+      const uint8_t version = READING_TIME_OF_DAY_VERSION;
+      writeOk = file.write(&magic, sizeof(magic)) == sizeof(magic) &&
+                file.write(&version, sizeof(version)) == sizeof(version) &&
+                file.write(reserved, sizeof(reserved)) == sizeof(reserved) &&
+                file.write(&entryCount, sizeof(entryCount)) == sizeof(entryCount);
+      for (uint32_t index = 0; writeOk && index < entryCount; ++index) {
+        const ReadingTimeOfDayEntry& entry = readingTimeOfDay[index];
+        const uint32_t pathLength = static_cast<uint32_t>(entry.bookPath.size());
+        writeOk = pathLength > 0 && pathLength <= 1024 &&
+                  file.write(&pathLength, sizeof(pathLength)) == sizeof(pathLength) &&
+                  file.write(&entry.morningMs, sizeof(entry.morningMs)) == sizeof(entry.morningMs) &&
+                  file.write(&entry.noonMs, sizeof(entry.noonMs)) == sizeof(entry.noonMs) &&
+                  file.write(&entry.eveningMs, sizeof(entry.eveningMs)) == sizeof(entry.eveningMs) &&
+                  file.write(entry.bookPath.data(), pathLength) == pathLength;
+      }
+    }
+  }
+
+  if (writeOk) {
+    SdMan.remove(readingTimeOfDayFile);
+    if (SdMan.rename(readingTimeOfDayTempFile, readingTimeOfDayFile)) {
+      readingTimeOfDayDirty = false;
+    } else {
+      SdMan.remove(readingTimeOfDayTempFile);
+    }
+  } else {
+    SdMan.remove(readingTimeOfDayTempFile);
+  }
+}
+
+void recordReadingTimeOfDayMs(const uint32_t elapsedMs, const std::string& bookPath) {
+  if (elapsedMs == 0 || bookPath.empty()) return;
+  HalGPIO::DateTime dateTime;
+  if (!gpio.readDateTime(dateTime)) return;
+
+  loadReadingTimeOfDay();
+  auto entry = std::find_if(readingTimeOfDay.begin(), readingTimeOfDay.end(), [&bookPath](const auto& value) {
+    return value.bookPath == bookPath;
+  });
+  if (entry == readingTimeOfDay.end()) {
+    readingTimeOfDay.push_back({bookPath, 0, 0, 0});
+    entry = readingTimeOfDay.end() - 1;
+  }
+
+  uint32_t* bucket = dateTime.hour < 12 ? &entry->morningMs : (dateTime.hour < 18 ? &entry->noonMs : &entry->eveningMs);
+  const uint32_t room = UINT32_MAX - *bucket;
+  *bucket += std::min(room, elapsedMs);
+  readingTimeOfDayDirty = true;
+}
 
 uint32_t makeDateKey(const HalGPIO::DateTime& dateTime) {
   return static_cast<uint32_t>(dateTime.year) * 10000UL + static_cast<uint32_t>(dateTime.month) * 100UL +
@@ -650,6 +770,7 @@ void recordReadingHistoryMs(const uint32_t elapsedMs, const std::string& bookPat
                                   (readingHistoryBooks.size() - MAX_READING_HISTORY_BOOK_ENTRIES));
   }
   readingHistoryBooksDirty = true;
+  recordReadingTimeOfDayMs(elapsedMs, bookPath);
 }
 
 void saveReadingHistory() {
@@ -661,6 +782,7 @@ void saveReadingHistory() {
     saveGlobalStats(cachedGlobalStats);
   }
   saveReadingHistoryBooks();
+  saveReadingTimeOfDay();
 }
 
 void clearReadingStatisticsState() {
@@ -671,6 +793,9 @@ void clearReadingStatisticsState() {
   readingHistoryBooks.clear();
   readingHistoryBooksLoaded = false;
   readingHistoryBooksDirty = false;
+  readingTimeOfDay.clear();
+  readingTimeOfDayLoaded = false;
+  readingTimeOfDayDirty = false;
 }
 
 const std::vector<ReadingHistoryEntry>& getReadingHistory() {
@@ -684,6 +809,22 @@ const std::vector<ReadingHistoryEntry>& getReadingHistory() {
 const std::vector<ReadingHistoryBookEntry>& getReadingHistoryBooks() {
   loadReadingHistoryBooks();
   return readingHistoryBooks;
+}
+
+void getBookReadingTimeOfDay(const std::string& bookPath, uint32_t& morningMs, uint32_t& noonMs,
+                             uint32_t& eveningMs) {
+  morningMs = 0;
+  noonMs = 0;
+  eveningMs = 0;
+  if (bookPath.empty()) return;
+  loadReadingTimeOfDay();
+  const auto entry = std::find_if(readingTimeOfDay.begin(), readingTimeOfDay.end(), [&bookPath](const auto& value) {
+    return value.bookPath == bookPath;
+  });
+  if (entry == readingTimeOfDay.end()) return;
+  morningMs = entry->morningMs;
+  noonMs = entry->noonMs;
+  eveningMs = entry->eveningMs;
 }
 
 int64_t readingDateToDay(const uint32_t dateKey) {

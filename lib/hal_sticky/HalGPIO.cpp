@@ -85,6 +85,12 @@ void HalGPIO::serviceTouchGestures() {
 
     const bool startedAtEdge = sx < kEdgeSwipeMargin || sx > (1.0f - kEdgeSwipeMargin) || sy < kEdgeSwipeMargin ||
                                sy > (1.0f - kEdgeSwipeMargin);
+    // A rightward swipe beginning at the left edge is the hidden-sidebar
+    // gesture. Do not convert it into a synthetic Back press before the page
+    // navigation layer can consume it.
+    if (sx < kEdgeSwipeMargin && touchSwipeDirection == TouchSwipe::Right) {
+      return;
+    }
     if (startedAtEdge) {
       touchPressedEvents |= (1 << BTN_BACK);
       touchReleasedEvents |= (1 << BTN_BACK);

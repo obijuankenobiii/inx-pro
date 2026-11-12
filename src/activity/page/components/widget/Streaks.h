@@ -9,12 +9,12 @@ class Streaks final {
  public:
   explicit Streaks(GfxRenderer& renderer) : renderer_(renderer) {}
 
-  void render(int x, int y, int width, int height, bool monthly = false) const;
-  void preview(int x, int y, int width, int height, bool monthly = false) const;
+  void render(int x, int y, int width, int height, bool monthly = false, bool compact = false) const;
+  void preview(int x, int y, int width, int height, bool monthly = false, bool compact = false) const;
   bool needsRefresh() const;
 
  private:
-  void renderContent(int x, int y, int width, int height, bool sample, bool monthly) const;
+  void renderContent(int x, int y, int width, int height, bool sample, bool monthly, bool compact) const;
   uint64_t dataKey() const;
 
   GfxRenderer& renderer_;

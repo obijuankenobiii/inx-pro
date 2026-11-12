@@ -127,10 +127,11 @@ class HalGPIO {
   bool touchSwipeLatchedDuringDisplay = false;
   mutable bool suppressPostSwipeTap = false;
   // A release event can be queried by the global gesture handler and then by
-  // the active page in the same input frame. Keep a rejected post-swipe tap
+  // the active page in the same input frame. Keep rejected post-swipe taps
   // rejected for all of those queries.
   mutable bool postSwipeTapBlockedThisFrame = false;
   unsigned long swipeDetectedAtMs = 0;
+  mutable unsigned long postSwipeDuplicateBlockedUntilMs = 0;
 };
 
 extern HalGPIO gpio;

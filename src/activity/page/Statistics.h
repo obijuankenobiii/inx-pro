@@ -82,7 +82,7 @@ class Statistics final : public SubPage {
    * Renders a book cover or placeholder at the specified position.
    */
   void renderCover(const std::string& bookPath, int x, int y, int width, int height, const std::string& title,
-                   const std::string& author) const;
+                   const std::string& author, bool cropToFill = true) const;
 
   /** Global view: draw recent cover with frame sized to bitmap (max 165×182); returns {frameW, frameH}. */
   std::pair<int, int> drawGlobalRecentThumbBlock(int x, int y, const std::string& bookPath,

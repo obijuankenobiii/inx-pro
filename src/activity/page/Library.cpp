@@ -158,12 +158,13 @@ FilterFooterLayout filterFooterLayout(const GfxRenderer& renderer, const FilterD
 void renderControlTab(const GfxRenderer& renderer, const ControlModalLayout& modal, const int index,
                       const char* label, const uint8_t* icon, const bool selected) {
   const int font = systemFontId();
+  const EpdFontFamily::Style tabFont = EpdFontFamily::REGULAR;
   const int x = modal.x + modal.width * index / 3;
   const int nextX = modal.x + modal.width * (index + 1) / 3;
   const int width = nextX - x;
-  const int textWidth = renderer.text.getWidth(font, label, selected ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR);
+  const int textWidth = renderer.text.getWidth(font, label, tabFont);
   constexpr int iconSize = 24;
-  constexpr int iconGap = 6;
+  constexpr int iconGap = 11;
   const int contentWidth = iconSize + iconGap + textWidth;
   const int tabCenterY = modal.tabY + modal.tabHeight / 2;
   const int textY = tabCenterY - renderer.text.getLineHeight(font) / 2;
@@ -171,10 +172,10 @@ void renderControlTab(const GfxRenderer& renderer, const ControlModalLayout& mod
   const int iconY = tabCenterY - iconSize / 2;
   renderer.bitmap.iconScaled(icon, contentX, iconY, 40, 40, iconSize, iconSize);
   const int textX = contentX + iconSize + iconGap;
-  renderer.text.render(font, textX, textY, label, true,
-                       selected ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR);
+  renderer.text.render(font, textX, textY, label, true, tabFont);
   if (selected) {
-    renderer.rectangle.fill(contentX, modal.tabY + modal.tabHeight - 3, std::max(1, contentWidth), 2, true);
+    const int dividerY = modal.tabY + modal.tabHeight;
+    renderer.rectangle.fill(contentX, dividerY - 1, std::max(1, contentWidth), 2, true);
   }
 }
 }
@@ -1340,6 +1341,7 @@ bool Library::handleSidebarTap() {
     sidebarOpen = true;
     sidebarScrollOffset_ = 0;
     updateRequired = true;
+    renderPage();
     return true;
   }
 
@@ -1376,7 +1378,7 @@ bool Library::handleSidebarInput() {
 
   const int tapX = static_cast<int>(tapNx * renderer.getScreenWidth());
   const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
-  const int drawerWidth = std::min(320, renderer.getScreenWidth() * 3 / 4);
+  const int drawerWidth = Sidebar::width(renderer);
   if (tapX >= drawerWidth) {
     restoreOverlayFrameOnClose();
     sidebarOpen = false;
@@ -1527,8 +1529,9 @@ void Library::controlModal() const {
   const ControlModalLayout modal = controlModalLayout(renderer);
   ScreenComponents::drawWhiteOverlay(renderer, modal.y);
   renderer.rectangle.fill(modal.x, modal.y, modal.width, modal.height, false);
-  renderer.line.render(modal.x, modal.tabY + modal.tabHeight, modal.x + modal.width - 1,
-                       modal.tabY + modal.tabHeight, true);
+  const int tabDividerY = modal.tabY + modal.tabHeight;
+  renderer.rectangle.fill(modal.x, tabDividerY, modal.width, 1,
+                          static_cast<int>(GfxRenderer::FillTone::Gray), false);
   const uint8_t* sortIcon = sort == Sort::TitleZA || sort == Sort::FolderZA || sort == Sort::AuthorZA ? SortDesc : SortAsc;
   renderControlTab(renderer, modal, 0, "View", viewIcon(), controlTab == ControlTab::View);
   renderControlTab(renderer, modal, 1, "Sort", sortIcon, controlTab == ControlTab::Sort);

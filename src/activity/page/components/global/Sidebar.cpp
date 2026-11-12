@@ -71,8 +71,9 @@ int Sidebar::hitTest(const GfxRenderer& renderer, const int tapX, const int tapY
   const int drawerWidth = width(renderer);
   const int contentTop = listTop() + kTopPadding;
   const int contentBottom = renderer.getScreenHeight() - kInnerPadding;
-  if (tapX < kInnerPadding || tapX >= drawerWidth - kInnerPadding || tapY < contentTop ||
-      tapY >= contentBottom) {
+  // The rendered rows span the drawer; keep the horizontal hit target just as
+  // wide so taps near the label's right edge are not discarded.
+  if (tapX < 0 || tapX >= drawerWidth || tapY < contentTop || tapY >= contentBottom) {
     return -1;
   }
   const int index = (tapY - contentTop) / (rowHeight + kRowGap);

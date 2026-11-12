@@ -105,16 +105,18 @@ uint64_t Streaks::dataKey() const {
 
 bool Streaks::needsRefresh() const { return dataKey() != renderedKey_; }
 
-void Streaks::render(const int x, const int y, const int width, const int height, const bool monthly) const {
-  renderContent(x, y, width, height, false, monthly);
+void Streaks::render(const int x, const int y, const int width, const int height, const bool monthly,
+                     const bool compact) const {
+  renderContent(x, y, width, height, false, monthly, compact);
 }
 
-void Streaks::preview(const int x, const int y, const int width, const int height, const bool monthly) const {
-  renderContent(x, y, width, height, true, monthly);
+void Streaks::preview(const int x, const int y, const int width, const int height, const bool monthly,
+                      const bool compact) const {
+  renderContent(x, y, width, height, true, monthly, compact);
 }
 
 void Streaks::renderContent(const int x, const int y, const int width, const int height, const bool sample,
-                            const bool monthly) const {
+                            const bool monthly, const bool compact) const {
   if (width <= 0 || height <= 0) return;
   renderer_.rectangle.fill(x, y, width, height, false);
 
@@ -167,15 +169,14 @@ void Streaks::renderContent(const int x, const int y, const int width, const int
   constexpr int iconWidth = 64;
   constexpr int iconHeight = 65;
 
-  const int labelFont = systemFontIdForPointSize(8);
+  const int labelFont = systemFontIdForPointSize(12);
   const int labelLine = renderer_.text.getLineHeight(labelFont);
-  const int valueFont = systemFontIdForPointSize(18);
-  constexpr uint8_t valueScale = 150;
-  constexpr int textGap = 10;
+  const int valueFont = systemFontIdForPointSize(27);
   const int valueLine = renderer_.text.getLineHeight(valueFont);
-  const int topSectionHeight = std::max(iconHeight, 6 + valueLine + labelLine);
-  const int circleRadius = monthly ? std::max(10, std::min(13, height / 16))
-                                   : std::max(9, std::min(15, height / 14 + 2));
+  const int topSectionHeight = std::max(iconHeight, 6 + std::max(valueLine, labelLine));
+  const int circleRadius = monthly ? std::max(12, std::min(15, height / 14))
+                                   : (compact ? std::max(11, std::min(17, height / 14 + 4))
+                                              : std::max(9, std::min(15, height / 14 + 2)));
   const int calendarFont = systemFontIdForPointSize(10);
   const int calendarLine = renderer_.text.getLineHeight(calendarFont);
   int monthFirstWeekday = 0;
@@ -195,7 +196,9 @@ void Streaks::renderContent(const int x, const int y, const int width, const int
   int calendarRowStep = 0;
   if (monthly) {
     const int availableGridHeight = std::max(1, contentHeight - topSectionHeight - 20 - calendarLine - 6);
-    calendarRowStep = std::max(circleRadius * 2, availableGridHeight / std::max(1, monthRowCount));
+    constexpr int monthlyDateGap = 6;
+    calendarRowStep = std::max(circleRadius * 2 + monthlyDateGap,
+                               availableGridHeight / std::max(1, monthRowCount) + monthlyDateGap);
   }
   const int bottomSectionHeight = monthly
                                      ? calendarLine + 6 + monthRowCount * calendarRowStep
@@ -213,9 +216,11 @@ void Streaks::renderContent(const int x, const int y, const int width, const int
   char streakText[16];
   std::snprintf(streakText, sizeof(streakText), "%d", streak);
   const int countY = top + 6;
-  const int labelY = countY + valueLine + textGap;
-  renderer_.text.renderScaled(valueFont, valueX, countY, streakText, valueScale, true, EpdFontFamily::BOLD);
-  renderer_.text.renderGray(labelFont, valueX, labelY, "Day streak", true, EpdFontFamily::REGULAR);
+  renderer_.text.render(valueFont, valueX, countY, streakText, true, EpdFontFamily::BOLD);
+  const int valueWidth = renderer_.text.getWidth(valueFont, streakText, EpdFontFamily::BOLD);
+  const int labelX = valueX + valueWidth + 12;
+  const int labelY = countY + (valueLine - labelLine) / 2;
+  renderer_.text.renderGray(labelFont, labelX, labelY, "Day streak", true, EpdFontFamily::REGULAR);
 
   const int circlesTop = blockTop + topSectionHeight + actualGap;
   const int availableWidth = std::max(1, width - paddingX * 2);

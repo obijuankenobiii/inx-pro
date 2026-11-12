@@ -164,6 +164,10 @@ void recordReadingHistoryMs(uint32_t elapsedMs);
 /** Adds elapsed reading time and attributes it to the active book cache path. */
 void recordReadingHistoryMs(uint32_t elapsedMs, const std::string& bookPath);
 
+/** Returns accumulated reading time for a book in morning, noon, and evening buckets. */
+void getBookReadingTimeOfDay(const std::string& bookPath, uint32_t& morningMs, uint32_t& noonMs,
+                             uint32_t& eveningMs);
+
 /** Flushes pending RTC history changes to /.system/statistics.bin. */
 void saveReadingHistory();
 
