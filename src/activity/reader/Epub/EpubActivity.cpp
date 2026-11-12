@@ -74,6 +74,7 @@ constexpr int kWordSelectionHandleRadius = 11;
 constexpr int kWordSelectionActionGap = 14;
 constexpr int kWordSelectionActionBarPadding = 20;
 constexpr bool kWordSelectionActionBarVertical = true;
+constexpr float kTocSwipeStartNx = 0.12f;
 
 bool pageImageFootprintAtLeastHalfScreen(const Page& page, const GfxRenderer& renderer, int marginLeft, int marginTop) {
   if (!page.hasImages()) {
@@ -1662,7 +1663,7 @@ void EpubActivity::loop() {
   float backGestureStartX = 0.0f;
   float backGestureStartY = 0.0f;
   if (mappedInput.wasTouchSwipeRightInScreen(renderer, backGestureStartX, backGestureStartY) &&
-      backGestureStartX <= 0.30f && !settingsDrawerVisible) {
+      backGestureStartX <= kTocSwipeStartNx && !settingsDrawerVisible) {
     pauseReadingStats();
     openTableOfContents();
     return;
@@ -1685,7 +1686,8 @@ void EpubActivity::loop() {
       lastAutoPageTurnTime = millis();
       return;
     }
-  } else if (mappedInput.wasTouchSwipeRightForRenderer(renderer)) {
+  } else if (mappedInput.wasTouchSwipeRightInScreen(renderer, backGestureStartX, backGestureStartY) &&
+             backGestureStartX <= kTocSwipeStartNx) {
     pauseReadingStats();
     openTableOfContents();
     return;

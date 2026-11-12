@@ -434,6 +434,15 @@ void setup() {
 void loop() {
   gpio.update();
   logButtonEdges();
+#if FREEINK_DEVICE_X4PRO
+  if (SETTINGS.x4proHomeButton == SystemSetting::X4PRO_HOME_BUTTON_HOME &&
+      gpio.touchSwipe() == HalGPIO::TouchSwipe::None && gpio.wasHomeKeyTapped()) {
+    INX_SERIAL.printf("[%lu] [INPUT][HOME] X4 Pro Home button -> Home\n", millis());
+    onGoToHome();
+    delay(10);
+    return;
+  }
+#endif
   const bool powerHeld = gpio.isPressed(HalGPIO::BTN_POWER);
   const bool downHeld = gpio.isPressed(HalGPIO::BTN_DOWN);
   static bool powerDownComboTracking = false;

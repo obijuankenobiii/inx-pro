@@ -66,6 +66,8 @@ class HalGPIO {
   bool wasTouchPressedAt(float& nx, float& ny) const;
   bool isTouchHeldAt(float& nx, float& ny) const;
   bool wasTouchActivity() const;
+  /** True once on release of the capacitive Home key's short press. */
+  bool wasHomeKeyTapped() const;
   bool wasTouchTap(float& nx, float& ny) const;
   unsigned long lastTouchHeldMs() const;
 

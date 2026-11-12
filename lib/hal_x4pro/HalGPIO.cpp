@@ -14,6 +14,8 @@
 
 #include <cmath>
 
+#include "state/SystemSetting.h"
+
 namespace {
 uint8_t weekdayFromCalendarDate(const uint16_t year, const uint8_t month, const uint8_t day) {
   if (year < 1900 || month < 1 || month > 12 || day < 1 || day > 31) {
@@ -55,11 +57,13 @@ void HalGPIO::serviceTouchGestures() {
     return;
   }
 
-  if (inputMgr.wasHomeKeyPressed()) {
-    touchPressedEvents |= (1 << BTN_BACK);
-  }
-  if (inputMgr.wasHomeKeyTapped()) {
-    touchReleasedEvents |= (1 << BTN_BACK);
+  if (SETTINGS.x4proHomeButton == SystemSetting::X4PRO_HOME_BUTTON_BACK) {
+    if (inputMgr.wasHomeKeyPressed()) {
+      touchPressedEvents |= (1 << BTN_BACK);
+    }
+    if (inputMgr.wasHomeKeyTapped()) {
+      touchReleasedEvents |= (1 << BTN_BACK);
+    }
   }
 
   // Publish the swipe only on the touch-controller release edge. If it is
@@ -136,6 +140,8 @@ bool HalGPIO::wasTouchPressedAt(float& nx, float& ny) const { return inputMgr.wa
 bool HalGPIO::isTouchHeldAt(float& nx, float& ny) const { return inputMgr.isTouchHeldAt(nx, ny); }
 
 bool HalGPIO::wasTouchActivity() const { return inputMgr.wasTouchActivity(); }
+
+bool HalGPIO::wasHomeKeyTapped() const { return inputMgr.wasHomeKeyTapped(); }
 
 bool HalGPIO::wasTouchTap(float& nx, float& ny) const {
   if (suppressTouchUntilRelease || inputMgr.isTouchPressed() || !inputMgr.wasTouchReleased()) return false;

@@ -109,6 +109,12 @@ std::vector<SettingInfo> buildSystemSettings() {
                                        GroupType::DEVICE_ADVANCED));
   settings.push_back(SettingInfo::Enum("Boot Mode", &SystemSetting::bootSetting, {"Recent Book", "Home"},
                                        GroupType::DEVICE_ADVANCED));
+#if FREEINK_DEVICE_X4PRO
+  settings.push_back(SettingInfo::Enum("Home Button", &SystemSetting::x4proHomeButton, {"Back", "Home"},
+                                       {SystemSetting::X4PRO_HOME_BUTTON_BACK,
+                                        SystemSetting::X4PRO_HOME_BUTTON_HOME},
+                                       GroupType::DEVICE_ADVANCED));
+#endif
   settings.push_back(SettingInfo::Action("Language", GroupType::DEVICE_ADVANCED));
 #if FREEINK_DEVICE_STICKY || FREEINK_DEVICE_PICCO
   settings.push_back(SettingInfo::Enum("Flick page turn", &SystemSetting::shakePageTurn,

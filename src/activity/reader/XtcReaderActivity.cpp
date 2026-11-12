@@ -40,6 +40,7 @@ constexpr int XTC_TOC_CLOSE_SIZE = 24;
 constexpr int XTC_TOC_CLOSE_HIT_SIZE = 40;
 constexpr int XTC_TOC_HEADER_HEIGHT = 74;
 constexpr int XTC_TOC_ROW_HEIGHT = 66;
+constexpr float XTC_TOC_SWIPE_START_NX = 0.12f;
 
 void drawScrollBar(const GfxRenderer& renderer, const int x, const int y, const int height, const int total,
                    const int visible, const int offset) {
@@ -239,7 +240,8 @@ void XtcReaderActivity::loop() {
 
   if (READER_SETTINGS.pageTurnMode == ReaderSetting::PAGE_TURN_TAP && xtc && xtc->hasChapters() &&
       !xtc->getChapters().empty() && mappedInput.hasTouch() &&
-      mappedInput.wasTouchSwipeRightForRenderer(renderer)) {
+      mappedInput.wasTouchSwipeRightInScreen(renderer, backGestureStartX, backGestureStartY) &&
+      backGestureStartX <= XTC_TOC_SWIPE_START_NX) {
       openTableOfContents();
       return;
   }

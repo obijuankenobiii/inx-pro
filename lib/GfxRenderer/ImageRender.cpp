@@ -339,9 +339,9 @@ bool ImageRender::displayGrayscale(int x, int y, int width, int height, const Op
   combinedCacheOptions.roundedOutside = opt.roundedOutside;
   combinedCacheOptions.quality = effectiveQuality;
 
-  if (!overlay && options.useDisplayCache &&
+  if (options.useDisplayCache &&
       ImageDisplayCache::renderCombinedTwoBit(renderer_, path_, x, y, width, height, combinedCacheOptions,
-                                              effectiveQuality, opt.fastQuality)) {
+                                              effectiveQuality, opt.fastQuality, overlay)) {
     return true;
   }
 

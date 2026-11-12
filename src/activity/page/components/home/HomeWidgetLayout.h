@@ -24,7 +24,19 @@ class GfxRenderer;
 
 class HomeWidgetLayout final {
  public:
-  enum class HitType { None, Carousel, Recent, RecentGrid, Flow, Favorites, TodaysReading, Heatmap, Library, Shortcut };
+  enum class HitType {
+    None,
+    Carousel,
+    Recent,
+    RecentGrid,
+    Flow,
+    Favorites,
+    TodaysReading,
+    Statistics,
+    Heatmap,
+    Library,
+    Shortcut
+  };
   enum class SwipeTarget { None, Carousel, Favorites, Flow, WidgetPage };
 
   struct HitResult {

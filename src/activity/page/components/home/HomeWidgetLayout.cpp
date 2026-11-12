@@ -550,6 +550,9 @@ HomeWidgetLayout::HitResult HomeWidgetLayout::hitTest(const HomeTheme::Theme& th
   const int todaysReading = todaysReadingAt(theme, x, y);
   if (todaysReading >= 0) return {HitType::TodaysReading, todaysReading};
 
+  const int statistics = findWidget(theme, HomeTheme::Widget::Statistics, x, y);
+  if (statistics >= 0) return {HitType::Statistics, statistics};
+
   const int heatmap = heatmapAt(theme, x, y);
   if (heatmap >= 0) return {HitType::Heatmap, heatmap};
 

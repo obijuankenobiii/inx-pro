@@ -87,6 +87,7 @@ void Home::onEnter() {
   thumbnailWarmupPending_ = false;
   popupBook = -1;
   favoritePopupOpen = false;
+  statisticsPopupOpen = false;
   heatmapPopupOpen = false;
   popupFavoritePath.clear();
   tapRejectLogged_ = false;
@@ -110,7 +111,7 @@ ButtonBounds Home::libraryButton() const {
 }
 
 void Home::loop() {
-  if ((popupBook >= 0 || favoritePopupOpen || heatmapPopupOpen) && handlePopup()) return;
+  if ((popupBook >= 0 || favoritePopupOpen || statisticsPopupOpen || heatmapPopupOpen) && handlePopup()) return;
   if (menuInput()) return;
   if (isOpen()) {
     renderPage();
@@ -145,11 +146,16 @@ void Home::content() {
     deferThumbnailDecode_ = false;
     thumbnailWarmupPending_ = true;
   }
-  if (popupBook >= 0 || favoritePopupOpen || heatmapPopupOpen) popup();
+  if (popupBook >= 0 || favoritePopupOpen || statisticsPopupOpen || heatmapPopupOpen) popup();
 }
 
 bool Home::handlePopup() {
   if (heatmapPopupOpen) {
+    if (popupInput()) return true;
+    renderPage();
+    return true;
+  }
+  if (statisticsPopupOpen) {
     if (popupInput()) return true;
     renderPage();
     return true;
@@ -308,6 +314,15 @@ bool Home::handleTap() {
     }
     return true;
   }
+  if (favoriteHit.type == HomeWidgetLayout::HitType::Statistics) {
+    if (mappedInput.lastTouchHeldMs() >= longPressMs) {
+      statisticsPopupOpen = true;
+      updateRequired = true;
+      return true;
+    }
+    onGoToStatistics();
+    return true;
+  }
   if (favoriteHit.type == HomeWidgetLayout::HitType::Favorites) {
     const std::string& path = widgetLayout.favoritePath(favoriteHit.index);
     if (mappedInput.lastTouchHeldMs() >= longPressMs) {
@@ -436,15 +451,19 @@ bool Home::handleShortcut(const int item) {
 }
 
 void Home::popup() const {
-  const std::vector<std::string> items =
-      heatmapPopupOpen
-          ? std::vector<std::string>{"View Report"}
-          : (favoritePopupOpen
-                 ? std::vector<std::string>{"Remove favorite"}
-                 : std::vector<std::string>{"View description", "Mark as completed", "Remove Recent", "Delete cache"});
+  std::vector<std::string> items;
+  if (heatmapPopupOpen || statisticsPopupOpen) {
+    items = {"View Report"};
+  } else if (favoritePopupOpen) {
+    items = {"Remove favorite"};
+  } else {
+    items = {"View description", "Mark as completed", "Remove Recent", "Delete cache"};
+  }
   const PopUpBounds box = PopUp::bounds(renderer, static_cast<int>(items.size()));
   PopUp::background(renderer, box);
-  PopUp::title(renderer, box, heatmapPopupOpen ? "Heatmap" : (favoritePopupOpen ? "Favorite" : "Book"));
+  PopUp::title(renderer, box, heatmapPopupOpen ? "Heatmap"
+                                               : (statisticsPopupOpen ? "Statistics"
+                                                                       : (favoritePopupOpen ? "Favorite" : "Book")));
   PopUp::list(renderer, box, items, -1, 0);
   PopUp::border(renderer, box);
 }
@@ -453,6 +472,7 @@ bool Home::popupInput() {
   if (mappedInput.wasPressed(MappedInputManager::Button::Back) ||
       (mappedInput.hasTouch() && mappedInput.wasTouchSwipeUp())) {
     favoritePopupOpen = false;
+    statisticsPopupOpen = false;
     heatmapPopupOpen = false;
     popupFavoritePath.clear();
     popupBook = -1;
@@ -465,11 +485,12 @@ bool Home::popupInput() {
   float tapY = 0.0f;
   if (!mappedInput.wasTouchTapInScreen(renderer, tapX, tapY)) return false;
 
-  const PopUpBounds box = PopUp::bounds(renderer, heatmapPopupOpen || favoritePopupOpen ? 1 : 4);
+  const PopUpBounds box = PopUp::bounds(renderer, heatmapPopupOpen || statisticsPopupOpen || favoritePopupOpen ? 1 : 4);
   const int x = static_cast<int>(tapX * renderer.getScreenWidth());
   const int y = static_cast<int>(tapY * renderer.getScreenHeight());
   if (x < box.x || x >= box.x + box.width || y < box.y || y >= box.y + box.height) {
     favoritePopupOpen = false;
+    statisticsPopupOpen = false;
     heatmapPopupOpen = false;
     popupFavoritePath.clear();
     popupBook = -1;
@@ -483,6 +504,12 @@ bool Home::popupInput() {
       heatmapPopupOpen = false;
       updateRequired = true;
       onGoToHeatmapReport(heatmapPopupView);
+    }
+  } else if (statisticsPopupOpen) {
+    if (item == 0) {
+      statisticsPopupOpen = false;
+      updateRequired = true;
+      onGoToStatistics();
     }
   } else if (favoritePopupOpen) {
     if (item == 0) {

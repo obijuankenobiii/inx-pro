@@ -814,7 +814,7 @@ bool ImageDisplayCache::hasCombinedTwoBit(GfxRenderer& renderer, const std::stri
 bool ImageDisplayCache::renderCombinedTwoBit(GfxRenderer& renderer, const std::string& sourcePath, const int x,
                                              const int y, const int width, const int height,
                                              const ImageDisplayCacheOptions& options, const bool quality,
-                                             const bool fastQuality) {
+                                             const bool fastQuality, const std::function<void()>& overlay) {
   SdIoMutex::Lock ioLock;
   const unsigned long hqStartedAt = millis();
   unsigned long hqFileReadMs = 0;
@@ -893,7 +893,7 @@ bool ImageDisplayCache::renderCombinedTwoBit(GfxRenderer& renderer, const std::s
   file.close();
   hqFileReadMs = millis() - hqStartedAt;
 
-  const bool useWindow = quality && renderer.supportsWindowedQuality();
+  const bool useWindow = quality && renderer.supportsWindowedQuality() && !overlay;
   const GfxRenderer::DisplayRegion window{x, y, width, height};
   if (quality) {
     if (useWindow) renderer.prepareQualityGrayscaleWindow(window);
@@ -908,6 +908,7 @@ bool ImageDisplayCache::renderCombinedTwoBit(GfxRenderer& renderer, const std::s
     renderer.drawPackedRow1bpp(visible.x, visible.y + row, visible.width,
                                lsbRows.get() + static_cast<size_t>(row) * header.rowBytes);
   }
+  if (overlay) overlay();
   hqLsbDrawMs = millis() - hqStartedAt - hqFileReadMs - hqPrepareMs;
   renderer.copyGrayscaleLsbBuffers();
   hqLsbCopyMs = millis() - hqStartedAt - hqFileReadMs - hqPrepareMs - hqLsbDrawMs;
@@ -919,6 +920,7 @@ bool ImageDisplayCache::renderCombinedTwoBit(GfxRenderer& renderer, const std::s
     renderer.drawPackedRow1bpp(visible.x, visible.y + row, visible.width,
                                msbRows.get() + static_cast<size_t>(row) * header.rowBytes);
   }
+  if (overlay) overlay();
   hqMsbDrawMs = millis() - hqStartedAt - hqFileReadMs - hqPrepareMs - hqLsbDrawMs - hqLsbCopyMs;
   renderer.copyGrayscaleMsbBuffers();
   hqMsbCopyMs = millis() - hqStartedAt - hqFileReadMs - hqPrepareMs - hqLsbDrawMs - hqLsbCopyMs - hqMsbDrawMs;

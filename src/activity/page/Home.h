@@ -50,6 +50,7 @@ class Home final : public UiPage {
   bool thumbnailWarmupPending_ = false;
   int popupBook = -1;
   bool favoritePopupOpen = false;
+  bool statisticsPopupOpen = false;
   bool heatmapPopupOpen = false;
   bool tapRejectLogged_ = false;
   HomeTheme::HeatmapView heatmapPopupView = HomeTheme::HeatmapView::Weekly;

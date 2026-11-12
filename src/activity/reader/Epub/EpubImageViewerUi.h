@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <string>
 
+#include <ImageRender.h>
+
 class EpubActivity;
 class GfxRenderer;
 
@@ -27,6 +29,9 @@ class EpubImageViewerUi {
   void releaseRasterCache();
   bool captureRasterCache(const GfxRenderer& renderer, int x, int y);
   bool renderCachedZoom(EpubActivity& activity, int x, int y, int width, int height) const;
+  bool captureGrayscalePlane(const GfxRenderer& renderer, int x, int y, int width, int height);
+  bool renderCachedGrayscaleZoom(EpubActivity& activity, int x, int y, int width, int height,
+                                 const ImageRender::Options& options) const;
   void buttons(EpubActivity& activity) const;
   bool closeAt(EpubActivity& activity, int x, int y) const;
   bool rotateAt(EpubActivity& activity, int x, int y) const;
@@ -53,5 +58,8 @@ class EpubImageViewerUi {
   int rasterHeight = 0;
   uint8_t* rasterCache = nullptr;
   size_t rasterCacheBytes = 0;
+  uint8_t* grayscaleLsbCache = nullptr;
+  uint8_t* grayscaleMsbCache = nullptr;
+  size_t grayscaleCacheBytes = 0;
   bool cleanRefreshRequired = false;
 };

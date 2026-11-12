@@ -45,7 +45,7 @@ void readAndValidate(FsFile& file, uint8_t& member, const uint8_t maxValue) {
 
 namespace {
 constexpr uint8_t SETTINGS_FILE_VERSION = 1;
-constexpr uint8_t SETTINGS_COUNT = 47;
+constexpr uint8_t SETTINGS_COUNT = 48;
 constexpr char SETTINGS_FILE[] = "/.system/settings.bin";
 constexpr char SYSTEM_FONT_SELECTION_FILE[] = "/.system/system_font_selection.txt";
 constexpr uint32_t FNV1A_OFFSET = 2166136261UL;
@@ -219,6 +219,7 @@ uint32_t settingsHash(const SystemSetting& settings) {
   hashPod(hash, settings.hideMenuClock);
   hashPod(hash, settings.disableStatistics);
   hashPod(hash, settings.systemFontFamily);
+  hashPod(hash, settings.x4proHomeButton);
   return hash;
 }
 
@@ -346,6 +347,7 @@ bool SystemSetting::saveToFile() const {
   serialization::writePod(outputFile, exitAnimation);
   serialization::writePod(outputFile, disableStatistics);
   serialization::writePod(outputFile, systemFontFamily);
+  serialization::writePod(outputFile, x4proHomeButton);
 
   outputFile.close();
 
@@ -603,6 +605,11 @@ bool SystemSetting::loadFromFile() {
       serialization::readPod(inputFile, systemFontFamily);
       ++settingsRead;
     }
+    if (settingsRead < fileSettingsCount) {
+      serialization::readPod(inputFile, x4proHomeButton);
+      if (x4proHomeButton >= X4PRO_HOME_BUTTON_COUNT) x4proHomeButton = X4PRO_HOME_BUTTON_BACK;
+      ++settingsRead;
+    }
 
   } while (false);
 
@@ -613,6 +620,7 @@ bool SystemSetting::loadFromFile() {
   if (hiddenMenu > 1) hiddenMenu = 0;
   if (exitAnimation > 1) exitAnimation = 1;
   if (disableStatistics > 1) disableStatistics = 0;
+  if (x4proHomeButton >= X4PRO_HOME_BUTTON_COUNT) x4proHomeButton = X4PRO_HOME_BUTTON_BACK;
   if (keyboardLayout >= KEYBOARD_LAYOUT_COUNT) keyboardLayout = KEYBOARD_QWERTY;
   if (systemTextSize >= SYSTEM_TEXT_SIZE_COUNT) systemTextSize = SYSTEM_TEXT_SMALL;
 #ifndef INX_SIMULATOR_WEB_ONLY

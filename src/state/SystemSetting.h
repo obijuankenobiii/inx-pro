@@ -333,6 +333,13 @@ class SystemSetting {
     BOOT_SETTING_COUNT
   };
 
+  /** X4 Pro capacitive Home button behavior. */
+  enum X4PRO_HOME_BUTTON {
+    X4PRO_HOME_BUTTON_BACK = 0,
+    X4PRO_HOME_BUTTON_HOME = 1,
+    X4PRO_HOME_BUTTON_COUNT
+  };
+
   uint8_t sleepScreen = LIGHT;                 ///< Sleep screen display mode
   uint8_t sleepScreenCoverMode = FIT;          ///< Sleep screen cover scaling mode
   uint8_t sleepScreenCoverFilter = NO_FILTER;  ///< Sleep screen cover filter
@@ -416,6 +423,7 @@ class SystemSetting {
   uint8_t thumbnailSize = THUMBNAIL_ACTUAL;
 
   uint8_t bootSetting = RECENT_PAGE;  ///< Boot destination setting
+  uint8_t x4proHomeButton = X4PRO_HOME_BUTTON_BACK;  ///< X4 Pro Home key action
 
   /** Book image quality (READER_IMAGE_QUALITY): 0=Low(1-bit), 1=Medium(fast 2-bit grayscale),
    *  2=High(quality 2-bit grayscale with text preserved). */
