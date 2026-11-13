@@ -266,6 +266,7 @@ ScreenComponents::LoadingProgressLayout EpubActivity::loadingProgressShow(const 
  * @return true if successful, false otherwise
  */
 bool EpubActivity::buildSection(int spineIndex, const ViewportInfo& info, bool showProgress, bool skipImages) {
+  const unsigned long buildStart = millis();
   if (!epub) return false;
   const int totalSpines = epub->getSpineItemsCount();
   if (spineIndex < 0 || spineIndex >= totalSpines) {
@@ -304,6 +305,9 @@ bool EpubActivity::buildSection(int spineIndex, const ViewportInfo& info, bool s
       /*warmImageQuality=*/READER_SETTINGS.readerImageGrayscale == SystemSetting::READER_IMAGE_HIGH,
       info.totalMarginTop);
 
+  INX_SERIAL.printf("[%lu] [OPEN-TIME] chapter build spine=%d success=%d total=%lu ms\n", millis(), spineIndex,
+                    success ? 1 : 0, millis() - buildStart);
+
   if (success) {
     EpubAnnotations::migrateSpineAnnotations(cachePath, spineIndex, tempSection->pageCount, renderer, info.fontId,
                                              FontManager::getNextFont(info.fontId), info.totalMarginLeft,
@@ -329,6 +333,7 @@ bool EpubActivity::buildSection(int spineIndex, const ViewportInfo& info, bool s
  * @return Unique pointer to the loaded section
  */
 std::unique_ptr<Section> EpubActivity::loadSection(int spineIndex, const ViewportInfo& info, const bool showProgress) {
+  const unsigned long sectionStart = millis();
   if (!epub) return nullptr;
   const int totalSpines = epub->getSpineItemsCount();
   if (spineIndex < 0 || spineIndex >= totalSpines) {
@@ -339,16 +344,21 @@ std::unique_ptr<Section> EpubActivity::loadSection(int spineIndex, const Viewpor
   std::shared_ptr<Epub> sharedEpub = std::shared_ptr<Epub>(epub.get(), [](Epub*) {});
   auto loadedSection = std::unique_ptr<Section>(new Section(sharedEpub, spineIndex, renderer));
 
+  const unsigned long cacheLoadStart = millis();
   bool isCached = loadedSection->loadSectionFile(
       info.fontId, info.lineCompression, info.wordSpacing, bookSettings.extraParagraphSpacing,
       bookSettings.paragraphAlignment, info.width, info.height, bookSettings.hyphenationEnabled,
       bookSettings.paragraphCssIndentEnabled != 0, bookSettings.bionicReadingEnabled != 0);
+  const unsigned long cacheLoadMs = millis() - cacheLoadStart;
 
   if (!isCached) {
+    const unsigned long buildStart = millis();
     if (!buildSection(spineIndex, info, showProgress, false)) {
       INX_SERIAL.printf("[%lu] [EPA] loadSection: build failed spine=%d total=%d\n", millis(), spineIndex, totalSpines);
       return nullptr;
     }
+    const unsigned long buildMs = millis() - buildStart;
+    const unsigned long reloadStart = millis();
     if (!loadedSection->loadSectionFile(
             info.fontId, info.lineCompression, info.wordSpacing, bookSettings.extraParagraphSpacing,
             bookSettings.paragraphAlignment, info.width, info.height, bookSettings.hyphenationEnabled,
@@ -357,6 +367,11 @@ std::unique_ptr<Section> EpubActivity::loadSection(int spineIndex, const Viewpor
                     totalSpines);
       return nullptr;
     }
+    INX_SERIAL.printf("[%lu] [OPEN-TIME] chapter cache miss spine=%d cache=%lu build=%lu reload=%lu total=%lu ms\n",
+                      millis(), spineIndex, cacheLoadMs, buildMs, millis() - reloadStart, millis() - sectionStart);
+  } else {
+    INX_SERIAL.printf("[%lu] [OPEN-TIME] chapter cache hit spine=%d load=%lu total=%lu ms\n", millis(), spineIndex,
+                      cacheLoadMs, millis() - sectionStart);
   }
 
   if (loadedSection->pageCount == 0) {
@@ -472,9 +487,9 @@ void EpubActivity::ensureThumbnailExists(const bool coverAvailable) {
   (void)coverAvailable;
   const bool generated = epub->generateThumbBmp(false);
   INX_SERIAL.printf("[%lu] [THUMB-GEN] result=%d jpg=%d png=%d bmp=%d cache=%s\n", millis(), generated ? 1 : 0,
-                 SdMan.exists(epub->getThumbJpegPath().c_str()) ? 1 : 0,
-                 SdMan.exists(epub->getThumbPngPath().c_str()) ? 1 : 0,
-                 SdMan.exists(epub->getThumbBmpPath().c_str()) ? 1 : 0, epub->getCachePath().c_str());
+                    SdMan.exists(epub->getThumbJpegPath().c_str()) ? 1 : 0,
+                    SdMan.exists(epub->getThumbPngPath().c_str()) ? 1 : 0,
+                    SdMan.exists(epub->getThumbBmpPath().c_str()) ? 1 : 0, epub->getCachePath().c_str());
 }
 
 /**
@@ -521,6 +536,7 @@ bool EpubActivity::displayCoverOrTitle() {
  * @brief Loads and sets up the current section
  */
 void EpubActivity::loadCurrentSection(const bool showProgress) {
+  const unsigned long chapterStart = millis();
   if (!epub) {
       section.reset();
     return;
@@ -561,6 +577,9 @@ void EpubActivity::loadCurrentSection(const bool showProgress) {
       section->currentPage = std::min(newPage, section->pageCount - 1);
       cachedChapterTotalPageCount = 0;
     }
+    INX_SERIAL.printf("[%lu] [OPEN-TIME] current chapter ready requested=%d actual=%d pages=%u total=%lu ms\n", millis(),
+                      requestedSpine, currentSpineIndex, static_cast<unsigned>(section->pageCount),
+                      millis() - chapterStart);
     return;
   }
 
@@ -586,8 +605,13 @@ void EpubActivity::updateExternalState() {
  * @brief Fast path for books that were opened before
  */
 void EpubActivity::fastPath() {
+  const unsigned long fastStart = millis();
+  const unsigned long progressStart = millis();
   loadProgress();
+  const unsigned long progressMs = millis() - progressStart;
+  const unsigned long fontStart = millis();
   FontManager::ensureReaderLayoutFonts(calculateViewport().fontId, renderer);
+  const unsigned long fontMs = millis() - fontStart;
   int totalSpineItems = epub->getSpineItemsCount();
   if (currentSpineIndex >= totalSpineItems) {
     currentSpineIndex = 0;
@@ -602,30 +626,42 @@ void EpubActivity::fastPath() {
     cachedChapterTotalPageCount = 0;
   }
 
+  const unsigned long sectionStart = millis();
   loadCurrentSection();
+  const unsigned long sectionMs = millis() - sectionStart;
+  const unsigned long statusStart = millis();
   statusBar = std::unique_ptr<StatusBar>(new StatusBar(renderer, *epub, bookSettings, &readingStats_));
+  INX_SERIAL.printf("[%lu] [OPEN-TIME] fast path progress=%lu fonts=%lu chapter=%lu status=%lu total=%lu ms\n", millis(),
+                    progressMs, fontMs, sectionMs, millis() - statusStart, millis() - fastStart);
 }
 
 /**
  * @brief Slow path for new books
  */
 bool EpubActivity::slowPath() {
+  const unsigned long slowStart = millis();
   INX_SERIAL.printf("[%lu] [THUMB-GEN] slowPath start book=%s cache=%s\n", millis(), epub->getPath().c_str(),
                  epub->getCachePath().c_str());
+  const unsigned long epubLoadStart = millis();
   if (!epub->isLoaded() && !epub->load(true)) {
     readerPopup("Book seems corrupted");
     onGoBack();
     return false;
   }
+  const unsigned long epubLoadMs = millis() - epubLoadStart;
 
+  const unsigned long coverStart = millis();
   const bool coverAvailable = displayCoverOrTitle();
+  const unsigned long coverMs = millis() - coverStart;
   loadingProgress = 30;
   drawLoadingScreen();
   vTaskDelay(pdMS_TO_TICKS(50));
 
   INX_SERIAL.printf("[%lu] [THUMB-GEN] slowPath calling thumbnail coverAvailable=%d\n", millis(),
                  coverAvailable ? 1 : 0);
+  const unsigned long thumbStart = millis();
   ensureThumbnailExists(coverAvailable);
+  const unsigned long thumbMs = millis() - thumbStart;
   const int initialSpine = epub->getSpineIndexForInitialOpen();
   // A number of EPUBs declare a cover/title XHTML item first, but that item
   // has no renderable pages. Starting there makes the first-open path build a
@@ -639,14 +675,20 @@ bool EpubActivity::slowPath() {
     nextPageNumber = initialPageNumber_;
   }
 
+  const unsigned long fontStart = millis();
   FontManager::ensureReaderLayoutFonts(calculateViewport().fontId, renderer);
+  const unsigned long fontMs = millis() - fontStart;
   BOOK_STATE.addOrUpdateBook(epub->getPath(), epub->getTitle(), epub->getAuthor());
 
+  const unsigned long sectionStart = millis();
   loadCurrentSection(false);
+  const unsigned long sectionMs = millis() - sectionStart;
   loadingProgress = 100;
   drawLoadingScreen();
 
   statusBar = std::unique_ptr<StatusBar>(new StatusBar(renderer, *epub, bookSettings, &readingStats_));
+  INX_SERIAL.printf("[%lu] [OPEN-TIME] slow path epub=%lu cover=%lu thumb=%lu fonts=%lu chapter=%lu total=%lu ms\n", millis(),
+                    epubLoadMs, coverMs, thumbMs, fontMs, sectionMs, millis() - slowStart);
   if (!section) {
     readerPopup("Error loading chapter");
     onGoBack();
@@ -2285,11 +2327,15 @@ void EpubActivity::renderScreen(const bool clearFramebuffer) {
 
   ViewportInfo info = calculateViewport();
 
-  if (!section) {
+  const bool sectionWasMissing = !section;
+  const unsigned long firstPageStart = sectionWasMissing ? millis() : 0;
+  unsigned long sectionLoadMs = 0;
+  if (sectionWasMissing) {
     const bool wasLayoutReload = suppressNextSectionLoadProgress_;
     const bool showSectionLoadProgress = !wasLayoutReload;
     suppressNextSectionLoadProgress_ = false;
     loadCurrentSection(showSectionLoadProgress);
+    sectionLoadMs = millis() - firstPageStart;
     if (!section) {
       INX_SERIAL.printf("[%lu] [EPA] renderScreen: loadCurrentSection failed spine=%d total=%d\n", millis(),
                     currentSpineIndex, totalSpine);
@@ -2338,7 +2384,9 @@ void EpubActivity::renderScreen(const bool clearFramebuffer) {
     section->currentPage = 0;
   }
 
+  const unsigned long pageLoadStart = sectionWasMissing ? millis() : 0;
   auto page = section->loadPageFromSectionFile();
+  const unsigned long pageLoadMs = sectionWasMissing ? millis() - pageLoadStart : 0;
   if (!page) {
     INX_SERIAL.printf("[%lu] [EPA] renderScreen: page deserialize failed spine=%d page=%d count=%u\n", millis(),
                   currentSpineIndex, section->currentPage, static_cast<unsigned>(section->pageCount));
@@ -2348,12 +2396,18 @@ void EpubActivity::renderScreen(const bool clearFramebuffer) {
     return;
   }
 
+  const unsigned long renderStart = sectionWasMissing ? millis() : 0;
   renderContents(page, info.totalMarginTop, info.totalMarginRight, info.totalMarginBottom, info.totalMarginLeft);
+  const unsigned long renderMs = sectionWasMissing ? millis() - renderStart : 0;
 
   if (settingsDrawerVisible && settingsDrawer) settingsDrawer->render();
   if (navigation_) navigation_->render();
 
   saveProgress(currentSpineIndex, section->currentPage, section->pageCount, false);
+  if (sectionWasMissing) {
+    INX_SERIAL.printf("[%lu] [OPEN-TIME] first page section=%lu page=%lu render=%lu total=%lu ms\n", millis(),
+                      sectionLoadMs, pageLoadMs, renderMs, millis() - firstPageStart);
+  }
   lastGoodSpineIndex_ = currentSpineIndex;
   lastGoodPageNumber_ = section->currentPage;
   chapterRecoveryAttempted_ = false;

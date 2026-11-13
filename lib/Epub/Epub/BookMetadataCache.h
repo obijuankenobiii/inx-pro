@@ -7,11 +7,32 @@
 
 #include <SDCardManager.h>
 
+#include "PsramAllocator.h"
+
 #include <algorithm>
 #include <string>
+#include <string_view>
+#include <unordered_map>
 #include <vector>
 
 class BookMetadataCache {
+ private:
+  struct SpineHrefHash {
+    using is_transparent = void;
+    size_t operator()(const std::string_view value) const noexcept {
+      return std::hash<std::string_view>{}(value);
+    }
+  };
+
+  struct SpineHrefEqual {
+    using is_transparent = void;
+    bool operator()(const std::string_view left, const std::string_view right) const noexcept { return left == right; }
+  };
+
+  using SpineIndexMap = std::unordered_map<
+      EpubPsramString, int16_t, SpineHrefHash, SpineHrefEqual,
+      EpubPsramAllocator<std::pair<const EpubPsramString, int16_t>>>;
+
  public:
   struct MetadataAttribute {
     std::string name;
@@ -106,6 +127,9 @@ class BookMetadataCache {
   FsFile spineFile;
   FsFile tocFile;
   FsFile cssFile;
+
+  // Build-time lookup so TOC entries do not rescan the complete spine file.
+  SpineIndexMap spineIndexByHref;
 
   static constexpr uint32_t MAX_CSS_SIZE = 1024 * 1024;
 

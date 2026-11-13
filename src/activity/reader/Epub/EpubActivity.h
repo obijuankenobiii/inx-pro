@@ -112,7 +112,6 @@ class EpubActivity final : public ActivityWithSubactivity {
   bool updateRequired = false;
   int loadingProgress = 0;
   unsigned long lastAutoPageTurnTime = 0;
-
   const std::function<void()> onGoBack;
   const std::function<void()> onGoToHome;
 
