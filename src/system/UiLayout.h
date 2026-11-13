@@ -18,6 +18,7 @@ constexpr int LIST_ITEM_HEIGHT = 66;       ///< one row in any settings/menu lis
 constexpr int HEADER_HEIGHT = 66;          ///< in-page header band
 constexpr int PAGE_HEADER_HEIGHT = 79;     ///< taller header used by drawer pages
 constexpr int TAB_BAR_HEIGHT = 60;         ///< bottom navigation strip
+constexpr int LIBRARY_BOTTOM_BAR_HEIGHT = 70;  ///< sidebar-mode Library controls bar
 constexpr int CONTENT_TOP = 36;            ///< first usable y below the status row
 constexpr int CONTENT_BOTTOM_PADDING = 5;  ///< gap between content and the tab bar
 constexpr int LIST_BOTTOM_PADDING = 12;

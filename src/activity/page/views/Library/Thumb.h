@@ -33,6 +33,7 @@ class Thumb final {
   void reset();
   /** Current page index, so the caller can restore it when returning to this folder. */
   int currentPage() const { return page; }
+  int totalPages() const { return pageCount(); }
   /** Restores a remembered page. Clamped in load(), which knows the item count. */
   void setPage(int value) { page = value < 0 ? 0 : value; }
   bool handleInput();

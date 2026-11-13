@@ -60,27 +60,26 @@ List::List(GfxRenderer& renderer, MappedInputManager& mappedInput,
 
 void List::reset() { page = 0; }
 
-int List::top() const { return navigation::Menu::height; }
+int List::top() const { return navigation::Menu::topPadding + navigation::Menu::iconSize; }
 
-int List::visibleRows() const {
-  // With the hidden sidebar there is no bottom tab bar consuming the final
-  // row's space, so expose one additional library item without changing the
-  // normal tab-bar layout.
-  return itemsPerPage + (SETTINGS.hiddenMenu != 0 ? 1 : 0);
+int List::availableHeight() const {
+  const int bottomInset = SETTINGS.hiddenMenu != 0 ? UiLayout::LIBRARY_BOTTOM_BAR_HEIGHT
+                                                   : navigation::Menu::bottomInset();
+  return std::max(1, renderer.getScreenHeight() - top() - bottomInset);
 }
 
+int List::rowHeight() const { return std::max(1, availableHeight() / itemsPerPage); }
+
 int List::pageCount() const {
-  const int rows = visibleRows();
-  return std::max(1, (static_cast<int>(items.size()) + rows - 1) / rows);
+  return std::max(1, (static_cast<int>(items.size()) + itemsPerPage - 1) / itemsPerPage);
 }
 
 int List::itemAt(const int x, const int y) const {
   (void)x;
-  if (y < top()) return -1;
-  const int row = (y - top()) / rowHeight;
-  const int rows = visibleRows();
-  if (row < 0 || row >= rows || y >= top() + rows * rowHeight) return -1;
-  const int index = page * rows + row;
+  const int currentRowHeight = rowHeight();
+  if (y < top() || y >= top() + itemsPerPage * currentRowHeight) return -1;
+  const int row = (y - top()) / currentRowHeight;
+  const int index = page * itemsPerPage + row;
   return index >= 0 && index < static_cast<int>(items.size()) ? index : -1;
 }
 
@@ -110,27 +109,28 @@ bool List::handleInput() {
 }
 
 void List::render() const {
-  const int rows = visibleRows();
-  const int start = page * rows;
-  const int count = std::min(rows, static_cast<int>(items.size()) - start);
+  const int start = page * itemsPerPage;
+  const int count = std::min(itemsPerPage, static_cast<int>(items.size()) - start);
   const int width = renderer.getScreenWidth();
   const int font = systemFontId();
+  const int currentRowHeight = rowHeight();
   for (int row = 0; row < count; ++row) {
-    const int y = top() + row * rowHeight;
-    const LibraryIndex::Book& item = items[static_cast<size_t>(start + row)];
+    const int index = start + row;
+    const int y = top() + row * currentRowHeight;
+    const LibraryIndex::Book& item = items[static_cast<size_t>(index)];
     const bool favorite = isFavorite && isFavorite(item);
     const uint8_t* icon = item.type == LibraryIndex::Book::Type::FOLDER
                               ? Folder
                               : (isPdf(item.path) ? Pdf24 : (isTxt(item.path) ? Txt24 : BookSmall));
-    renderer.bitmap.icon(icon, 20, y + (rowHeight - 24) / 2, 24, 24);
+    renderer.bitmap.icon(icon, 20, y + (currentRowHeight - 24) / 2, 24, 24);
     constexpr int favoriteSize = 24;
     const int available = std::max(40, width - 54 - 20 - (favorite ? favoriteSize + 10 : 0));
     const std::string label = renderer.text.truncate(font, bookTitle(item).c_str(), available);
-    renderer.text.render(font, 54, y + (rowHeight - renderer.text.getLineHeight(font)) / 2, label.c_str(), true);
-    if (favorite) renderer.bitmap.icon(Star, width - 20 - favoriteSize, y + (rowHeight - favoriteSize) / 2,
+    renderer.text.render(font, 54, y + (currentRowHeight - renderer.text.getLineHeight(font)) / 2, label.c_str(), true);
+    if (favorite) renderer.bitmap.icon(Star, width - 20 - favoriteSize, y + (currentRowHeight - favoriteSize) / 2,
                                        favoriteSize, favoriteSize);
     if (row + 1 < count) {
-      renderer.line.render(0, y + rowHeight - 1, width, y + rowHeight - 1, true,
+      renderer.line.render(20, y + currentRowHeight - 1, width - 20, y + currentRowHeight - 1, true,
                            LineRender::Style::Dotted);
     }
   }

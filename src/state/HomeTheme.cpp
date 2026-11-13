@@ -522,6 +522,16 @@ void load() {
       for (uint8_t& value : theme.streakCompact) value = 0;
       for (HeatmapView& view : theme.heatmapViews) view = HeatmapView::Weekly;
       setDefaultLibraryFolders(theme);
+    } else if (theme.layout == Layout::HalfTop || theme.layout == Layout::HalfMiddle ||
+               theme.layout == Layout::HalfBottom) {
+      // The half-stack layouts are no longer offered. Keep the first two
+      // configured rows and migrate the saved theme to the supported 1 x 2
+      // layout when it is loaded.
+      theme.layout = Layout::OneByTwo;
+      for (int i = 2; i < 4; ++i) {
+        theme.widgets[i] = Widget::Empty;
+        theme.borders[i] = Border::None;
+      }
     }
     return true;
   };

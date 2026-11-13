@@ -320,7 +320,8 @@ bool Home::handleTap() {
       updateRequired = true;
       return true;
     }
-    onGoToStatistics();
+    // Statistics is opened through the long-press popup only. A regular tap
+    // on the widget should not navigate away from the home page.
     return true;
   }
   if (favoriteHit.type == HomeWidgetLayout::HitType::Favorites) {

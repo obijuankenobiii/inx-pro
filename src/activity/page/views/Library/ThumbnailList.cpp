@@ -13,6 +13,7 @@
 
 #include "images/LibraryFilterRight.h"
 #include "state/SystemSetting.h"
+#include "system/UiLayout.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
 #include "../../navigation/Menu.h"
@@ -35,7 +36,11 @@ std::string folderFor(const LibraryIndex::Book& book) {
     const size_t slash = book.path.find_last_of('/');
     folder = slash == std::string::npos || slash == 0 ? "/" : book.path.substr(0, slash);
   }
-  return folder == "/" ? "Library" : folder;
+  if (folder.empty() || folder == "/" || folder == "Root") return "Library";
+  while (!folder.empty() && folder.front() == '/') folder.erase(folder.begin());
+  const size_t slash = folder.find_last_of('/');
+  if (slash != std::string::npos) folder = folder.substr(slash + 1);
+  return folder.empty() ? "Library" : folder;
 }
 
 std::string metadataImagePath(const std::string& bookPath) {
@@ -84,13 +89,13 @@ int ThumbnailList::top() const { return navigation::Menu::height; }
 
 int ThumbnailList::rowHeight() const {
   if (SETTINGS.hiddenMenu == 0) return normalRowHeight;
-  const int available = std::max(1, renderer.getScreenHeight() - top());
-  // Six rows still leave the 104px thumbnail enough vertical breathing room.
-  return std::max(thumbnailHeight + 10, available / 6);
+  const int available = std::max(1, renderer.getScreenHeight() - top() - UiLayout::LIBRARY_BOTTOM_BAR_HEIGHT);
+  return std::max(thumbnailHeight + 10, available / 5);
 }
 
 int ThumbnailList::visibleRows() const {
-  const int available = renderer.getScreenHeight() - top() - navigation::Menu::bottomInset();
+  const int bottomInset = SETTINGS.hiddenMenu != 0 ? UiLayout::LIBRARY_BOTTOM_BAR_HEIGHT : navigation::Menu::bottomInset();
+  const int available = renderer.getScreenHeight() - top() - bottomInset;
   return std::max(1, available / rowHeight());
 }
 

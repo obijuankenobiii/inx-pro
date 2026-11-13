@@ -15,6 +15,7 @@
 
 #include "state/SystemSetting.h"
 #include "images/Star.h"
+#include "system/UiLayout.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
 #include "util/SdIoMutex.h"
@@ -28,7 +29,7 @@ namespace {
 int contentBottomInset() {
   // The hidden sidebar replaces the bottom tab bar, but thumbnails still need
   // a touch-safe breathing room at the bottom of the portrait panel.
-  return SETTINGS.hiddenMenu != 0 ? 60 : navigation::Menu::bottomInset();
+  return SETTINGS.hiddenMenu != 0 ? UiLayout::LIBRARY_BOTTOM_BAR_HEIGHT : navigation::Menu::bottomInset();
 }
 
 std::string bookTitle(const LibraryIndex::Book& book) {

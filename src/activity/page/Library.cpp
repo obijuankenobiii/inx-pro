@@ -31,6 +31,7 @@
 #include "images/LibraryViewList.h"
 #include "images/LibraryViewThumb.h"
 #include "images/Refresh.h"
+#include "images/Search.h"
 #include "images/SortAsc.h"
 #include "images/SortDesc.h"
 #include "state/BookState.h"
@@ -1296,9 +1297,17 @@ void Library::refresh() {
   LibraryIndexRefresh::start(renderer, this);
 }
 
-int Library::miniMenuX() const { return std::max(0, renderer.getScreenWidth() - buttonSize); }
+int Library::miniMenuX() const {
+  if (SETTINGS.hiddenMenu != 0) {
+    constexpr int bottomBarRightMargin = 0;
+    constexpr int bottomBarButtonCount = 3;
+    return std::max(0, renderer.getScreenWidth() - bottomBarRightMargin - buttonSize * bottomBarButtonCount);
+  }
+  return std::max(0, renderer.getScreenWidth() - buttonSize);
+}
 
 int Library::miniMenuY() const {
+  if (SETTINGS.hiddenMenu != 0) return renderer.getScreenHeight() - bottomBarHeight;
   return (renderer.getScreenHeight() - (buttonSize * 2 + buttonGap)) / 2;
 }
 
@@ -1306,25 +1315,68 @@ void Library::center() const {
   const int x = miniMenuX();
   const int y = miniMenuY();
   const int screenWidth = renderer.getScreenWidth();
-  const int containerWidth = std::min(screenWidth - x, buttonSize);
-  const int containerHeight = buttonSize * 2 + buttonGap;
+  const bool bottomBar = SETTINGS.hiddenMenu != 0;
+  const int bottomBarButtonCount = 3;
+  const int containerWidth = std::min(screenWidth - x, bottomBar ? buttonSize * bottomBarButtonCount : buttonSize);
+  const int containerHeight = bottomBar ? bottomBarHeight : buttonSize * 2 + buttonGap;
   renderer.rectangle.fill(x, y, containerWidth, containerHeight, false);
-  // Round the two outer left corners of the connected controls. The right
-  // edge remains square against the display edge.
-  renderer.rectangle.render(x, y, containerWidth, containerHeight, true, true);
+  // Keep the controls connected. In sidebar mode they become a centered
+  // bottom bar; otherwise they remain the right-edge vertical controls.
   constexpr int rightCornerRestore = 4;
-  renderer.line.render(x + std::max(0, containerWidth - rightCornerRestore), y,
-                       x + containerWidth - 1, y, true);
-  renderer.line.render(x + std::max(0, containerWidth - rightCornerRestore), y + containerHeight - 1,
-                       x + containerWidth - 1, y + containerHeight - 1, true);
-  renderer.line.render(x, y + buttonSize, x + containerWidth, y + buttonSize, true);
+  if (!bottomBar) {
+    renderer.rectangle.render(x, y, containerWidth, containerHeight, true, true);
+    renderer.line.render(x + std::max(0, containerWidth - rightCornerRestore), y,
+                         x + containerWidth - 1, y, true);
+    renderer.line.render(x + std::max(0, containerWidth - rightCornerRestore), y + containerHeight - 1,
+                         x + containerWidth - 1, y + containerHeight - 1, true);
+    renderer.line.render(x, y + buttonSize, x + containerWidth, y + buttonSize, true);
+  } else {
+    renderer.line.render(x + buttonSize, y, x + buttonSize, y + containerHeight, true);
+    renderer.line.render(x + buttonSize * 2, y, x + buttonSize * 2, y + containerHeight, true);
+    renderer.line.render(x, y + containerHeight - 1, x + containerWidth, y + containerHeight - 1, true);
+    renderer.line.render(0, y, screenWidth, y, true);
+
+    int currentPage = 0;
+    int totalPages = 1;
+    switch (view) {
+      case View::List:
+        currentPage = list.currentPage();
+        totalPages = list.totalPages();
+        break;
+      case View::Grid:
+        currentPage = grid.currentPage();
+        totalPages = grid.totalPages();
+        break;
+      case View::ListThumb:
+        currentPage = listThumb.currentPage();
+        totalPages = listThumb.totalPages();
+        break;
+      case View::Thumb:
+        currentPage = thumb.currentPage();
+        totalPages = thumb.totalPages();
+        break;
+    }
+    currentPage = std::max(0, std::min(currentPage, totalPages - 1));
+    const std::string pagination = std::to_string(currentPage + 1) + " / " + std::to_string(totalPages);
+    const int paginationFont = systemFontId();
+    renderer.text.render(paginationFont, 20,
+                         y + (containerHeight - renderer.text.getLineHeight(paginationFont)) / 2,
+                         pagination.c_str(), true, EpdFontFamily::REGULAR);
+  }
   const int caretX = x + (buttonSize - kCaretIconSize) / 2;
-  const int caretY = y + (buttonSize - kCaretIconSize) / 2;
+  const int caretY = y + (bottomBar ? (containerHeight - kCaretIconSize) / 2
+                                    : (buttonSize - kCaretIconSize) / 2);
   renderer.bitmap.iconScaled(LibraryFilterRight, caretX, caretY, kCaretSourceWidth, kCaretSourceHeight,
-                             kCaretIconSize, kCaretIconSize, BitmapRender::Orientation::Rotate180);
-  renderer.bitmap.icon(Refresh, x + (buttonSize - kRefreshIconSize) / 2,
-                       y + buttonSize + buttonGap + (buttonSize - kRefreshIconSize) / 2, kRefreshIconSize,
-                       kRefreshIconSize);
+                             kCaretIconSize, kCaretIconSize,
+                             bottomBar ? BitmapRender::Orientation::Rotate270CW : BitmapRender::Orientation::Rotate180);
+  if (bottomBar) {
+    renderer.bitmap.icon(Search, x + buttonSize + (buttonSize - kRefreshIconSize) / 2,
+                         y + (containerHeight - kRefreshIconSize) / 2, kRefreshIconSize, kRefreshIconSize);
+  }
+  const int refreshX = x + (bottomBar ? buttonSize * 2 : 0) + (buttonSize - kRefreshIconSize) / 2;
+  const int refreshY = y + (bottomBar ? (containerHeight - kRefreshIconSize) / 2
+                                      : buttonSize + buttonGap + (buttonSize - kRefreshIconSize) / 2);
+  renderer.bitmap.icon(Refresh, refreshX, refreshY, kRefreshIconSize, kRefreshIconSize);
 }
 
 bool Library::handleSidebarTap() {
@@ -1490,6 +1542,20 @@ navigation::Menu::Action Library::centerTap(const int tapX, const int tapY) cons
   const int x = miniMenuX();
   const int y = miniMenuY();
   const int touchPadding = refreshTouchPadding;
+  if (SETTINGS.hiddenMenu != 0) {
+    if (tapY >= y - touchPadding && tapY < y + bottomBarHeight + touchPadding) {
+      if (tapX >= x - touchPadding && tapX < x + buttonSize + touchPadding) {
+        return navigation::Menu::Action::Filter;
+      }
+      if (tapX >= x + buttonSize - touchPadding && tapX < x + buttonSize * 2 + touchPadding) {
+        return navigation::Menu::Action::Search;
+      }
+      if (tapX >= x + buttonSize * 2 - touchPadding && tapX < x + buttonSize * 3 + touchPadding) {
+        return navigation::Menu::Action::Refresh;
+      }
+    }
+    return navigation::Menu::Action::None;
+  }
   if (tapX >= x - touchPadding && tapX < x + buttonSize + touchPadding && tapY >= y &&
       tapY < y + buttonSize) {
     return navigation::Menu::Action::Filter;

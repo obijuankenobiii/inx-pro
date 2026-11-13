@@ -12,6 +12,7 @@
 
 #include "Epub/PsramAllocator.h"
 #include "Page.h"
+#include "system/UiLayout.h"
 #include "system/PluginManager.h"
 #include "util/LibraryIndex.h"
 #include "util/MetadataIndex.h"
@@ -70,6 +71,7 @@ class Library final : public UiPage {
   };
 
   static constexpr int buttonSize = 60;
+  static constexpr int bottomBarHeight = UiLayout::LIBRARY_BOTTOM_BAR_HEIGHT;
   static constexpr int buttonGap = 0;
   static constexpr int refreshTouchPadding = 10;
 

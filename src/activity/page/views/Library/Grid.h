@@ -21,6 +21,8 @@ class Grid final {
   void reset();
   bool handleInput();
   void render() const;
+  int currentPage() const { return page; }
+  int totalPages() const { return pageCount(); }
 
  private:
   static constexpr int itemsPerPage = 12;

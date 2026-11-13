@@ -26,6 +26,8 @@ class ThumbnailList final {
   void reset();
   bool handleInput();
   void render() const;
+  int currentPage() const { return page; }
+  int totalPages() const { return pageCount(); }
 
  private:
   // Keep the Statistics proportions while allowing five rows on the normal

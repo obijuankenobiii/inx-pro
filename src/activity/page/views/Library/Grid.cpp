@@ -13,6 +13,7 @@
 #include "images/Pdf72.h"
 #include "images/Star.h"
 #include "images/Txt72.h"
+#include "system/UiLayout.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
 #include "../../navigation/Menu.h"
@@ -159,7 +160,8 @@ void Grid::reset() { page = 0; }
 int Grid::top() const { return navigation::Menu::height; }
 
 int Grid::visibleHeight() const {
-  return std::max(1, renderer.getScreenHeight() - top() - navigation::Menu::bottomInset() - 30);
+  const int bottomInset = SETTINGS.hiddenMenu != 0 ? UiLayout::LIBRARY_BOTTOM_BAR_HEIGHT : navigation::Menu::bottomInset();
+  return std::max(1, renderer.getScreenHeight() - top() - bottomInset - 30);
 }
 
 int Grid::pageCount() const {

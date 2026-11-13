@@ -65,12 +65,6 @@ int layoutIndex(const HomeTheme::Layout layout) {
       return 1;
     case HomeTheme::Layout::OneByThree:
       return 2;
-    case HomeTheme::Layout::HalfTop:
-      return 3;
-    case HomeTheme::Layout::HalfMiddle:
-      return 4;
-    case HomeTheme::Layout::HalfBottom:
-      return 5;
     default:
       return 1;
   }
@@ -82,12 +76,6 @@ HomeTheme::Layout layoutAtIndex(const int index) {
       return HomeTheme::Layout::OneByOne;
     case 2:
       return HomeTheme::Layout::OneByThree;
-    case 3:
-      return HomeTheme::Layout::HalfTop;
-    case 4:
-      return HomeTheme::Layout::HalfMiddle;
-    case 5:
-      return HomeTheme::Layout::HalfBottom;
     case 1:
     default:
       return HomeTheme::Layout::OneByTwo;
@@ -183,7 +171,7 @@ LayoutCellBounds layoutCellBounds(const HomeTheme::Layout layout, const int x, c
           cellHeight};
 }
 
-int layoutCount() { return 6; }
+int layoutCount() { return 3; }
 constexpr int kLayoutsPerPage = 3;
 
 bool isCompactLayout(const HomeTheme::Layout layout) {

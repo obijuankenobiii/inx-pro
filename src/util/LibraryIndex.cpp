@@ -102,10 +102,10 @@ bool readDirectory(FsFile& file, const uint8_t version, std::string& path, uint1
 }
 
 std::string folderName(const std::string& path) {
-  if (path.empty() || path == "/") return "Root";
+  if (path.empty() || path == "/") return "Library";
   const size_t slash = path.find_last_of('/');
   const std::string name = slash == std::string::npos ? path : path.substr(slash + 1);
-  return name.empty() ? "Root" : name;
+  return name.empty() ? "Library" : name;
 }
 
 bool readEntry(FsFile& file, const uint8_t marker, const uint8_t version, LibraryIndex::Book& book, bool& found) {
