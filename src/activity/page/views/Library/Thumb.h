@@ -42,8 +42,6 @@ class Thumb final {
   struct Thumbnail {
     std::string item;
     std::string first;
-    std::string second;
-    std::string third;
     std::string singleBookTitle;
     std::string image;
     int imageWidth = 0;
