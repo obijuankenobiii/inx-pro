@@ -8,7 +8,7 @@ class Clock final {
  public:
   explicit Clock(GfxRenderer& renderer) : renderer_(renderer) {}
 
-  void render(int x, int y, int width, int height) const;
+  void render(int x, int y, int width, int height, bool compact = false) const;
   bool needsRefresh() const;
 
  private:

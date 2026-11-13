@@ -112,7 +112,6 @@ class EpubActivity final : public ActivityWithSubactivity {
   bool updateRequired = false;
   int loadingProgress = 0;
   unsigned long lastAutoPageTurnTime = 0;
-
   const std::function<void()> onGoBack;
   const std::function<void()> onGoToHome;
 
@@ -137,7 +136,6 @@ class EpubActivity final : public ActivityWithSubactivity {
     bool highQuality = false;
     bool mediumImageGrayscale = false;
     bool textAntiAlias = false;
-    bool imagePlaceholder = false;
   };
   PreparedPage preparedPage_;
   int preparedPageSpineIndex_ = -1;
@@ -153,6 +151,7 @@ class EpubActivity final : public ActivityWithSubactivity {
 
   SettingsDrawer* settingsDrawer = nullptr;
   bool settingsDrawerVisible = false;
+  bool readerTouchEnabled_ = true;
   std::unique_ptr<class EpubNavigation> navigation_;
   BookSettings bookSettings;
   BookSettings settingsDrawerSnapshot_;
@@ -323,6 +322,8 @@ class EpubActivity final : public ActivityWithSubactivity {
 
   void saveBookSettings();
   void loadBookSettings();
+  void saveReaderTouchSetting();
+  void loadReaderTouchSetting();
 
   void initStats();
   void maybeCommitReadingSessionCount();

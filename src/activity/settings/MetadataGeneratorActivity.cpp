@@ -1,4 +1,5 @@
 #include "MetadataGeneratorActivity.h"
+#include "SettingsListLayout.h"
 
 #include <GfxRenderer.h>
 
@@ -17,15 +18,16 @@
 
 namespace {
 constexpr int kOptionCount = 12;
-constexpr int kRowHeight = UiLayout::LIST_ITEM_HEIGHT;
+constexpr int kRowHeight = SettingsListLayout::kRowHeight;
 constexpr int kButtonWidth = 180;
-constexpr int kButtonBottomMargin = 64;
+constexpr int kButtonSideMargin = 20;
+constexpr int kButtonBottomMargin = 20;
 constexpr const char* kOptionLabels[kOptionCount] = {
     "Thumbnails", "Authors", "Series", "Tags", "Publisher", "Language", "Rating", "Publication date",
     "Identifiers", "Title sort", "Author sort", "Description, dates, UUID + custom fields"};
 
 ButtonBounds actionBounds(const GfxRenderer& renderer) {
-  return {(renderer.getScreenWidth() - kButtonWidth) / 2,
+  return {renderer.getScreenWidth() - kButtonSideMargin - kButtonWidth,
           renderer.getScreenHeight() - kButtonBottomMargin - Button::height, kButtonWidth, Button::height};
 }
 
@@ -183,8 +185,11 @@ void MetadataGeneratorActivity::render() {
       renderer.text.render(font, 20, textY, kOptionLabels[index], true, EpdFontFamily::REGULAR);
       ReaderFontSettingsDraw::drawToggleCheckbox(renderer, screenWidth - 24, y, kRowHeight, false,
                                                  selectedOptions[index]);
-      renderer.line.render(0, y + kRowHeight - 1, screenWidth, y + kRowHeight - 1, true,
-                           LineRender::Style::Dotted);
+      if (index + 1 < kOptionCount && row + 1 < optionListRows) {
+        renderer.line.render(SettingsListLayout::kDividerInset, y + kRowHeight - 1,
+                             screenWidth - SettingsListLayout::kDividerInset, y + kRowHeight - 1, true,
+                             LineRender::Style::Dotted);
+      }
     }
     if (kOptionCount > optionListRows) {
       const int listHeight = optionListRows * kRowHeight;

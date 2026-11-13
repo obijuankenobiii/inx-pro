@@ -8,6 +8,7 @@
 #include <esp_heap_caps.h>
 
 #include <GfxRenderer.h>
+#include <HalDisplay.h>
 #include <SDCardManager.h>
 #include <Serialization.h>
 
@@ -22,6 +23,7 @@
 #include "system/FontManager.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
+#include "system/ScreenComponents.h"
 
 namespace {
 constexpr unsigned long goHomeMs = 1000;
@@ -186,6 +188,15 @@ void PdfReaderActivity::loop() {
     return;
   }
 
+  float backGestureStartX = 0.0f;
+  float backGestureStartY = 0.0f;
+  if (mappedInput.hasTouch() && mappedInput.wasTouchSwipeRightInScreen(renderer, backGestureStartX,
+                                                                        backGestureStartY) &&
+      backGestureStartX <= 0.30f) {
+    onGoBack();
+    return;
+  }
+
   if (mappedInput.hasTouch() && mappedInput.wasTouchSwipeUpForRenderer(renderer)) {
     onGoBack();
     return;
@@ -274,10 +285,10 @@ void PdfReaderActivity::renderBuildProgress(const char* status, const int curren
   const int screenHeight = renderer.getScreenHeight();
   const int centerY = screenHeight / 2;
 
-  renderer.text.centered(MONTSERRAT_10_FONT_ID, centerY - 66, "PREPARING BOOK", true, EpdFontFamily::BOLD);
-  const std::string title = renderer.text.truncate(MONTSERRAT_12_FONT_ID, pdf->getTitle().c_str(), pageWidth - 80);
-  renderer.text.centered(MONTSERRAT_12_FONT_ID, centerY - 34, title.c_str(), true, EpdFontFamily::BOLD);
-  renderer.text.centered(MONTSERRAT_10_FONT_ID, centerY - 4, status, true, EpdFontFamily::REGULAR);
+  renderer.text.centered(systemFontIdForPointSize(10), centerY - 66, "PREPARING BOOK", true, EpdFontFamily::BOLD);
+  const std::string title = renderer.text.truncate(systemFontIdForPointSize(12), pdf->getTitle().c_str(), pageWidth - 80);
+  renderer.text.centered(systemFontIdForPointSize(12), centerY - 34, title.c_str(), true, EpdFontFamily::BOLD);
+  renderer.text.centered(systemFontIdForPointSize(10), centerY - 4, status, true, EpdFontFamily::REGULAR);
 
   const int barW = std::min(300, pageWidth - 72);
   constexpr int barH = 6;
@@ -292,7 +303,7 @@ void PdfReaderActivity::renderBuildProgress(const char* status, const int curren
 
     char line[32];
     snprintf(line, sizeof(line), "%d / %d", current, total);
-    renderer.text.centered(MONTSERRAT_8_FONT_ID, barY + 22, line, true, EpdFontFamily::REGULAR);
+    renderer.text.centered(systemFontIdForPointSize(8), barY + 22, line, true, EpdFontFamily::REGULAR);
   }
 
   renderer.displayBuffer();
@@ -343,7 +354,10 @@ void PdfReaderActivity::computeLayoutMetrics() {
   cachedHeaderFontId = READER_SETTINGS.getReaderFontIdForFamilyAndSize(READER_SETTINGS.fontFamily, headerSizeIndex);
   FontManager::ensureFontReady(cachedHeaderFontId, renderer);
 
-  cachedScreenMargin = READER_SETTINGS.screenMargin;
+  cachedMarginTop = READER_SETTINGS.marginTop;
+  cachedMarginLeft = READER_SETTINGS.marginLeft;
+  cachedMarginRight = READER_SETTINGS.marginRight;
+  cachedMarginBottom = READER_SETTINGS.marginBottom;
   cachedParagraphAlignment = READER_SETTINGS.paragraphAlignment;
   cachedExtraParagraphSpacing = READER_SETTINGS.extraParagraphSpacing;
   cachedLineCompression = READER_SETTINGS.getReaderLineCompression();
@@ -352,10 +366,10 @@ void PdfReaderActivity::computeLayoutMetrics() {
   int orientedMarginTop, orientedMarginRight, orientedMarginBottom, orientedMarginLeft;
   renderer.getOrientedViewableTRBL(&orientedMarginTop, &orientedMarginRight, &orientedMarginBottom,
                                    &orientedMarginLeft);
-  orientedMarginTop += cachedScreenMargin;
-  orientedMarginLeft += cachedScreenMargin;
-  orientedMarginRight += cachedScreenMargin;
-  orientedMarginBottom += cachedScreenMargin;
+  orientedMarginTop += cachedMarginTop;
+  orientedMarginLeft += cachedMarginLeft;
+  orientedMarginRight += cachedMarginRight;
+  orientedMarginBottom += cachedMarginBottom;
 
   viewportWidth = renderer.getScreenWidth() - orientedMarginLeft - orientedMarginRight;
   viewportHeight = renderer.getScreenHeight() - orientedMarginTop - orientedMarginBottom;
@@ -696,7 +710,7 @@ void PdfReaderActivity::renderScreen() {
 
   if (totalPages == 0) {
     renderer.clearScreen();
-    renderer.text.centered(MONTSERRAT_12_FONT_ID, 300, "Empty book", true, EpdFontFamily::BOLD);
+    renderer.text.centered(systemFontIdForPointSize(12), 300, "Empty book", true, EpdFontFamily::BOLD);
     renderer.displayBuffer();
     return;
   }
@@ -716,8 +730,8 @@ void PdfReaderActivity::renderPage() {
   int orientedMarginTop, orientedMarginRight, orientedMarginBottom, orientedMarginLeft;
   renderer.getOrientedViewableTRBL(&orientedMarginTop, &orientedMarginRight, &orientedMarginBottom,
                                    &orientedMarginLeft);
-  orientedMarginTop += cachedScreenMargin;
-  orientedMarginLeft += cachedScreenMargin;
+  orientedMarginTop += cachedMarginTop;
+  orientedMarginLeft += cachedMarginLeft;
 
   auto renderPageContent = [&]() {
     if (currentPageData) {

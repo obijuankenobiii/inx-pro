@@ -19,7 +19,7 @@ class BaseCarousel {
   explicit BaseCarousel(GfxRenderer& renderer) : renderer_(renderer) {}
 
   void renderBackground(int x, int y, int width, int height, bool background) const;
-  ContentArea contentArea(int y, int height, bool showLabel) const;
+  ContentArea contentArea(int y, int height, bool showLabel, int bottomInset = 0) const;
   void renderLabel(int x, int y, const char* label, HomeTheme::CarouselLabelColor color) const;
 
   GfxRenderer& renderer_;

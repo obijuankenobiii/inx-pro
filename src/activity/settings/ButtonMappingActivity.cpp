@@ -16,7 +16,7 @@
 #include "activity/page/components/global/PopUp.h"
 #include "activity/settings/QuickActionsSettingsActivity.h"
 #include "activity/settings/ReaderFontSettingsDraw.h"
-#include "images/Download.h"
+#include "images/LibraryFilterRight.h"
 #include "state/ReaderSetting.h"
 #include "state/SystemSetting.h"
 #include "system/Fonts.h"
@@ -24,15 +24,20 @@
 #include "system/UiLayout.h"
 
 namespace {
+constexpr bool usesVerticalSideButtons() {
+  return FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO;
+}
+
+const char* previousButtonLabel() { return usesVerticalSideButtons() ? "Up" : "Left"; }
+const char* nextButtonLabel() { return usesVerticalSideButtons() ? "Down" : "Right"; }
+
 const char* buttonLabel(const int row) {
-  static const char* const left = FREEINK_DEVICE_STICKY ? "Up" : "Left";
-  static const char* const right = FREEINK_DEVICE_STICKY ? "Down" : "Right";
-  static const char* const kLabels[] = {left, "", right, "", "Power"};
+  static const char* const kLabels[] = {previousButtonLabel(), "", nextButtonLabel(), "", "Power"};
   if (row < 0 || row >= 5) return "";
-  if (row == 1) return FREEINK_DEVICE_STICKY ? "Up (Long)" : "Left (Long)";
-  if (row == 3) return FREEINK_DEVICE_STICKY ? "Down (Long)" : "Right (Long)";
-  if (row == 0) return FREEINK_DEVICE_STICKY ? "Up (Short)" : "Left (Short)";
-  if (row == 2) return FREEINK_DEVICE_STICKY ? "Down (Short)" : "Right (Short)";
+  if (row == 1) return usesVerticalSideButtons() ? "Up (Long)" : "Left (Long)";
+  if (row == 3) return usesVerticalSideButtons() ? "Down (Long)" : "Right (Long)";
+  if (row == 0) return usesVerticalSideButtons() ? "Up (Short)" : "Left (Short)";
+  if (row == 2) return usesVerticalSideButtons() ? "Down (Short)" : "Right (Short)";
   return kLabels[row];
 }
 
@@ -116,7 +121,20 @@ int ButtonMappingActivity::itemY(const int row) const {
   return gesturesTop + (row - kGestureStartRow) * kRowHeight;
 }
 
+int ButtonMappingActivity::sectionRowCount() const {
+  return section_ == Section::Buttons ? kButtonCount : kGestureCount;
+}
+
+int ButtonMappingActivity::sectionItemY(const int row) const {
+  return UiLayout::PAGE_HEADER_HEIGHT + row * kRowHeight;
+}
+
 int ButtonMappingActivity::itemRowAtY(const int tapY) const {
+  if (section_ != Section::Main) {
+    const int top = sectionItemY(0);
+    const int row = (tapY - top) / kRowHeight;
+    return tapY >= top && row >= 0 && row < sectionRowCount() ? row : -1;
+  }
   for (int row = 0; row < kItemCount; ++row) {
     const int y = itemY(row);
     if (tapY >= y && tapY < y + kRowHeight) return row;
@@ -281,12 +299,14 @@ void ButtonMappingActivity::handleListInput() {
   }
 
   if (mappedInput.wasPressed(MappedInputManager::Button::Up)) {
-    selectedRow_ = (selectedRow_ + kItemCount - 1) % kItemCount;
+    const int count = section_ == Section::Main ? 3 : sectionRowCount();
+    selectedRow_ = (selectedRow_ + count - 1) % count;
     render();
     return;
   }
   if (mappedInput.wasPressed(MappedInputManager::Button::Down)) {
-    selectedRow_ = (selectedRow_ + 1) % kItemCount;
+    const int count = section_ == Section::Main ? 3 : sectionRowCount();
+    selectedRow_ = (selectedRow_ + 1) % count;
     render();
     return;
   }
@@ -295,11 +315,55 @@ void ButtonMappingActivity::handleListInput() {
   }
 }
 
+void ButtonMappingActivity::handleMainInput() {
+  if (SubPage::closeInput(renderer, mappedInput, onDone_)) return;
+
+  const int bodyTop = UiLayout::PAGE_HEADER_HEIGHT;
+  if (mappedInput.hasTouch()) {
+    float tapNx = 0.0f;
+    float tapNy = 0.0f;
+    if (mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy)) {
+      const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
+      const int row = (tapY - bodyTop) / kRowHeight;
+      if (tapY >= bodyTop && row >= 0 && row < 3) {
+        selectedRow_ = row;
+        handleGestureInput(row);
+        return;
+      }
+    }
+  }
+
+  if (mappedInput.wasPressed(MappedInputManager::Button::Up)) {
+    selectedRow_ = (selectedRow_ + 2) % 3;
+    render();
+  } else if (mappedInput.wasPressed(MappedInputManager::Button::Down)) {
+    selectedRow_ = (selectedRow_ + 1) % 3;
+    render();
+  } else if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
+    handleGestureInput(selectedRow_);
+  }
+}
+
 void ButtonMappingActivity::handleGestureInput(const int row) {
-  if (row == kQuickActionRow) {
+  const int mappedRow = section_ == Section::Buttons
+                            ? kButtonStartRow + row
+                            : (section_ == Section::Gestures ? kGestureStartRow + row : row);
+  if (section_ == Section::Main && row == kQuickActionRow) {
     enterNewActivity(new QuickActionsSettingsActivity(renderer, mappedInput, [this]() { subFinished_ = true; }));
-  } else if (row >= kButtonStartRow && row < kGestureStartRow) {
-    openSelector(row);
+  } else if (section_ == Section::Main && row == kButtonStartRow) {
+    enterNewActivity(new ButtonMappingActivity(renderer, mappedInput, [this]() { subFinished_ = true; },
+                                               Section::Buttons));
+  } else if (section_ == Section::Main && row == kButtonStartRow + 1) {
+    enterNewActivity(new ButtonMappingActivity(renderer, mappedInput, [this]() { subFinished_ = true; },
+                                               Section::Gestures));
+  } else if (section_ == Section::Buttons) {
+    openSelector(mappedRow);
+  } else if (section_ == Section::Gestures && row == 0) {
+    READER_SETTINGS.disableLightControl = !READER_SETTINGS.disableLightControl;
+    READER_SETTINGS.saveToFile();
+    render();
+  } else if (section_ == Section::Gestures && (row == 1 || row == 2)) {
+    openSelector(mappedRow);
   } else if (row == kDisableLightRow) {
     READER_SETTINGS.disableLightControl = !READER_SETTINGS.disableLightControl;
     READER_SETTINGS.saveToFile();
@@ -328,68 +392,82 @@ void ButtonMappingActivity::renderSelector() {
   PopUp::border(renderer, box);
 }
 
-void ButtonMappingActivity::render() {
-  renderer.clearScreen();
+void ButtonMappingActivity::renderMain() {
   const int bodyTop = SubPage::header(renderer, "Button & Gestures");
+  const int font = systemFontId();
+  const int screenW = renderer.getScreenWidth();
+  constexpr int rowCount = 3;
+  constexpr int caretWidth = 32;
+  constexpr int caretHeight = 30;
+  constexpr int rightInset = 30;
+
+  for (int row = 0; row < rowCount; ++row) {
+    const int y = bodyTop + row * kRowHeight;
+    const int textY = y + (kRowHeight - renderer.text.getLineHeight(font)) / 2;
+    const char* label = row == 0 ? "Quick Actions" : row == 1 ? "Buttons" : "Gestures";
+    renderer.text.render(font, 20, textY, label, true, EpdFontFamily::REGULAR);
+    const int iconX = screenW - rightInset - caretWidth;
+    const int iconY = y + (kRowHeight - caretHeight) / 2;
+    renderer.bitmap.icon(LibraryFilterRight, iconX, iconY, caretWidth, caretHeight);
+    if (row + 1 < rowCount) {
+      renderer.line.render(SettingsListLayout::kDividerInset, y + kRowHeight - 1,
+                           screenW - SettingsListLayout::kDividerInset, y + kRowHeight - 1, true,
+                           LineRender::Style::Dotted);
+    }
+  }
+}
+
+void ButtonMappingActivity::renderSection() {
+  const char* title = section_ == Section::Buttons ? "Buttons" : "Gestures";
+  const int bodyTop = SubPage::header(renderer, title);
   const int font = systemFontId();
   const int screenW = renderer.getScreenWidth();
   const int valueRight = screenW - 30;
   const int valueLeft = screenW / 2;
   const int valueMaxW = valueRight - valueLeft;
 
-  const int quickActionHeaderY = bodyTop;
-  const int quickActionTop = quickActionHeaderY;
-  const int buttonHeaderY = quickActionTop + kRowHeight + kQuickActionToButtonGap;
-  const int buttonRowsTop = buttonHeaderY + kSectionHeaderHeight;
-  const int gesturesHeaderY = buttonRowsTop + kButtonCount * kRowHeight + kButtonToGesturesGap;
-  const int gesturesTop = gesturesHeaderY + kSectionHeaderHeight;
-  renderer.text.render(font, 20, buttonHeaderY + (kSectionHeaderHeight - renderer.text.getLineHeight(font)) / 2 - 10,
-                       "Button", true, EpdFontFamily::BOLD);
-  renderer.text.render(font, 20, gesturesHeaderY + (kSectionHeaderHeight - renderer.text.getLineHeight(font)) / 2 - 10,
-                       "Gestures", true, EpdFontFamily::BOLD);
-
-  for (int row = 0; row < kItemCount; ++row) {
-    const int y = itemY(row);
+  for (int row = 0; row < sectionRowCount(); ++row) {
+    const int mappedRow = section_ == Section::Buttons ? kButtonStartRow + row : kGestureStartRow + row;
+    const int y = bodyTop + row * kRowHeight;
     const int textY = y + (kRowHeight - renderer.text.getLineHeight(font)) / 2;
-    const bool isQuickAction = row == kQuickActionRow;
-    const bool isDisableLight = row == kDisableLightRow;
-    const bool isPageTurn = row == kPageTurnRow;
-    const bool isDoubleTap = row == kDoubleTapRow;
-    const char* label = isQuickAction
-                            ? "Set up quick actions menu"
-                            : (row >= kButtonStartRow && row < kGestureStartRow
-                                   ? buttonLabel(row - kButtonStartRow)
-                                   : (isDisableLight ? "Disable light control"
-                                                      : (isPageTurn ? "Page turn" : "Double tap")));
+    const bool isDisableLight = mappedRow == kDisableLightRow;
+    const bool isPageTurn = mappedRow == kPageTurnRow;
+    const bool isDoubleTap = mappedRow == kDoubleTapRow;
+    const char* label = section_ == Section::Buttons
+                            ? buttonLabel(row)
+                            : (isDisableLight ? "Disable light control"
+                                               : (isPageTurn ? "Page turn" : "Double tap"));
     renderer.text.render(font, 20, textY, label, true, EpdFontFamily::REGULAR);
-    const uint8_t* action = actionSlot(row);
+
+    const uint8_t* action = actionSlot(mappedRow);
     const char* value = nullptr;
     if (isPageTurn) value = pageTurnLabel(READER_SETTINGS.pageTurnMode);
     else if (isDoubleTap) value = doubleTapActionLabel(READER_SETTINGS.doubleTapAction);
-    else if (!isDisableLight && !isQuickAction) value = action ? SystemSetting::readerButtonActionLabel(*action) : "None";
+    else if (!isDisableLight) value = action ? SystemSetting::readerButtonActionLabel(*action) : "None";
     if (isDisableLight) {
       ReaderFontSettingsDraw::drawToggleCheckbox(renderer, valueRight, y, kRowHeight, false,
                                                  READER_SETTINGS.disableLightControl != 0);
     }
     if (value) {
-    const std::string clippedValue = renderer.text.truncate(font, value, valueMaxW);
-    const int valueW = renderer.text.getWidth(font, clippedValue.c_str());
-    renderer.text.render(font, valueRight - valueW, textY, clippedValue.c_str(), true, EpdFontFamily::REGULAR);
+      const std::string clippedValue = renderer.text.truncate(font, value, valueMaxW);
+      const int valueW = renderer.text.getWidth(font, clippedValue.c_str());
+      renderer.text.render(font, valueRight - valueW, textY, clippedValue.c_str(), true, EpdFontFamily::REGULAR);
     }
-    if (isQuickAction) {
-      constexpr int kActionIconSize = 40;
-      const int iconX = valueRight - kActionIconSize;
-      const int iconY = y + (kRowHeight - kActionIconSize) / 2;
-      renderer.bitmap.iconScaled(Download, iconX, iconY, kActionIconSize, kActionIconSize, kActionIconSize,
-                                kActionIconSize, BitmapRender::Orientation::Rotate270CW);
-    }
-    const bool isLastInGroup = row == kQuickActionRow || row == kGestureStartRow - 1 || row == kItemCount - 1;
-    if (!isLastInGroup) {
-      renderer.line.render(0, y + kRowHeight - 1, screenW, y + kRowHeight - 1, true,
+    if (row + 1 < sectionRowCount()) {
+      renderer.line.render(SettingsListLayout::kDividerInset, y + kRowHeight - 1,
+                           screenW - SettingsListLayout::kDividerInset, y + kRowHeight - 1, true,
                            LineRender::Style::Dotted);
     }
   }
+}
 
+void ButtonMappingActivity::render() {
+  renderer.clearScreen();
+  if (section_ == Section::Main) {
+    renderMain();
+  } else {
+    renderSection();
+  }
   if (selectorOpen_) renderSelector();
   renderer.displayBuffer();
 }
@@ -408,5 +486,9 @@ void ButtonMappingActivity::loop() {
     handleSelectorInput();
     return;
   }
-  handleListInput();
+  if (section_ == Section::Main) {
+    handleMainInput();
+  } else {
+    handleListInput();
+  }
 }

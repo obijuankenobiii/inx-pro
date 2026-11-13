@@ -11,21 +11,60 @@
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
 
+namespace {
+constexpr float kBottomEdgeSwipeStartNy = 0.95f;
+}
+
+void SubPage::closeIcon(const GfxRenderer& renderer, const int x, const int y, const int size) {
+  constexpr int sourceSize = 40;
+  renderer.bitmap.iconScaled(Close, x, y, sourceSize, sourceSize, size, size);
+}
+
 int SubPage::header(const GfxRenderer& renderer, const char* name) {
-  constexpr int top = FREEINK_DEVICE_X4PRO ? 20 : 15;
-  constexpr int size = 40;
-  const int font = MONTSERRAT_16_FONT_ID;
+  constexpr int top = navigation::Menu::topPadding;
+  constexpr int size = navigation::Menu::iconSize;
+  const int font = systemFontIdForPointSize(16);
   const int textY = top + (size - renderer.text.getLineHeight(font)) / 2;
-  renderer.text.render(font, 20, textY, name ? name : "", true, EpdFontFamily::BOLD);
-  renderer.bitmap.icon(Close, renderer.getScreenWidth() - 60, top, size, size);
+  renderer.text.render(font, navigation::Menu::leftMargin, textY, name ? name : "", true,
+                       EpdFontFamily::BOLD);
+  closeIcon(renderer, renderer.getScreenWidth() - 60, top, size);
   return top + size + 20;
+}
+
+int SubPage::header(const GfxRenderer& renderer, const char* name, const char* mode) {
+  const int contentTop = header(renderer, name);
+  if (!mode || mode[0] == '\0') return contentTop;
+
+  constexpr int top = navigation::Menu::topPadding;
+  constexpr int size = navigation::Menu::iconSize;
+  const int titleFont = systemFontIdForPointSize(16);
+  const int modeFont = systemFontIdForPointSize(12);
+  const int titleWidth = renderer.text.getWidth(titleFont, name ? name : "", EpdFontFamily::BOLD);
+  const int modeY = top + (size - renderer.text.getLineHeight(modeFont)) / 2;
+  renderer.text.renderGray(modeFont, navigation::Menu::leftMargin + titleWidth + 10, modeY, mode, true,
+                           EpdFontFamily::BOLD);
+  return contentTop;
 }
 
 bool SubPage::closeInput(GfxRenderer& renderer, MappedInputManager& mappedInput,
                          const std::function<void()>& close, const bool closeOnSwipeUp) {
-  if (closeOnSwipeUp && mappedInput.hasTouch() && mappedInput.wasTouchSwipeUp()) {
-    if (close) close();
-    return true;
+  if (closeOnSwipeUp && mappedInput.hasTouch()) {
+    float swipeStartNx = 0.0f;
+    float swipeStartNy = 0.0f;
+    if (mappedInput.wasTouchSwipeUpInScreen(renderer, swipeStartNx, swipeStartNy) &&
+        swipeStartNy >= kBottomEdgeSwipeStartNy) {
+      if (close) close();
+      return true;
+    }
+  }
+
+  if (mappedInput.hasTouch()) {
+    float startX = 0.0f;
+    float startY = 0.0f;
+    if (mappedInput.wasTouchSwipeRightInScreen(renderer, startX, startY) && startX <= 0.30f) {
+      if (close) close();
+      return true;
+    }
   }
 
   if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
@@ -41,8 +80,8 @@ bool SubPage::closeInput(GfxRenderer& renderer, MappedInputManager& mappedInput,
 
   const int x = static_cast<int>(tapX * renderer.getScreenWidth());
   const int y = static_cast<int>(tapY * renderer.getScreenHeight());
-  constexpr int headerTop = FREEINK_DEVICE_X4PRO ? 20 : 10;
-  constexpr int closeSize = 40;
+  constexpr int headerTop = navigation::Menu::topPadding;
+  constexpr int closeSize = navigation::Menu::iconSize;
   constexpr int closeTouchPadding = 10;
   const int closeLeft = renderer.getScreenWidth() - 60 - closeTouchPadding;
   const int closeRight = renderer.getScreenWidth() - 20 + closeTouchPadding;
@@ -59,17 +98,31 @@ bool SubPage::closeInput(GfxRenderer& renderer, MappedInputManager& mappedInput,
 
 SubPage::SubPage(const char* name, GfxRenderer& renderer, MappedInputManager& mappedInput,
                  std::function<void()> close)
-    : Page(name, renderer, mappedInput), close(std::move(close)) {}
+    : UiPage(name, renderer, mappedInput), close(std::move(close)) {}
 
 void SubPage::menu() {
   title();
-  renderer.bitmap.icon(Close, renderer.getScreenWidth() - 60, 20, 40, 40);
+  closeIcon(renderer, renderer.getScreenWidth() - 60, 20, 40);
 }
 
 bool SubPage::closeInput(const bool closeOnSwipeUp) {
-  if (closeOnSwipeUp && mappedInput.hasTouch() && mappedInput.wasTouchSwipeUp()) {
-    dismiss();
-    return true;
+  if (closeOnSwipeUp && mappedInput.hasTouch()) {
+    float swipeStartNx = 0.0f;
+    float swipeStartNy = 0.0f;
+    if (mappedInput.wasTouchSwipeUpInScreen(renderer, swipeStartNx, swipeStartNy) &&
+        swipeStartNy >= kBottomEdgeSwipeStartNy) {
+      dismiss();
+      return true;
+    }
+  }
+
+  if (mappedInput.hasTouch()) {
+    float startX = 0.0f;
+    float startY = 0.0f;
+    if (mappedInput.wasTouchSwipeRightInScreen(renderer, startX, startY) && startX <= 0.30f) {
+      dismiss();
+      return true;
+    }
   }
 
   if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {

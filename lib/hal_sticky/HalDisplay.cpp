@@ -54,6 +54,12 @@ StickyDisplay::RefreshMode convertRefreshMode(HalDisplay::RefreshMode mode) {
 
 void HalDisplay::displayBuffer(HalDisplay::RefreshMode mode) { display.displayBuffer(convertRefreshMode(mode)); }
 
+void HalDisplay::displayWindow(const uint16_t x, const uint16_t y, const uint16_t w, const uint16_t h,
+                               const HalDisplay::RefreshMode mode) {
+  (void)mode;
+  display.displayWindow(x, y, w, h);
+}
+
 void HalDisplay::displayBufferAsync(HalDisplay::RefreshMode mode) {
   display.displayBufferAsync(convertRefreshMode(mode));
 }
@@ -91,6 +97,13 @@ void HalDisplay::displayGrayBuffer(const bool quality, const bool trackForRevert
 }
 
 void HalDisplay::displayGrayBufferFastQuality() { display.displayGrayBufferFastQuality(); }
+
+void HalDisplay::displayGrayBufferWindow(const uint16_t x, const uint16_t y, const uint16_t w, const uint16_t h,
+                                         const bool quality, const bool fastQuality) {
+  display.displayGrayWindow(x, y, w, h, quality, fastQuality);
+}
+
+bool HalDisplay::supportsWindowedQuality() const { return display.supportsWindowedGray(); }
 
 void HalDisplay::prepareQualityGrayscale() { display.prepareQualityGrayscale(); }
 

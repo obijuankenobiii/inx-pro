@@ -10,6 +10,8 @@
 
 #include <functional>
 
+#include <GfxRenderer.h>
+
 #include "Epub.h"
 #include "Epub/EpubActivity.h"
 #include "Mobi.h"
@@ -19,7 +21,8 @@
 #include "TxtReaderActivity.h"
 #include "Xtc.h"
 #include "XtcReaderActivity.h"
-#include "system/FontManager.h"
+#include "state/BookState.h"
+#include "system/Fonts.h"
 #include "system/ScreenComponents.h"
 #include "util/SdIoMutex.h"
 #include "util/StringUtils.h"
@@ -75,22 +78,32 @@ bool ReaderActivity::isPdfFile(const std::string& path) { return StringUtils::ch
  * @return Unique pointer to loaded Epub object, or nullptr if loading fails
  */
 std::unique_ptr<Epub> ReaderActivity::loadEpub(const std::string& path) {
-  INX_SERIAL.printf("[%lu] [THUMB-TRACE] ReaderActivity::loadEpub path=%s\n", millis(), path.c_str());
+  const unsigned long loadStart = millis();
+  INX_SERIAL.printf("[%lu] [OPEN-TIME] epub load start path=%s\n", loadStart, path.c_str());
   SdIoMutex::Lock lock;
   if (!SdMan.exists(path.c_str())) {
+    INX_SERIAL.printf("[%lu] [OPEN-TIME] epub missing total=%lu ms\n", millis(), millis() - loadStart);
     return nullptr;
   }
 
+  const unsigned long constructStart = millis();
   auto epub = std::unique_ptr<Epub>(new Epub(path, "/.metadata"));
+  const unsigned long constructDone = millis();
   const bool hadMetadataCache = epub->hasMetadataCache();
+  const unsigned long parseStart = millis();
   if (epub->load(false)) {
+    INX_SERIAL.printf("[%lu] [OPEN-TIME] epub load done exists->construct=%lu parse=%lu cache=%d total=%lu ms\n", millis(),
+                      constructDone - constructStart, millis() - parseStart, hadMetadataCache ? 1 : 0,
+                      millis() - loadStart);
     return epub;
   }
 
   if (hadMetadataCache) {
-    INX_SERIAL.printf("[Reader] EPUB metadata cache failed, rebuilding: %s\n", path.c_str());
+    INX_SERIAL.printf("[%lu] [OPEN-TIME] epub metadata cache failed, rebuilding path=%s\n", millis(), path.c_str());
     epub->clearCache();
   }
+
+  INX_SERIAL.printf("[%lu] [OPEN-TIME] epub load failed total=%lu ms\n", millis(), millis() - loadStart);
 
   return epub;
 }
@@ -186,7 +199,9 @@ void ReaderActivity::onGoToEpubReader(std::unique_ptr<Epub> epub) {
   auto callback = onGoBack;
 
   exitActivity();
-  FontManager::unloadAllSDFonts();
+  // Keep the SD/PSRAM reader fonts resident while moving between Reader
+  // sessions. EpubActivity::onEnter() already reuses loaded entries; forcing
+  // an unload here turns every reopen into a full TTF reconstruction.
   enterNewActivity(new EpubActivity(
       renderer, mappedInput, std::move(epub),
       [callback, bookPath] {
@@ -253,9 +268,10 @@ void ReaderActivity::showCorruptedBookError() {
  * @brief Called when entering the reader activity
  */
 void ReaderActivity::onEnter() {
+  const unsigned long openStart = millis();
   ActivityWithSubactivity::onEnter();
 
-  INX_SERIAL.printf("[%lu] [THUMB-TRACE] ReaderActivity::onEnter path=%s\n", millis(), initialBookPath.c_str());
+  INX_SERIAL.printf("[%lu] [OPEN-TIME] reader enter path=%s\n", openStart, initialBookPath.c_str());
 
   if (initialBookPath.empty()) {
     if (onGoBack) {
@@ -264,10 +280,21 @@ void ReaderActivity::onEnter() {
     return;
   }
 
+  // Type detection and metadata loading happen synchronously before the
+  // concrete reader activity exists. Show feedback only on the first user
+  // open; reopening a known book should return to the reader immediately.
+  BookState::Book knownBook;
+  const bool showOpeningFeedback = !BOOK_STATE.findBook(initialBookPath, knownBook);
+  if (showOpeningFeedback) {
+    renderer.clearScreen();
+    renderer.text.centered(systemFontIdForPointSize(12), renderer.getScreenHeight() / 2, "Opening book...", true);
+    renderer.displayBufferAsync();
+  }
+
   currentBookPath = initialBookPath;
 
   if (isXtcFile(initialBookPath)) {
-    INX_SERIAL.printf("[%lu] [THUMB-TRACE] reader branch=XTC path=%s\n", millis(), initialBookPath.c_str());
+    INX_SERIAL.printf("[%lu] [OPEN-TIME] reader branch=XTC\n", millis());
     auto xtc = loadXtc(initialBookPath);
     if (!xtc) {
       showCorruptedBookError();
@@ -275,7 +302,7 @@ void ReaderActivity::onEnter() {
     }
     onGoToXtcReader(std::move(xtc));
   } else if (isTxtFile(initialBookPath)) {
-    INX_SERIAL.printf("[%lu] [THUMB-TRACE] reader branch=TXT path=%s\n", millis(), initialBookPath.c_str());
+    INX_SERIAL.printf("[%lu] [OPEN-TIME] reader branch=TXT\n", millis());
     auto txt = loadTxt(initialBookPath);
     if (!txt) {
       showCorruptedBookError();
@@ -283,7 +310,7 @@ void ReaderActivity::onEnter() {
     }
     onGoToTxtReader(std::move(txt));
   } else if (isPdfFile(initialBookPath)) {
-    INX_SERIAL.printf("[%lu] [THUMB-TRACE] reader branch=PDF path=%s\n", millis(), initialBookPath.c_str());
+    INX_SERIAL.printf("[%lu] [OPEN-TIME] reader branch=PDF\n", millis());
     auto pdf = loadPdf(initialBookPath);
     if (!pdf) {
       showCorruptedBookError();
@@ -291,7 +318,7 @@ void ReaderActivity::onEnter() {
     }
     onGoToPdfReader(std::move(pdf));
   } else if (isMobiFile(initialBookPath)) {
-    INX_SERIAL.printf("[%lu] [THUMB-TRACE] reader branch=MOBI path=%s\n", millis(), initialBookPath.c_str());
+    INX_SERIAL.printf("[%lu] [OPEN-TIME] reader branch=MOBI\n", millis());
     auto epub = loadEpubFromMobi(initialBookPath);
     if (!epub) {
       showCorruptedBookError();
@@ -299,7 +326,7 @@ void ReaderActivity::onEnter() {
     }
     onGoToEpubReader(std::move(epub));
   } else {
-    INX_SERIAL.printf("[%lu] [THUMB-TRACE] reader branch=EPUB path=%s\n", millis(), initialBookPath.c_str());
+    INX_SERIAL.printf("[%lu] [OPEN-TIME] reader branch=EPUB\n", millis());
     auto epub = loadEpub(initialBookPath);
     if (!epub) {
       showCorruptedBookError();
@@ -307,4 +334,6 @@ void ReaderActivity::onEnter() {
     }
     onGoToEpubReader(std::move(epub));
   }
+
+  INX_SERIAL.printf("[%lu] [OPEN-TIME] reader enter dispatched total=%lu ms\n", millis(), millis() - openStart);
 }

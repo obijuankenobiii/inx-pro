@@ -11,7 +11,7 @@
 #include "EpubActivity.h"
 #include "EpubNavigation.h"
 #include "state/SystemSetting.h"
-#if INX_HAS_FRONTLIGHT
+#if INX_HAS_FRONTLIGHT || FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
 #include "system/Frontlight.h"
 #endif
 
@@ -148,7 +148,7 @@ void ReaderButtonBindings::dispatch(EpubActivity& act, const uint8_t action) {
       act.goToPercentUi_.enter(act);
       break;
     case SystemSetting::BTN_ACTION_TOGGLE_LIGHT:
-#if INX_HAS_FRONTLIGHT
+#if INX_HAS_FRONTLIGHT || FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
       if (frontlight.present()) {
         if (frontlight.brightness() > 0) {
           frontlight.off();
@@ -170,7 +170,8 @@ void ReaderButtonBindings::dispatch(EpubActivity& act, const uint8_t action) {
     case SystemSetting::BTN_ACTION_PAGE_REFRESH:
       act.invalidatePreparedPage();
       act.renderer.syncWriteBufferFromActive();
-      act.renderer.displayBuffer(FREEINK_DEVICE_X4PRO ? HalDisplay::FULL_REFRESH : HalDisplay::MANUAL_REFRESH);
+      act.renderer.displayBuffer(FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 ? HalDisplay::FULL_REFRESH
+                                                                                     : HalDisplay::MANUAL_REFRESH);
       act.updateRequired = true;
       break;
     case SystemSetting::BTN_ACTION_CHAPTER_SKIP_NEXT:

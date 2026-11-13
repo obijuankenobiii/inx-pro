@@ -1,10 +1,11 @@
 /**
- * @file Page.cpp
+ * @file UiPage.cpp
  * @brief Minimal page shell for the new page redesign.
  */
 
 #include "Page.h"
 
+#include <Arduino.h>
 #include <GfxRenderer.h>
 
 #include "system/MappedInputManager.h"
@@ -15,23 +16,32 @@ extern void onGoToLibrary(const std::string& path);
 extern void onGoToFileTransfer();
 extern void onGoToSettings();
 extern void onGoToStatistics();
+extern void onGoToApps();
 extern void openSearchFromCallback(std::function<void()> returnToCaller);
 
-Page::Page(const char* name, GfxRenderer& renderer, MappedInputManager& mappedInput)
+UiPage::UiPage(const char* name, GfxRenderer& renderer, MappedInputManager& mappedInput)
     : Activity(name, renderer, mappedInput), navigation::Menu(renderer) {}
 
-void Page::onEnter() {
+UiPage::~UiPage() { discardOverlayFrame(); }
+
+void UiPage::onEnter() {
   Activity::onEnter();
   updateRequired = true;
 }
 
-void Page::loop() {
+void UiPage::loop() {
   if (menuInput()) return;
   renderPage();
 }
 
-bool Page::menuInput() {
+bool UiPage::menuInput() {
   if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+    if (isOpen()) {
+      close();
+      restoreOverlayFrameOnClose();
+      updateRequired = true;
+      return true;
+    }
     return back();
   }
 
@@ -43,51 +53,85 @@ bool Page::menuInput() {
     return true;
   }
 
-#if INX_HAS_FRONTLIGHT
-  if (mappedInput.isTouchPressed() || isLightDrawerSliderDragging()) {
-    const navigation::Menu::Action action = navigation::Menu::handleInput(mappedInput);
-    if (action != navigation::Menu::Action::None) {
-      routeMenuAction(action);
-      return true;
-    }
-    if (isLightDrawerSliderDragging()) return true;
-  }
-#endif
-
   if (mappedInput.hasTouch()) {
 
     float tapX = 0.0f;
     float tapY = 0.0f;
-    if (!mappedInput.wasTouchTapInScreen(renderer, tapX, tapY)) return false;
+    if (mappedInput.wasTouchTapInScreen(renderer, tapX, tapY)) {
+      const int x = static_cast<int>(tapX * renderer.getScreenWidth());
+      const int y = static_cast<int>(tapY * renderer.getScreenHeight());
+      const navigation::Menu::Action action = navigation::Menu::handleTap(x, y);
+      if (action == navigation::Menu::Action::None) {
+        mappedInput.restoreTouchTapInScreen(renderer, tapX, tapY);
+        return false;
+      }
 
-    const int x = static_cast<int>(tapX * renderer.getScreenWidth());
-    const int y = static_cast<int>(tapY * renderer.getScreenHeight());
-    const navigation::Menu::Action action = navigation::Menu::handleTap(x, y);
-    if (action == navigation::Menu::Action::None) {
-      mappedInput.restoreTouchTapInScreen(renderer, tapX, tapY);
-      return false;
+      routeMenuAction(action);
+      return true;
     }
-
-    routeMenuAction(action);
-    return true;
   }
 
+  // A board can expose a touch controller even when the current input frame
+  // contains no touch event. Do not let that capability check swallow the
+  // physical navigation buttons used by the hidden menu.
   const navigation::Menu::Action action = navigation::Menu::handleInput(mappedInput);
   if (action == navigation::Menu::Action::None) return false;
   routeMenuAction(action);
   return true;
 }
 
-void Page::renderPage() {
+void UiPage::renderPage() {
+#ifndef SIMULATOR
+  const unsigned long now = millis();
+  if (lastPowerPollMs_ == 0 || now - lastPowerPollMs_ >= 1500) {
+    lastPowerPollMs_ = now;
+    const bool connected = gpio.isUsbConnected();
+    if (powerStateKnown_ && connected != lastExternalPower_) {
+      discardOverlayFrame();
+      updateRequired = true;
+    }
+    lastExternalPower_ = connected;
+    powerStateKnown_ = true;
+  }
+#endif
   if (!updateRequired) return;
   render();
   updateRequired = false;
 }
 
-bool Page::routeMenuAction(const navigation::Menu::Action action) {
+bool UiPage::storeOverlayFrame() {
+  renderer.syncWriteBufferFromActive();
+  renderer.freeBwBufferChunks();
+  overlayFrameStored_ = renderer.storeBwBuffer();
+  overlayFrameActive_ = overlayFrameStored_;
+  overlayFrameRestorePending_ = false;
+  return overlayFrameStored_;
+}
+
+void UiPage::restoreOverlayFrameOnClose() {
+  if (!overlayFrameStored_) return;
+  overlayFrameActive_ = false;
+  overlayFrameRestorePending_ = true;
+}
+
+void UiPage::discardOverlayFrame() {
+  if (!overlayFrameStored_) return;
+  renderer.freeBwBufferChunks();
+  overlayFrameStored_ = false;
+  overlayFrameActive_ = false;
+  overlayFrameRestorePending_ = false;
+}
+
+bool UiPage::routeMenuAction(const navigation::Menu::Action action) {
   switch (action) {
     case navigation::Menu::Action::Opened:
+      // Capture the underlying page only on the initial open. Selection
+      // changes while the drawer is already open also return Opened.
+      if (!overlayFrameStored_) storeOverlayFrame();
+      updateRequired = true;
+      break;
     case navigation::Menu::Action::Closed:
+      restoreOverlayFrameOnClose();
       updateRequired = true;
       break;
     case navigation::Menu::Action::Search:
@@ -115,6 +159,9 @@ bool Page::routeMenuAction(const navigation::Menu::Action action) {
     case navigation::Menu::Action::Sync:
       onGoToFileTransfer();
       return true;
+    case navigation::Menu::Action::Apps:
+      onGoToApps();
+      return true;
     case navigation::Menu::Action::None:
     default:
       break;
@@ -122,32 +169,49 @@ bool Page::routeMenuAction(const navigation::Menu::Action action) {
   return false;
 }
 
-void Page::menu() { navigation::Menu::render(); }
+void UiPage::menu() { navigation::Menu::render(); }
 
-void Page::refresh() { LibraryIndexRefresh::start(renderer, this); }
+void UiPage::refresh() { LibraryIndexRefresh::start(renderer, this); }
 
-void Page::search() { openSearchFromCallback([] { onGoToHome(); }); }
+void UiPage::search() { openSearchFromCallback([] { onGoToHome(); }); }
 
-bool Page::back() {
+bool UiPage::back() {
   onGoToHome();
   return true;
 }
 
-bool Page::menuAction(const navigation::Menu::Action action) {
+bool UiPage::menuAction(const navigation::Menu::Action action) {
   (void)action;
   return false;
 }
 
-void Page::render() {
+void UiPage::render() {
   renderer.setRenderMode(GfxRenderer::BW);
-  renderer.clearScreen();
-  content();
+  bool restored = false;
+  if (overlayFrameStored_ && (overlayFrameActive_ || overlayFrameRestorePending_)) {
+    restored = renderer.copyStoredBwToFramebuffer();
+    if (!restored) {
+      discardOverlayFrame();
+    } else if (overlayFrameRestorePending_) {
+      renderer.freeBwBufferChunks();
+      overlayFrameStored_ = false;
+      overlayFrameRestorePending_ = false;
+    }
+  }
+
+  if (!restored) {
+    renderer.clearScreen();
+    content();
+  }
+
   menu();
   renderer.displayBufferAsync();
 }
 
-int Page::contentBottomY(const GfxRenderer& renderer) {
-  return renderer.getScreenHeight() - TAB_BAR_HEIGHT - CONTENT_BOTTOM_PADDING;
+int UiPage::contentBottomY(const GfxRenderer& renderer) {
+  return renderer.getScreenHeight() - navigation::Menu::bottomInset() - CONTENT_BOTTOM_PADDING;
 }
 
-int Page::tabBarTopY(const GfxRenderer& renderer) { return renderer.getScreenHeight() - TAB_BAR_HEIGHT; }
+int UiPage::tabBarTopY(const GfxRenderer& renderer) {
+  return renderer.getScreenHeight() - navigation::Menu::bottomInset();
+}

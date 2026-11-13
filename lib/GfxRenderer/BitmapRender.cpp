@@ -194,7 +194,7 @@ bool readIconBitMsbFirst(const uint8_t* bitmap, const int width, const int heigh
 
 void BitmapRender::render(const Bitmap& bitmap, const int x, const int y, const int maxWidth, const int maxHeight,
                           const float cropX, const float cropY, const RoundedOutside roundedOutside,
-                          const ImageRenderMode mode, const float cropAnchorX) const {
+                          const ImageRenderMode mode, const float cropAnchorX, const float cropAnchorY) const {
   if (bitmap.is1Bit() && cropX == 0.0f && cropY == 0.0f) {
     oneBit(bitmap, x, y, maxWidth, maxHeight, roundedOutside);
     return;
@@ -203,8 +203,9 @@ void BitmapRender::render(const Bitmap& bitmap, const int x, const int y, const 
   float scale = 1.0f;
   bool isScaled = false;
   const float clampedCropAnchorX = std::max(0.0f, std::min(1.0f, cropAnchorX));
+  const float clampedCropAnchorY = std::max(0.0f, std::min(1.0f, cropAnchorY));
   const int cropPixX = static_cast<int>(std::floor(bitmap.getWidth() * cropX * clampedCropAnchorX));
-  const int cropPixY = static_cast<int>(std::floor(bitmap.getHeight() * cropY / 2.0f));
+  const int cropPixY = static_cast<int>(std::floor(bitmap.getHeight() * cropY * clampedCropAnchorY));
 
   const float croppedWidth = (1.0f - cropX) * static_cast<float>(bitmap.getWidth());
   const float croppedHeight = (1.0f - cropY) * static_cast<float>(bitmap.getHeight());
@@ -564,34 +565,76 @@ void BitmapRender::iconScaled(const uint8_t bitmap[], const int x, const int y, 
       break;
   }
 
+  const bool downscaling = targetWidth < orientedSourceW || targetHeight < orientedSourceH;
+
+  auto sourceCoordinates = [&](const int ox, const int oy, int& sx, int& sy) {
+    switch (orientation) {
+      case BitmapRender::Orientation::None:
+        sx = ox;
+        sy = oy;
+        break;
+      case BitmapRender::Orientation::Rotate180:
+        sx = sourceWidth - 1 - ox;
+        sy = sourceHeight - 1 - oy;
+        break;
+      case BitmapRender::Orientation::Rotate90CW:
+        sx = oy;
+        sy = sourceHeight - 1 - ox;
+        break;
+      case BitmapRender::Orientation::Rotate270CW:
+        sx = sourceWidth - 1 - oy;
+        sy = ox;
+        break;
+    }
+  };
+
   for (int dy = 0; dy < targetHeight; ++dy) {
     if ((dy & 7) == 0) {
       esp_task_wdt_reset();
       yield();
     }
     for (int dx = 0; dx < targetWidth; ++dx) {
+      if (downscaling) {
+        // A nearest-neighbor reduction makes thin diagonal bitmap icons
+        // visibly jagged. Average the covered source pixels instead, then
+        // threshold the coverage back to the panel's one-bit icon raster.
+        const float sourceX0 = static_cast<float>(dx * orientedSourceW) / targetWidth;
+        const float sourceX1 = static_cast<float>((dx + 1) * orientedSourceW) / targetWidth;
+        const float sourceY0 = static_cast<float>(dy * orientedSourceH) / targetHeight;
+        const float sourceY1 = static_cast<float>((dy + 1) * orientedSourceH) / targetHeight;
+        const int firstSourceX = std::max(0, static_cast<int>(std::floor(sourceX0)));
+        const int lastSourceX = std::min(orientedSourceW - 1, static_cast<int>(std::ceil(sourceX1)) - 1);
+        const int firstSourceY = std::max(0, static_cast<int>(std::floor(sourceY0)));
+        const int lastSourceY = std::min(orientedSourceH - 1, static_cast<int>(std::ceil(sourceY1)) - 1);
+        float coveredArea = 0.0f;
+        float inkArea = 0.0f;
+        for (int sourceY = firstSourceY; sourceY <= lastSourceY; ++sourceY) {
+          const float yCoverage = std::max(0.0f, std::min(sourceY1, static_cast<float>(sourceY + 1)) -
+                                                       std::max(sourceY0, static_cast<float>(sourceY)));
+          for (int sourceX = firstSourceX; sourceX <= lastSourceX; ++sourceX) {
+            const float area = yCoverage *
+                               std::max(0.0f, std::min(sourceX1, static_cast<float>(sourceX + 1)) -
+                                                   std::max(sourceX0, static_cast<float>(sourceX)));
+            int mappedX = 0;
+            int mappedY = 0;
+            sourceCoordinates(sourceX, sourceY, mappedX, mappedY);
+            coveredArea += area;
+            if (!readIconBitMsbFirst(bitmap, sourceWidth, sourceHeight, mappedX, mappedY)) {
+              inkArea += area;
+            }
+          }
+        }
+        if (coveredArea > 0.0f && inkArea >= coveredArea * 0.40f) {
+          gfx.drawPixel(x + dx, y + dy, !invert);
+        }
+        continue;
+      }
+
       const int ox = std::min(orientedSourceW - 1, (dx * orientedSourceW + targetWidth / 2) / targetWidth);
       const int oy = std::min(orientedSourceH - 1, (dy * orientedSourceH + targetHeight / 2) / targetHeight);
       int sx = 0;
       int sy = 0;
-      switch (orientation) {
-        case BitmapRender::Orientation::None:
-          sx = ox;
-          sy = oy;
-          break;
-        case BitmapRender::Orientation::Rotate180:
-          sx = sourceWidth - 1 - ox;
-          sy = sourceHeight - 1 - oy;
-          break;
-        case BitmapRender::Orientation::Rotate90CW:
-          sx = oy;
-          sy = sourceHeight - 1 - ox;
-          break;
-        case BitmapRender::Orientation::Rotate270CW:
-          sx = sourceWidth - 1 - oy;
-          sy = ox;
-          break;
-      }
+      sourceCoordinates(ox, oy, sx, sy);
 
       const bool ink = !readIconBitMsbFirst(bitmap, sourceWidth, sourceHeight, sx, sy);
       if (ink) {

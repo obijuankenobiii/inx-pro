@@ -47,7 +47,7 @@ constexpr uint32_t STACK_SIZE = 8192;
  */
 int renderActivityHeader(const GfxRenderer& renderer, int startY, const char* title) {
   (void)startY;
-  return SubPage::header(renderer, title);
+  return SubPage::header(renderer, title, "Hotspot");
 }
 
 /**
@@ -216,18 +216,17 @@ void HotspotActivity::loop() {
 
     esp_task_wdt_reset();
 
-    constexpr int MAX_ITERATIONS = 500;
+    // Keep the web service responsive without monopolizing loopTask.  A large
+    // burst here can starve IDLE0 on CPU 0 and trip the task watchdog.
+    constexpr int MAX_ITERATIONS = 8;
     for (int i = 0; i < MAX_ITERATIONS && webServer->isRunning(); i++) {
       webServer->handleClient();
-      if ((i & 0x1F) == 0x1F) {
-        esp_task_wdt_reset();
-      }
-      if ((i & 0x3F) == 0x3F) {
-        yield();
-        if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
-          if (onGoBack) onGoBack();
-          return;
-        }
+      esp_task_wdt_reset();
+      // Give the idle task a scheduling opportunity after each request.
+      vTaskDelay(1 / portTICK_PERIOD_MS);
+      if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+        if (onGoBack) onGoBack();
+        return;
       }
     }
   }
@@ -285,7 +284,7 @@ void HotspotActivity::render() const {
   if (state == HotspotState::RUNNING) {
     renderServerRunning();
   } else if (state == HotspotState::STARTING) {
-    const int contentStart = renderActivityHeader(renderer, startY, "Hotspot");
+    const int contentStart = renderActivityHeader(renderer, startY, "File Transfer");
 
     int centerY = contentStart + (screenHeight - contentStart - BOTTOM_AREA_HEIGHT) / 2;
 
@@ -293,7 +292,7 @@ void HotspotActivity::render() const {
 
     auto labels = mappedInput.mapLabels("« Back", "", "", "");
   } else if (state == HotspotState::ERROR) {
-    const int contentStart = renderActivityHeader(renderer, startY, "Hotspot");
+    const int contentStart = renderActivityHeader(renderer, startY, "File Transfer");
 
     int centerY = contentStart + (screenHeight - contentStart - BOTTOM_AREA_HEIGHT) / 2;
 
@@ -317,7 +316,7 @@ void HotspotActivity::renderServerRunning() const {
   int screenHeight = renderer.getScreenHeight();
   int startY = 0;
 
-  const int contentStart = renderActivityHeader(renderer, startY, "Hotspot");
+  const int contentStart = renderActivityHeader(renderer, startY, "File Transfer");
 
   std::string hostnameUrl = std::string("http://") + AP_HOSTNAME + ".local/";
   std::string ipUrl = "http://" + connectedIP + "/";
@@ -331,20 +330,22 @@ void HotspotActivity::renderServerRunning() const {
   const int bodyTop = contentStart + verticalOffset;
   const int wifiY = bodyTop + 8;
   const int webY = wifiY + stepStride;
-  const int labelFont = MONTSERRAT_8_FONT_ID;
-  const int titleFont = MONTSERRAT_14_FONT_ID;
+  const int labelFont = systemFontIdForPointSize(8);
+  const int titleFont = systemFontIdForPointSize(14);
   const int bodyFont = systemFontId();
+  const int bodyLineHeight = renderer.text.getLineHeight(bodyFont);
+  const int ipOffset = 61 + bodyLineHeight + 8;
 
   renderer.text.render(labelFont, textX, wifiY, "STEP 1", true, EpdFontFamily::BOLD);
   renderer.text.render(titleFont, textX, wifiY + 24, "Join WiFi", true, EpdFontFamily::BOLD);
   renderer.text.render(bodyFont, textX, wifiY + 61, truncateString(connectedSSID, 20).c_str(), true);
-  renderer.text.render(MONTSERRAT_8_FONT_ID, textX, wifiY + 86, connectedIP.c_str());
+  renderer.text.render(systemFontIdForPointSize(8), textX, wifiY + ipOffset, connectedIP.c_str());
   drawQRCode(qrX, wifiY, "WIFI:S:" + connectedSSID + ";;");
 
   renderer.text.render(labelFont, textX, webY, "STEP 2", true, EpdFontFamily::BOLD);
   renderer.text.render(titleFont, textX, webY + 24, "Open Transfer", true, EpdFontFamily::BOLD);
   renderer.text.render(bodyFont, textX, webY + 61, hostnameUrl.c_str(), true);
-  renderer.text.render(MONTSERRAT_8_FONT_ID, textX, webY + 86, ipUrl.c_str());
+  renderer.text.render(systemFontIdForPointSize(8), textX, webY + ipOffset, ipUrl.c_str());
   drawQRCode(qrX, webY, hostnameUrl);
 
   auto labels = mappedInput.mapLabels("« Back", "", "", "");

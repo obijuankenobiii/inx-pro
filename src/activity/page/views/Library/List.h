@@ -23,10 +23,11 @@ class List final {
   void reset();
   bool handleInput();
   void render() const;
+  int currentPage() const { return page; }
+  int totalPages() const { return pageCount(); }
 
  private:
-  static constexpr int rowHeight = UiLayout::LIST_ITEM_HEIGHT;
-  static constexpr int itemsPerPage = 10;
+  static constexpr int itemsPerPage = 9;
 
   GfxRenderer& renderer;
   MappedInputManager& mappedInput;
@@ -37,7 +38,8 @@ class List final {
   int page = 0;
 
   int top() const;
-  int visibleRows() const;
+  int availableHeight() const;
+  int rowHeight() const;
   int pageCount() const;
   int itemAt(int x, int y) const;
 };

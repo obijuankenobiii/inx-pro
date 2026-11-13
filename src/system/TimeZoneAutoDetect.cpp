@@ -76,6 +76,10 @@ bool autoDetectTimeZone() {
   }
 
   const char* result = document["status"] | "fail";
+  if (!document["offset"].is<int>()) {
+    INX_SERIAL.printf("[%lu] [TIMEZONE] lookup response missing numeric offset\n", millis());
+    return false;
+  }
   const int offsetSeconds = document["offset"] | 0;
   const char* timeZone = document["timezone"] | "";
   if (strcmp(result, "success") != 0 || offsetSeconds < -43200 || offsetSeconds > 50400 ||

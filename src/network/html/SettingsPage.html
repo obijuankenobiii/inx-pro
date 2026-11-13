@@ -81,6 +81,7 @@
         <div class="setting-item"><span class="setting-label">Choose sleep image</span><div class="setting-control"><input id="sleepCustomBmp" type="text" placeholder="Filename or empty for random" autocomplete="off"></div></div>
         <div class="setting-item"><span class="setting-label">Hide Battery %</span><div class="setting-control"><select id="hideBatteryPercentage"></select></div></div>
         <div class="setting-item"><span class="setting-label">Keyboard</span><div class="setting-control"><select id="keyboardLayout"></select></div></div>
+        <div class="setting-item"><span class="setting-label">System font</span><div class="setting-control"><select id="systemFontFamily"></select></div></div>
         <div class="setting-item"><span class="setting-label">Text size</span><div class="setting-control"><select id="systemTextSize"></select></div></div>
         <div class="setting-item"><span class="setting-label">Hide title for thumbnails</span><div class="setting-control"><label class="toggle-switch"><input id="hideThumbnailTitles" type="checkbox"><span class="toggle-slider"></span></label></div></div>
       </section>
@@ -105,7 +106,7 @@
         <div class="setting-item"><span class="setting-label">Boot Mode</span><div class="setting-control"><select id="bootSetting"></select></div></div>
         <div id="flickPageTurnSetting" class="setting-item"><span class="setting-label">Flick page turn</span><div class="setting-control"><select id="shakePageTurn"></select></div></div>
         <div id="flickSensitivitySetting" class="setting-item"><span class="setting-label">Flick sensitivity</span><div class="setting-control"><select id="shakePageTurnSensitivity"></select></div></div>
-        <div class="setting-item"><span class="setting-label">Short Press Power Button</span><div class="setting-control"><select id="shortPwrBtn"></select></div></div>
+        <div class="setting-item"><span class="setting-label">Power Button</span><div class="setting-control"><select id="shortPwrBtn"></select></div></div>
       </section>
 
       <section class="settings-section">
@@ -159,17 +160,17 @@
     let pendingChanges = {};
     let wifiNetworks = [];
     const enumOptions = {
-      sleepScreen: {labels: ['Dark', 'Light', 'Custom', 'Recent Book', 'Transparent Cover', 'None', 'Date Time', 'Widget']},
+      sleepScreen: {labels: ['Dark', 'Light', 'Custom', 'Recent Book', 'Transparent Cover', 'None', 'Widget'], values: [0, 1, 2, 3, 4, 5, 7]},
       hideBatteryPercentage: {labels: ['Never', 'In Reader', 'Always']},
       keyboardLayout: {labels: ['QWERTY', 'Numpad']},
       systemTextSize: {labels: ['Small', 'Medium', 'Large']},
-      sleepClockStyle: {labels: ['Stacked', 'Centered', 'Card']},
+      sleepClockStyle: {labels: ['Stacked', 'Centered', 'Card', 'Days']},
       sleepClockTimeFormat: {labels: ['12 hour', '24 hour']},
       sleepScreenCoverMode: {labels: ['Fill', 'Crop']},
       sleepScreenCoverFilter: {labels: ['None', 'Contrast', 'Inverted']},
       sleepImageQuality: {labels: ['Low', 'Medium', 'High']},
       bitmapRoundedCorners: {labels: ['Square', 'Rounded', 'Subtle']},
-      sleepTimeout: {labels: ['1 min', '5 min', '10 min', '15 min', '30 min']},
+      sleepTimeout: {labels: ['1 min', '5 min', '10 min', '15 min', '30 min', 'Never']},
       bootSetting: {labels: ['Recent Book', 'Home Page']},
       shakePageTurn: {labels: ['Off', 'Normal', 'Inverted']},
       shakePageTurnSensitivity: {labels: ['Low', 'Normal', 'High']},
@@ -224,8 +225,10 @@
     }
     function populateSettings() {
       Object.entries(enumOptions).forEach(([id, config]) => populateSelect(id, config.labels, config.values));
-      const sleepScreen = document.getElementById('sleepScreen');
-      if (sleepScreen && !settingsData.clockAvailable) [...sleepScreen.options].find(option => option.value === '6')?.remove();
+      if (Array.isArray(settingsData.systemFontFamilyOptions)) {
+        populateSelect('systemFontFamily', settingsData.systemFontFamilyOptions.map(option => option.label),
+          settingsData.systemFontFamilyOptions.map(option => option.value));
+      }
       populateRange('pageAutoTurnSeconds', Array.from({length: 19}, (_, index) => index * 10), value => value ? value + ' sec' : 'Off');
       populateRange('dailyReadingGoalMinutes', [0, ...Array.from({length: 24}, (_, index) => (index + 1) * 5)], value => value ? value + ' min' : 'Off');
       boolFields.forEach(id => {

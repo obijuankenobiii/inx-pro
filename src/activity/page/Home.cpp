@@ -19,11 +19,9 @@
 #include "HomeSubPage.h"
 #include "components/global/Button.h"
 #include "components/global/PopUp.h"
-#include "components/global/Sidebar.h"
-#include "images/Hamburger.h"
-#include "images/Store.h"
 #include "state/BookState.h"
 #include "state/RecentBooks.h"
+#include "state/SystemSetting.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
 
@@ -34,23 +32,10 @@ extern void openHomeSubPage(HomeSubPage::Section section);
 extern void openHomeDescription(const std::string& bookPath, const std::string& cachePath);
 extern void onGoToStatistics();
 extern void onGoToHeatmapReport(HomeTheme::HeatmapView view);
-extern void onGoToStore();
 
 namespace {
 
 constexpr unsigned long longPressMs = 500;
-constexpr int kStoreIconSize = 40;
-constexpr int kStoreBottomMargin = 20;
-
-int storeIconY(const GfxRenderer& renderer) { return renderer.getScreenHeight() - kStoreBottomMargin - kStoreIconSize; }
-
-bool storeIconHit(const GfxRenderer& renderer, const int x, const int y) {
-  const int iconY = storeIconY(renderer);
-  constexpr int rowSideMargin = 16;
-  constexpr int rowVerticalPadding = 10;
-  return x >= rowSideMargin && x < renderer.getScreenWidth() / 2 + rowSideMargin && y >= iconY - rowVerticalPadding &&
-         y < iconY + kStoreIconSize + rowVerticalPadding;
-}
 
 std::string cachePath(const RecentBook& book) {
   if (!book.cachePath.empty()) return book.cachePath;
@@ -86,71 +71,91 @@ bool removeTree(const std::string& path, int& removed) {
 }  // namespace
 
 Home::Home(GfxRenderer& renderer, MappedInputManager& mappedInput)
-    : Page("Home", renderer, mappedInput), widgetLayout(renderer), shortcutList(renderer) {}
+    : UiPage("Home", renderer, mappedInput), widgetLayout(renderer) {}
 
 void Home::onEnter() {
-  Page::onEnter();
+  UiPage::onEnter();
   renderer.syncWriteBufferFromActive();
   carouselIndex = 0;
   favoriteIndex = 0;
+  widgetPageIndex = 0;
+  recentGridPageIndex = 0;
+  flowIndex = 0;
   widgetLayout.invalidateFavorites();
   carouselThumbnailsPreloaded = false;
+  deferThumbnailDecode_ = true;
+  thumbnailWarmupPending_ = false;
   popupBook = -1;
   favoritePopupOpen = false;
+  statisticsPopupOpen = false;
   heatmapPopupOpen = false;
   popupFavoritePath.clear();
-  shortcutDrawerOpen = false;
+  tapRejectLogged_ = false;
 }
 
 void Home::menu() {
-  Page::menu();
-#if INX_HAS_FRONTLIGHT
-  if (!isLightDrawerOpen()) drawBattery(renderer);
-#else
-  drawBattery(renderer);
-#endif
-  if (shortcutDrawerOpen) drawShortcutDrawer();
+  UiPage::menu();
 }
 
 void Home::title() const {
-  renderer.bitmap.icon(Hamburger, navigation::Menu::leftMargin, navigation::Menu::topPadding,
-                       navigation::Menu::iconSize, navigation::Menu::iconSize);
-  const int font = MONTSERRAT_16_FONT_ID;
+  const int font = systemFontIdForPointSize(16);
   const int textY = navigation::Menu::topPadding + (navigation::Menu::iconSize - renderer.text.getLineHeight(font)) / 2;
-  renderer.text.render(font, navigation::Menu::leftMargin + navigation::Menu::iconSize + 12, textY, "Home", true,
-                       EpdFontFamily::BOLD);
+  renderer.text.render(font, navigation::Menu::leftMargin, textY, "Home", true, EpdFontFamily::BOLD);
 }
 
 ButtonBounds Home::libraryButton() const {
-  const int width = Button::width(renderer, "Library", MONTSERRAT_10_FONT_ID);
+  const int width = Button::width(renderer, "Library", systemFontIdForPointSize(10));
   const int x = (renderer.getScreenWidth() - width) / 2;
   const int y = navigation::Menu::height + Carousel::kHeight / 2 + 14;
   return {x, y, width, Button::height};
 }
 
 void Home::loop() {
-  if (shortcutDrawerOpen && handleShortcutDrawerInput()) return;
-  if ((popupBook >= 0 || favoritePopupOpen || heatmapPopupOpen) && handlePopup()) return;
+  if ((popupBook >= 0 || favoritePopupOpen || statisticsPopupOpen || heatmapPopupOpen) && handlePopup()) return;
   if (menuInput()) return;
   if (isOpen()) {
     renderPage();
     return;
   }
 
+  // The first Home frame intentionally uses thumbnail placeholders. Warm all
+  // image caches only after that frame has been displayed and the device is
+  // idle, so entering Home never waits on SD decoding.
+  if (thumbnailWarmupPending_ && !mappedInput.wasTouchActivity()) {
+    thumbnailWarmupPending_ = false;
+    updateRequired = true;
+    renderPage();
+  }
+
   if (widgetLayout.needsRefresh(HomeTheme::active())) updateRequired = true;
+  // Let the first Home frame reach the panel before doing carousel I/O and
+  // thumbnail decoding. The preload is still done on the next idle loop, so
+  // it remains warm for a swipe without extending the visible screen render.
+  const bool renderedThisLoop = updateRequired;
   if (handleSwipe()) return;
   if (handleTap()) return;
   renderPage();
-  preloadCarousel();
+  if (!renderedThisLoop && !mappedInput.wasTouchActivity()) preloadCarousel();
 }
 
 void Home::content() {
-  widgetLayout.render(HomeTheme::active(), carouselIndex, favoriteIndex);
-  if (popupBook >= 0 || favoritePopupOpen || heatmapPopupOpen) popup();
+  renderer.setDeferImageDecode(deferThumbnailDecode_);
+  widgetLayout.render(HomeTheme::active(), carouselIndex, favoriteIndex, widgetPageIndex, recentGridPageIndex, flowIndex);
+  renderer.setDeferImageDecode(false);
+  if (deferThumbnailDecode_) {
+    deferThumbnailDecode_ = false;
+    thumbnailWarmupPending_ = true;
+  }
+  if (popupBook >= 0 || favoritePopupOpen || statisticsPopupOpen || heatmapPopupOpen) popup();
 }
 
 bool Home::handlePopup() {
   if (heatmapPopupOpen) {
+    if (popupInput()) return true;
+    renderPage();
+    return true;
+  }
+  if (statisticsPopupOpen) {
     if (popupInput()) return true;
     renderPage();
     return true;
@@ -180,23 +185,39 @@ bool Home::handlePopup() {
 }
 
 bool Home::handleSwipe() {
-  if (mappedInput.wasTouchSwipeUp() || mappedInput.wasTouchSwipeDown()) return false;
-  float swipeNx = 0.0f;
-  float swipeNy = 0.0f;
-  const bool swipeLeft = mappedInput.wasTouchSwipeLeftInScreen(renderer, swipeNx, swipeNy);
-  const bool swipeRight = !swipeLeft && mappedInput.wasTouchSwipeRightInScreen(renderer, swipeNx, swipeNy);
-  if (!swipeLeft && !swipeRight) return false;
-
-  if (swipeRight && static_cast<int>(swipeNy * renderer.getScreenHeight()) < navigation::Menu::height) {
-    shortcutDrawerOpen = true;
-    updateRequired = true;
-    renderPage();
+  const bool swipeUp = mappedInput.wasTouchSwipeUp();
+  const bool swipeDown = !swipeUp && mappedInput.wasTouchSwipeDown();
+  if (swipeUp || swipeDown) {
+    const int pageCount = widgetLayout.recentGridPageCount(HomeTheme::active(), widgetPageIndex,
+                                                          RECENT_BOOKS.getCount());
+    if (pageCount > 1) {
+      recentGridPageIndex = (recentGridPageIndex + pageCount + (swipeUp ? 1 : -1)) % pageCount;
+      updateRequired = true;
+      renderPage();
+      return true;
+    }
+    // A completed swipe owns this input cycle even when the current layout has
+    // no page to move to. Do not let the same release fall through to a book
+    // tap hit-test.
     return true;
   }
+  float swipeNx = 0.0f;
+  float swipeNy = 0.0f;
+  const bool swipeLeftInScreen = mappedInput.wasTouchSwipeLeftInScreen(renderer, swipeNx, swipeNy);
+  const bool swipeRightInScreen = !swipeLeftInScreen && mappedInput.wasTouchSwipeRightInScreen(renderer, swipeNx, swipeNy);
+  const bool swipeLeft = swipeLeftInScreen || mappedInput.wasTouchSwipeLeft();
+  const bool swipeRight = !swipeLeft && (swipeRightInScreen || mappedInput.wasTouchSwipeRight());
+  if (!swipeLeft && !swipeRight) return false;
 
-  const int swipeX = static_cast<int>(swipeNx * renderer.getScreenWidth());
-  const int swipeY = static_cast<int>(swipeNy * renderer.getScreenHeight());
-  const HomeWidgetLayout::SwipeTarget target = widgetLayout.horizontalSwipeTarget(HomeTheme::active(), swipeX, swipeY);
+  const int swipeX = (swipeLeftInScreen || swipeRightInScreen)
+                         ? static_cast<int>(swipeNx * renderer.getScreenWidth())
+                         : renderer.getScreenWidth() / 2;
+  const int swipeY = (swipeLeftInScreen || swipeRightInScreen)
+                         ? static_cast<int>(swipeNy * renderer.getScreenHeight())
+                         : navigation::Menu::height +
+                               (renderer.getScreenHeight() - navigation::Menu::height - navigation::Menu::bottomInset()) / 2;
+  const HomeWidgetLayout::SwipeTarget target =
+      widgetLayout.horizontalSwipeTarget(HomeTheme::active(), widgetPageIndex, swipeX, swipeY);
   if (target == HomeWidgetLayout::SwipeTarget::Carousel) {
     advanceCarousel(swipeLeft ? 1 : -1);
     return true;
@@ -209,7 +230,24 @@ bool Home::handleSwipe() {
     renderPage();
     return true;
   }
-  return false;
+  if (target == HomeWidgetLayout::SwipeTarget::Flow) {
+    advanceFlow(swipeLeft ? 1 : -1);
+    return true;
+  }
+  if (target == HomeWidgetLayout::SwipeTarget::WidgetPage) {
+    const int count = widgetLayout.oneByOnePageCount(HomeTheme::active());
+    if (count > 1) {
+      widgetPageIndex = (widgetPageIndex + count + (swipeLeft ? 1 : -1)) % count;
+      recentGridPageIndex = 0;
+      updateRequired = true;
+      renderPage();
+    }
+    return true;
+  }
+  // Keep all classified horizontal swipes out of handleTap(). This matters on
+  // touch controllers that expose tap and swipe state on the same release
+  // edge, and on edge swipes that start outside a widget's hit area.
+  return true;
 }
 
 void Home::advanceCarousel(const int delta) {
@@ -223,6 +261,17 @@ void Home::advanceCarousel(const int delta) {
   renderPage();
 }
 
+void Home::advanceFlow(const int delta) {
+  const int bookCount = RECENT_BOOKS.getCount();
+  if (bookCount <= 0) {
+    flowIndex = 0;
+    return;
+  }
+  flowIndex = (flowIndex + bookCount + delta) % bookCount;
+  updateRequired = true;
+  renderPage();
+}
+
 void Home::preloadCarousel() {
   if (carouselThumbnailsPreloaded) return;
   widgetLayout.preloadCarousel(HomeTheme::active(), carouselIndex);
@@ -230,31 +279,49 @@ void Home::preloadCarousel() {
 }
 
 bool Home::handleTap() {
-  if (!mappedInput.hasTouch()) return false;
+  if (mappedInput.isTouchPressed()) {
+    tapRejectLogged_ = false;
+    return false;
+  }
+  if (!mappedInput.hasTouch()) {
+    tapRejectLogged_ = false;
+    return false;
+  }
+  const bool touchActivity = mappedInput.wasTouchActivity();
+  if (!touchActivity) tapRejectLogged_ = false;
   float tapNx = 0.0f;
   float tapNy = 0.0f;
-  if (!mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy)) return false;
+  if (!mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy)) {
+    if (!tapRejectLogged_ && touchActivity) {
+      INX_SERIAL.printf("[%lu] [HOME-TAP] touch present but tap predicate rejected carouselIndex=%d\n", millis(),
+                        carouselIndex);
+      tapRejectLogged_ = true;
+    }
+    return false;
+  }
+  tapRejectLogged_ = false;
   const int tapX = static_cast<int>(tapNx * renderer.getScreenWidth());
   const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
-  const int hamburgerX = navigation::Menu::leftMargin - 10;
-  const int hamburgerY = navigation::Menu::topPadding - 10;
-  const int hamburgerSize = navigation::Menu::iconSize;
-  if (tapX >= hamburgerX && tapX < hamburgerX + hamburgerSize && tapY >= hamburgerY &&
-      tapY < hamburgerY + hamburgerSize) {
-    shortcutDrawerOpen = true;
-    updateRequired = true;
-    renderPage();
-    return true;
-  }
   const int bookCount = RECENT_BOOKS.getCount();
   const HomeWidgetLayout::HitResult favoriteHit =
-      widgetLayout.hitTest(HomeTheme::active(), carouselIndex, favoriteIndex, bookCount, tapX, tapY);
+      widgetLayout.hitTest(HomeTheme::active(), carouselIndex, favoriteIndex, bookCount, widgetPageIndex,
+                           recentGridPageIndex, flowIndex, tapX, tapY);
   if (favoriteHit.type == HomeWidgetLayout::HitType::Heatmap) {
     if (mappedInput.lastTouchHeldMs() >= longPressMs) {
       heatmapPopupOpen = true;
-      heatmapPopupView = HomeTheme::active().heatmapViews[favoriteHit.index];
+      heatmapPopupView = HomeTheme::HeatmapView::Monthly;
       updateRequired = true;
     }
+    return true;
+  }
+  if (favoriteHit.type == HomeWidgetLayout::HitType::Statistics) {
+    if (mappedInput.lastTouchHeldMs() >= longPressMs) {
+      statisticsPopupOpen = true;
+      updateRequired = true;
+      return true;
+    }
+    // Statistics is opened through the long-press popup only. A regular tap
+    // on the widget should not navigate away from the home page.
     return true;
   }
   if (favoriteHit.type == HomeWidgetLayout::HitType::Favorites) {
@@ -275,9 +342,35 @@ bool Home::handleTap() {
   }
   if (bookCount > 0) {
     const HomeWidgetLayout::HitResult hit =
-        widgetLayout.hitTest(HomeTheme::active(), carouselIndex, favoriteIndex, bookCount, tapX, tapY);
+        widgetLayout.hitTest(HomeTheme::active(), carouselIndex, favoriteIndex, bookCount, widgetPageIndex,
+                             recentGridPageIndex, flowIndex, tapX, tapY);
+    INX_SERIAL.printf(
+        "[%lu] [HOME-TAP] tap=(%d,%d) norm=(%.3f,%.3f) books=%d carouselIndex=%d widgetPage=%d recentGridPage=%d "
+        "hitType=%d hitIndex=%d held_ms=%lu\n",
+        millis(), tapX, tapY, tapNx, tapNy, bookCount, carouselIndex, widgetPageIndex, recentGridPageIndex,
+        static_cast<int>(hit.type), hit.index, mappedInput.lastTouchHeldMs());
     if (hit.type == HomeWidgetLayout::HitType::Shortcut) return handleShortcut(hit.index);
     if (hit.type == HomeWidgetLayout::HitType::Recent) {
+      if (mappedInput.lastTouchHeldMs() >= longPressMs) {
+        popupBook = hit.index;
+        updateRequired = true;
+        return true;
+      }
+      openReaderFromCallback(RECENT_BOOKS.getBooks()[static_cast<size_t>(hit.index)].path, [] { onGoToHome(); });
+      return true;
+    }
+    if (hit.type == HomeWidgetLayout::HitType::RecentGrid) {
+      if (hit.index < 0 || hit.index >= bookCount) return true;
+      if (mappedInput.lastTouchHeldMs() >= longPressMs) {
+        popupBook = hit.index;
+        updateRequired = true;
+        return true;
+      }
+      openReaderFromCallback(RECENT_BOOKS.getBooks()[static_cast<size_t>(hit.index)].path, [] { onGoToHome(); });
+      return true;
+    }
+    if (hit.type == HomeWidgetLayout::HitType::Flow) {
+      if (hit.index < 0 || hit.index >= bookCount) return true;
       if (mappedInput.lastTouchHeldMs() >= longPressMs) {
         popupBook = hit.index;
         updateRequired = true;
@@ -297,6 +390,8 @@ bool Home::handleTap() {
       updateRequired = true;
       return true;
     }
+    INX_SERIAL.printf("[%lu] [RECENT-CAROUSEL] opening index=%d path=%s\n", millis(), tappedIndex,
+                      RECENT_BOOKS.getBooks()[static_cast<size_t>(tappedIndex)].path.c_str());
     openReaderFromCallback(RECENT_BOOKS.getBooks()[static_cast<size_t>(tappedIndex)].path, [] { onGoToHome(); });
     return true;
   }
@@ -307,9 +402,14 @@ bool Home::handleTap() {
     return true;
   }
   const HomeWidgetLayout::HitResult hit =
-      widgetLayout.hitTest(HomeTheme::active(), carouselIndex, favoriteIndex, bookCount, tapX, tapY);
+      widgetLayout.hitTest(HomeTheme::active(), carouselIndex, favoriteIndex, bookCount, widgetPageIndex,
+                           recentGridPageIndex, flowIndex, tapX, tapY);
   if (hit.type == HomeWidgetLayout::HitType::Shortcut) return handleShortcut(hit.index);
   if (hit.type == HomeWidgetLayout::HitType::Recent) {
+    openReaderFromCallback(RECENT_BOOKS.getBooks()[static_cast<size_t>(hit.index)].path, [] { onGoToHome(); });
+    return true;
+  }
+  if (hit.type == HomeWidgetLayout::HitType::RecentGrid && hit.index >= 0 && hit.index < bookCount) {
     openReaderFromCallback(RECENT_BOOKS.getBooks()[static_cast<size_t>(hit.index)].path, [] { onGoToHome(); });
     return true;
   }
@@ -324,58 +424,12 @@ bool Home::handleTap() {
   return false;
 }
 
-bool Home::handleShortcutDrawerInput() {
-  if (mappedInput.wasPressed(MappedInputManager::Button::Back) || mappedInput.wasTouchSwipeRight()) {
-    shortcutDrawerOpen = false;
-    updateRequired = true;
-    return true;
-  }
-  if (!mappedInput.hasTouch()) return false;
-
-  float tapNx = 0.0f;
-  float tapNy = 0.0f;
-  if (!mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy)) return false;
-  const int tapX = static_cast<int>(tapNx * renderer.getScreenWidth());
-  const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
-  const int drawerWidth = Sidebar::width(renderer);
-  const int listTop = Sidebar::listTop();
-  if (tapX >= 0 && tapX < drawerWidth && storeIconHit(renderer, tapX, tapY)) {
-    shortcutDrawerOpen = false;
-    updateRequired = true;
-    onGoToStore();
-    return true;
-  }
-  if (tapX >= 0 && tapX < drawerWidth && tapY >= listTop) {
-    const int item = shortcutList.hitTest(tapX, tapY, 0, listTop, drawerWidth, renderer.getScreenHeight() - listTop,
-                                          Sidebar::rowHeight);
-    if (item >= 0) {
-      shortcutDrawerOpen = false;
-      updateRequired = true;
-      handleShortcut(item);
-      return true;
-    }
-  }
-
-  if (tapX >= drawerWidth) {
-    shortcutDrawerOpen = false;
-    updateRequired = true;
-  }
-  return true;
-}
-
-void Home::drawShortcutDrawer() const {
-  const int drawerWidth = Sidebar::width(renderer);
-  const int listTop = Sidebar::listTop();
-  Sidebar::renderFrame(renderer, "Shortcuts");
-  shortcutList.render(0, listTop, drawerWidth, renderer.getScreenHeight() - listTop, Sidebar::rowHeight);
-  const int storeY = storeIconY(renderer);
-  renderer.line.render(20, storeY - 14, drawerWidth - 20, storeY - 14, true, LineRender::Style::Dotted);
-  const int storeLabelY = storeY + (kStoreIconSize - renderer.text.getLineHeight(systemFontId())) / 2;
-  renderer.bitmap.icon(Store, 24, storeY, kStoreIconSize, kStoreIconSize);
-  renderer.text.render(systemFontId(), 80, storeLabelY, "Store", true);
-}
-
 bool Home::handleShortcut(const int item) {
+  if (SETTINGS.disableStatistics != 0 && item == 3) {
+    // Removing Statistics shifts Dictionary from row 4 to row 3.
+    openHomeSubPage(HomeSubPage::Section::Dictionary);
+    return true;
+  }
   switch (item) {
     case 0:
       openHomeSubPage(HomeSubPage::Section::Bookmarks);
@@ -398,15 +452,19 @@ bool Home::handleShortcut(const int item) {
 }
 
 void Home::popup() const {
-  const std::vector<std::string> items =
-      heatmapPopupOpen
-          ? std::vector<std::string>{"View Report"}
-          : (favoritePopupOpen
-                 ? std::vector<std::string>{"Remove favorite"}
-                 : std::vector<std::string>{"View description", "Mark as completed", "Remove Recent", "Delete cache"});
+  std::vector<std::string> items;
+  if (heatmapPopupOpen || statisticsPopupOpen) {
+    items = {"View Report"};
+  } else if (favoritePopupOpen) {
+    items = {"Remove favorite"};
+  } else {
+    items = {"View description", "Mark as completed", "Remove Recent", "Delete cache"};
+  }
   const PopUpBounds box = PopUp::bounds(renderer, static_cast<int>(items.size()));
   PopUp::background(renderer, box);
-  PopUp::title(renderer, box, heatmapPopupOpen ? "Heatmap" : (favoritePopupOpen ? "Favorite" : "Book"));
+  PopUp::title(renderer, box, heatmapPopupOpen ? "Heatmap"
+                                               : (statisticsPopupOpen ? "Statistics"
+                                                                       : (favoritePopupOpen ? "Favorite" : "Book")));
   PopUp::list(renderer, box, items, -1, 0);
   PopUp::border(renderer, box);
 }
@@ -415,6 +473,7 @@ bool Home::popupInput() {
   if (mappedInput.wasPressed(MappedInputManager::Button::Back) ||
       (mappedInput.hasTouch() && mappedInput.wasTouchSwipeUp())) {
     favoritePopupOpen = false;
+    statisticsPopupOpen = false;
     heatmapPopupOpen = false;
     popupFavoritePath.clear();
     popupBook = -1;
@@ -427,11 +486,12 @@ bool Home::popupInput() {
   float tapY = 0.0f;
   if (!mappedInput.wasTouchTapInScreen(renderer, tapX, tapY)) return false;
 
-  const PopUpBounds box = PopUp::bounds(renderer, heatmapPopupOpen || favoritePopupOpen ? 1 : 4);
+  const PopUpBounds box = PopUp::bounds(renderer, heatmapPopupOpen || statisticsPopupOpen || favoritePopupOpen ? 1 : 4);
   const int x = static_cast<int>(tapX * renderer.getScreenWidth());
   const int y = static_cast<int>(tapY * renderer.getScreenHeight());
   if (x < box.x || x >= box.x + box.width || y < box.y || y >= box.y + box.height) {
     favoritePopupOpen = false;
+    statisticsPopupOpen = false;
     heatmapPopupOpen = false;
     popupFavoritePath.clear();
     popupBook = -1;
@@ -445,6 +505,12 @@ bool Home::popupInput() {
       heatmapPopupOpen = false;
       updateRequired = true;
       onGoToHeatmapReport(heatmapPopupView);
+    }
+  } else if (statisticsPopupOpen) {
+    if (item == 0) {
+      statisticsPopupOpen = false;
+      updateRequired = true;
+      onGoToStatistics();
     }
   } else if (favoritePopupOpen) {
     if (item == 0) {
@@ -495,6 +561,7 @@ void Home::removeRecent() {
   if (carouselIndex >= widgetLayout.carouselBookCount(HomeTheme::active(), RECENT_BOOKS.getCount())) {
     carouselIndex = 0;
   }
+  if (flowIndex >= RECENT_BOOKS.getCount()) flowIndex = 0;
   updateRequired = true;
 }
 

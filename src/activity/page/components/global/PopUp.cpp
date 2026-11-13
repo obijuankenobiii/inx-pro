@@ -6,6 +6,25 @@
 #include <algorithm>
 
 #include "system/Fonts.h"
+#include "system/ScreenComponents.h"
+
+namespace {
+
+void drawLightGraySelection(const GfxRenderer& renderer, const int x, const int y, const int width,
+                            const int height) {
+  // A 2x2 dither produces a much lighter gray than FillTone::Gray while
+  // remaining stable on the 1-bit display.
+  const bool inkPixel = !(renderer.isDarkMode() && !renderer.isImageRendering());
+  for (int row = y; row < y + height; ++row) {
+    for (int column = x; column < x + width; ++column) {
+      if ((column & 1) == 0 && (row & 1) == 0) {
+        renderer.drawPixel(column, row, inkPixel);
+      }
+    }
+  }
+}
+
+}
 
 PopUpBounds PopUp::bounds(const GfxRenderer& renderer, const int count, const int contentTop) {
   constexpr int margin = 20;
@@ -24,6 +43,7 @@ PopUpBounds PopUp::bounds(const GfxRenderer& renderer, const int count, const in
 }
 
 void PopUp::background(GfxRenderer& renderer, const PopUpBounds& box) {
+  ScreenComponents::drawWhiteOverlay(renderer);
   renderer.rectangle.fill(box.x, box.y, box.width, box.height, false);
 }
 
@@ -45,12 +65,11 @@ void PopUp::list(GfxRenderer& renderer, const PopUpBounds& box, const std::vecto
     if (index >= static_cast<int>(values.size())) break;
     const int y = box.y + box.header + i * box.row;
     const bool active = index == selected;
-    if (active) renderer.rectangle.fill(box.x + 1, y, box.width - 2, box.row, true);
+    if (active) drawLightGraySelection(renderer, box.x + 1, y, box.width - 2, box.row);
     const std::string shown = renderer.text.truncate(font, values[static_cast<size_t>(index)].c_str(),
                                                      box.width - 44);
     const int textY = y + (box.row - renderer.text.getLineHeight(font)) / 2;
-    renderer.text.render(font, box.x + 20, textY, shown.c_str(), !active,
-                         active ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR);
+    renderer.text.render(font, box.x + 20, textY, shown.c_str(), true);
     if (i + 1 < box.rows && index + 1 < static_cast<int>(values.size())) {
       renderer.line.render(box.x + dividerInset, y + box.row, box.x + box.width - dividerInset, y + box.row,
                            !active, LineRender::Style::Dotted);

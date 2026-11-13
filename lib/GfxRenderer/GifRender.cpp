@@ -7,17 +7,19 @@
 
 bool GifRender::render(FsFile& gifFile, const int x, const int y, const int targetWidth, const int targetHeight,
                        const bool cropToFill, const ImageRenderMode mode, const bool quality,
-                       JpegLevelCapture* capture, const float cropAnchorX) {
+                       JpegLevelCapture* capture, const float cropAnchorX, const float cropAnchorY) {
   return StbImageDecode::render(gifFile, renderer_, x, y, targetWidth, targetHeight, cropToFill, mode, quality,
-                                capture, cropAnchorX);
+                                capture, cropAnchorX, cropAnchorY);
 }
 
 bool GifRender::fromPath(const std::string& path, const int x, const int y, const int targetWidth,
                          const int targetHeight, const bool cropToFill, const ImageRenderMode mode,
-                         const bool quality, JpegLevelCapture* capture, const float cropAnchorX) {
+                         const bool quality, JpegLevelCapture* capture, const float cropAnchorX,
+                         const float cropAnchorY) {
   FsFile file;
   if (!SdMan.openFileForRead("GIF", path, file)) return false;
-  const bool ok = render(file, x, y, targetWidth, targetHeight, cropToFill, mode, quality, capture, cropAnchorX);
+  const bool ok = render(file, x, y, targetWidth, targetHeight, cropToFill, mode, quality, capture, cropAnchorX,
+                         cropAnchorY);
   file.close();
   return ok;
 }

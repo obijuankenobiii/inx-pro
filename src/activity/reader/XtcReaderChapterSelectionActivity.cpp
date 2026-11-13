@@ -133,11 +133,11 @@ void XtcReaderChapterSelectionActivity::renderScreen() {
 
   const auto pageWidth = renderer.getScreenWidth();
   const int pageItems = getPageItems();
-  renderer.text.centered(MONTSERRAT_12_FONT_ID, 15, "Select Chapter", true, EpdFontFamily::BOLD);
+  renderer.text.centered(systemFontIdForPointSize(12), 15, "Select Chapter", true, EpdFontFamily::BOLD);
 
   const auto& chapters = xtc->getChapters();
   if (chapters.empty()) {
-    renderer.text.centered(MONTSERRAT_10_FONT_ID, 120, "No chapters");
+    renderer.text.centered(systemFontIdForPointSize(10), 120, "No chapters");
     renderer.displayBuffer();
     return;
   }
@@ -148,7 +148,7 @@ void XtcReaderChapterSelectionActivity::renderScreen() {
   for (int i = pageStartIndex; i < static_cast<int>(chapters.size()) && i < pageStartIndex + pageItems; i++) {
     const auto& chapter = chapters[i];
     const char* title = chapter.name.empty() ? "Unnamed" : chapter.name.c_str();
-    renderer.text.render(MONTSERRAT_10_FONT_ID, 20, 60 + (i % pageItems) * 30, title, i != selectorIndex);
+    renderer.text.render(systemFontIdForPointSize(10), 20, 60 + (i % pageItems) * 30, title, i != selectorIndex);
   }
 
   if (renderer.getOrientation() != GfxRenderer::LandscapeClockwise) {

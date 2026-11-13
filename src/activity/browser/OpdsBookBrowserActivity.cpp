@@ -27,7 +27,7 @@ namespace {
 constexpr uint32_t kDisplayTaskStack = 8192;
 constexpr int PAGE_ITEMS = 8;
 constexpr int SKIP_PAGE_MS = 700;
-constexpr int kListItemHeight = Page::LIST_ITEM_HEIGHT;
+constexpr int kListItemHeight = UiPage::LIST_ITEM_HEIGHT;
 constexpr int kBodyTop = FREEINK_DEVICE_X4PRO ? 80 : 70;
 
 ButtonBounds retryButtonBounds(const GfxRenderer& renderer) {

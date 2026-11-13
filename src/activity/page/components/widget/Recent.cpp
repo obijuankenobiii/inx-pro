@@ -1,14 +1,11 @@
 #include "Recent.h"
 
 #include <BitmapRender.h>
-#include <Epub/BookMetadataCache.h>
 #include <GfxRenderer.h>
 #include <ImageRender.h>
-#include <SDCardManager.h>
 
 #include <algorithm>
 #include <cstdio>
-#include <functional>
 #include <string>
 
 #include "images/Star.h"
@@ -16,19 +13,11 @@
 #include "state/RecentBooks.h"
 #include "state/SystemSetting.h"
 #include "system/Fonts.h"
-#include "util/SdIoMutex.h"
 
 namespace {
 
-std::string thumbnailPath(const std::string& cacheDir) {
-  if (cacheDir.empty()) return {};
-  SdIoMutex::Lock ioLock;
-  char path[192];
-  for (const char* extension : {"thumb.jpg", "thumb.png", "thumb.bmp"}) {
-    snprintf(path, sizeof(path), "%s/%s", cacheDir.c_str(), extension);
-    if (SdMan.exists(path)) return path;
-  }
-  return {};
+std::string thumbnailPath(const RecentBook& book) {
+  return book.thumbnailPath;
 }
 
 std::string bookTitle(const RecentBook& book) {
@@ -67,11 +56,12 @@ void titleLines(const GfxRenderer& renderer, const std::string& value, const int
   second = renderer.text.truncate(font, value.substr(best).c_str(), width, EpdFontFamily::BOLD);
 }
 
-void thumbnailDimensions(const int width, const int height, int& thumbnailWidth, int& thumbnailHeight) {
+void thumbnailDimensions(const int width, const int height, int& thumbnailWidth, int& thumbnailHeight,
+                         const bool fullHeight) {
   const bool wideLayout = width >= 360;
   const int maxHeight = wideLayout ? 300 : 230;
   const int maxWidth = wideLayout ? 200 : 154;
-  thumbnailHeight = std::min(maxHeight, std::max(40, height - 32));
+  thumbnailHeight = std::min(maxHeight, std::max(40, height - (fullHeight ? 10 : 32)));
   thumbnailWidth = std::min(maxWidth, std::max(40, thumbnailHeight * 2 / 3));
 }
 
@@ -79,7 +69,7 @@ void renderThumbnail(GfxRenderer& renderer, const RecentBook& book, const int x,
                      const int height, const HomeTheme::CarouselShadowStyle shadowStyle) {
   BaseCarousel::renderShadow(renderer, x + 6, y + 6, width, height, shadowStyle);
   renderer.rectangle.fill(x, y, width, height, false);
-  const std::string path = thumbnailPath(book.cachePath);
+  const std::string path = thumbnailPath(book);
   if (!path.empty()) {
     ImageRender::Options options;
     options.cropToFill = true;
@@ -88,9 +78,9 @@ void renderThumbnail(GfxRenderer& renderer, const RecentBook& book, const int x,
     if (SETTINGS.bitmapRoundedCorners == 0) {
       options.roundedOutside = BitmapRender::RoundedOutside::None;
     } else if (SETTINGS.bitmapRoundedCorners == 2) {
-      options.roundedOutside = BitmapRender::RoundedOutside::SubtleSparseInkAlignedOutside;
+      options.roundedOutside = BitmapRender::RoundedOutside::SubtlePaperOutside;
     } else {
-      options.roundedOutside = BitmapRender::RoundedOutside::SparseInkAlignedOutside;
+      options.roundedOutside = BitmapRender::RoundedOutside::PaperOutside;
     }
     if (ImageRender::create(renderer, path).render(x, y, width, height, options)) return;
   }
@@ -103,13 +93,7 @@ void renderThumbnail(GfxRenderer& renderer, const RecentBook& book, const int x,
 int Recent::ratingStars(const RecentBook& book) const {
   if (ratingCachePath_ == book.path) return cachedRatingStars_;
   ratingCachePath_ = book.path;
-  cachedRatingStars_ = 0;
-
-  const std::string cachePath = book.cachePath.empty()
-                                    ? "/.metadata/epub/" + std::to_string(std::hash<std::string>{}(book.path))
-                                    : book.cachePath;
-  BookMetadataCache metadata(cachePath);
-  if (metadata.load()) cachedRatingStars_ = metadataRatingStars(metadata.coreMetadata.rating);
+  cachedRatingStars_ = metadataRatingStars(book.rating);
   return cachedRatingStars_;
 }
 
@@ -117,7 +101,7 @@ void Recent::render(const int x, const int y, const int width, const int height,
                     const HomeTheme::CarouselStyle style, const bool showLabel,
                     const HomeTheme::CarouselLabelColor labelColor,
                     const HomeTheme::CarouselShadowStyle shadowStyle, const bool showTitle, const bool showAuthor,
-                    const bool showProgress, const bool showRating) const {
+                    const bool showProgress, const bool showRating, const bool fullHeight) const {
   if (width <= 0 || height <= 0) return;
   renderBackground(x, y, width, height, background);
   const ContentArea content = contentArea(y, height, showLabel);
@@ -129,7 +113,7 @@ void Recent::render(const int x, const int y, const int width, const int height,
   constexpr int innerPadding = 20;
   int thumbnailWidth = 0;
   int thumbnailHeight = 0;
-  thumbnailDimensions(width, content.height, thumbnailWidth, thumbnailHeight);
+  thumbnailDimensions(width, content.height, thumbnailWidth, thumbnailHeight, fullHeight);
   const bool rightAligned = style == HomeTheme::CarouselStyle::Right;
   const int thumbnailX = rightAligned ? x + width - innerPadding - thumbnailWidth : x + innerPadding;
   const int thumbnailY = content.y + (content.height - thumbnailHeight) / 2;
@@ -181,7 +165,7 @@ void Recent::render(const int x, const int y, const int width, const int height,
   if (!showProgress) return;
   const int percentage = book.progress < 0.0f ? 0 : std::max(0, std::min(100, static_cast<int>(book.progress * 100.0f + 0.5f)));
   const std::string percentageText = std::to_string(percentage) + "%";
-  constexpr int percentageFont = MONTSERRAT_8_FONT_ID;
+  const int percentageFont = systemFontIdForPointSize(8);
   const int percentageWidth = renderer_.text.getWidth(percentageFont, percentageText.c_str());
   const int barY = std::min(content.y + content.height - innerPadding - 11,
                             content.y + content.height / 2 + lineHeight + 20);
@@ -202,7 +186,7 @@ void Recent::preview(const int x, const int y, const int width, const int height
                      const HomeTheme::CarouselStyle style, const bool showLabel,
                      const HomeTheme::CarouselLabelColor labelColor,
                      const HomeTheme::CarouselShadowStyle shadowStyle, const bool showTitle, const bool showAuthor,
-                     const bool showProgress, const bool showRating) const {
+                     const bool showProgress, const bool showRating, const bool fullHeight) const {
   if (width <= 0 || height <= 0) return;
   renderBackground(x, y, width, height, background);
   const ContentArea content = contentArea(y, height, showLabel);
@@ -210,7 +194,7 @@ void Recent::preview(const int x, const int y, const int width, const int height
   constexpr int innerPadding = 20;
   int thumbnailWidth = 0;
   int thumbnailHeight = 0;
-  thumbnailDimensions(width, content.height, thumbnailWidth, thumbnailHeight);
+  thumbnailDimensions(width, content.height, thumbnailWidth, thumbnailHeight, fullHeight);
   const bool rightAligned = style == HomeTheme::CarouselStyle::Right;
   const int thumbnailX = rightAligned ? x + width - innerPadding - thumbnailWidth : x + innerPadding;
   const int thumbnailY = content.y + (content.height - thumbnailHeight) / 2;
@@ -244,7 +228,7 @@ void Recent::preview(const int x, const int y, const int width, const int height
 
   if (!showProgress) return;
   constexpr int percentage = 65;
-  const int percentageWidth = renderer_.text.getWidth(MONTSERRAT_8_FONT_ID, "65%");
+  const int percentageWidth = renderer_.text.getWidth(systemFontIdForPointSize(8), "65%");
   const int barY = std::min(content.y + content.height - innerPadding - 11,
                             content.y + content.height / 2 + lineHeight + 20);
   const int barWidth = std::max(1, contentWidth - percentageWidth - 8);
@@ -254,7 +238,7 @@ void Recent::preview(const int x, const int y, const int width, const int height
   renderer_.rectangle.fill(contentX + 1, barY + 1, std::max(1, barWidth - 2), barInnerHeight, false);
   renderer_.rectangle.fill(contentX + 1, barY + 1, std::max(1, (barWidth - 2) * percentage / 100),
                            barInnerHeight, true);
-  constexpr int percentageFont = MONTSERRAT_8_FONT_ID;
+  const int percentageFont = systemFontIdForPointSize(8);
   const int percentageY = barY + (barHeight - renderer_.text.getLineHeight(percentageFont)) / 2;
   renderer_.text.render(percentageFont, contentX + barWidth + 8, percentageY, "65%", true);
 }

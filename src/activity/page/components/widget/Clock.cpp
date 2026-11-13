@@ -8,6 +8,10 @@
 
 extern HalGPIO gpio;
 
+namespace {
+constexpr int kCompactClockPadding = 20;
+}
+
 bool Clock::readDateTime(uint64_t& key) const {
 #ifdef SIMULATOR
   (void)key;
@@ -22,7 +26,7 @@ bool Clock::readDateTime(uint64_t& key) const {
 #endif
 }
 
-void Clock::render(const int x, const int y, const int width, const int height) const {
+void Clock::render(const int x, const int y, const int width, const int height, const bool compact) const {
   ClockRender::DateTimeView view;
   bool available = false;
 #ifndef SIMULATOR
@@ -41,7 +45,13 @@ void Clock::render(const int x, const int y, const int width, const int height) 
     renderedKey_ = static_cast<uint64_t>(view.year) * 100000000ULL + static_cast<uint64_t>(view.month) * 1000000ULL +
                    static_cast<uint64_t>(view.day) * 10000ULL + static_cast<uint64_t>(view.hour) * 100ULL + view.minute;
   }
-  ClockRender::render(renderer_, SETTINGS.sleepClockStyle, view, available, x, y, width, height);
+  int renderY = y;
+  int renderHeight = height;
+  if (compact && height > kCompactClockPadding * 2) {
+    renderY = y + kCompactClockPadding;
+    renderHeight = height - kCompactClockPadding * 2;
+  }
+  ClockRender::render(renderer_, SETTINGS.sleepClockStyle, view, available, x, renderY, width, renderHeight, compact);
 }
 
 bool Clock::needsRefresh() const {

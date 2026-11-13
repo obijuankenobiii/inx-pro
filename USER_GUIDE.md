@@ -143,7 +143,7 @@ The Settings screen allows you to configure the device's behavior. There are a f
   - "Atkinson Hyperlegible"
 - **Reader Font Size**: Adjust the text size for reading; options are "Small", "Medium", "Large", or "X Large".
 - **Reader Line Spacing**: Adjust the spacing between lines; options are "Tight", "Normal", or "Wide".
-- **Reader Screen Margin**: Controls the screen margins in reader mode between 5 and 40 pixels in 5 pixel increments.
+- **Reader Margins**: Set the top, left, right, and bottom reader margins independently in 5 pixel increments.
 - **Reader Paragraph Alignment**: Set the alignment of paragraphs; options are "Justified" (default), "Left", "Center", or "Right".
 - **Time to Sleep**: Set the duration of inactivity before the device automatically goes to sleep.
 - **Refresh Frequency**: Set how often the screen does a full refresh while reading to reduce ghosting.

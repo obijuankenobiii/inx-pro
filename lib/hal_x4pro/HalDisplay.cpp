@@ -30,6 +30,7 @@ const uint8_t* grayscaleCodeTable();
 namespace {
 
 bool g_qualityPass = false;
+bool g_qualityWindowOpen = false;
 bool uc8279QualityController() {
   return BoardConfig::ACTIVE.displayController == BoardConfig::DisplayController::UC8279;
 }
@@ -54,6 +55,7 @@ void requestRedriveScrub(EInkDisplay& display) {
 bool x4ProBusyWaitSlice(const int8_t busyPin, const uint8_t busyLevel) {
   (void)busyPin;
   (void)busyLevel;
+  gpio.updateDuringDisplay();
   delay(1);
   return true;
 }
@@ -61,7 +63,15 @@ bool x4ProBusyWaitSlice(const int8_t busyPin, const uint8_t busyLevel) {
 EInkDisplay::RefreshMode convertRefreshMode(const HalDisplay::RefreshMode mode) {
   switch (mode) {
     case HalDisplay::FULL_REFRESH:
+#if FREEINK_DEVICE_MURPHY_M4
+      // Murphy M4 uses the same SSD1677 adapter as X4 Pro, but its panel is
+      // much more sensitive to the stock FULL waveform (0xF7).  The M4's
+      // single-pass HALF waveform (0xD7) is still an absolute clean update
+      // that rewrites both planes, without the aggressive multi-flash drive.
+      return EInkDisplay::HALF_REFRESH;
+#else
       return EInkDisplay::FULL_REFRESH;
+#endif
     case HalDisplay::HALF_REFRESH:
     case HalDisplay::MANUAL_REFRESH:
       // UC8279 stays on FAST deliberately. Its driver's Half branch is a charge scrub
@@ -130,6 +140,12 @@ void HalDisplay::displayBuffer(const HalDisplay::RefreshMode mode) {
   display.displayBuffer(convertRefreshMode(mode));
 }
 
+void HalDisplay::displayWindow(const uint16_t x, const uint16_t y, const uint16_t w, const uint16_t h,
+                               const HalDisplay::RefreshMode mode) {
+  (void)mode;
+  display.displayWindow(x, y, w, h);
+}
+
 void HalDisplay::displayBufferAsync(const HalDisplay::RefreshMode mode) {
   display.displayBufferAsync(convertRefreshMode(mode));
 }
@@ -138,7 +154,13 @@ void HalDisplay::displayGrayscaleBase(const HalDisplay::RefreshMode mode, const 
   display.displayGrayscaleBase(convertRefreshMode(mode), turnOffScreen);
 }
 
-void HalDisplay::syncWriteBufferFromActive() const { display.syncWriteBufferFromActive(); }
+void HalDisplay::syncWriteBufferFromActive() const {
+  // An async page turn swaps the host buffers before the panel waveform has
+  // finished. Drain that handoff before copying the active page; otherwise an
+  // overlay can capture the pre-turn buffer on the first frame after paging.
+  const_cast<EInkDisplay&>(display).waitRefreshComplete();
+  display.syncWriteBufferFromActive();
+}
 
 bool HalDisplay::refreshBusy() { return display.refreshBusy(); }
 
@@ -207,6 +229,38 @@ constexpr uint8_t UC8279_PSR0 = 0x37;
 constexpr uint8_t UC8279_PSR1 = 0x4D;
 constexpr uint8_t UC8279_CDI_AA = 0x97;
 
+void setUc8279Ptl(EInkDisplay& display, const uint16_t x, const uint16_t y, const uint16_t w,
+                  const uint16_t h) {
+  auto* driver = static_cast<freeink::Uc8279X4Driver*>(display._driver);
+  const uint16_t gateStart = static_cast<uint16_t>(driver->_cfg.gateOffset + y);
+  const uint16_t gateEnd = static_cast<uint16_t>(gateStart + h - 1);
+  freeink::EpdBus& bus = display._bus;
+  bus.cmd(0x90);  // PTL
+  bus.data(static_cast<uint8_t>(x >> 8));
+  bus.data(static_cast<uint8_t>(x & 0xFF));
+  bus.data(static_cast<uint8_t>((x + w - 1) >> 8));
+  bus.data(static_cast<uint8_t>((x + w - 1) & 0xFF));
+  bus.data(static_cast<uint8_t>(gateStart >> 8));
+  bus.data(static_cast<uint8_t>(gateStart & 0xFF));
+  bus.data(static_cast<uint8_t>(gateEnd >> 8));
+  bus.data(static_cast<uint8_t>(gateEnd & 0xFF));
+  bus.data(0x01);
+}
+
+bool openUc8279GrayWindow(EInkDisplay& display, const uint16_t x, const uint16_t y, const uint16_t w,
+                          const uint16_t h) {
+  if (display._inverted || display._driver == nullptr || w == 0 || h == 0 || x % 8 != 0 || w % 8 != 0) return false;
+  auto* driver = static_cast<freeink::Uc8279X4Driver*>(display._driver);
+  if (x + w > driver->_w || y + h > driver->_h) return false;
+
+  // The X4 quality path uploads both full-panel DTM planes before entering
+  // PTIN. Keep that RAM stream outside the partial window; PTIN/PTL is opened
+  // only after the planes are complete, immediately before the LUT waveform.
+  display.syncPendingAsync();
+  g_qualityWindowOpen = true;
+  return true;
+}
+
 void runUc8279Gray(EInkDisplay& display, const uint8_t tables[5][49], const uint8_t (&lutReg)[5],
                    const char* tag) {
   freeink::EpdBus& bus = display._bus;
@@ -240,6 +294,47 @@ void runUc8279Gray(EInkDisplay& display, const uint8_t tables[5][49], const uint
   display._redRamSynced = false;
 
   requestRedriveScrub(display);
+  g_qualityPass = false;
+}
+
+void runUc8279GrayWindow(EInkDisplay& display, const uint8_t tables[5][49], const uint8_t (&lutReg)[5],
+                         const uint16_t x, const uint16_t y, const uint16_t w, const uint16_t h,
+                         const char* tag) {
+  if (display._inverted || display._driver == nullptr) return;
+
+  freeink::EpdBus& bus = display._bus;
+  if (!g_qualityWindowOpen && !openUc8279GrayWindow(display, x, y, w, h)) return;
+
+  // The full-panel grayscale planes have already been copied. Now enter the
+  // partial mode and set the requested PTL before loading the quality LUT and
+  // firing DRF. This matches the X4 driver's normal PTIN -> PTL -> DRF order.
+  bus.cmd(0x91);  // PTIN
+  setUc8279Ptl(display, x, y, w, h);
+
+  bus.cmd(0x00);
+  bus.data(UC8279_PSR0);
+  bus.data(UC8279_PSR1);
+  for (uint8_t i = 0; i < 5; ++i) {
+    bus.cmd(lutReg[i]);
+    bus.data(tables[i], 49);
+  }
+  bus.cmd(0x50);
+  bus.data(UC8279_CDI_AA);
+
+  bus.cmd(0x04);
+  bus.waitBusy("x4pro_gray_window_PON");
+  bus.cmd(0x00);
+  bus.data(UC8279_PSR0);
+  bus.data(UC8279_PSR1);
+  bus.cmd(0x12);
+  bus.waitBusy(tag);
+  bus.cmd(0x92);  // PTOUT: leave the controller in normal B/W mode
+  g_qualityWindowOpen = false;
+
+  display._shadowValid = false;
+  display._redRamSynced = false;
+  requestRedriveScrub(display);
+  g_qualityPass = false;
 }
 
 void seedUc8179QualityBase(EInkDisplay& display, bool invertBase = false);
@@ -372,6 +467,7 @@ void seedUc8179QualityBase(EInkDisplay& display, bool invertBase) {
 }
 
 void HalDisplay::displayGrayBuffer(const bool quality, const bool trackForRevert) {
+  g_qualityWindowOpen = false;
   if (!quality) {
     // Text AA keeps FreeInk's stock table; only images get the custom four-tone banks.
     //
@@ -419,6 +515,7 @@ void HalDisplay::displayGrayBuffer(const bool quality, const bool trackForRevert
 }
 
 void HalDisplay::displayGrayBufferFastQuality() {
+  g_qualityWindowOpen = false;
   if (controllerHonoursCustomLut()) {
     display.displayGrayBuffer(false, inx::x4pro::lut_quality_fast, true);
     return;
@@ -431,6 +528,28 @@ void HalDisplay::displayGrayBufferFastQuality() {
   g_qualityPass = false;
 }
 
+void HalDisplay::displayGrayBufferWindow(const uint16_t x, const uint16_t y, const uint16_t w, const uint16_t h,
+                                         const bool quality, const bool fastQuality) {
+  if (controllerUsesUc8279QualityPath()) {
+    runUc8279GrayWindow(display, inx::x4pro::scaledGrayBank(), kUc8279QualityLutReg, x, y, w, h,
+                         fastQuality ? "x4pro_gray_window_fast" : "x4pro_gray_window_quality");
+    return;
+  }
+  if (!controllerHonoursCustomLut()) return;
+  // SSD1677 quality remains on the established full-frame path here. The
+  // project-owned Sticky/Murphy adapter owns their SSD1677 window path; the
+  // UC8279 branch above owns the X4 Pro PTL window path.
+  (void)x;
+  (void)y;
+  (void)w;
+  (void)h;
+  display.displayGrayBuffer(false, fastQuality ? inx::x4pro::lut_quality_fast : inx::x4pro::lut_quality, quality);
+}
+
+bool HalDisplay::supportsWindowedQuality() const {
+  return controllerUsesUc8279QualityPath();
+}
+
 void HalDisplay::forceGrayWaveformVariant(const uint8_t variant) {
   BoardConfig::ACTIVE.displayControllerVariant = variant;
   INX_SERIAL.printf("[X4PRO][DISPLAY] gray AA waveform variant forced to 0x%02X\n", variant);
@@ -441,7 +560,14 @@ void HalDisplay::forceGrayWaveformVariant(const uint8_t variant) {
 #endif
 void HalDisplay::prepareQualityGrayscale() {
   g_qualityPass = true;
+  g_qualityWindowOpen = false;
   seedUc8179QualityBase(display, X4PRO_UC8179_HQ_INVERT_BASE != 0);
+}
+
+void HalDisplay::prepareQualityGrayscaleWindow(const uint16_t x, const uint16_t y, const uint16_t w,
+                                               const uint16_t h) {
+  prepareQualityGrayscale();
+  if (controllerUsesUc8279QualityPath()) openUc8279GrayWindow(display, x, y, w, h);
 }
 
 uint16_t HalDisplay::getDisplayWidth() const { return display.getDisplayWidth(); }

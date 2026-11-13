@@ -33,6 +33,7 @@ class Thumb final {
   void reset();
   /** Current page index, so the caller can restore it when returning to this folder. */
   int currentPage() const { return page; }
+  int totalPages() const { return pageCount(); }
   /** Restores a remembered page. Clamped in load(), which knows the item count. */
   void setPage(int value) { page = value < 0 ? 0 : value; }
   bool handleInput();
@@ -42,8 +43,6 @@ class Thumb final {
   struct Thumbnail {
     std::string item;
     std::string first;
-    std::string second;
-    std::string third;
     std::string singleBookTitle;
     std::string image;
     int imageWidth = 0;
@@ -91,7 +90,16 @@ class Thumb final {
   void drawItem(const LibraryIndex::Book& item, int x, int y, int width, int height, bool favorite) const;
   void itemBounds(int index, int& x, int& y, int& width, int& height) const;
   int itemAt(int x, int y) const;
-  std::vector<std::string> coversForFolder(const LibraryIndex::Book& folder, int limit) const;
+  std::string thumbnailPathForBook(const std::string& bookPath);
+  std::vector<std::string> coversForFolder(const LibraryIndex::Book& folder, int limit);
+  void preloadBookCache(const Thumbnail& thumbnail, int x, int y, int width, int height) const;
+  void preloadFolderCache(const Thumbnail& thumbnail, int x, int y, int width, int height) const;
+  void preloadImageCache(const std::string& path, int x, int y, int width, int height, bool cropToFill,
+                         float cropAnchorX) const;
+
+  // Entries survive page changes, while reset() clears them after a library
+  // refresh so newly generated or deleted thumbnails are discovered.
+  std::unordered_map<std::string, std::string> thumbnailPathCache_;
 };
 
 }

@@ -10,28 +10,27 @@
 
 #include "Page.h"
 
-enum class NetworkMode { JOIN_NETWORK, CONNECT_CALIBRE, CREATE_HOTSPOT, OPDS_BROWSER };
+enum class NetworkMode { JOIN_NETWORK, CONNECT_CALIBRE, CREATE_HOTSPOT };
 
-class SyncActivity final : public Page {
+class SyncActivity final : public UiPage {
  public:
   SyncActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
                const std::function<void(NetworkMode)>& onModeSelected)
-      : Page("Device Management", renderer, mappedInput), onModeSelected(onModeSelected) {}
+      : UiPage("Device", renderer, mappedInput), onModeSelected(onModeSelected) {}
 
-  const char* name() const override { return "Device Management"; }
+  const char* name() const override { return "Device"; }
 
   void onEnter() override;
   void onExit() override;
   void loop() override;
 
  private:
-  int selectedIndex = 0;
-  bool selectedVisible = false;
   std::unique_ptr<Activity> subActivity;
 
   const std::function<void(NetworkMode)> onModeSelected;
 
   void content() override;
+  void activateItem(int index);
   void enter(Activity* activity);
   void exit();
 };

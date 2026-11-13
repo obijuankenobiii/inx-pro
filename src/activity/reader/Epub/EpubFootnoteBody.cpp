@@ -226,7 +226,7 @@ void EpubFootnoteBody::drawBodyPanel(EpubActivity& act) {
   const int defaultPanelTop = screenH * 2 / 5;
   const int minPanelTop = margin;
 
-  const int titleFontId = MONTSERRAT_12_FONT_ID;
+  const int titleFontId = systemFontIdForPointSize(12);
   const int titleH = act.renderer.text.getLineHeight(titleFontId);
   constexpr int closeSize = 40;
   const int headerH = std::max(titleH, closeSize);

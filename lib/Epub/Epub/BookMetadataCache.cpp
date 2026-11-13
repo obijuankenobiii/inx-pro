@@ -117,6 +117,7 @@ bool BookMetadataCache::beginWrite() {
   spineCount = 0;
   tocCount = 0;
   cssCount = 0;
+  spineIndexByHref.clear();
   INX_SERIAL.printf("[%lu] [BMC] Entering write mode\n", millis());
   return true;
 }
@@ -287,7 +288,7 @@ bool BookMetadataCache::buildBookBin(const std::string& epubPath, const BookMeta
     uint32_t pos = spineFile.position();
     auto spineEntry = readSpineEntry(spineFile);
     serialization::writePod(bookFile, pos + lutOffset + lutSize);
-    delay(1);
+    if ((i & 31) == 31) delay(1);
   }
 
   std::vector<int16_t> firstTocIndexForSpine(spineCount, -1);
@@ -300,7 +301,7 @@ bool BookMetadataCache::buildBookBin(const std::string& epubPath, const BookMeta
         firstTocIndexForSpine[tocEntry.spineIndex] == -1) {
       firstTocIndexForSpine[tocEntry.spineIndex] = static_cast<int16_t>(i);
     }
-    delay(1);
+    if ((i & 31) == 31) delay(1);
   }
 
   if (hasCss) {
@@ -311,12 +312,12 @@ bool BookMetadataCache::buildBookBin(const std::string& epubPath, const BookMeta
       uint32_t pos = cssFile.position();
       auto cssEntry = readCssEntry(cssFile);
       serialization::writePod(bookFile, pos + cssOffset);
-      delay(1);
+      if ((i & 31) == 31) delay(1);
     }
   } else {
     for (int i = 0; i < cssCount; i++) {
       serialization::writePod(bookFile, static_cast<uint32_t>(0));
-      delay(1);
+      if ((i & 31) == 31) delay(1);
     }
   }
 
@@ -331,18 +332,26 @@ bool BookMetadataCache::buildBookBin(const std::string& epubPath, const BookMeta
     return false;
   }
 
+  // Build the central-directory index once. Without this, each spine-size
+  // lookup walks the ZIP directory again, which is especially expensive for
+  // large EPUBs with many split XHTML files.
+  const bool zipIndexReady = zip.loadAllFileStatSlims();
+  if (!zipIndexReady) {
+    INX_SERIAL.printf("[%lu] [BMC] Warning: ZIP central-directory index unavailable\n", millis());
+  }
+
   uint32_t cumSize = 0;
   spineFile.seek(0);
   int lastSpineTocIndex = -1;
+  int missingTocCount = 0;
+  int missingSizeCount = 0;
   for (int i = 0; i < spineCount; i++) {
     auto spineEntry = readSpineEntry(spineFile);
 
     spineEntry.tocIndex = firstTocIndexForSpine[i];
 
     if (spineEntry.tocIndex == -1) {
-      INX_SERIAL.printf(
-          "[%lu] [BMC] Warning: Could not find TOC entry for spine item %d: %s, using title from last section\n",
-          millis(), i, spineEntry.href.c_str());
+      ++missingTocCount;
       spineEntry.tocIndex = lastSpineTocIndex;
     }
     lastSpineTocIndex = spineEntry.tocIndex;
@@ -350,21 +359,28 @@ bool BookMetadataCache::buildBookBin(const std::string& epubPath, const BookMeta
     size_t itemSize = 0;
     const std::string path = FsHelpers::normalisePath(spineEntry.href);
     if (!zip.getInflatedFileSize(path.c_str(), &itemSize)) {
-      INX_SERIAL.printf("[%lu] [BMC] Warning: Could not get size for spine item: %s\n", millis(), path.c_str());
+      ++missingSizeCount;
     }
 
     cumSize += itemSize;
     spineEntry.cumulativeSize = cumSize;
 
     writeSpineEntry(bookFile, spineEntry);
-    delay(1);
+    if ((i & 31) == 31) delay(1);
+  }
+
+  if (missingTocCount > 0) {
+    INX_SERIAL.printf("[%lu] [BMC] TOC fallback used for %d spine items\n", millis(), missingTocCount);
+  }
+  if (missingSizeCount > 0) {
+    INX_SERIAL.printf("[%lu] [BMC] ZIP size unavailable for %d spine items\n", millis(), missingSizeCount);
   }
 
   tocFile.seek(0);
   for (int i = 0; i < tocCount; i++) {
     auto tocEntry = readTocEntry(tocFile);
     writeTocEntry(bookFile, tocEntry);
-    delay(1);
+    if ((i & 31) == 31) delay(1);
   }
 
   if (hasCss) {
@@ -372,7 +388,7 @@ bool BookMetadataCache::buildBookBin(const std::string& epubPath, const BookMeta
     for (int i = 0; i < cssCount; i++) {
       auto cssEntry = readCssEntry(cssFile);
       writeCssEntry(bookFile, cssEntry);
-      delay(1);
+      if ((i & 31) == 31) delay(1);
     }
     cssFile.close();
   }
@@ -535,6 +551,7 @@ void BookMetadataCache::createSpineEntry(const std::string& href) {
 
   const SpineEntry entry(href, 0, -1);
   writeSpineEntry(spineFile, entry);
+  spineIndexByHref.emplace(EpubPsramString(href.c_str()), static_cast<int16_t>(spineCount));
   spineCount++;
 }
 
@@ -546,16 +563,8 @@ void BookMetadataCache::createTocEntry(const std::string& title, const std::stri
   }
 
   int16_t spineIndex = -1;
-
-  spineFile.seek(0);
-  for (int i = 0; i < spineCount; i++) {
-    auto spineEntry = readSpineEntry(spineFile);
-    if ((i & 7) == 0) delay(1);
-    if (spineEntry.href == href) {
-      spineIndex = static_cast<int16_t>(i);
-      break;
-    }
-  }
+  const auto spineMatch = spineIndexByHref.find(href);
+  if (spineMatch != spineIndexByHref.end()) spineIndex = spineMatch->second;
   if (spineIndex == -1) {
     INX_SERIAL.printf("[%lu] [BMC] createTocEntry: Could not find spine item for TOC href %s\n", millis(), href.c_str());
   }

@@ -6,6 +6,7 @@
 #include "CalibreConnectActivity.h"
 
 #include <algorithm>
+#include <sstream>
 
 #include <ESPmDNS.h>
 #include <GfxRenderer.h>
@@ -13,11 +14,19 @@
 #include <esp_heap_caps.h>
 
 #include "activity/page/SubPage.h"
+#include "activity/page/components/global/Button.h"
+#include "activity/page/components/widget/BaseCarousel.h"
 #include "WifiSelectionActivity.h"
-#include "images/Computer.h"
 #include "images/Check.h"
-#include "images/Phone.h"
-#include "images/Transfer.h"
+#if FREEINK_DEVICE_X4PRO
+#include "images/X4ProWifiTransferSetup.h"
+#elif FREEINK_DEVICE_STICKY || FREEINK_DEVICE_MURPHY_M4
+#include "images/MurphyStickyWifiTransferSetup.h"
+#else
+#include "images/WifiTransferSetup.h"
+#endif
+#include "state/SystemSetting.h"
+#include "state/HomeTheme.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
 #include "system/UiLayout.h"
@@ -28,6 +37,59 @@ namespace {
  * @brief mDNS hostname for device discovery on local network
  */
 constexpr const char* HOSTNAME = "inx";
+constexpr int IMAGE_WIDTH = 400;
+constexpr int IMAGE_HEIGHT = 200;
+constexpr int IMAGE_GAP = 15;
+constexpr int CARD_PADDING = 20;
+constexpr int CARD_GAP = 12;
+constexpr int ACTION_MARGIN = 20;
+constexpr int PANEL_BUTTON_GAP = 20;
+constexpr int SUCCESS_ICON_SIZE = 40;
+
+#if FREEINK_DEVICE_X4PRO
+const uint8_t* const kWifiTransferSetup = X4ProWifiTransferSetup;
+#elif FREEINK_DEVICE_STICKY || FREEINK_DEVICE_MURPHY_M4
+const uint8_t* const kWifiTransferSetup = MurphyStickyWifiTransferSetup;
+#else
+const uint8_t* const kWifiTransferSetup = WifiTransferSetup;
+#endif
+
+ButtonBounds disconnectBounds(const GfxRenderer& renderer) {
+  const int width = Button::width(renderer, "Disconnect", systemFontId());
+  return {renderer.getScreenWidth() - ACTION_MARGIN - width,
+          renderer.getScreenHeight() - ACTION_MARGIN - Button::height, width, Button::height};
+}
+
+bool contains(const ButtonBounds& bounds, const int x, const int y) {
+  return x >= bounds.x && x < bounds.x + bounds.width && y >= bounds.y && y < bounds.y + bounds.height;
+}
+
+struct WrappedInstructionLine {
+  std::string text;
+  int indent = 0;
+};
+
+std::vector<WrappedInstructionLine> wrapInstruction(const GfxRenderer& renderer, const int font,
+                                                    const std::string& text, const int maxWidth,
+                                                    const int continuationIndent) {
+  std::vector<WrappedInstructionLine> lines;
+  std::istringstream words(text);
+  std::string word;
+  std::string line;
+  int indent = 0;
+  while (words >> word) {
+    const std::string candidate = line.empty() ? word : line + " " + word;
+    if (!line.empty() && renderer.text.getWidth(font, candidate.c_str()) > maxWidth - indent) {
+      lines.push_back({line, indent});
+      line = word;
+      indent = continuationIndent;
+    } else {
+      line = candidate;
+    }
+  }
+  if (!line.empty()) lines.push_back({line, indent});
+  return lines;
+}
 }
 
 /**
@@ -66,7 +128,8 @@ void CalibreConnectActivity::onEnter() {
   const bool alreadyConnected = WiFi.status() == WL_CONNECTED;
   if (!alreadyConnected) {
     enterNewActivity(new WifiSelectionActivity(renderer, mappedInput,
-                                               [this](const bool connected) { onWifiSelectionComplete(connected); }));
+                                               [this](const bool connected) { onWifiSelectionComplete(connected); },
+                                               "File Transfer", "Calibre"));
   } else {
     connectedIP = WiFi.localIP().toString().c_str();
     connectedSSID = WiFi.SSID().c_str();
@@ -78,13 +141,28 @@ void CalibreConnectActivity::onEnter() {
   if (alreadyConnected) {
     startWebServer();
   }
+
+  renderer.syncWriteBufferFromActive();
 }
 
 /**
  * @brief Cleans up resources when exiting the activity
  */
 void CalibreConnectActivity::onExit() {
-  ActivityWithSubactivity::onExit();
+  if (renderingMutex) {
+    xSemaphoreTake(renderingMutex, portMAX_DELAY);
+    updateRequired = false;
+    if (displayTaskHandle) {
+      vTaskDeleteWithCaps(displayTaskHandle);
+      displayTaskHandle = nullptr;
+    }
+    xSemaphoreGive(renderingMutex);
+    vSemaphoreDelete(renderingMutex);
+    renderingMutex = nullptr;
+  } else if (displayTaskHandle) {
+    vTaskDeleteWithCaps(displayTaskHandle);
+    displayTaskHandle = nullptr;
+  }
 
   stopWebServer();
   MDNS.end();
@@ -94,15 +172,7 @@ void CalibreConnectActivity::onExit() {
   delay(30);
   WiFi.mode(WIFI_OFF);
 
-  if (renderingMutex) {
-    xSemaphoreTake(renderingMutex, portMAX_DELAY);
-    if (displayTaskHandle) {
-      vTaskDeleteWithCaps(displayTaskHandle);
-      displayTaskHandle = nullptr;
-    }
-    vSemaphoreDelete(renderingMutex);
-    renderingMutex = nullptr;
-  }
+  ActivityWithSubactivity::onExit();
 }
 
 /**
@@ -171,6 +241,24 @@ void CalibreConnectActivity::loop() {
   if (subActivity) {
     subActivity->loop();
     return;
+  }
+
+  if (state == CalibreConnectState::SERVER_RUNNING && mappedInput.hasTouch()) {
+    float tapX = 0.0f;
+    float tapY = 0.0f;
+    if (mappedInput.wasTouchTapInScreen(renderer, tapX, tapY)) {
+      const ButtonBounds disconnect = disconnectBounds(renderer);
+      const int x = static_cast<int>(tapX * renderer.getScreenWidth());
+      const int y = static_cast<int>(tapY * renderer.getScreenHeight());
+      if (contains(disconnect, x, y)) {
+        INX_SERIAL.printf("[%lu] [CAL] disconnect requested\n", millis());
+        stopWebServer();
+        exitActivity();
+        onComplete();
+        return;
+      }
+      mappedInput.restoreTouchTapInScreen(renderer, tapX, tapY);
+    }
   }
 
   if (SubPage::closeInput(renderer, mappedInput, onComplete)) return;
@@ -246,15 +334,34 @@ void CalibreConnectActivity::render() const {
   if (state == CalibreConnectState::SERVER_RUNNING) {
     renderServerRunning(screenWidth, screenHeight, startY);
   } else if (state == CalibreConnectState::SERVER_STARTING) {
-    const int contentStart = SubPage::header(renderer, "Calibre File Transfer");
+    const int headerBottom = SubPage::header(renderer, "File Transfer", "Calibre");
+    const int imageX = (screenWidth - IMAGE_WIDTH) / 2;
+    const int imageY = headerBottom;
+    renderer.bitmap.icon(kWifiTransferSetup, imageX, imageY, IMAGE_WIDTH, IMAGE_HEIGHT);
 
-    int centerY = contentStart + (screenHeight - contentStart) / 2;
+    const int panelY = imageY + IMAGE_HEIGHT + IMAGE_GAP;
+    const int panelBottom = std::max(panelY + 1, screenHeight - PANEL_BUTTON_GAP);
+    for (int py = panelY; py < panelBottom; py += 2) {
+      const int offset = ((py - panelY) & 2) != 0 ? 0 : 1;
+      for (int px = offset; px < screenWidth; px += 2) renderer.drawPixel(px, py, true);
+    }
 
-    renderer.text.centered(systemFontId(), centerY, "Please wait...");
+    const int cardX = CARD_PADDING;
+    const int cardY = panelY + CARD_PADDING;
+    const int cardWidth = screenWidth - 2 * CARD_PADDING;
+    const int cardHeight = UiLayout::LIST_ITEM_HEIGHT;
+    const bool rounded = SETTINGS.bitmapRoundedCorners != 0;
+    BaseCarousel::renderShadow(renderer, cardX + 4, cardY + 4, cardWidth, cardHeight,
+                               HomeTheme::CarouselShadowStyle::Gray);
+    renderer.rectangle.fill(cardX, cardY, cardWidth, cardHeight, false, rounded);
+    renderer.rectangle.render(cardX, cardY, cardWidth, cardHeight, true, rounded);
+    const int font = systemFontId();
+    const int textY = cardY + (cardHeight - renderer.text.getLineHeight(font)) / 2;
+    renderer.text.centered(font, textY, "Please wait...");
 
     auto labels = mappedInput.mapLabels("« Back", "", "", "");
   } else if (state == CalibreConnectState::ERROR) {
-    const int contentStart = SubPage::header(renderer, "Calibre File Transfer");
+    const int contentStart = SubPage::header(renderer, "File Transfer", "Calibre");
 
     int centerY = contentStart + (screenHeight - contentStart) / 2;
 
@@ -276,76 +383,110 @@ void CalibreConnectActivity::render() const {
 void CalibreConnectActivity::renderServerRunning(int screenWidth, int screenHeight, int startY) const {
   (void)startY;
 
-  const int contentStart = SubPage::header(renderer, "Calibre File Transfer");
+  const int headerBottom = SubPage::header(renderer, "File Transfer", "Calibre");
+  const int imageX = (screenWidth - IMAGE_WIDTH) / 2;
+  const int imageY = headerBottom;
+  renderer.bitmap.icon(kWifiTransferSetup, imageX, imageY, IMAGE_WIDTH, IMAGE_HEIGHT);
 
-  constexpr int iconSize = 72;
-  constexpr int iconGap = 28;
-  constexpr int rowHeight = UiLayout::LIST_ITEM_HEIGHT;
-  constexpr int sideMargin = 20;
-  constexpr int actionIconSize = 40;
-  const int labelFont = MONTSERRAT_8_FONT_ID;
-  const int bodyFont = systemFontId();
-
-  const int iconGroupWidth = iconSize * 3 + iconGap * 2;
-  const int iconX = (screenWidth - iconGroupWidth) / 2;
-  const int iconY = contentStart + 58;
-  renderer.bitmap.icon(Phone, iconX, iconY, iconSize, iconSize);
-  renderer.bitmap.icon(Transfer, iconX + iconSize + iconGap, iconY, iconSize, iconSize);
-  renderer.bitmap.icon(Computer, iconX + (iconSize + iconGap) * 2, iconY, iconSize, iconSize);
-
-  const int detailsY = iconY + iconSize + 12;
-  renderer.text.centered(labelFont, detailsY, "CALIBRE", true, EpdFontFamily::BOLD);
-
-  const bool uploadActive = lastProgressTotal > 0 && lastProgressReceived <= lastProgressTotal;
-  if (uploadActive || !receivedFiles.empty()) {
-    const int listTop = std::max(iconY + iconSize + 40, detailsY + 26 + 40);
-    const int listBottom = screenHeight - 76;
-    const int visibleRows = std::max(0, (listBottom - listTop) / rowHeight);
-    const int totalFiles = static_cast<int>(receivedFiles.size()) + (uploadActive ? 1 : 0);
-    const int visibleFiles = std::min(visibleRows, totalFiles);
-
-    for (int row = 0; row < visibleFiles; ++row) {
-      const bool isCurrentUpload = uploadActive && row == 0;
-      const int rowY = listTop + row * rowHeight;
-      const int textY = rowY + (rowHeight - renderer.text.getLineHeight(bodyFont)) / 2;
-      const int iconXRight = screenWidth - sideMargin - actionIconSize;
-      const int percent = uploadActive
-                              ? std::min(100, static_cast<int>((static_cast<uint64_t>(lastProgressReceived) * 100) /
-                                                               lastProgressTotal))
-                              : 0;
-      const std::string progressText = std::to_string(percent) + "%";
-      const int rightContentWidth = isCurrentUpload ? renderer.text.getWidth(bodyFont, progressText.c_str())
-                                                     : actionIconSize;
-      const int maxNameWidth = screenWidth - (sideMargin * 2) - rightContentWidth - 20;
-      const char* fileName = currentUploadName.c_str();
-      size_t fileIndex = 0;
-      if (!isCurrentUpload) {
-        const int completedRow = uploadActive ? row - 1 : row;
-        fileIndex = receivedFiles.size() - 1 - static_cast<size_t>(completedRow);
-        fileName = receivedFiles[fileIndex].c_str();
-      }
-      const std::string displayName = renderer.text.truncate(bodyFont, fileName, maxNameWidth);
-      renderer.text.render(bodyFont, sideMargin, textY, displayName.c_str());
-      if (!isCurrentUpload) {
-        renderer.bitmap.icon(Check, iconXRight, rowY + (rowHeight - actionIconSize) / 2, actionIconSize,
-                             actionIconSize);
-      } else {
-        renderer.text.render(bodyFont, screenWidth - sideMargin - renderer.text.getWidth(bodyFont, progressText.c_str()),
-                             textY, progressText.c_str());
-      }
-      if (row + 1 < visibleFiles) {
-        renderer.line.render(0, rowY + rowHeight - 1, screenWidth, rowY + rowHeight - 1, true,
-                             LineRender::Style::Dotted);
-      }
-    }
-  } else {
-    const int instructionCenterY = detailsY + (screenHeight - detailsY - 76) / 2;
-    renderer.text.centered(bodyFont, instructionCenterY - 24, "Download and install");
-    renderer.text.centered(bodyFont, instructionCenterY, "CrossPoint Calibre");
-    renderer.text.centered(bodyFont, instructionCenterY + 24, "plugin");
+  const int panelY = imageY + IMAGE_HEIGHT + IMAGE_GAP;
+  const ButtonBounds disconnect = disconnectBounds(renderer);
+  const int panelBottom = std::max(panelY + 1, disconnect.y - PANEL_BUTTON_GAP);
+  const int panelHeight = std::max(1, panelBottom - panelY);
+  for (int py = panelY; py < panelBottom; py += 2) {
+    const int offset = ((py - panelY) & 2) != 0 ? 0 : 1;
+    for (int px = offset; px < screenWidth; px += 2) renderer.drawPixel(px, py, true);
   }
 
-  renderer.text.centered(MONTSERRAT_8_FONT_ID, screenHeight - 30, "Choose Send to device in Calibre");
+  const int cardX = CARD_PADDING;
+  const int cardWidth = screenWidth - 2 * CARD_PADDING;
+  const int font = systemFontId();
+  const int lineHeight = renderer.text.getLineHeight(font);
+  const int contentX = cardX + CARD_PADDING;
+  const bool uploadActive = lastProgressTotal > 0 && lastProgressReceived <= lastProgressTotal;
+  const int totalFiles = static_cast<int>(receivedFiles.size()) + (uploadActive ? 1 : 0);
+  const bool showInstructions = receivedFiles.empty() && !uploadActive;
+  const int instructionCardY = panelY + CARD_PADDING;
+  const int instructionWidth = cardWidth - 2 * CARD_PADDING;
+  const int listIndent = renderer.text.getWidth(font, "1. ");
+  const std::vector<WrappedInstructionLine> installLines = wrapInstruction(
+      renderer, font, "1. Download and install the CrossPoint Calibre plugin.", instructionWidth, listIndent);
+  const std::vector<WrappedInstructionLine> sendLines = wrapInstruction(
+      renderer, font, "2. Choose Send to device in Calibre.", instructionWidth, listIndent);
+  const int instructionLineCount = static_cast<int>(installLines.size() + sendLines.size());
+  const int statusTagFont = systemFontIdForPointSize(12);
+  const int statusTagLine = renderer.text.getLineHeight(statusTagFont);
+  const int statusTagHeight = statusTagLine + 8;
+  const int instructionCardHeight = CARD_PADDING * 2 + std::max(lineHeight, statusTagHeight) + 8 +
+                                    instructionLineCount * lineHeight;
+  const int listStartY = showInstructions ? instructionCardY + instructionCardHeight + CARD_GAP
+                                          : panelY + CARD_PADDING;
+  const int rowHeight = UiLayout::LIST_ITEM_HEIGHT;
+  const int availableHeight = std::max(0, panelBottom - listStartY - CARD_PADDING);
+  const int maxVisibleFiles = std::max(0, (availableHeight + CARD_GAP) / (rowHeight + CARD_GAP));
+  const int visibleFiles = std::min(maxVisibleFiles, totalFiles);
+  const bool rounded = SETTINGS.bitmapRoundedCorners != 0;
 
-  auto labels = mappedInput.mapLabels("« Back", "", "", "");
+  if (showInstructions) {
+    BaseCarousel::renderShadow(renderer, cardX + 4, instructionCardY + 4, cardWidth, instructionCardHeight,
+                               HomeTheme::CarouselShadowStyle::Gray);
+    renderer.rectangle.fill(cardX, instructionCardY, cardWidth, instructionCardHeight, false, rounded);
+    renderer.rectangle.render(cardX, instructionCardY, cardWidth, instructionCardHeight, true, rounded);
+    renderer.text.render(font, contentX, instructionCardY + CARD_PADDING, "Instructions", true,
+                         EpdFontFamily::BOLD);
+    constexpr int statusTagPaddingX = 12;
+    const int statusTagWidth = renderer.text.getWidth(statusTagFont, "Ready", EpdFontFamily::BOLD) +
+                               statusTagPaddingX * 2;
+    const int statusTagX = cardX + cardWidth - CARD_PADDING - statusTagWidth;
+    const int statusTagY = instructionCardY + CARD_PADDING;
+    renderer.rectangle.fill(statusTagX, statusTagY, statusTagWidth, statusTagHeight,
+                            static_cast<int>(GfxRenderer::FillTone::Ink), true);
+    renderer.text.render(statusTagFont, statusTagX + statusTagPaddingX,
+                         statusTagY + (statusTagHeight - statusTagLine) / 2, "Ready", false,
+                         EpdFontFamily::BOLD);
+    int instructionY = instructionCardY + CARD_PADDING + lineHeight + 4;
+    for (const auto& line : installLines) {
+      renderer.text.render(font, contentX + line.indent, instructionY, line.text.c_str());
+      instructionY += lineHeight;
+    }
+    instructionY += 4;
+    for (const auto& line : sendLines) {
+      renderer.text.render(font, contentX + line.indent, instructionY, line.text.c_str());
+      instructionY += lineHeight;
+    }
+  }
+
+  for (int row = 0; row < visibleFiles; ++row) {
+      const bool isCurrentUpload = uploadActive && row == 0;
+      const int rowY = listStartY + row * (rowHeight + CARD_GAP);
+      const int textY = rowY + (rowHeight - lineHeight) / 2;
+      const int rightWidth = isCurrentUpload ? renderer.text.getWidth(font, "100%") : SUCCESS_ICON_SIZE;
+      const int maxNameWidth = cardWidth - 2 * CARD_PADDING - rightWidth - 20;
+      const char* fileName = currentUploadName.c_str();
+      if (!isCurrentUpload) {
+        const int completedRow = uploadActive ? row - 1 : row;
+        const size_t fileIndex = receivedFiles.size() - 1 - static_cast<size_t>(completedRow);
+        fileName = receivedFiles[fileIndex].c_str();
+      }
+      const std::string displayName = renderer.text.truncate(font, fileName, maxNameWidth);
+      BaseCarousel::renderShadow(renderer, cardX + 4, rowY + 4, cardWidth, rowHeight,
+                                 HomeTheme::CarouselShadowStyle::Gray);
+      renderer.rectangle.fill(cardX, rowY, cardWidth, rowHeight, false, rounded);
+      renderer.rectangle.render(cardX, rowY, cardWidth, rowHeight, true, rounded);
+      renderer.text.render(font, contentX, textY, displayName.c_str());
+      if (isCurrentUpload) {
+        const int percent = lastProgressTotal == 0
+                                ? 0
+                                : std::min(100, static_cast<int>((static_cast<uint64_t>(lastProgressReceived) * 100) /
+                                                                 lastProgressTotal));
+        const std::string progress = std::to_string(percent) + "%";
+        renderer.text.render(font, cardX + cardWidth - CARD_PADDING - renderer.text.getWidth(font, progress.c_str()),
+                             textY, progress.c_str());
+      } else {
+        renderer.bitmap.icon(Check, cardX + cardWidth - CARD_PADDING - SUCCESS_ICON_SIZE,
+                             rowY + (rowHeight - SUCCESS_ICON_SIZE) / 2, SUCCESS_ICON_SIZE, SUCCESS_ICON_SIZE);
+      }
+  }
+
+  Button::render(renderer, disconnect, "Disconnect", true, systemFontId());
+  mappedInput.mapLabels("« Back", "Disconnect", "", "");
 }

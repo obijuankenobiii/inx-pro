@@ -58,6 +58,9 @@ class ReaderPresetStore {
   bool rename(int index, const std::string& name);
   /** Deletes a user preset (rejects Default). */
   bool remove(int index);
+  /** Re-resolves persisted font-family slots after the installed-font catalog changes. */
+  bool remapFontFamilySlots(const std::vector<std::string>& oldLabels,
+                            const std::vector<std::string>& newLabels);
 
   /**
    * Snapshot-applies a preset onto a book's settings and records the source preset index for display.
@@ -76,7 +79,7 @@ class ReaderPresetStore {
   static constexpr const char* kDir = "/.system";
   static constexpr const char* kPath = "/.system/reader_presets.bin";
   static constexpr uint32_t kMagic = 0x52505253;
-  static constexpr uint8_t kVersion = 8;
+  static constexpr uint8_t kVersion = 9;
 };
 
 #define READER_PRESETS ReaderPresetStore::getInstance()

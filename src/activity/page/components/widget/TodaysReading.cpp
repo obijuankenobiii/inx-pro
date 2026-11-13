@@ -93,13 +93,31 @@ void drawArcOutlinePixels(const GfxRenderer& renderer, const int cx, const int c
 }
 
 void drawReadingGauge(const GfxRenderer& renderer, const int cx, const int baseY, const int outerRadius,
-                      const int thickness, const float progress) {
+                      const int thickness, const float progress, const bool fullCircle = false) {
   const int usedThickness = std::max(6, std::min(outerRadius - 8, thickness));
   const int innerRadius = outerRadius - usedThickness;
   if (innerRadius <= 2) return;
 
   const int fillOuter = outerRadius - 1;
   const int fillInner = innerRadius + 1;
+  if (fullCircle) {
+    constexpr float startAngle = -kPi / 2.0f;
+    constexpr float fullSweep = 2.0f * kPi;
+    fillAnnulusToneSweep(renderer, cx, baseY, fillOuter, fillInner, startAngle, fullSweep,
+                         GfxRenderer::FillTone::Gray);
+    const float clampedProgress = std::min(1.0f, std::max(0.0f, progress));
+    if (clampedProgress >= 0.999f) {
+      fillAnnulusToneSweep(renderer, cx, baseY, fillOuter, fillInner, startAngle, fullSweep,
+                           GfxRenderer::FillTone::Ink);
+    } else if (clampedProgress > 0.004f) {
+      fillAnnulusWedge(renderer, cx, baseY, fillOuter, fillInner, startAngle,
+                       clampedProgress * fullSweep + 0.02f);
+    }
+    drawArcOutlinePixels(renderer, cx, baseY, outerRadius, startAngle, fullSweep);
+    drawArcOutlinePixels(renderer, cx, baseY, innerRadius, startAngle, fullSweep);
+    return;
+  }
+
   constexpr float startAngle = kPi;
   constexpr float halfCircle = kPi;
   fillAnnulusToneSweep(renderer, cx, baseY, fillOuter, fillInner, startAngle, halfCircle,
@@ -130,8 +148,8 @@ std::string recentBookTitle() {
 }
 
 int readingButtonHeight(const GfxRenderer& renderer) {
-  const int actionLine = renderer.text.getLineHeight(MONTSERRAT_10_FONT_ID);
-  const int subtitleLine = renderer.text.getLineHeight(MONTSERRAT_8_FONT_ID);
+  const int actionLine = renderer.text.getLineHeight(systemFontIdForPointSize(10));
+  const int subtitleLine = renderer.text.getLineHeight(systemFontIdForPointSize(8));
   constexpr int paddingY = 10;
   constexpr int lineGap = 1;
   return actionLine + lineGap + subtitleLine + paddingY * 2;
@@ -139,8 +157,8 @@ int readingButtonHeight(const GfxRenderer& renderer) {
 
 void drawReadingButton(const GfxRenderer& renderer, const int x, const int y, const int width, const int height,
                        const std::string& bookTitle) {
-  const int actionFont = MONTSERRAT_10_FONT_ID;
-  const int subtitleFont = MONTSERRAT_8_FONT_ID;
+  const int actionFont = systemFontIdForPointSize(10);
+  const int subtitleFont = systemFontIdForPointSize(8);
   constexpr int paddingY = 6;
   constexpr int lineGap = 1;
   const int radius = std::max(1, height / 2);
@@ -163,19 +181,74 @@ void drawReadingButton(const GfxRenderer& renderer, const int x, const int y, co
   renderer.text.render(subtitleFont, x + (width - textWidth) / 2, subtitleY, truncated.c_str(), false);
 }
 
+void renderReadingDuration(const GfxRenderer& renderer, const int fontId, const int centerX, const int topY,
+                           const uint32_t elapsedSeconds) {
+  const int lineHeight = renderer.text.getLineHeight(fontId);
+  if (elapsedSeconds < 60U * 60U) {
+    char duration[16];
+    std::snprintf(duration, sizeof(duration), "%u:%02u", static_cast<unsigned>(elapsedSeconds / 60),
+                  static_cast<unsigned>(elapsedSeconds % 60));
+    const int durationWidth = renderer.text.getWidth(fontId, duration);
+    renderer.text.render(fontId, centerX - durationWidth / 2, topY, duration, true);
+    return;
+  }
+
+  const unsigned totalMinutes = static_cast<unsigned>(elapsedSeconds / 60U);
+  char hours[12];
+  char minutes[4];
+  std::snprintf(hours, sizeof(hours), "%u", totalMinutes / 60U);
+  std::snprintf(minutes, sizeof(minutes), "%u", totalMinutes % 60U);
+
+  const int unitFont = systemFontIdForPointSize(10);
+  const int unitLineHeight = renderer.text.getLineHeight(unitFont);
+  const int hourWidth = renderer.text.getWidth(fontId, hours);
+  const int hourUnitWidth = renderer.text.getWidth(unitFont, "h");
+  const int minuteWidth = renderer.text.getWidth(fontId, minutes);
+  const int minuteUnitWidth = renderer.text.getWidth(unitFont, "m");
+  constexpr int unitGap = 2;
+  constexpr int valueGap = 6;
+  const int totalWidth = hourWidth + unitGap + hourUnitWidth + valueGap + minuteWidth + unitGap + minuteUnitWidth;
+  const int startX = centerX - totalWidth / 2;
+  const int unitY = topY + lineHeight - unitLineHeight;
+
+  int x = startX;
+  renderer.text.render(fontId, x, topY, hours, true);
+  x += hourWidth + unitGap;
+  renderer.text.renderGray(unitFont, x, unitY, "h", true);
+  x += hourUnitWidth + valueGap;
+  renderer.text.render(fontId, x, topY, minutes, true);
+  x += minuteWidth + unitGap;
+  renderer.text.renderGray(unitFont, x, unitY, "m", true);
 }
 
-void TodaysReading::render(const int x, const int y, const int width, const int height) const {
-  renderContent(x, y, width, height, false);
 }
 
-void TodaysReading::preview(const int x, const int y, const int width, const int height) const {
-  renderContent(x, y, width, height, true);
+void TodaysReading::render(const int x, const int y, const int width, const int height, const bool compact) const {
+  renderContent(x, y, width, height, false, compact);
+}
+
+void TodaysReading::preview(const int x, const int y, const int width, const int height, const bool compact) const {
+  renderContent(x, y, width, height, true, compact);
 }
 
 bool TodaysReading::buttonHitTest(const int tapX, const int tapY, const int areaX, const int areaY,
-                                  const int areaWidth, const int areaHeight) const {
+                                  const int areaWidth, const int areaHeight, const bool compact) const {
   if (areaWidth <= 0 || areaHeight <= 0) return false;
+  if (compact) {
+    constexpr int inset = 20;
+    const int horizontalInset = std::min(inset, areaWidth / 2);
+    const int verticalInset = std::min(inset, areaHeight / 2);
+    const int contentX = areaX + horizontalInset;
+    const int contentY = areaY + verticalInset;
+    const int contentWidth = std::max(1, areaWidth - horizontalInset * 2);
+    const int contentHeight = std::max(1, areaHeight - verticalInset * 2);
+    const int leftWidth = std::max(1, contentWidth * 44 / 100);
+    const int detailX = contentX + leftWidth + 16;
+    const int detailWidth = std::max(1, contentX + contentWidth - detailX);
+    const int buttonHeight = readingButtonHeight(renderer_);
+    const int buttonY = contentY + contentHeight - buttonHeight;
+    return tapX >= detailX && tapX < detailX + detailWidth && tapY >= buttonY && tapY < buttonY + buttonHeight;
+  }
   const int designHeight = std::min(areaHeight, kDesignHeight);
   const int designY = areaY + (areaHeight - designHeight) / 2;
   const int buttonHeight = readingButtonHeight(renderer_);
@@ -185,7 +258,8 @@ bool TodaysReading::buttonHitTest(const int tapX, const int tapY, const int area
   return tapX >= buttonX && tapX < buttonX + buttonWidth && tapY >= buttonY && tapY < buttonY + buttonHeight;
 }
 
-void TodaysReading::renderContent(const int x, const int y, const int width, const int height, const bool sample) const {
+void TodaysReading::renderContent(const int x, const int y, const int width, const int height, const bool sample,
+                                  const bool compact) const {
   if (width <= 0 || height <= 0) return;
   renderer_.rectangle.fill(x, y, width, height, false);
 
@@ -196,15 +270,15 @@ void TodaysReading::renderContent(const int x, const int y, const int width, con
     status.goalMinutes = 5;
   }
   if (!status.rtcAvailable) {
-    renderer_.text.render(MONTSERRAT_8_FONT_ID, x + 12, y + height / 2 - 5, "Today's Reading unavailable", true,
+    renderer_.text.render(systemFontIdForPointSize(8), x + 12, y + height / 2 - 5, "Today's Reading unavailable", true,
                           EpdFontFamily::BOLD);
     return;
   }
 
   const int designHeight = std::min(height, kDesignHeight);
   const int designY = y + (height - designHeight) / 2;
-  const int titleFont = MONTSERRAT_10_FONT_ID;
-  const int goalFont = MONTSERRAT_8_FONT_ID;
+  const int titleFont = systemFontIdForPointSize(10);
+  const int goalFont = systemFontIdForPointSize(8);
   const int titleLine = renderer_.text.getLineHeight(titleFont);
   const int goalLine = renderer_.text.getLineHeight(goalFont);
 
@@ -218,9 +292,6 @@ void TodaysReading::renderContent(const int x, const int y, const int width, con
   const int gaugeCenterX = x + width / 2;
 
   const uint32_t elapsedSeconds = status.readingTimeMs / 1000;
-  char duration[16];
-  std::snprintf(duration, sizeof(duration), "%u:%02u", static_cast<unsigned>(elapsedSeconds / 60),
-                static_cast<unsigned>(elapsedSeconds % 60));
   const float progress = status.goalMinutes > 0
                              ? std::min(1.0f, status.readingTimeMs / (static_cast<float>(status.goalMinutes) * 60000.0f))
                              : 0.0f;
@@ -232,7 +303,49 @@ void TodaysReading::renderContent(const int x, const int y, const int width, con
   } else {
     std::snprintf(goalText, sizeof(goalText), "Set a reading goal in Reader settings  >");
   }
-  const int timeFont = MONTSERRAT_18_FONT_ID;
+
+  if (compact) {
+    constexpr int inset = 20;
+    const int horizontalInset = std::min(inset, width / 2);
+    const int verticalInset = std::min(inset, height / 2);
+    const int contentX = x + horizontalInset;
+    const int contentY = y + verticalInset;
+    const int contentWidth = std::max(1, width - horizontalInset * 2);
+    const int contentHeight = std::max(1, height - verticalInset * 2);
+    const int leftWidth = std::max(1, contentWidth * 44 / 100);
+    const int detailX = contentX + leftWidth + 16;
+    const int detailWidth = std::max(1, contentX + contentWidth - detailX);
+    const int centerX = contentX + leftWidth / 2;
+    const int centerY = contentY + contentHeight / 2;
+    const int outerRadius = std::max(20, std::min(leftWidth / 2 - 4, contentHeight / 2 - 4));
+    drawReadingGauge(renderer_, centerX, centerY, outerRadius, std::max(8, outerRadius / 8), progress, true);
+
+    const int compactTimeFont = systemFontIdForPointSize(18);
+    const int compactTimeLine = renderer_.text.getLineHeight(compactTimeFont);
+    renderReadingDuration(renderer_, compactTimeFont, centerX, centerY - compactTimeLine / 2, elapsedSeconds);
+
+    const int compactTitleFont = systemFontIdForPointSize(12);
+    const int compactGoalFont = systemFontIdForPointSize(10);
+    const int compactTitleLine = renderer_.text.getLineHeight(compactTitleFont);
+    const int compactGoalLine = renderer_.text.getLineHeight(compactGoalFont);
+    const int detailButtonHeight = readingButtonHeight(renderer_);
+    const int detailStackHeight = compactTitleLine + 8 + compactGoalLine + 12 + detailButtonHeight;
+    const int detailTop = contentY + std::max(0, (contentHeight - detailStackHeight) / 2);
+    renderer_.text.render(compactTitleFont, detailX, detailTop, "Today's Reading", true, EpdFontFamily::BOLD);
+    const int goalY = detailTop + compactTitleLine + 8;
+    const std::string goalDisplay = renderer_.text.truncate(compactGoalFont, goalText, detailWidth);
+    renderer_.text.renderGray(compactGoalFont, detailX, goalY, goalDisplay.c_str(), true,
+                              EpdFontFamily::REGULAR);
+
+    const std::string bookTitle = sample ? std::string{} : recentBookTitle();
+    const int buttonY = contentY + contentHeight - detailButtonHeight;
+    drawReadingButton(renderer_, detailX, buttonY, detailWidth, detailButtonHeight, bookTitle);
+    renderedKey_ = static_cast<uint64_t>(status.dateKey) * 100000ULL +
+                   static_cast<uint64_t>(status.readingTimeMs / 60000ULL) * 10ULL + status.goalMinutes;
+    return;
+  }
+
+  const int timeFont = systemFontIdForPointSize(18);
   const int timeLine = renderer_.text.getLineHeight(timeFont);
   const int stackGap = 5;
   const int stackHeight = titleLine + stackGap + timeLine + stackGap + goalLine;
@@ -246,8 +359,7 @@ void TodaysReading::renderContent(const int x, const int y, const int width, con
   const int titleWidth = renderer_.text.getWidth(titleFont, "Today's Reading", EpdFontFamily::BOLD);
   renderer_.text.render(titleFont, x + std::max(0, (width - titleWidth) / 2), titleY, "Today's Reading", true,
                         EpdFontFamily::BOLD);
-  const int durationWidth = renderer_.text.getWidth(timeFont, duration);
-  renderer_.text.render(timeFont, x + std::max(0, (width - durationWidth) / 2), timeY, duration, true);
+  renderReadingDuration(renderer_, timeFont, x + width / 2, timeY, elapsedSeconds);
   const std::string goalDisplay = renderer_.text.truncate(goalFont, goalText, std::max(1, width - 24));
   const int goalWidth = renderer_.text.getWidth(goalFont, goalDisplay.c_str());
   renderer_.text.render(goalFont, x + std::max(0, (width - goalWidth) / 2), goalY, goalDisplay.c_str(), true);

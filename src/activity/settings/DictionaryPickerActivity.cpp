@@ -1,4 +1,5 @@
 #include "DictionaryPickerActivity.h"
+#include "SettingsListLayout.h"
 #include "system/UiLayout.h"
 
 #include <GfxRenderer.h>
@@ -16,7 +17,7 @@
 #include "util/StringUtils.h"
 
 namespace {
-constexpr int kRowH = UiLayout::LIST_ITEM_HEIGHT;
+constexpr int kRowH = SettingsListLayout::kRowHeight;
 constexpr const char* kDictionariesRoot = "/dictionaries";
 
 /** A folder counts as a dictionary if it directly contains at least one .idx and one .dict file. */
@@ -222,7 +223,9 @@ void DictionaryPickerActivity::render() {
     renderer.text.render(font, 20, titleY, label.c_str(), !selected, EpdFontFamily::REGULAR);
     INX_SERIAL.printf("[%lu] [DICT-PICKER] row drawn index=%d label='%s'\n", millis(), i, label.c_str());
     if (i + 1 < endIndex) {
-      renderer.line.render(0, y + kRowH - 1, screenW, y + kRowH - 1, true, LineRender::Style::Dotted);
+      renderer.line.render(SettingsListLayout::kDividerInset, y + kRowH - 1,
+                           screenW - SettingsListLayout::kDividerInset, y + kRowH - 1, true,
+                           LineRender::Style::Dotted);
     }
   }
 

@@ -24,8 +24,9 @@ class ClockStylePickerActivity final : public ActivityWithSubactivity {
   bool updateRequired = false;
 
   int selectedIndex = 0;
+  int pageIndex = 0;
   int scrollOffset = 0;
-  int itemsPerPage = 1;
+  int itemsPerPage = 3;
 
   const std::function<void()> onBack;
 

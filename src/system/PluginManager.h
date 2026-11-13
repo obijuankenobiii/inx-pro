@@ -26,6 +26,7 @@ class PluginManager {
     std::string page;
     std::string script;
     std::string icon;
+    std::vector<std::string> assets;
     int order = 0;
   };
 

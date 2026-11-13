@@ -8,14 +8,32 @@
 #include <GfxRenderer.h>
 
 #include <algorithm>
-#include <cstdio>
 
+#include "activity/page/SubPage.h"
+#include "activity/page/components/global/Paginator.h"
 #include "state/SystemSetting.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
 #include <ClockRender.h>
 
 namespace {
+constexpr int kPickerSideInset = 20;
+constexpr int kPickerTopInset = 10;
+constexpr int kPickerBottomInset = 20;
+constexpr int kPickerRowGap = 10;
+constexpr int kItemsPerPage = 3;
+
+int pickerContentTop() {
+  constexpr int headerTop = FREEINK_DEVICE_X4PRO ? 20 : 15;
+  return headerTop + 40 + 20 + kPickerTopInset;
+}
+
+int pickerRowHeight(const int screenHeight) {
+  return std::max(1, (screenHeight - pickerContentTop() - kPickerBottomInset -
+                      kPickerRowGap * (kItemsPerPage - 1)) /
+                         kItemsPerPage);
+}
+
 ClockRender::DateTimeView previewDateTime() {
   ClockRender::DateTimeView dt;
   dt.year = 2026;
@@ -41,9 +59,14 @@ void ClockStylePickerActivity::onEnter() {
   if (selectedIndex >= ClockRender::styleCount()) {
     selectedIndex = 0;
   }
+  itemsPerPage = kItemsPerPage;
+  pageIndex = selectedIndex / itemsPerPage;
 
   updateRequired = true;
-  xTaskCreate(&ClockStylePickerActivity::taskTrampoline, "ClockStylePickerTask", 4096, this, 1, &displayTaskHandle);
+  // Clock previews rasterize glyphs from the selected TTF. stb_truetype uses
+  // substantially more call-stack space than the normal settings renderer;
+  // keep this task from tripping the ESP32 stack canary while drawing a face.
+  xTaskCreate(&ClockStylePickerActivity::taskTrampoline, "ClockStylePickerTask", 8192, this, 1, &displayTaskHandle);
 }
 
 void ClockStylePickerActivity::onExit() {
@@ -73,27 +96,65 @@ void ClockStylePickerActivity::displayTaskLoop() {
 void ClockStylePickerActivity::render() {
   const int pageWidth = renderer.getScreenWidth();
   const int pageHeight = renderer.getScreenHeight();
+  const int styleCount = ClockRender::styleCount();
+  const int pageCount = std::max(1, (styleCount + itemsPerPage - 1) / itemsPerPage);
+  pageIndex = std::max(0, std::min(pageCount - 1, pageIndex));
+  const int pageStart = pageIndex * itemsPerPage;
+  const int pageItems = std::min(itemsPerPage, styleCount - pageStart);
+  const int contentTop = pickerContentTop();
+  const int rowHeight = pickerRowHeight(pageHeight);
 
   renderer.clearScreen();
+  SubPage::header(renderer, "Clock face");
   const auto dt = previewDateTime();
-  ClockRender::render(renderer, selectedIndex, dt, true, 0, 0, pageWidth, pageHeight);
+  for (int row = 0; row < pageItems; ++row) {
+    const int index = pageStart + row;
+    const int rowY = contentTop + row * (rowHeight + kPickerRowGap);
+    const bool selected = index == selectedIndex;
+    const char* name = ClockRender::styleName(static_cast<uint8_t>(index));
+    const int labelFont = systemFontId();
+    const int labelY = rowY + 2;
+    const int labelLineHeight = renderer.text.getLineHeight(labelFont);
+    const int previewY = labelY + renderer.text.getLineHeight(labelFont) + 2;
+    const int previewHeight = std::max(1, rowHeight - (previewY - rowY) - 2);
 
-  const char* name = ClockRender::styleName(selectedIndex);
-  renderer.rectangle.fill(0, 0, pageWidth, 24, false);
-  renderer.text.render(MONTSERRAT_16_FONT_ID, 8, 6, name, true, EpdFontFamily::BOLD);
-  char countText[8];
-  std::snprintf(countText, sizeof(countText), "%d/%d", selectedIndex + 1, ClockRender::styleCount());
-  renderer.text.render(MONTSERRAT_16_FONT_ID,
-                       pageWidth - renderer.text.getWidth(MONTSERRAT_16_FONT_ID, countText) - 8, 6, countText,
-                       true);
+    if (row + 1 < pageItems) {
+      const int dividerY = rowY + rowHeight + kPickerRowGap / 2;
+      renderer.line.render(kPickerSideInset, dividerY, pageWidth - kPickerSideInset - 1, dividerY, true,
+                           LineRender::Style::Dotted);
+    }
+    renderer.text.render(labelFont, kPickerSideInset, labelY, name, true, EpdFontFamily::REGULAR);
+    if (selected) {
+      constexpr int tagHorizontalPadding = 8;
+      const char* activeText = "Active";
+      const int tagHeight = labelLineHeight + 4;
+      const int tagWidth = renderer.text.getWidth(labelFont, activeText) + tagHorizontalPadding * 2;
+      const int tagX = pageWidth - kPickerSideInset - tagWidth;
+      const int tagY = rowY;
+      renderer.rectangle.fill(tagX, tagY, tagWidth, tagHeight, false);
+      renderer.rectangle.render(tagX, tagY, tagWidth, tagHeight, true);
+      renderer.text.render(labelFont, tagX + tagHorizontalPadding, tagY + 2, activeText, true,
+                           EpdFontFamily::REGULAR);
+    }
+    int clockY = previewY;
+    int clockHeight = previewHeight;
+    constexpr int compactClockPadding = 20;
+    if (clockHeight > compactClockPadding * 2) {
+      clockY += compactClockPadding;
+      clockHeight -= compactClockPadding * 2;
+    }
+    ClockRender::render(renderer, static_cast<uint8_t>(index), dt, true, kPickerSideInset, clockY,
+                         std::max(1, pageWidth - kPickerSideInset * 2), clockHeight, true);
+  }
 
-  const auto labels = mappedInput.mapLabels("\xC2\xAB Back", "Select", "Prev", "Next");
+  const int listHeight = rowHeight * itemsPerPage + kPickerRowGap * (itemsPerPage - 1);
+  Paginator::render(renderer, pageIndex, pageCount, pageWidth - 10, contentTop, listHeight);
+
   renderer.displayBuffer();
 }
 
 void ClockStylePickerActivity::applySelection() {
   SETTINGS.sleepClockStyle = static_cast<uint8_t>(selectedIndex);
-  SETTINGS.sleepScreen = SystemSetting::SLEEP_SCREEN_MODE::DATETIME;
   SETTINGS.saveToFile();
   onBack();
 }
@@ -104,20 +165,41 @@ void ClockStylePickerActivity::loop() {
     return;
   }
 
+  // Only a bottom-edge upward swipe exits. Body swipes paginate the picker.
+  if (SubPage::closeInput(renderer, mappedInput, onBack, false)) return;
+
   if (mappedInput.hasTouch()) {
+    const bool swipeUp = mappedInput.wasTouchSwipeUpForRenderer(renderer);
+    const bool swipeDown = mappedInput.wasTouchSwipeDownForRenderer(renderer);
+    const bool swipeHorizontal = mappedInput.wasTouchSwipeLeftForRenderer(renderer) ||
+                                 mappedInput.wasTouchSwipeRightForRenderer(renderer);
+    if (swipeUp || swipeDown) {
+      const int pageCount = std::max(1, (ClockRender::styleCount() + itemsPerPage - 1) / itemsPerPage);
+      pageIndex = std::max(0, std::min(pageCount - 1, pageIndex + (swipeUp ? 1 : -1)));
+      selectedIndex = std::min(ClockRender::styleCount() - 1, pageIndex * itemsPerPage);
+      updateRequired = true;
+      return;
+    }
+    if (swipeHorizontal) return;
+
     float tapNx = 0.0f;
     float tapNy = 0.0f;
     if (mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy)) {
       const int screenWidth = renderer.getScreenWidth();
+      const int screenHeight = renderer.getScreenHeight();
       const int tapX = static_cast<int>(tapNx * screenWidth);
-      if (tapX < screenWidth / 3) {
-        selectedIndex = (selectedIndex + ClockRender::styleCount() - 1) % ClockRender::styleCount();
-        updateRequired = true;
-      } else if (tapX >= (screenWidth * 2) / 3) {
-        selectedIndex = (selectedIndex + 1) % ClockRender::styleCount();
-        updateRequired = true;
-      } else {
-        applySelection();
+      const int rowHeight = pickerRowHeight(screenHeight);
+      const int tapY = static_cast<int>(tapNy * screenHeight);
+      const int contentTop = pickerContentTop();
+      if (tapX >= kPickerSideInset && tapX < screenWidth - kPickerSideInset && tapY >= contentTop) {
+        const int row = (tapY - contentTop) / (rowHeight + kPickerRowGap);
+        const int rowY = contentTop + row * (rowHeight + kPickerRowGap);
+        const int pageStart = pageIndex * itemsPerPage;
+        if (row >= 0 && row < itemsPerPage && pageStart + row < ClockRender::styleCount() &&
+            tapY < rowY + rowHeight) {
+          selectedIndex = pageStart + row;
+          applySelection();
+        }
       }
       return;
     }
@@ -137,9 +219,11 @@ void ClockStylePickerActivity::loop() {
 
   if (mappedInput.wasPressed(MappedInputManager::Button::Up) || mappedInput.wasPressed(MappedInputManager::Button::Left)) {
     selectedIndex = (selectedIndex + ClockRender::styleCount() - 1) % ClockRender::styleCount();
+    pageIndex = selectedIndex / itemsPerPage;
     needRedraw = true;
   } else if (mappedInput.wasPressed(MappedInputManager::Button::Down) || mappedInput.wasPressed(MappedInputManager::Button::Right)) {
     selectedIndex = (selectedIndex + 1) % ClockRender::styleCount();
+    pageIndex = selectedIndex / itemsPerPage;
     needRedraw = true;
   }
 

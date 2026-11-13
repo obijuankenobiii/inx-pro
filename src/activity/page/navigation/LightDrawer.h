@@ -6,6 +6,11 @@ class GfxRenderer;
 
 namespace navigation {
 
+class LightDrawer;
+
+/** Returns the single light drawer shared by all activities. */
+LightDrawer& globalLightDrawer(GfxRenderer& renderer);
+
 /** Owns the X4 Pro front-light drawer UI and input handling. */
 class LightDrawer {
  public:
@@ -15,8 +20,10 @@ class LightDrawer {
 
   bool isOpen() const { return open; }
   bool isSliderDragging() const { return sliderDragging; }
+  /** Restores the page frame for a drawer-only render, if one was captured. */
+  bool restoreStoredFrameForRender() const;
   void render() const;
-  Action handleInput(MappedInputManager& input) const;
+  Action handleInput(MappedInputManager& input, bool allowOpen = true) const;
   Action handleTap(int tapX, int tapY) const;
 
  private:
@@ -26,14 +33,14 @@ class LightDrawer {
   mutable bool sliderDragChanged = false;
   mutable uint8_t sliderControl = 0;
 
-  /** Whole-frame store held for the duration of a slider drag; see LightDrawer.cpp. */
-  mutable bool sliderFrameStored = false;
-  mutable int sliderStripTrackY = 0;
+  /** Whole-page frame held while the drawer is open, so its overlay can render without repainting the page. */
+  mutable bool drawerFrameStored = false;
+  mutable bool frameRestorePending = false;
   mutable bool sliderRepaintPending = false;
 
   void refreshAfterSliderChange() const;
-  void storeSliderFrame() const;
-  void releaseSliderFrame() const;
+  void storeDrawerFrame() const;
+  void releaseDrawerFrame() const;
   void renderSliderRowLive() const;
 };
 

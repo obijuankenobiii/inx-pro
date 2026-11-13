@@ -73,19 +73,6 @@ std::string dictionaryButtonLabel(const GfxRenderer& renderer) {
   return renderer.text.truncate(font, label.c_str(), maxTextWidth, EpdFontFamily::REGULAR) + disclosure;
 }
 
-std::string stripSurroundingPunctuation(const std::string& s) {
-  size_t start = 0;
-  size_t end = s.size();
-  auto keep = [](unsigned char c) { return std::isalnum(c) || c == '\'' || c == '-'; };
-  while (start < end && !keep(static_cast<unsigned char>(s[start]))) {
-    ++start;
-  }
-  while (end > start && !keep(static_cast<unsigned char>(s[end - 1]))) {
-    --end;
-  }
-  return s.substr(start, end - start);
-}
-
 bool endsWithLineBreakHyphen(const PageWordHit& first, const PageWordHit& second) {
   return !first.text.empty() && first.text.back() == '-' && first.elementIndex != second.elementIndex &&
          first.screenY != second.screenY;
@@ -108,7 +95,7 @@ std::string lookupWordAt(const std::vector<PageWordHit>& words, const size_t foc
   } else if (focus > 0 && endsWithLineBreakHyphen(words[focus - 1], words[focus])) {
     word = words[focus - 1].text.substr(0, words[focus - 1].text.size() - 1) + word;
   }
-  return stripSurroundingPunctuation(word);
+  return StarDictLookup::cleanQueryWord(word);
 }
 
 }
@@ -582,7 +569,7 @@ void EpubDictionaryUi::drawDefinitionPanel(EpubActivity& act) {
   const int defaultPanelTop = screenH * 2 / 5;
   const int minPanelTop = margin;
 
-  const int titleFontId = MONTSERRAT_12_FONT_ID;
+  const int titleFontId = systemFontIdForPointSize(12);
   const int titleH = act.renderer.text.getLineHeight(titleFontId);
   constexpr int closeSize = 40;
   const int headerH = std::max(titleH, closeSize);
@@ -622,7 +609,7 @@ void EpubDictionaryUi::drawDefinitionPanel(EpubActivity& act) {
   act.renderer.text.render(titleFontId, panelX + pad, titleY, title.c_str(), true, EpdFontFamily::BOLD);
   act.renderer.bitmap.icon(Close, closeX_, closeY_, closeSize, closeSize);
   if (wordAlreadySaved_) {
-    const int tagFontId = MONTSERRAT_8_FONT_ID;
+    const int tagFontId = systemFontIdForPointSize(8);
     const char* tag = "\xE2\x98\x85 Saved";
     const int tagW = act.renderer.text.getWidth(tagFontId, tag);
     const int tagY = titleY + (titleH - act.renderer.text.getLineHeight(tagFontId)) / 2;

@@ -14,7 +14,7 @@
 
 namespace {
 constexpr uint32_t kDisplayTaskStack = 8192;
-constexpr int kListItemHeight = Page::LIST_ITEM_HEIGHT;
+constexpr int kListItemHeight = UiPage::LIST_ITEM_HEIGHT;
 }
 
 /** Static trampoline that dispatches to the instance's displayTaskLoop. */

@@ -31,6 +31,7 @@
 #include "images/LibraryViewList.h"
 #include "images/LibraryViewThumb.h"
 #include "images/Refresh.h"
+#include "images/Search.h"
 #include "images/SortAsc.h"
 #include "images/SortDesc.h"
 #include "state/BookState.h"
@@ -42,6 +43,7 @@
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
 #include "system/PluginManager.h"
+#include "system/ScreenComponents.h"
 #include "util/LibraryIndexRefresh.h"
 #include "util/SdIoMutex.h"
 
@@ -52,8 +54,11 @@ std::map<std::string, int> gThumbPage;
 
 constexpr int kFilterCategoryCount = 5;
 constexpr int kFilterMenuRowCount = kFilterCategoryCount + 1;
-constexpr int kPopupHeadingTopLeftMargin = 20;
-constexpr int kPopupHeadingBottomMargin = 20;
+constexpr int kRefreshIconSize = 40;
+constexpr int kCaretSourceWidth = 32;
+constexpr int kCaretSourceHeight = 30;
+constexpr int kCaretIconSize = 30;
+constexpr int kControlListItemHeight = UiLayout::LIST_ITEM_HEIGHT + 10;
 
 struct FilterDrawerLayout {
   int x;
@@ -74,25 +79,45 @@ struct FilterFooterLayout {
   bool hasBack;
 };
 
-FilterDrawerLayout filterDrawerLayout(const GfxRenderer& renderer, const int anchorRight, const int rowCount) {
-  constexpr int maxVisibleRows = 6;
-  constexpr int horizontalScreenMargin = 12;
+struct ControlModalLayout {
+  int x;
+  int y;
+  int width;
+  int height;
+  int tabY;
+  int tabHeight;
+  int contentY;
+};
+
+ControlModalLayout controlModalLayout(const GfxRenderer& renderer) {
+  constexpr int horizontalScreenMargin = 20;
+  constexpr int bottomMargin = 20;
   const int screenHeight = renderer.getScreenHeight();
   const int screenWidth = renderer.getScreenWidth();
-  const int headerFont = systemFontId();
-  const int headerHeight = renderer.text.getLineHeight(headerFont) + kPopupHeadingTopLeftMargin +
-                           kPopupHeadingBottomMargin;
-  const int doneHeight = UiLayout::LIST_ITEM_HEIGHT;
-  const int rowHeight = UiLayout::LIST_ITEM_HEIGHT;
-  const int y = navigation::Menu::height + 10;
-  const int availableRows = std::max(1, (screenHeight - y - 12 - headerHeight - doneHeight) / rowHeight);
+  const int x = horizontalScreenMargin;
+  const int width = std::max(1, screenWidth - horizontalScreenMargin * 2);
+  constexpr int tabPaddingHeight = 20 + 20;
+  constexpr int sortRowCount = 6;
+  const int tabHeight = tabPaddingHeight + renderer.text.getLineHeight(systemFontId());
+  const int contentHeight = tabHeight + sortRowCount * kControlListItemHeight;
+  const int y = std::max(navigation::Menu::height + 10, screenHeight - bottomMargin - contentHeight);
+  const int height = std::max(1, screenHeight - bottomMargin - y);
+  const int tabY = y;
+  const int contentY = tabY + tabHeight;
+  return {x, y, width, height, tabY, tabHeight, contentY};
+}
+
+FilterDrawerLayout filterDrawerLayout(const GfxRenderer& renderer, const int rowCount) {
+  constexpr int maxVisibleRows = 6;
+  const ControlModalLayout modal = controlModalLayout(renderer);
+  constexpr int headerHeight = 0;
+  const int doneHeight = kControlListItemHeight;
+  const int rowHeight = kControlListItemHeight;
+  const int y = modal.contentY;
+  const int availableRows = std::max(1, (modal.y + modal.height - y - headerHeight - doneHeight) / rowHeight);
   const int visibleRows = std::min({std::max(1, rowCount), availableRows, maxVisibleRows});
-  const int height = headerHeight + visibleRows * rowHeight + doneHeight;
-  const int width = std::max(1, std::min(320, screenWidth - horizontalScreenMargin * 2));
-  const int minX = horizontalScreenMargin;
-  const int maxX = std::max(minX, screenWidth - width - horizontalScreenMargin);
-  const int x = std::clamp(anchorRight - width, minX, maxX) + 2;
-  return {x, y, width, height, headerHeight, doneHeight, rowHeight, visibleRows};
+  const int height = std::max(headerHeight + visibleRows * rowHeight + doneHeight, modal.y + modal.height - y);
+  return {modal.x, y, modal.width, height, headerHeight, doneHeight, rowHeight, visibleRows};
 }
 
 void renderFilterScrollbar(const GfxRenderer& renderer, const FilterDrawerLayout& drawer, const int totalRows,
@@ -122,13 +147,37 @@ FilterFooterLayout filterFooterLayout(const GfxRenderer& renderer, const FilterD
   const int maxButtonWidth = std::max(1, buttonSpace / 2);
   const int doneWidth = std::min(Button::width(renderer, "Done", font), maxButtonWidth);
   const int clearWidth = std::min(Button::width(renderer, "Clear", font), maxButtonWidth);
-  const int footerY = drawer.y + drawer.headerHeight + drawer.visibleRows * drawer.rowHeight;
+  const int footerY = drawer.y + drawer.height - drawer.doneHeight;
   const int doneX = drawer.x + drawer.width - doneWidth;
   const int clearX = doneX - clearWidth;
   const ButtonBounds back{drawer.x + backLeftMargin, footerY, backTouchWidth, drawer.doneHeight};
   const ButtonBounds clear{clearX, footerY, clearWidth, drawer.doneHeight};
   const ButtonBounds done{doneX, footerY, doneWidth, drawer.doneHeight};
   return {back, clear, done, caretSize, hasBack};
+}
+
+void renderControlTab(const GfxRenderer& renderer, const ControlModalLayout& modal, const int index,
+                      const char* label, const uint8_t* icon, const bool selected) {
+  const int font = systemFontId();
+  const EpdFontFamily::Style tabFont = EpdFontFamily::REGULAR;
+  const int x = modal.x + modal.width * index / 3;
+  const int nextX = modal.x + modal.width * (index + 1) / 3;
+  const int width = nextX - x;
+  const int textWidth = renderer.text.getWidth(font, label, tabFont);
+  constexpr int iconSize = 24;
+  constexpr int iconGap = 11;
+  const int contentWidth = iconSize + iconGap + textWidth;
+  const int tabCenterY = modal.tabY + modal.tabHeight / 2;
+  const int textY = tabCenterY - renderer.text.getLineHeight(font) / 2;
+  const int contentX = x + (width - contentWidth) / 2;
+  const int iconY = tabCenterY - iconSize / 2;
+  renderer.bitmap.iconScaled(icon, contentX, iconY, 40, 40, iconSize, iconSize);
+  const int textX = contentX + iconSize + iconGap;
+  renderer.text.render(font, textX, textY, label, true, tabFont);
+  if (selected) {
+    const int dividerY = modal.tabY + modal.tabHeight;
+    renderer.rectangle.fill(contentX, dividerY - 1, std::max(1, contentWidth), 2, true);
+  }
 }
 }
 extern void openReaderFromCallback(const std::string& path, std::function<void()> returnToCaller);
@@ -312,7 +361,7 @@ bool removeTree(const std::string& path, int& removed) {
 
 Library::Library(GfxRenderer& renderer, MappedInputManager& mappedInput, std::string path,
                  PluginManager::LibraryMenuLink pluginMenu)
-    : Page("Library", renderer, mappedInput),
+    : UiPage("Library", renderer, mappedInput),
       path(cleanPath(std::move(path))),
       pluginMenu_(std::move(pluginMenu)),
       pluginMode_(!pluginMenu_.id.empty()),
@@ -322,6 +371,15 @@ Library::Library(GfxRenderer& renderer, MappedInputManager& mappedInput, std::st
       list(renderer, mappedInput, items, [this](const int index, const bool longPress) { select(index, longPress); },
            [this](const LibraryIndex::Book& book) { return isFavorite(book); },
            [this](const int x, const int y) { routeMenuAction(navigation::Menu::handleTap(x, y)); }),
+      listThumb(renderer, mappedInput, items, books,
+                [this](const int index, const bool longPress) { select(index, longPress); },
+                [this](const LibraryIndex::Book& book) { return isFavorite(book); },
+                [this](const int x, const int y) { routeMenuAction(navigation::Menu::handleTap(x, y)); },
+                [this](const LibraryIndex::Book& book) {
+                  const std::vector<std::string> covers = groupCovers(book, 1);
+                  return covers.empty() ? std::string() : covers.front();
+                },
+                [this] { return stateFilter != StateFilter::None; }),
       thumb(renderer, mappedInput, items, books,
             [this](const int index, const bool longPress) { select(index, longPress); },
             [this](const LibraryIndex::Book& book) { return isFavorite(book); },
@@ -329,7 +387,7 @@ Library::Library(GfxRenderer& renderer, MappedInputManager& mappedInput, std::st
             [this](const LibraryIndex::Book& group, const int limit) { return groupCovers(group, limit); }) {}
 
 void Library::onEnter() {
-  Page::onEnter();
+  UiPage::onEnter();
   switch (SETTINGS.libraryMode) {
     case SystemSetting::LIBRARY_LIST:
       view = View::List;
@@ -339,6 +397,9 @@ void Library::onEnter() {
       break;
     case SystemSetting::LIBRARY_THUMBNAIL:
       view = View::Thumb;
+      break;
+    case SystemSetting::LIBRARY_LIST_THUMBNAIL:
+      view = View::ListThumb;
       break;
     default:
       view = View::Grid;
@@ -354,6 +415,10 @@ void Library::onEnter() {
   filterScrollOffset_ = 0;
   sortOpen = false;
   filterOpen = false;
+  controlModalOpen = false;
+  controlTab = ControlTab::View;
+  listThumbDeferImageDecode_ = view == View::ListThumb;
+  listThumbWarmupPending_ = false;
   popupBook = -1;
   folderDeleteConfirm = false;
   sidebarOpen = false;
@@ -726,6 +791,16 @@ void Library::open(const int index) {
 }
 
 void Library::loop() {
+  // Shared navigation must see the edge swipe before library navigation treats
+  // it as a folder/back gesture. This keeps the hidden menu available on the
+  // Library main page and inside library folders.
+  if (controlModalOpen) {
+    if (controlModalInput()) return;
+    renderPage();
+    return;
+  }
+  if (menuInput()) return;
+
   if (loading) {
     if (updateRequired) {
       renderPage();
@@ -764,7 +839,7 @@ void Library::loop() {
 
   const bool horizontalSwipe = mappedInput.wasTouchSwipeLeft() || mappedInput.wasTouchSwipeRight();
 
-  if (!filterOpen && !sortOpen && !isOpen() && horizontalSwipe) {
+  if (!isOpen() && horizontalSwipe) {
     if (stateFilter == StateFilter::Plugin && !activePluginGroup_.empty() && mappedInput.wasTouchSwipeRight()) {
       activePluginGroup_.clear();
       thumb.setPage(0);
@@ -786,82 +861,17 @@ void Library::loop() {
     return;
   }
 
-  if (filterOpen) {
-    if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
-      if (filterCategory_ != FilterCategory::Categories) {
-        openFilterCategory(FilterCategory::Categories);
-      } else {
-        filterOpen = false;
-      }
-      updateRequired = true;
-      return;
-    }
-
-    const int rowCount = filterRowCount();
-    const FilterDrawerLayout drawer = filterDrawerLayout(renderer, buttonX(2) + buttonSize, rowCount);
-    const int maxScroll = std::max(0, rowCount - drawer.visibleRows);
-    const int scrollStep = std::max(1, drawer.visibleRows - 1);
-    float swipeNx = 0.0f;
-    float swipeNy = 0.0f;
-    if (mappedInput.wasTouchSwipeUpInScreen(renderer, swipeNx, swipeNy)) {
-      const int startX = static_cast<int>(swipeNx * renderer.getScreenWidth());
-      const int startY = static_cast<int>(swipeNy * renderer.getScreenHeight());
-      if (startX >= drawer.x && startX < drawer.x + drawer.width && startY >= drawer.y &&
-          startY < drawer.y + drawer.height) {
-        filterScrollOffset_ = std::min(maxScroll, filterScrollOffset_ + scrollStep);
-        updateRequired = true;
-      }
-      return;
-    }
-    if (mappedInput.wasTouchSwipeDownInScreen(renderer, swipeNx, swipeNy)) {
-      const int startX = static_cast<int>(swipeNx * renderer.getScreenWidth());
-      const int startY = static_cast<int>(swipeNy * renderer.getScreenHeight());
-      if (startX < drawer.x || startX >= drawer.x + drawer.width || startY < drawer.y ||
-          startY >= drawer.y + drawer.height) {
-        filterOpen = false;
-      } else if (filterScrollOffset_ > 0) {
-        filterScrollOffset_ = std::max(0, filterScrollOffset_ - scrollStep);
-      } else if (filterCategory_ != FilterCategory::Categories) {
-        openFilterCategory(FilterCategory::Categories);
-      } else {
-        filterOpen = false;
-      }
-      updateRequired = true;
-      return;
-    }
-
-    if (mappedInput.hasTouch()) {
-      float tapNx = 0.0f;
-      float tapNy = 0.0f;
-      if (mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy)) {
-        handleFilterTap(static_cast<int>(tapNx * renderer.getScreenWidth()),
-                        static_cast<int>(tapNy * renderer.getScreenHeight()));
-        return;
-      }
-    }
-    renderPage();
-    return;
-  }
-
-  if (menuInput()) return;
-
   if (isOpen()) {
     renderPage();
     return;
   }
 
-  if (sortOpen) {
-    if (mappedInput.hasTouch()) {
-      float tapNx = 0.0f;
-      float tapNy = 0.0f;
-      if (mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy)) {
-        handleSortTap(static_cast<int>(tapNx * renderer.getScreenWidth()),
-                      static_cast<int>(tapNy * renderer.getScreenHeight()));
-        return;
-      }
-    }
+  // The first thumbnail-list frame intentionally uses placeholders. Let it
+  // reach the panel before decoding covers, just like Home's widget layout.
+  if (listThumbWarmupPending_ && !mappedInput.wasTouchActivity()) {
+    listThumbWarmupPending_ = false;
+    updateRequired = true;
     renderPage();
-    return;
   }
 
   bool handled = false;
@@ -872,11 +882,20 @@ void Library::loop() {
     case View::Grid:
       handled = grid.handleInput();
       break;
+    case View::ListThumb:
+      handled = listThumb.handleInput();
+      break;
     case View::Thumb:
       handled = thumb.handleInput();
       break;
   }
   if (handled) {
+    if (view == View::ListThumb) {
+      // A page change should get the same deferred first render as the
+      // initial list. This also keeps a newly loaded page responsive.
+      listThumbDeferImageDecode_ = true;
+      listThumbWarmupPending_ = false;
+    }
     updateRequired = true;
     return;
   }
@@ -915,6 +934,15 @@ void Library::content() {
       break;
     case View::Grid:
       grid.render();
+      break;
+    case View::ListThumb:
+      renderer.setDeferImageDecode(listThumbDeferImageDecode_);
+      listThumb.render();
+      renderer.setDeferImageDecode(false);
+      if (listThumbDeferImageDecode_) {
+        listThumbDeferImageDecode_ = false;
+        listThumbWarmupPending_ = true;
+      }
       break;
     case View::Thumb:
       thumb.render();
@@ -1000,11 +1028,11 @@ void Library::title() const {
       break;
   }
 
-  const int font = MONTSERRAT_16_FONT_ID;
+  const int font = systemFontIdForPointSize(16);
   const int textY = navigation::Menu::topPadding +
                     (navigation::Menu::iconSize - renderer.text.getLineHeight(font)) / 2;
   const int textX = navigation::Menu::leftMargin + navigation::Menu::iconSize + 12;
-  const int maxTextWidth = std::max(1, buttonX(0) - 12 - textX);
+  const int maxTextWidth = std::max(1, renderer.getScreenWidth() - 80 - textX);
   const std::string shown = renderer.text.truncate(font, heading, maxTextWidth, EpdFontFamily::BOLD);
   renderer.text.render(font, textX, textY, shown.c_str(), true, EpdFontFamily::BOLD);
 }
@@ -1269,48 +1297,86 @@ void Library::refresh() {
   LibraryIndexRefresh::start(renderer, this);
 }
 
-int Library::buttonX(const int index) const {
-  const int right = renderer.getScreenWidth() - 20;
-  const int refreshX = right - navigation::Menu::iconSize;
-  const int filterX = refreshX - buttonGap - buttonSize;
-  const int sortX = filterX - buttonGap - buttonSize;
-  const int viewX = sortX - buttonGap - buttonSize;
-  switch (index) {
-    case 0:
-      return viewX;
-    case 1:
-      return sortX;
-    case 2:
-      return filterX;
-    case 3:
-    default:
-      return refreshX;
+int Library::miniMenuX() const {
+  if (SETTINGS.hiddenMenu != 0) {
+    constexpr int bottomBarRightMargin = 0;
+    constexpr int bottomBarButtonCount = 3;
+    return std::max(0, renderer.getScreenWidth() - bottomBarRightMargin - buttonSize * bottomBarButtonCount);
   }
+  return std::max(0, renderer.getScreenWidth() - buttonSize);
 }
 
-int Library::buttonY() const { return navigation::Menu::topPadding; }
+int Library::miniMenuY() const {
+  if (SETTINGS.hiddenMenu != 0) return renderer.getScreenHeight() - bottomBarHeight;
+  return (renderer.getScreenHeight() - (buttonSize * 2 + buttonGap)) / 2;
+}
 
 void Library::center() const {
-  const bool sortSelected = sortOpen;
-  const bool filterSelected = filterOpen;
-  const uint8_t* sortIcon = sort == Sort::TitleZA || sort == Sort::FolderZA ? SortDesc : SortAsc;
-  constexpr int selectedPadding = 4;
+  const int x = miniMenuX();
+  const int y = miniMenuY();
+  const int screenWidth = renderer.getScreenWidth();
+  const bool bottomBar = SETTINGS.hiddenMenu != 0;
+  const int bottomBarButtonCount = 3;
+  const int containerWidth = std::min(screenWidth - x, bottomBar ? buttonSize * bottomBarButtonCount : buttonSize);
+  const int containerHeight = bottomBar ? bottomBarHeight : buttonSize * 2 + buttonGap;
+  renderer.rectangle.fill(x, y, containerWidth, containerHeight, false);
+  // Keep the controls connected. In sidebar mode they become a centered
+  // bottom bar; otherwise they remain the right-edge vertical controls.
+  constexpr int rightCornerRestore = 4;
+  if (!bottomBar) {
+    renderer.rectangle.render(x, y, containerWidth, containerHeight, true, true);
+    renderer.line.render(x + std::max(0, containerWidth - rightCornerRestore), y,
+                         x + containerWidth - 1, y, true);
+    renderer.line.render(x + std::max(0, containerWidth - rightCornerRestore), y + containerHeight - 1,
+                         x + containerWidth - 1, y + containerHeight - 1, true);
+    renderer.line.render(x, y + buttonSize, x + containerWidth, y + buttonSize, true);
+  } else {
+    renderer.line.render(x + buttonSize, y, x + buttonSize, y + containerHeight, true);
+    renderer.line.render(x + buttonSize * 2, y, x + buttonSize * 2, y + containerHeight, true);
+    renderer.line.render(x, y + containerHeight - 1, x + containerWidth, y + containerHeight - 1, true);
+    renderer.line.render(0, y, screenWidth, y, true);
 
-  if (sortSelected) {
-    renderer.rectangle.fill(buttonX(1) - selectedPadding, buttonY() - selectedPadding,
-                            buttonSize + selectedPadding * 2, buttonSize + selectedPadding * 2, true);
+    int currentPage = 0;
+    int totalPages = 1;
+    switch (view) {
+      case View::List:
+        currentPage = list.currentPage();
+        totalPages = list.totalPages();
+        break;
+      case View::Grid:
+        currentPage = grid.currentPage();
+        totalPages = grid.totalPages();
+        break;
+      case View::ListThumb:
+        currentPage = listThumb.currentPage();
+        totalPages = listThumb.totalPages();
+        break;
+      case View::Thumb:
+        currentPage = thumb.currentPage();
+        totalPages = thumb.totalPages();
+        break;
+    }
+    currentPage = std::max(0, std::min(currentPage, totalPages - 1));
+    const std::string pagination = std::to_string(currentPage + 1) + " / " + std::to_string(totalPages);
+    const int paginationFont = systemFontId();
+    renderer.text.render(paginationFont, 20,
+                         y + (containerHeight - renderer.text.getLineHeight(paginationFont)) / 2,
+                         pagination.c_str(), true, EpdFontFamily::REGULAR);
   }
-  if (filterSelected) {
-    renderer.rectangle.fill(buttonX(2) - selectedPadding, buttonY() - selectedPadding,
-                            buttonSize + selectedPadding * 2, buttonSize + selectedPadding * 2, true);
+  const int caretX = x + (buttonSize - kCaretIconSize) / 2;
+  const int caretY = y + (bottomBar ? (containerHeight - kCaretIconSize) / 2
+                                    : (buttonSize - kCaretIconSize) / 2);
+  renderer.bitmap.iconScaled(LibraryFilterRight, caretX, caretY, kCaretSourceWidth, kCaretSourceHeight,
+                             kCaretIconSize, kCaretIconSize,
+                             bottomBar ? BitmapRender::Orientation::Rotate270CW : BitmapRender::Orientation::Rotate180);
+  if (bottomBar) {
+    renderer.bitmap.icon(Search, x + buttonSize + (buttonSize - kRefreshIconSize) / 2,
+                         y + (containerHeight - kRefreshIconSize) / 2, kRefreshIconSize, kRefreshIconSize);
   }
-  renderer.bitmap.icon(viewIcon(), buttonX(0), buttonY(), buttonSize, buttonSize,
-                       BitmapRender::Orientation::None, false);
-  renderer.bitmap.icon(sortIcon, buttonX(1), buttonY(), buttonSize, buttonSize,
-                       BitmapRender::Orientation::None, sortSelected);
-  renderer.bitmap.icon(Filter, buttonX(2), buttonY(), buttonSize, buttonSize,
-                       BitmapRender::Orientation::None, filterSelected);
-  renderer.bitmap.icon(Refresh, buttonX(3), buttonY(), buttonSize, buttonSize);
+  const int refreshX = x + (bottomBar ? buttonSize * 2 : 0) + (buttonSize - kRefreshIconSize) / 2;
+  const int refreshY = y + (bottomBar ? (containerHeight - kRefreshIconSize) / 2
+                                      : buttonSize + buttonGap + (buttonSize - kRefreshIconSize) / 2);
+  renderer.bitmap.icon(Refresh, refreshX, refreshY, kRefreshIconSize, kRefreshIconSize);
 }
 
 bool Library::handleSidebarTap() {
@@ -1322,14 +1388,12 @@ bool Library::handleSidebarTap() {
 
   const int tapX = static_cast<int>(tapNx * renderer.getScreenWidth());
   const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
-  const int hamburgerX = navigation::Menu::leftMargin - 10;
-  const int hamburgerY = navigation::Menu::topPadding - 10;
-  const int hamburgerSize = navigation::Menu::iconSize;
-  if (tapX >= hamburgerX && tapX < hamburgerX + hamburgerSize && tapY >= hamburgerY &&
-      tapY < hamburgerY + hamburgerSize) {
+  if (navigation::Menu::hamburgerHit(tapX, tapY)) {
+    storeOverlayFrame();
     sidebarOpen = true;
     sidebarScrollOffset_ = 0;
     updateRequired = true;
+    renderPage();
     return true;
   }
 
@@ -1339,13 +1403,14 @@ bool Library::handleSidebarTap() {
 
 bool Library::handleSidebarInput() {
   if (mappedInput.wasPressed(MappedInputManager::Button::Back) || mappedInput.wasTouchSwipeRight()) {
+    restoreOverlayFrameOnClose();
     sidebarOpen = false;
     updateRequired = true;
     return true;
   }
   PluginManager::LibraryMenuLink pluginMenu;
   const bool hasPluginMenu = PluginManager::findLibraryMenuPlugin(pluginMenu);
-  const size_t sidebarItemCount = hasPluginMenu ? 8 : 7;
+  const size_t sidebarItemCount = hasPluginMenu ? 9 : 8;
   if (mappedInput.hasTouch() && (mappedInput.wasTouchSwipeUp() || mappedInput.wasTouchSwipeDown())) {
     const int maxOffset = std::max(0, static_cast<int>(sidebarItemCount) - Sidebar::visibleRows(renderer));
     const int step = std::max(1, Sidebar::visibleRows(renderer) - 1);
@@ -1365,58 +1430,44 @@ bool Library::handleSidebarInput() {
 
   const int tapX = static_cast<int>(tapNx * renderer.getScreenWidth());
   const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
-  const int drawerWidth = std::min(320, renderer.getScreenWidth() * 3 / 4);
+  const int drawerWidth = Sidebar::width(renderer);
   if (tapX >= drawerWidth) {
+    restoreOverlayFrameOnClose();
     sidebarOpen = false;
     updateRequired = true;
     return true;
   }
 
   const int item = Sidebar::hitTest(renderer, tapX, tapY, sidebarItemCount, sidebarScrollOffset_);
-  if (item == 0) {
+  if (item == 0 || item == 1) {
+    discardOverlayFrame();
     stateFilter = StateFilter::None;
     pluginMode_ = false;
     metadataGroupKey_.clear();
-    if (allBooksMode) {
-      SETTINGS.libraryViewMode = SystemSetting::LIBRARY_VIEW_FOLDERS;
-      SETTINGS.saveToFile();
-      allBooksMode = false;
+    const bool showAllBooks = item == 0;
+    SETTINGS.libraryViewMode = showAllBooks ? SystemSetting::LIBRARY_VIEW_BOOKS
+                                           : SystemSetting::LIBRARY_VIEW_FOLDERS;
+    SETTINGS.saveToFile();
+    sidebarOpen = false;
+    if (path != "/") {
+      gThumbPage[path] = thumb.currentPage();
+      onGoToLibrary("/");
+      return true;
+    } else {
+      allBooksMode = showAllBooks;
       sortOpen = false;
       filterOpen = false;
       popupBook = -1;
       thumb.setPage(0);
       load();
-    } else {
-      const View selectedView = view;
-      SETTINGS.libraryMode = selectedView == View::List
-                                 ? SystemSetting::LIBRARY_LIST
-                                 : (selectedView == View::Grid ? SystemSetting::LIBRARY_GRID
-                                                               : SystemSetting::LIBRARY_THUMBNAIL);
-      SETTINGS.libraryViewMode = SystemSetting::LIBRARY_VIEW_BOOKS;
-      SETTINGS.saveToFile();
-      sidebarOpen = false;
-      updateRequired = true;
-      if (path != "/") {
-        gThumbPage[path] = thumb.currentPage();
-        onGoToLibrary("/");
-      } else {
-        allBooksMode = true;
-        sortOpen = false;
-        filterOpen = false;
-        popupBook = -1;
-        thumb.setPage(0);
-        load();
-        view = selectedView;
-      }
-      return true;
     }
-    sidebarOpen = false;
     updateRequired = true;
-  } else if (item == 1 || item == 2 || item == 3) {
-    stateFilter = item == 1 ? StateFilter::Favorites
-                            : (item == 2 ? StateFilter::Reading : StateFilter::Finished);
-    SETTINGS.libraryViewMode = item == 1 ? SystemSetting::LIBRARY_VIEW_FAVORITES
-                                         : (item == 2 ? SystemSetting::LIBRARY_VIEW_READING
+  } else if (item >= 2 && item <= 4) {
+    discardOverlayFrame();
+    stateFilter = item == 2 ? StateFilter::Favorites
+                            : (item == 3 ? StateFilter::Reading : StateFilter::Finished);
+    SETTINGS.libraryViewMode = item == 2 ? SystemSetting::LIBRARY_VIEW_FAVORITES
+                                         : (item == 3 ? SystemSetting::LIBRARY_VIEW_READING
                                                       : SystemSetting::LIBRARY_VIEW_FINISHED);
     SETTINGS.saveToFile();
     pluginMode_ = false;
@@ -1429,11 +1480,12 @@ bool Library::handleSidebarInput() {
     sidebarOpen = false;
     load();
     updateRequired = true;
-  } else if (item >= 4 && item <= 6) {
-    metadataKind_ = item == 4 ? MetadataIndex::Kind::Authors
-                              : (item == 5 ? MetadataIndex::Kind::Tags : MetadataIndex::Kind::Series);
-    SETTINGS.libraryViewMode = item == 4 ? SystemSetting::LIBRARY_VIEW_AUTHORS
-                                         : (item == 5 ? SystemSetting::LIBRARY_VIEW_TAGS
+  } else if (item >= 5 && item <= 7) {
+    discardOverlayFrame();
+    metadataKind_ = item == 5 ? MetadataIndex::Kind::Authors
+                              : (item == 6 ? MetadataIndex::Kind::Tags : MetadataIndex::Kind::Series);
+    SETTINGS.libraryViewMode = item == 5 ? SystemSetting::LIBRARY_VIEW_AUTHORS
+                                         : (item == 6 ? SystemSetting::LIBRARY_VIEW_TAGS
                                                       : SystemSetting::LIBRARY_VIEW_SERIES);
     SETTINGS.saveToFile();
     metadataGroupKey_.clear();
@@ -1454,7 +1506,8 @@ bool Library::handleSidebarInput() {
     sidebarScrollOffset_ = 0;
     load();
     updateRequired = true;
-  } else if (hasPluginMenu && item == 7) {
+  } else if (hasPluginMenu && item == 8) {
+    discardOverlayFrame();
     pluginMenu_ = pluginMenu;
     pluginMode_ = true;
     stateFilter = StateFilter::Plugin;
@@ -1478,59 +1531,53 @@ bool Library::handleSidebarInput() {
 void Library::drawSidebar() const {
   PluginManager::LibraryMenuLink pluginMenu;
   const bool hasPluginMenu = PluginManager::findLibraryMenuPlugin(pluginMenu);
-  const char* labels[8] = {allBooksMode ? "Folders" : "All books", "Favorites", "Reading", "Finished",
+  const char* labels[9] = {"All books", "Folders", "Favorites", "Reading", "Finished",
                            "Authors", "Tags", "Series", nullptr};
-  if (hasPluginMenu) labels[7] = pluginMenu.label.c_str();
+  if (hasPluginMenu) labels[8] = pluginMenu.label.c_str();
   Sidebar::renderFrame(renderer, "Library");
-  Sidebar::renderTextList(renderer, labels, hasPluginMenu ? 8 : 7, sidebarScrollOffset_);
+  Sidebar::renderTextList(renderer, labels, hasPluginMenu ? 9 : 8, sidebarScrollOffset_);
 }
 
 navigation::Menu::Action Library::centerTap(const int tapX, const int tapY) const {
-  if (tapX >= buttonX(3) - refreshTouchPadding && tapX < buttonX(3) + buttonSize + refreshTouchPadding &&
-      tapY >= buttonY() - refreshTouchPadding && tapY < buttonY() + buttonSize + refreshTouchPadding) {
+  const int x = miniMenuX();
+  const int y = miniMenuY();
+  const int touchPadding = refreshTouchPadding;
+  if (SETTINGS.hiddenMenu != 0) {
+    if (tapY >= y - touchPadding && tapY < y + bottomBarHeight + touchPadding) {
+      if (tapX >= x - touchPadding && tapX < x + buttonSize + touchPadding) {
+        return navigation::Menu::Action::Filter;
+      }
+      if (tapX >= x + buttonSize - touchPadding && tapX < x + buttonSize * 2 + touchPadding) {
+        return navigation::Menu::Action::Search;
+      }
+      if (tapX >= x + buttonSize * 2 - touchPadding && tapX < x + buttonSize * 3 + touchPadding) {
+        return navigation::Menu::Action::Refresh;
+      }
+    }
+    return navigation::Menu::Action::None;
+  }
+  if (tapX >= x - touchPadding && tapX < x + buttonSize + touchPadding && tapY >= y &&
+      tapY < y + buttonSize) {
+    return navigation::Menu::Action::Filter;
+  }
+  const int refreshY = y + buttonSize + buttonGap;
+  if (tapX >= x - touchPadding && tapX < x + buttonSize + touchPadding && tapY >= refreshY &&
+      tapY < refreshY + buttonSize) {
     return navigation::Menu::Action::Refresh;
   }
-  if (tapY < buttonY() || tapY >= buttonY() + buttonSize) return navigation::Menu::Action::None;
-  if (tapX >= buttonX(0) && tapX < buttonX(0) + buttonSize) return navigation::Menu::Action::View;
-  if (tapX >= buttonX(1) && tapX < buttonX(1) + buttonSize) return navigation::Menu::Action::Sort;
-  if (tapX >= buttonX(2) && tapX < buttonX(2) + buttonSize) return navigation::Menu::Action::Filter;
   return navigation::Menu::Action::None;
 }
 
 bool Library::menuAction(const navigation::Menu::Action action) {
-  if (action == navigation::Menu::Action::View) {
-    switch (view) {
-      case View::List:
-        view = View::Grid;
-        break;
-      case View::Grid:
-        view = View::Thumb;
-        break;
-      case View::Thumb:
-        view = View::List;
-        break;
-    }
-    SETTINGS.libraryMode = view == View::List
-                               ? SystemSetting::LIBRARY_LIST
-                               : (view == View::Grid ? SystemSetting::LIBRARY_GRID
-                                                     : SystemSetting::LIBRARY_THUMBNAIL);
-    SETTINGS.saveToFile();
-    resetViews();
-    restoreThumbPage();
-    if (view == View::Thumb) thumb.load();
-    updateRequired = true;
-    return true;
-  }
-  if (action == navigation::Menu::Action::Sort) {
-    sortOpen = !sortOpen;
-    filterOpen = false;
-    updateRequired = true;
-    return true;
-  }
-  if (action == navigation::Menu::Action::Filter) {
-    filterOpen = !filterOpen;
-    if (filterOpen) openFilterCategory(FilterCategory::Categories);
+  if (action == navigation::Menu::Action::View || action == navigation::Menu::Action::Sort ||
+      action == navigation::Menu::Action::Filter) {
+    controlModalOpen = true;
+    controlTab = action == navigation::Menu::Action::View
+                     ? ControlTab::View
+                     : (action == navigation::Menu::Action::Sort ? ControlTab::Sort : ControlTab::Filter);
     sortOpen = false;
+    filterOpen = false;
+    if (controlTab == ControlTab::Filter) openFilterCategory(FilterCategory::Categories);
     updateRequired = true;
     return true;
   }
@@ -1538,11 +1585,120 @@ bool Library::menuAction(const navigation::Menu::Action action) {
 }
 
 void Library::menu() {
-  Page::menu();
-  if (sortOpen) sortDropdown();
-  if (filterOpen) filterPopup();
+  UiPage::menu();
+  if (controlModalOpen) controlModal();
   if (popupBook >= 0 && popupBook < static_cast<int>(items.size())) popup();
   if (sidebarOpen) drawSidebar();
+}
+
+void Library::controlModal() const {
+  const ControlModalLayout modal = controlModalLayout(renderer);
+  ScreenComponents::drawWhiteOverlay(renderer, modal.y);
+  renderer.rectangle.fill(modal.x, modal.y, modal.width, modal.height, false);
+  const int tabDividerY = modal.tabY + modal.tabHeight;
+  renderer.rectangle.fill(modal.x, tabDividerY, modal.width, 1,
+                          static_cast<int>(GfxRenderer::FillTone::Gray), false);
+  const uint8_t* sortIcon = sort == Sort::TitleZA || sort == Sort::FolderZA || sort == Sort::AuthorZA ? SortDesc : SortAsc;
+  renderControlTab(renderer, modal, 0, "View", viewIcon(), controlTab == ControlTab::View);
+  renderControlTab(renderer, modal, 1, "Sort", sortIcon, controlTab == ControlTab::Sort);
+  renderControlTab(renderer, modal, 2, "Filter", Filter, controlTab == ControlTab::Filter);
+
+  switch (controlTab) {
+    case ControlTab::View:
+      viewDropdown();
+      break;
+    case ControlTab::Sort:
+      sortDropdown();
+      break;
+    case ControlTab::Filter:
+      filterPopup();
+      break;
+  }
+  renderer.rectangle.render(modal.x, modal.y, modal.width, modal.height, true);
+}
+
+bool Library::controlModalInput() {
+  if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+    if (controlTab == ControlTab::Filter && filterCategory_ != FilterCategory::Categories) {
+      openFilterCategory(FilterCategory::Categories);
+    } else {
+      controlModalOpen = false;
+    }
+    updateRequired = true;
+    return true;
+  }
+
+  const ControlModalLayout modal = controlModalLayout(renderer);
+  if (mappedInput.hasTouch()) {
+    float swipeNx = 0.0f;
+    float swipeNy = 0.0f;
+    const bool swipeUp = mappedInput.wasTouchSwipeUpInScreen(renderer, swipeNx, swipeNy);
+    const bool swipeDown = !swipeUp && mappedInput.wasTouchSwipeDownInScreen(renderer, swipeNx, swipeNy);
+    if (swipeUp || swipeDown) {
+      const int startX = static_cast<int>(swipeNx * renderer.getScreenWidth());
+      const int startY = static_cast<int>(swipeNy * renderer.getScreenHeight());
+      const bool insideModal = startX >= modal.x && startX < modal.x + modal.width && startY >= modal.y &&
+                               startY < modal.y + modal.height;
+      if (controlTab == ControlTab::Filter && insideModal) {
+        const FilterDrawerLayout drawer = filterDrawerLayout(renderer, filterRowCount());
+        const int maxScroll = std::max(0, filterRowCount() - drawer.visibleRows);
+        const int scrollStep = std::max(1, drawer.visibleRows - 1);
+        if (startX >= drawer.x && startX < drawer.x + drawer.width && startY >= drawer.y &&
+            startY < drawer.y + drawer.height) {
+          if (swipeUp) {
+            filterScrollOffset_ = std::min(maxScroll, filterScrollOffset_ + scrollStep);
+          } else if (filterScrollOffset_ > 0) {
+            filterScrollOffset_ = std::max(0, filterScrollOffset_ - scrollStep);
+          } else if (filterCategory_ != FilterCategory::Categories) {
+            openFilterCategory(FilterCategory::Categories);
+          }
+        } else if (swipeDown) {
+          controlModalOpen = false;
+        }
+      } else if (swipeDown) {
+        controlModalOpen = false;
+      }
+      updateRequired = true;
+      return true;
+    }
+
+    float tapNx = 0.0f;
+    float tapNy = 0.0f;
+    if (mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy)) {
+      const int tapX = static_cast<int>(tapNx * renderer.getScreenWidth());
+      const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
+      if (tapX < modal.x || tapX >= modal.x + modal.width || tapY < modal.y || tapY >= modal.y + modal.height) {
+        controlModalOpen = false;
+        updateRequired = true;
+        return true;
+      }
+      if (tapY >= modal.tabY && tapY < modal.tabY + modal.tabHeight) {
+        const int tab = std::min(2, std::max(0, (tapX - modal.x) * 3 / modal.width));
+        controlTab = tab == 0 ? ControlTab::View : (tab == 1 ? ControlTab::Sort : ControlTab::Filter);
+        if (controlTab == ControlTab::Filter) openFilterCategory(FilterCategory::Categories);
+        updateRequired = true;
+        return true;
+      }
+
+      if (controlTab == ControlTab::View) {
+        constexpr int rowHeight = kControlListItemHeight;
+        const int listY = modal.contentY;
+        const int listX = modal.x;
+        const int listWidth = modal.width;
+        if (tapX >= listX && tapX < listX + listWidth && tapY >= listY && tapY < listY + 4 * rowHeight) {
+          applyView((tapY - listY) / rowHeight);
+        }
+        return true;
+      }
+      if (controlTab == ControlTab::Sort) {
+        handleSortTap(tapX, tapY);
+        return true;
+      }
+      handleFilterTap(tapX, tapY);
+      return true;
+    }
+  }
+  return false;
 }
 
 int Library::sortCount() const { return 6; }
@@ -1557,6 +1713,8 @@ const uint8_t* Library::viewIcon() const {
       return LibraryViewGrid;
     case View::Thumb:
       return LibraryViewThumb;
+    case View::ListThumb:
+      return LibraryViewList;
     default:
       return LibraryViewGrid;
   }
@@ -1570,65 +1728,112 @@ void Library::restoreThumbPage() {
 void Library::resetViews() {
   grid.reset();
   list.reset();
+  listThumb.reset();
   thumb.reset();
+  if (view == View::ListThumb) {
+    listThumbDeferImageDecode_ = true;
+    listThumbWarmupPending_ = false;
+  }
 }
 
 void Library::sortDropdown() const {
-  constexpr int rowHeight = UiLayout::LIST_ITEM_HEIGHT;
-  constexpr int width = 250;
-  constexpr int leftPadding = 20;
-  constexpr int rightPadding = 40;
+  const ControlModalLayout modal = controlModalLayout(renderer);
+  constexpr int leftPadding = 24;
+  constexpr int rightPadding = 30;
+  constexpr int radioRadius = 10;
   const int font = systemFontId();
-  const int headerHeight = renderer.text.getLineHeight(font) + kPopupHeadingTopLeftMargin +
-                           kPopupHeadingBottomMargin;
-  const int height = headerHeight + sortCount() * rowHeight + 1;
-  const int x = std::max(0, buttonX(1) + buttonSize - width) + 2;
-  const int y = navigation::Menu::height + 10;
-
-  renderer.rectangle.fill(x, y, width, height, false);
-  renderer.text.render(font, x + kPopupHeadingTopLeftMargin, y + kPopupHeadingTopLeftMargin, "Sort", true,
-                       EpdFontFamily::BOLD);
-  renderer.line.render(x + kPopupHeadingTopLeftMargin, y + headerHeight - 1,
-                       x + width - kPopupHeadingTopLeftMargin, y + headerHeight - 1, true,
-                       LineRender::Style::Dotted);
+  const int x = modal.x;
+  const int y = modal.contentY;
+  const int width = modal.width;
+  constexpr int rowHeight = kControlListItemHeight;
   const char* names[] = {"Title", "Title", "Folder", "Folder", "Author", "Author"};
   const char* directions[] = {"A-Z", "Z-A", "A-Z", "Z-A", "A-Z", "Z-A"};
   for (int index = 0; index < sortCount(); ++index) {
-    const int rowY = y + headerHeight + index * rowHeight;
+    const int rowY = y + index * rowHeight;
     const bool selected = index == sortIndex();
-    if (selected) {
-      renderer.rectangle.fill(x, rowY, width, rowHeight, true);
-    }
     const int textY = rowY + (rowHeight - renderer.text.getLineHeight(font)) / 2;
-    renderer.text.render(font, x + leftPadding, textY, names[index], !selected, EpdFontFamily::REGULAR);
-    const int directionFont = MONTSERRAT_8_FONT_ID;
+    renderer.text.render(font, x + leftPadding, textY, names[index], true, EpdFontFamily::REGULAR);
+    const int directionFont = systemFontIdForPointSize(8);
     const int directionWidth = renderer.text.getWidth(directionFont, directions[index]);
     const int directionY = rowY + (rowHeight - renderer.text.getLineHeight(directionFont)) / 2;
-    renderer.text.render(directionFont, x + width - rightPadding - directionWidth, directionY, directions[index],
-                         !selected, EpdFontFamily::REGULAR);
+    renderer.text.render(directionFont, x + width - rightPadding - directionWidth - radioRadius * 2 - 16,
+                         directionY, directions[index], true, EpdFontFamily::REGULAR);
+    const int radioX = x + width - rightPadding - radioRadius;
+    const int radioY = rowY + rowHeight / 2;
+    renderer.circle.render(radioX, radioY, radioRadius, true);
+    renderer.circle.render(radioX, radioY, radioRadius - 3, false);
+    if (selected) renderer.circle.render(radioX, radioY, radioRadius - 6, true);
     if (index + 1 < sortCount()) {
-      renderer.line.render(x + 10, rowY + rowHeight, x + width - 10, rowY + rowHeight, !selected,
+      renderer.line.render(x + 10, rowY + rowHeight, x + width - 10, rowY + rowHeight, true,
                            LineRender::Style::Dotted);
     }
   }
-  renderer.rectangle.render(x, y, width, height, true);
 }
 
 void Library::handleSortTap(const int tapX, const int tapY) {
-  constexpr int rowHeight = UiLayout::LIST_ITEM_HEIGHT;
-  constexpr int width = 250;
-  const int font = systemFontId();
-  const int headerHeight = renderer.text.getLineHeight(font) + kPopupHeadingTopLeftMargin +
-                           kPopupHeadingBottomMargin;
-  const int height = headerHeight + sortCount() * rowHeight + 1;
-  const int x = std::max(0, buttonX(1) + buttonSize - width);
-  const int y = navigation::Menu::height;
-  const int listY = y + headerHeight;
-  if (tapX >= x && tapX < x + width && tapY >= listY && tapY < y + height) {
-    applySort((tapY - listY) / rowHeight);
+  const ControlModalLayout modal = controlModalLayout(renderer);
+  const int x = modal.x;
+  const int y = modal.contentY;
+  const int width = modal.width;
+  constexpr int rowHeight = kControlListItemHeight;
+  if (tapX >= x && tapX < x + width && tapY >= y && tapY < y + sortCount() * rowHeight) {
+    applySort((tapY - y) / rowHeight);
     return;
   }
-  sortOpen = false;
+  controlModalOpen = false;
+  updateRequired = true;
+}
+
+void Library::viewDropdown() const {
+  const ControlModalLayout modal = controlModalLayout(renderer);
+  constexpr int rowHeight = kControlListItemHeight;
+  const int font = systemFontId();
+  const int x = modal.x;
+  const int y = modal.contentY;
+  const int width = modal.width;
+  const char* labels[] = {"List", "Grid", "Thumbnails", "Thumbnail list"};
+  for (int index = 0; index < 4; ++index) {
+    const int rowY = y + index * rowHeight;
+    const bool selected = static_cast<int>(view) == index;
+    const int iconSize = 40;
+    const uint8_t* icon = index == 0 ? LibraryViewList
+                                     : (index == 1 ? LibraryViewGrid
+                                                   : (index == 2 ? LibraryViewThumb : LibraryViewList));
+    renderer.bitmap.icon(icon,
+                         x + 18, rowY + (rowHeight - iconSize) / 2, iconSize, iconSize);
+    const int textY = rowY + (rowHeight - renderer.text.getLineHeight(font)) / 2;
+    renderer.text.render(font, x + 18 + iconSize + 18, textY, labels[index], true, EpdFontFamily::REGULAR);
+    const int radioX = x + width - 32;
+    const int radioY = rowY + rowHeight / 2;
+    renderer.circle.render(radioX, radioY, 10, true);
+    renderer.circle.render(radioX, radioY, 7, false);
+    if (selected) renderer.circle.render(radioX, radioY, 4, true);
+    if (index < 3) {
+      renderer.line.render(x + 12, rowY + rowHeight, x + width - 12, rowY + rowHeight, true,
+                           LineRender::Style::Dotted);
+    }
+  }
+}
+
+void Library::applyView(const int index) {
+  if (index < 0 || index >= 4) return;
+  view = static_cast<View>(index);
+  switch (view) {
+    case View::List:
+      SETTINGS.libraryMode = SystemSetting::LIBRARY_LIST;
+      break;
+    case View::Grid:
+      SETTINGS.libraryMode = SystemSetting::LIBRARY_GRID;
+      break;
+    case View::Thumb:
+      SETTINGS.libraryMode = SystemSetting::LIBRARY_THUMBNAIL;
+      break;
+    case View::ListThumb:
+      SETTINGS.libraryMode = SystemSetting::LIBRARY_LIST_THUMBNAIL;
+      break;
+  }
+  SETTINGS.saveToFile();
+  load();
   updateRequired = true;
 }
 
@@ -1812,20 +2017,14 @@ void Library::clearFilters() {
 
 void Library::filterPopup() const {
   const int rowCount = filterRowCount();
-  const FilterDrawerLayout drawer = filterDrawerLayout(renderer, buttonX(2) + buttonSize, rowCount);
+  const FilterDrawerLayout drawer = filterDrawerLayout(renderer, rowCount);
   const int maxScroll = std::max(0, rowCount - drawer.visibleRows);
   const int scroll = std::clamp(filterScrollOffset_, 0, maxScroll);
   constexpr int horizontalPadding = 24;
   const int font = systemFontId();
 
-  renderer.rectangle.fill(drawer.x, drawer.y, drawer.width, drawer.height, false);
   const int lineHeight = renderer.text.getLineHeight(font);
-  renderer.text.render(font, drawer.x + kPopupHeadingTopLeftMargin, drawer.y + kPopupHeadingTopLeftMargin,
-                       filterCategoryLabel(filterCategory_), true, EpdFontFamily::BOLD);
-  const int listY = drawer.y + drawer.headerHeight;
-  renderer.line.render(drawer.x + kPopupHeadingTopLeftMargin, listY - 1,
-                       drawer.x + drawer.width - kPopupHeadingTopLeftMargin, listY - 1, true,
-                       LineRender::Style::Dotted);
+  const int listY = drawer.y;
   static constexpr const char* kCategories[kFilterCategoryCount] = {
       "Title", "Type", "Author", "Series", "Tags"};
   const int metadataIndex = metadataFilterIndex(filterCategory_);
@@ -1889,7 +2088,8 @@ void Library::filterPopup() const {
         renderer.text.render(font, arrowX - 16 - valueWidth, textY, value.c_str(), true,
                              EpdFontFamily::REGULAR);
       }
-      renderer.bitmap.icon(LibraryFilterRight, arrowX, arrowY, caretSize, caretSize);
+      renderer.bitmap.iconScaled(LibraryFilterRight, arrowX, arrowY, kCaretSourceWidth, kCaretSourceHeight,
+                                 caretSize, caretSize);
     } else if (label) {
       const ToggleBounds toggle = Toggle::bounds(drawer.x + drawer.width - horizontalPadding, rowY,
                                                  drawer.rowHeight);
@@ -1916,32 +2116,32 @@ void Library::filterPopup() const {
   }
 
   renderFilterScrollbar(renderer, drawer, rowCount, drawer.visibleRows, scroll);
-  const int doneY = drawer.y + drawer.headerHeight + drawer.visibleRows * drawer.rowHeight;
+  const int doneY = drawer.y + drawer.height - drawer.doneHeight;
   renderer.line.render(drawer.x, doneY, drawer.x + drawer.width, doneY, true);
   const FilterFooterLayout footer = filterFooterLayout(renderer, drawer,
                                                        filterCategory_ != FilterCategory::Categories, font);
   if (footer.hasBack) {
     const int caretX = footer.back.x + (footer.back.width - footer.caretSize) / 2;
     const int caretY = footer.back.y + (footer.back.height - footer.caretSize) / 2;
-    renderer.bitmap.icon(LibraryFilterLeft, caretX, caretY, footer.caretSize, footer.caretSize);
+    renderer.bitmap.iconScaled(LibraryFilterLeft, caretX, caretY, kCaretSourceWidth, kCaretSourceHeight,
+                               footer.caretSize, footer.caretSize);
   }
   Button::render(renderer, footer.clear, "Clear", false, font);
   Button::render(renderer, footer.done, "Done", true, font);
-  renderer.rectangle.render(drawer.x, drawer.y, drawer.width, drawer.height, true);
 }
 
 void Library::handleFilterTap(const int tapX, const int tapY) {
   const int rowCount = filterRowCount();
-  const FilterDrawerLayout drawer = filterDrawerLayout(renderer, buttonX(2) + buttonSize, rowCount);
+  const FilterDrawerLayout drawer = filterDrawerLayout(renderer, rowCount);
 
   if (tapY < drawer.y || tapY >= drawer.y + drawer.height || tapX < drawer.x || tapX >= drawer.x + drawer.width) {
-    filterOpen = false;
+    controlModalOpen = false;
     updateRequired = true;
     return;
   }
 
   const int listY = drawer.y + drawer.headerHeight;
-  const int doneY = listY + drawer.visibleRows * drawer.rowHeight;
+  const int doneY = drawer.y + drawer.height - drawer.doneHeight;
   if (tapY >= doneY) {
     const FilterFooterLayout footer = filterFooterLayout(
         renderer, drawer, filterCategory_ != FilterCategory::Categories, systemFontId());
@@ -1950,7 +2150,7 @@ void Library::handleFilterTap(const int tapX, const int tapY) {
     } else if (tapX >= footer.clear.x && tapX < footer.clear.x + footer.clear.width) {
       clearFilters();
     } else if (tapX >= footer.done.x && tapX < footer.done.x + footer.done.width) {
-      filterOpen = false;
+      controlModalOpen = false;
       updateRequired = true;
     }
     return;

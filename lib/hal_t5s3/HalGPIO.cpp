@@ -70,7 +70,7 @@ void HalGPIO::serviceTouchGestures() {
   }
 
   float sx = 0.0f, sy = 0.0f, ex = 0.0f, ey = 0.0f;
-  if (inputMgr.wasSwipe(sx, sy, ex, ey)) {
+  if (touchGesture.wasSwipe(sx, sy, ex, ey)) {
     touchSwipeStartNx = sx;
     touchSwipeStartNy = sy;
     const float dx = ex - sx;
@@ -89,6 +89,8 @@ void HalGPIO::serviceTouchGestures() {
 
 void HalGPIO::update() {
   inputMgr.update();
+  const auto& touch = BoardConfig::ACTIVE.touch;
+  touchGesture.update(inputMgr, touch.rawMaxX - touch.rawMinX, touch.rawMaxY - touch.rawMinY);
   float pressedNx = 0.0f;
   float pressedNy = 0.0f;
   if (inputMgr.wasTouchPressedAt(pressedNx, pressedNy)) {
@@ -101,7 +103,7 @@ void HalGPIO::update() {
   if (inputMgr.wasTouchReleased()) {
     float tapNx = 0.0f;
     float tapNy = 0.0f;
-    const bool isTap = inputMgr.wasTouchTap(tapNx, tapNy);
+    const bool isTap = touchGesture.wasTap(tapNx, tapNy);
     INX_SERIAL.printf("[T5S3][TOUCH] UP tap=%d native=(%.3f,%.3f) held=%lu\n", isTap ? 1 : 0, tapNx, tapNy,
                       inputMgr.lastTouchHeldMs());
   }
@@ -120,7 +122,7 @@ bool HalGPIO::wasTouchActivity() const { return inputMgr.wasTouchActivity(); }
 
 bool HalGPIO::wasTouchTap(float& nx, float& ny) const {
   if (suppressTouchUntilRelease) return false;
-  const bool tapped = inputMgr.wasTouchTap(nx, ny);
+  const bool tapped = touchGesture.wasTap(nx, ny);
   if (tapped) {
     INX_SERIAL.printf("[T5S3] wasTouchTap() -> nx=%.3f ny=%.3f\n", nx, ny);
   }
@@ -156,6 +158,8 @@ unsigned long HalGPIO::getHeldTime() const { return inputMgr.getHeldTime(); }
 
 void HalGPIO::ignoreCurrentTouchUntilRelease() {
   if (!inputMgr.isTouchPressed()) return;
+  inputMgr.suppressTouchContact();
+  touchGesture = {};
   suppressTouchUntilRelease = true;
   touchSwipeDirection = TouchSwipe::None;
   touchPressedEvents = 0;
@@ -215,10 +219,13 @@ bool HalGPIO::isCharging() const {
 }
 
 bool HalGPIO::isUsbConnected() const {
-  if (BoardConfig::ACTIVE.usbDetect < 0) {
-    return false;
+  if (BoardConfig::ACTIVE.usbDetect >= 0) {
+    return digitalRead(BoardConfig::ACTIVE.usbDetect) == HIGH;
   }
-  return digitalRead(BoardConfig::ACTIVE.usbDetect) == HIGH;
+  static const BatteryMonitor battery;
+  bool known = false;
+  const bool present = battery.isExternalPowerPresent(&known);
+  return known ? present : battery.isCharging();
 }
 
 bool HalGPIO::readDateTime(DateTime& outDateTime) const {

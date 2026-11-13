@@ -1,4 +1,5 @@
 #include "QuickActionsSettingsActivity.h"
+#include "SettingsListLayout.h"
 #include "system/UiLayout.h"
 
 #include <GfxRenderer.h>
@@ -17,7 +18,7 @@
 #include "system/MappedInputManager.h"
 
 namespace {
-constexpr int kRowH = UiLayout::LIST_ITEM_HEIGHT;
+constexpr int kRowH = SettingsListLayout::kRowHeight;
 constexpr int kSideMargin = 20;
 constexpr int kBottomMargin = 44;
 constexpr int kScrollCaretSize = 40;
@@ -96,7 +97,9 @@ void QuickActionsSettingsActivity::loop() {
   const std::vector<uint8_t> actions = eligibleActions();
   const int total = static_cast<int>(actions.size());
   const int bodyTop = pageBodyTop();
-  const int visibleRows = std::max(1, (renderer.getScreenHeight() - kBottomMargin - bodyTop) / kRowH);
+  // The final row still fits above the bottom controls; keep one additional
+  // quick action visible, matching the other settings lists.
+  const int visibleRows = std::max(1, (renderer.getScreenHeight() - kBottomMargin - bodyTop) / kRowH + 1);
   const int maxScroll = std::max(0, total - visibleRows);
 
   if (mappedInput.hasTouch()) {
@@ -186,7 +189,8 @@ void QuickActionsSettingsActivity::render() {
   }
 
   const int listBottom = screenH - kBottomMargin;
-  const int visibleRows = std::max(1, (listBottom - bodyTop) / kRowH);
+  // Keep one additional quick action visible in the available list area.
+  const int visibleRows = std::max(1, (listBottom - bodyTop) / kRowH + 1);
   if (selectedIndex_ < scrollOffset_) {
     scrollOffset_ = selectedIndex_;
   } else if (selectedIndex_ >= scrollOffset_ + visibleRows) {
@@ -206,7 +210,9 @@ void QuickActionsSettingsActivity::render() {
                          EpdFontFamily::REGULAR);
     ReaderFontSettingsDraw::drawToggleCheckbox(renderer, screenW - kValueColumnRight, y, kRowH, false, checked);
     if (i + 1 < endIndex) {
-      renderer.line.render(0, y + kRowH - 1, screenW, y + kRowH - 1, true, LineRender::Style::Dotted);
+      renderer.line.render(SettingsListLayout::kDividerInset, y + kRowH - 1,
+                           screenW - SettingsListLayout::kDividerInset, y + kRowH - 1, true,
+                           LineRender::Style::Dotted);
     }
   }
 

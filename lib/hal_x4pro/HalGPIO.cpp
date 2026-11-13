@@ -1,6 +1,6 @@
 /**
  * @file HalGPIO.cpp
- * @brief Sticky variant of HalGPIO — delegates to freeink-sdk.
+ * @brief X4 Pro variant of HalGPIO — delegates to freeink-sdk.
  */
 
 #include <BatteryMonitor.h>
@@ -13,6 +13,8 @@
 #include <esp_system.h>
 
 #include <cmath>
+
+#include "state/SystemSetting.h"
 
 namespace {
 uint8_t weekdayFromCalendarDate(const uint16_t year, const uint8_t month, const uint8_t day) {
@@ -55,17 +57,27 @@ void HalGPIO::serviceTouchGestures() {
     return;
   }
 
-  if (inputMgr.wasHomeKeyPressed()) {
-    touchPressedEvents |= (1 << BTN_BACK);
-  }
-  if (inputMgr.wasHomeKeyTapped()) {
-    touchReleasedEvents |= (1 << BTN_BACK);
+  if (SETTINGS.x4proHomeButton == SystemSetting::X4PRO_HOME_BUTTON_BACK) {
+    if (inputMgr.wasHomeKeyPressed()) {
+      touchPressedEvents |= (1 << BTN_BACK);
+    }
+    if (inputMgr.wasHomeKeyTapped()) {
+      touchReleasedEvents |= (1 << BTN_BACK);
+    }
   }
 
+  // Publish the swipe only on the touch-controller release edge. If it is
+  // latched while the finger is still down, a page rendered during the drag
+  // can consume the release as a second tap.
+  if (!inputMgr.hasTouch() || !inputMgr.wasTouchReleased()) return;
+
   float sx = 0.0f, sy = 0.0f, ex = 0.0f, ey = 0.0f;
-  if (inputMgr.wasSwipe(sx, sy, ex, ey)) {
+  if (touchGesture.wasSwipe(sx, sy, ex, ey)) {
     touchSwipeStartNx = sx;
     touchSwipeStartNy = sy;
+    suppressPostSwipeTap = true;
+    postSwipeDuplicateBlockedUntilMs = 0;
+    swipeDetectedAtMs = millis();
     const float dx = ex - sx;
     const float dy = ey - sy;
     if (std::fabs(dy) > std::fabs(dx)) {
@@ -81,7 +93,19 @@ void HalGPIO::serviceTouchGestures() {
 }
 
 void HalGPIO::update() {
+  if (touchSwipeLatchedDuringDisplay) {
+    // Preserve the swipe detected by the BUSY-wait poll for the first normal
+    // input cycle after the waveform completes.
+    touchSwipeLatchedDuringDisplay = false;
+    return;
+  }
+  // Start a fresh query window. The previous release may have been inspected
+  // by more than one activity, but all callers in that previous frame must
+  // see the same suppressed result.
+  postSwipeTapBlockedThisFrame = false;
   inputMgr.update();
+  const auto& touch = BoardConfig::ACTIVE.touch;
+  touchGesture.update(inputMgr, touch.rawMaxX - touch.rawMinX, touch.rawMaxY - touch.rawMinY);
   float pressedNx = 0.0f;
   float pressedNy = 0.0f;
   if (inputMgr.wasTouchPressedAt(pressedNx, pressedNy)) {
@@ -94,11 +118,17 @@ void HalGPIO::update() {
   if (inputMgr.wasTouchReleased()) {
     float tapNx = 0.0f;
     float tapNy = 0.0f;
-    const bool isTap = inputMgr.wasTouchTap(tapNx, tapNy);
+    const bool isTap = touchGesture.wasTap(tapNx, tapNy);
     INX_SERIAL.printf("[X4PRO][TOUCH] UP tap=%d native=(%.3f,%.3f) held=%lu\n", isTap ? 1 : 0, tapNx, tapNy,
                    inputMgr.lastTouchHeldMs());
   }
   serviceTouchGestures();
+}
+
+void HalGPIO::updateDuringDisplay() {
+  if (touchSwipeLatchedDuringDisplay) return;
+  update();
+  touchSwipeLatchedDuringDisplay = touchSwipeDirection != TouchSwipe::None;
 }
 
 bool HalGPIO::hasTouch() const { return inputMgr.hasTouch(); }
@@ -111,9 +141,49 @@ bool HalGPIO::isTouchHeldAt(float& nx, float& ny) const { return inputMgr.isTouc
 
 bool HalGPIO::wasTouchActivity() const { return inputMgr.wasTouchActivity(); }
 
+bool HalGPIO::wasHomeKeyTapped() const { return inputMgr.wasHomeKeyTapped(); }
+
 bool HalGPIO::wasTouchTap(float& nx, float& ny) const {
-  if (suppressTouchUntilRelease) return false;
-  const bool tapped = inputMgr.wasTouchTap(nx, ny);
+  if (suppressTouchUntilRelease || inputMgr.isTouchPressed() || !inputMgr.wasTouchReleased()) return false;
+  if (postSwipeTapBlockedThisFrame) return false;
+  const bool tapped = touchGesture.wasTap(nx, ny);
+  if (tapped) {
+    // X4 Pro can spend more than a second in the panel BUSY waveform after a
+    // swipe. The controller may then report one short duplicate contact,
+    // followed by a second release from the same stale contact. Suppress the
+    // first one during the long waveform window, but keep the follow-up guard
+    // short so normal taps remain responsive.
+    constexpr unsigned long kPostSwipeTapWindowMs = 3000;
+    constexpr unsigned long kPostSwipeTapMaxHoldMs = 300;
+    constexpr unsigned long kPostSwipeDuplicateWindowMs = 500;
+    constexpr float kPostSwipeSamePointTolerance = 0.05f;
+    const unsigned long now = millis();
+    const unsigned long elapsed = now - swipeDetectedAtMs;
+    const unsigned long heldMs = inputMgr.lastTouchHeldMs();
+    const bool shortTap = heldMs <= kPostSwipeTapMaxHoldMs;
+    const bool sameSwipeStart = std::fabs(nx - touchSwipeStartNx) <= kPostSwipeSamePointTolerance &&
+                                std::fabs(ny - touchSwipeStartNy) <= kPostSwipeSamePointTolerance;
+    if (shortTap) {
+      // A genuine follow-up tap may be anywhere on the page (for example on
+      // a sidebar item). Only suppress a short contact that returns to the
+      // swipe's original point, which is how the X4 Pro's stale swipe tail
+      // presents itself.
+      if (suppressPostSwipeTap && elapsed <= kPostSwipeTapWindowMs && sameSwipeStart) {
+        suppressPostSwipeTap = false;
+        postSwipeDuplicateBlockedUntilMs = now + kPostSwipeDuplicateWindowMs;
+        postSwipeTapBlockedThisFrame = true;
+        INX_SERIAL.printf("[X4PRO] suppressed post-swipe tap nx=%.3f ny=%.3f held=%lums elapsed=%lums\n", nx, ny,
+                          heldMs, elapsed);
+        return false;
+      }
+      if (now < postSwipeDuplicateBlockedUntilMs) {
+        postSwipeTapBlockedThisFrame = true;
+        INX_SERIAL.printf("[X4PRO] suppressed duplicate tap nx=%.3f ny=%.3f held=%lums\n", nx, ny, heldMs);
+        return false;
+      }
+    }
+    suppressPostSwipeTap = false;
+  }
   if (tapped) {
     INX_SERIAL.printf("[X4PRO] wasTouchTap() -> nx=%.3f ny=%.3f\n", nx, ny);
   }
@@ -150,6 +220,8 @@ unsigned long HalGPIO::getHeldTime() const { return inputMgr.getHeldTime(); }
 
 void HalGPIO::ignoreCurrentTouchUntilRelease() {
   if (!inputMgr.isTouchPressed()) return;
+  inputMgr.suppressTouchContact();
+  touchGesture = {};
   suppressTouchUntilRelease = true;
   touchSwipeDirection = TouchSwipe::None;
   touchPressedEvents = 0;
@@ -158,6 +230,8 @@ void HalGPIO::ignoreCurrentTouchUntilRelease() {
 
 void HalGPIO::discardTouchSwipe() {
   touchSwipeDirection = TouchSwipe::None;
+  // Keep the post-swipe tap guard. Activities call this immediately after
+  // consuming the swipe, while duplicate contacts may still be pending.
   touchPressedEvents = 0;
   touchReleasedEvents = 0;
 }
@@ -209,10 +283,13 @@ bool HalGPIO::isCharging() const {
 }
 
 bool HalGPIO::isUsbConnected() const {
-  if (BoardConfig::ACTIVE.usbDetect < 0) {
-    return false;
+  if (BoardConfig::ACTIVE.usbDetect >= 0) {
+    return digitalRead(BoardConfig::ACTIVE.usbDetect) == HIGH;
   }
-  return digitalRead(BoardConfig::ACTIVE.usbDetect) == HIGH;
+  static const BatteryMonitor battery;
+  bool known = false;
+  const bool present = battery.isExternalPowerPresent(&known);
+  return known ? present : battery.isCharging();
 }
 
 bool HalGPIO::readDateTime(DateTime& outDateTime) const {

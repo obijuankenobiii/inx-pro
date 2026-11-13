@@ -1,27 +1,30 @@
 #include "LightDrawer.h"
 
-#if INX_HAS_FRONTLIGHT
+#if INX_HAS_FRONTLIGHT || FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
 
 #include <Arduino.h>
 #include <GfxRenderer.h>
 
 #include <algorithm>
 
-#include "images/DarkMode.h"
+#include "Menu.h"
 #include "images/LibraryFilterLeft.h"
 #include "images/LibraryFilterRight.h"
 #include "images/LightOff.h"
 #include "images/LightOn.h"
+#include "images/Moon.h"
+#include "images/Sun.h"
 #include "system/Fonts.h"
 #include "system/Frontlight.h"
 #include "system/FrontlightPreferences.h"
+#include "system/ScreenComponents.h"
 #include "state/SystemSetting.h"
 
 namespace navigation {
 namespace {
-constexpr int lightButtonSize = 40;
-constexpr int lightButtonY = 30;
-constexpr int lightButtonRightMargin = 20;
+constexpr int lightButtonSize = Menu::iconSize;
+constexpr int lightButtonY = Menu::topPadding;
+constexpr int lightButtonRightMargin = Menu::leftMargin;
 constexpr int lightButtonGap = 10;
 constexpr int lightCaretSize = 30;
 constexpr int lightCaretGap = 8;
@@ -31,15 +34,18 @@ constexpr int lightTrackX = 56;
 constexpr int lightTrackWidth = 368;
 constexpr int lightKnobRadius = 15;
 constexpr int lightKnobBorder = 2;
-constexpr int lightBrightnessLabelY = 120;
+constexpr int lightBrightnessLabelY = 110;
 constexpr int lightBrightnessY = 176;
-constexpr int lightTemperatureLabelY = 220;
-constexpr int lightTemperatureY = 266;
+constexpr int lightTemperatureLabelY = 230;
+constexpr int lightTemperatureY = 296;
+constexpr int lightIndicatorWidth = 96;
+constexpr int lightIndicatorHeight = 6;
+constexpr int lightIndicatorBottomMargin = 20;
 
 // Single-channel boards (the T5 S3) have no colour temperature to set, so the drawer ends
 // below the brightness slider, with the same bottom gap.
 bool hasTemperatureSlider() { return frontlight.hasColorTemperature(); }
-int lightDrawerHeight() { return hasTemperatureSlider() ? 330 : 240; }
+int lightDrawerHeight() { return hasTemperatureSlider() ? 380 : 240; }
 
 int lightValueFromTrack(const int tapX, const bool brightness) {
   const int clamped = std::max(lightTrackX, std::min(lightTrackX + lightTrackWidth, tapX));
@@ -78,6 +84,17 @@ void drawLightTrack(const GfxRenderer& renderer, const int y, const int value) {
   drawLightTrackBody(renderer, y, value);
 }
 
+void drawLightDrawerIndicator(const GfxRenderer& renderer, const int width) {
+  const int x = (width - lightIndicatorWidth) / 2;
+  const int y = lightDrawerHeight() - lightIndicatorBottomMargin - lightIndicatorHeight;
+  const int radius = lightIndicatorHeight / 2;
+  const int middleWidth = lightIndicatorWidth - 2 * radius;
+  renderer.rectangle.fill(x + radius, y, middleWidth, lightIndicatorHeight,
+                          static_cast<int>(GfxRenderer::FillTone::Ink), true);
+  renderer.circle.render(x + radius, y + radius, radius, true);
+  renderer.circle.render(x + lightIndicatorWidth - radius - 1, y + radius, radius, true);
+}
+
 /**
  * Band holding both carets, the whole track, and the knob at any position along it. It is
  * blanked before the drag's frame is stored, so the stored frame carries every pixel of
@@ -114,6 +131,11 @@ void saveLightPreferences() {
 }
 }
 
+LightDrawer& globalLightDrawer(GfxRenderer& renderer) {
+  static LightDrawer drawer(renderer);
+  return drawer;
+}
+
 LightDrawer::LightDrawer(GfxRenderer& renderer) : drawerRenderer(renderer) {}
 
 void LightDrawer::refreshAfterSliderChange() const {
@@ -124,28 +146,35 @@ void LightDrawer::refreshAfterSliderChange() const {
 }
 
 /**
- * Stores the whole frame for the duration of a slider drag.
- *
- * The dragged row is blanked back to paper and carets first, so what gets stored is the
- * entire screen minus the throbber: drawer chrome, both labels, the other slider, and the
- * page underneath. Each drag step then restores that frame and stamps the knob on top,
- * which is what keeps a live drag off the full render path.
+ * Stores the page frame for the duration of the drawer.
  */
-void LightDrawer::storeSliderFrame() const {
-  sliderStripTrackY = sliderControl == 0 ? lightBrightnessY : lightTemperatureY;
-  // Order matters. This panel is dual-buffer, so after the drawer's own refresh the write
-  // buffer holds a stale frame and syncWriteBufferFromActive() has to run FIRST to pull
-  // the displayed frame in. Running it after the blank would copy the on-screen knob right
-  // back over the cleared row and store it.
+void LightDrawer::storeDrawerFrame() const {
+  // The page may have been displayed asynchronously. Pull the displayed frame into the
+  // writable buffer before taking the snapshot used by the drawer-only render.
   drawerRenderer.syncWriteBufferFromActive();
-  clearLightSliderRow(drawerRenderer, sliderStripTrackY);
-  sliderFrameStored = drawerRenderer.storeBwBuffer();
+  drawerRenderer.freeBwBufferChunks();
+  drawerFrameStored = drawerRenderer.storeBwBuffer();
+  frameRestorePending = false;
 }
 
-void LightDrawer::releaseSliderFrame() const {
-  if (!sliderFrameStored) return;
+void LightDrawer::releaseDrawerFrame() const {
+  if (!drawerFrameStored) return;
   drawerRenderer.freeBwBufferChunks();
-  sliderFrameStored = false;
+  drawerFrameStored = false;
+}
+
+bool LightDrawer::restoreStoredFrameForRender() const {
+  if (!drawerFrameStored || (!open && !frameRestorePending)) return false;
+  if (!drawerRenderer.copyStoredBwToFramebuffer()) {
+    releaseDrawerFrame();
+    frameRestorePending = false;
+    return false;
+  }
+  if (!open) {
+    frameRestorePending = false;
+    releaseDrawerFrame();
+  }
+  return true;
 }
 
 /**
@@ -173,11 +202,9 @@ void LightDrawer::renderSliderRowLive() const {
   const int trackY = brightness ? lightBrightnessY : lightTemperatureY;
   const int value = brightness ? frontlight.brightness() : frontlight.colorTemperature();
 
-  if (!sliderFrameStored || sliderStripTrackY != trackY || !drawerRenderer.copyStoredBwToFramebuffer()) {
-    // No stored frame (allocation failed): pull the displayed frame in instead, or the
-    // dual-buffer swap would leave the knob being drawn onto a stale frame.
-    drawerRenderer.syncWriteBufferFromActive();
-  }
+  // The stored frame is the page beneath the drawer, not the drawer itself. Pull the
+  // currently displayed drawer frame before replacing only this slider row.
+  drawerRenderer.syncWriteBufferFromActive();
 
   // Rebuild the row rather than trusting whatever the restore brought back: paper over any
   // knob still in the frame, carets and both track bars behind where it sat, then the knob
@@ -192,35 +219,36 @@ void LightDrawer::render() const {
   if (!open || !frontlight.present()) return;
 
   const int width = drawerRenderer.getScreenWidth();
-  const int screenHeight = drawerRenderer.getScreenHeight();
-
+  ScreenComponents::drawWhiteOverlay(drawerRenderer, lightDrawerHeight());
   drawerRenderer.rectangle.fill(0, 0, width, lightDrawerHeight(),
                                 static_cast<int>(GfxRenderer::FillTone::Paper));
   drawerRenderer.rectangle.render(0, 0, width, lightDrawerHeight(), true);
-  drawerRenderer.text.render(MONTSERRAT_16_FONT_ID, 20, 30, "Light", true, EpdFontFamily::BOLD);
+  const int titleFont = systemFontIdForPointSize(16);
+  const int titleY = Menu::topPadding + (Menu::iconSize - drawerRenderer.text.getLineHeight(titleFont)) / 2;
+  drawerRenderer.text.render(titleFont, Menu::leftMargin, titleY, "Light", true, EpdFontFamily::BOLD);
 
   const bool on = frontlight.brightness() > 0;
   const int lightButtonX = width - lightButtonRightMargin - lightButtonSize;
   const int darkModeButtonX = lightButtonX - lightButtonGap - lightButtonSize;
-  drawerRenderer.bitmap.icon(DarkMode, darkModeButtonX, lightButtonY, lightButtonSize, lightButtonSize,
-                             drawerRenderer.isDarkMode() ? BitmapRender::Orientation::Rotate180
-                                                         : BitmapRender::Orientation::None);
+  const uint8_t* modeIcon = drawerRenderer.isDarkMode() ? Sun : Moon;
+  drawerRenderer.bitmap.icon(modeIcon, darkModeButtonX, lightButtonY, lightButtonSize, lightButtonSize);
   drawerRenderer.bitmap.icon(on ? LightOn : LightOff, lightButtonX, lightButtonY, lightButtonSize,
                              lightButtonSize);
 
-  drawerRenderer.text.render(MONTSERRAT_10_FONT_ID, 20, lightBrightnessLabelY, "Brightness", true);
+  const int labelFont = systemFontId();
+  drawerRenderer.text.render(labelFont, 20, lightBrightnessLabelY, "Brightness", true);
   drawLightTrack(drawerRenderer, lightBrightnessY, frontlight.brightness());
   if (!hasTemperatureSlider()) return;
-  drawerRenderer.text.render(MONTSERRAT_10_FONT_ID, 20, lightTemperatureLabelY, "Cool", true);
-  const int warmWidth = drawerRenderer.text.getWidth(MONTSERRAT_10_FONT_ID, "Warm");
-  drawerRenderer.text.render(MONTSERRAT_10_FONT_ID, width - 40 - warmWidth, lightTemperatureLabelY, "Warm",
-                             true);
+  drawerRenderer.text.render(labelFont, 20, lightTemperatureLabelY, "Cool", true);
+  const int warmWidth = drawerRenderer.text.getWidth(labelFont, "Warm");
+  drawerRenderer.text.render(labelFont, width - 40 - warmWidth, lightTemperatureLabelY, "Warm", true);
   drawLightTrack(drawerRenderer, lightTemperatureY, frontlight.colorTemperature());
+  drawLightDrawerIndicator(drawerRenderer, width);
 }
 
 constexpr float kOpenFromTopMaxNy = 0.15f;
 
-LightDrawer::Action LightDrawer::handleInput(MappedInputManager& input) const {
+LightDrawer::Action LightDrawer::handleInput(MappedInputManager& input, const bool allowOpen) const {
   if (open && sliderDragging) {
     if (input.isTouchPressed()) {
       float nx = 0.0f;
@@ -239,15 +267,18 @@ LightDrawer::Action LightDrawer::handleInput(MappedInputManager& input) const {
           sliderRepaintPending = true;
         }
       }
-      // Retry every pass, not just on a change: a move made while the panel was busy still
-      // owes a repaint once it goes idle.
+      // Match the working in-book Picco drawer: update the frontlight hardware
+      // during the drag, but do not start an e-paper refresh for every sample.
+      // The display is refreshed once after release. X4 Pro/Murphy retain their
+      // existing live slider repaint behavior.
+#if !FREEINK_DEVICE_PICCO
       if (sliderRepaintPending) renderSliderRowLive();
+#endif
       return Action::Adjusted;
     }
 
     sliderDragging = false;
     sliderRepaintPending = false;
-    releaseSliderFrame();
     if (sliderDragChanged) {
       saveLightPreferences();
       refreshAfterSliderChange();
@@ -277,7 +308,8 @@ LightDrawer::Action LightDrawer::handleInput(MappedInputManager& input) const {
         sliderControl = inBrightnessTrack ? 0 : 1;
         sliderDragging = true;
         sliderDragChanged = false;
-        storeSliderFrame();
+        // The drawer frame was captured when the drawer opened; keep it intact so
+        // closing the drawer can restore the page without repainting its content.
         const int value = lightValueFromTrack(x, sliderControl == 0);
         const int current = sliderControl == 0 ? frontlight.brightness() : frontlight.colorTemperature();
         if (value != current) {
@@ -288,9 +320,11 @@ LightDrawer::Action LightDrawer::handleInput(MappedInputManager& input) const {
           }
           sliderDragChanged = true;
         }
-        // Always repaint: storing the frame cleared the row, so the knob has to be put
-        // back even when the press landed on the value the slider already held.
+        // Picco follows the in-book drawer and waits until release for the
+        // single e-paper refresh. Other devices keep their live knob repaint.
+#if !FREEINK_DEVICE_PICCO
         renderSliderRowLive();
+#endif
         return Action::Adjusted;
       }
     }
@@ -301,20 +335,23 @@ LightDrawer::Action LightDrawer::handleInput(MappedInputManager& input) const {
   }
   if (open && input.wasTouchSwipeUpForRenderer(drawerRenderer)) {
     open = false;
+    frameRestorePending = true;
     return Action::Closed;
   }
-  if (!open) {
+  if (!open && allowOpen) {
     float startNx = 0.0f;
     float startNy = 0.0f;
     if (input.wasTouchSwipeDownInScreen(drawerRenderer, startNx, startNy)) {
       const bool fromTop = startNy <= kOpenFromTopMaxNy;
       INX_SERIAL.printf("[LIGHTDRAWER] swipe-down start nx=%.3f ny=%.3f fromTop=%d\n", startNx, startNy, fromTop);
       if (fromTop) {
+        storeDrawerFrame();
         open = true;
         return Action::Opened;
       }
     } else if (input.wasTouchSwipeDownForRenderer(drawerRenderer)) {
       INX_SERIAL.printf("[LIGHTDRAWER] swipe-down with NO start position available\n");
+      storeDrawerFrame();
       open = true;
       return Action::Opened;
     }
@@ -327,12 +364,26 @@ LightDrawer::Action LightDrawer::handleTap(const int tapX, const int tapY) const
   const int darkModeButtonX = lightButtonX - lightButtonGap - lightButtonSize;
   if (tapX < 0 || tapX >= drawerRenderer.getScreenWidth() || tapY < 0 || tapY >= lightDrawerHeight()) {
     open = false;
+    frameRestorePending = true;
     return Action::Closed;
   }
 
   if (tapX >= darkModeButtonX && tapX < darkModeButtonX + lightButtonSize && tapY >= lightButtonY &&
       tapY < lightButtonY + lightButtonSize) {
+    // The saved frame is the page that will be restored when the drawer closes.
+    // Rebuild it in the new mode instead of discarding it; otherwise the drawer
+    // can get stuck over the old page frame after a dark-mode toggle.
     drawerRenderer.setDarkMode(!drawerRenderer.isDarkMode());
+    if (drawerFrameStored) {
+      if (drawerRenderer.copyStoredBwToFramebuffer()) {
+        drawerRenderer.invertScreen();
+        drawerRenderer.freeBwBufferChunks();
+        drawerFrameStored = drawerRenderer.storeBwBuffer();
+      } else {
+        releaseDrawerFrame();
+        frameRestorePending = false;
+      }
+    }
     SETTINGS.darkMode = drawerRenderer.isDarkMode() ? 1 : 0;
     SETTINGS.saveToFile();
     return Action::Opened;
@@ -340,10 +391,7 @@ LightDrawer::Action LightDrawer::handleTap(const int tapX, const int tapY) const
 
   if (tapX >= lightButtonX && tapX < lightButtonX + lightButtonSize && tapY >= lightButtonY &&
       tapY < lightButtonY + lightButtonSize) {
-    if (frontlight.brightness() > 0)
-      frontlight.off();
-    else
-      frontlight.on();
+    frontlight_ui::toggle();
     saveLightPreferences();
     return Action::Opened;
   }

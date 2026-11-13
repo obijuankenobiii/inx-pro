@@ -1,11 +1,9 @@
 #include "Description.h"
 
-#include <Epub/BookMetadataCache.h>
 #include <GfxRenderer.h>
 
 #include <algorithm>
 #include <cctype>
-#include <functional>
 #include <utility>
 
 #include "state/RecentBooks.h"
@@ -123,11 +121,6 @@ std::vector<DescriptionWidgetLine::Run> parseDescription(const std::string& raw)
   return runs;
 }
 
-std::string metadataCachePath(const RecentBook& book) {
-  if (!book.cachePath.empty()) return book.cachePath;
-  return "/.metadata/epub/" + std::to_string(std::hash<std::string>{}(book.path));
-}
-
 std::string bookTitle(const RecentBook& book) {
   if (!book.title.empty()) return book.title;
   const size_t slash = book.path.find_last_of('/');
@@ -139,7 +132,7 @@ std::string bookTitle(const RecentBook& book) {
 
 void renderProgress(GfxRenderer& renderer, const int x, const int y, const int width, const int percentage) {
   constexpr int barHeight = 5;
-  constexpr int percentageFont = MONTSERRAT_8_FONT_ID;
+  const int percentageFont = systemFontIdForPointSize(8);
   constexpr int gap = 8;
   const int barWidth = std::max(1, width / 2);
   const std::string percentageText = std::to_string(percentage) + "%";
@@ -153,11 +146,10 @@ void renderProgress(GfxRenderer& renderer, const int x, const int y, const int w
 }
 
 std::vector<DescriptionWidgetLine> wrapDescription(const GfxRenderer& renderer, const std::string& raw,
-                                                    const int width) {
+                                                    const int width, const int font) {
   std::vector<DescriptionWidgetLine> lines;
   if (raw.empty()) return lines;
 
-  constexpr int font = MONTSERRAT_12_FONT_ID;
   const int spaceWidth = renderer.text.getSpaceWidth(font);
   const std::vector<DescriptionWidgetLine::Run> runs = parseDescription(raw);
   DescriptionWidgetLine line;
@@ -211,54 +203,62 @@ std::vector<DescriptionWidgetLine> wrapDescription(const GfxRenderer& renderer, 
 
 }  // namespace
 
-void Description::ensureLines(const int recentIndex, const int width) const {
+void Description::ensureLines(const int recentIndex, const int width, const int font, const bool preview) const {
   const auto& books = RECENT_BOOKS.getBooks();
-  const std::string path = recentIndex >= 0 && recentIndex < static_cast<int>(books.size())
+  const std::string path = preview
+                               ? "__widget_preview__"
+                               : (recentIndex >= 0 && recentIndex < static_cast<int>(books.size())
                                ? books[static_cast<size_t>(recentIndex)].path
-                               : std::string();
-  if (path == cachedPath_ && width == cachedWidth_) return;
+                               : std::string());
+  if (path == cachedPath_ && width == cachedWidth_ && font == cachedFont_) return;
 
   cachedPath_ = path;
   cachedWidth_ = width;
+  cachedFont_ = font;
   lines_.clear();
   cachedRatingStars_ = 0;
 
   std::string raw;
-  if (!path.empty()) {
+  if (preview) {
+    raw = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor "
+          "incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud "
+          "exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.";
+    cachedRatingStars_ = 4;
+  } else if (!path.empty()) {
     const RecentBook& book = books[static_cast<size_t>(recentIndex)];
-    BookMetadataCache metadata(metadataCachePath(book));
-    if (metadata.load()) {
-      raw = metadata.coreMetadata.description;
-      cachedRatingStars_ = metadataRatingStars(metadata.coreMetadata.rating);
-    }
+    raw = book.description;
+    cachedRatingStars_ = metadataRatingStars(book.rating);
   }
-  lines_ = wrapDescription(renderer_, raw, std::max(1, width));
+  lines_ = wrapDescription(renderer_, raw, std::max(1, width), font);
 }
 
 void Description::render(const int recentIndex, const int x, const int y, const int width, const int height,
                          const bool background, const bool showLabel,
                          const HomeTheme::CarouselLabelColor labelColor,
                          const HomeTheme::CarouselShadowStyle shadowStyle, const bool showTitle,
-                         const bool showAuthor, const bool showProgress, const bool showRating) const {
+                         const bool showAuthor, const bool showProgress, const bool showRating,
+                         const bool compact, const bool preview) const {
   if (width <= 0 || height <= 0) return;
   renderBackground(x, y, width, height, background);
   const ContentArea content = contentArea(y, height, showLabel);
-  if (showLabel) renderLabel(x, y, "Book Details", labelColor);
 
   const auto& books = RECENT_BOOKS.getBooks();
-  if (recentIndex < 0 || recentIndex >= static_cast<int>(books.size())) {
+  if (!preview && (recentIndex < 0 || recentIndex >= static_cast<int>(books.size()))) {
     renderer_.text.centered(systemFontId(), content.y + content.height / 2, "No recent");
     (void)shadowStyle;
     return;
   }
 
-  const RecentBook& book = books[static_cast<size_t>(recentIndex)];
+  const RecentBook previewBook("", "", "Lorem Ipsum", "Author Name", 0.62f);
+  const RecentBook& book = preview ? previewBook : books[static_cast<size_t>(recentIndex)];
   constexpr int marginX = 20;
-  constexpr int marginTop = 20;
-  constexpr int titleFont = MONTSERRAT_16_FONT_ID;
-  constexpr int authorFont = MONTSERRAT_12_FONT_ID;
+  constexpr int bottomPadding = 20;
+  const int marginTop = compact ? 12 : 20;
+  const int titleFont = compact ? systemFontIdForPointSize(14) : systemFontIdForPointSize(16);
+  const int authorFont = compact ? systemFontIdForPointSize(10) : systemFontIdForPointSize(12);
+  const int descriptionFont = compact ? systemFontIdForPointSize(10) : systemFontIdForPointSize(12);
   const int textWidth = std::max(1, width - marginX * 2);
-  ensureLines(recentIndex, textWidth);
+  ensureLines(recentIndex, textWidth, descriptionFont, preview);
   int textBottom = content.y + marginTop;
   if (showTitle) {
     const std::string title = renderer_.text.truncate(titleFont, bookTitle(book).c_str(), textWidth,
@@ -269,9 +269,9 @@ void Description::render(const int recentIndex, const int x, const int y, const 
   const int ratingStars = showRating ? cachedRatingStars_ : 0;
   const bool showAuthorText = showAuthor && !book.author.empty();
   if (showAuthorText || ratingStars > 0) {
-    const int authorY = textBottom + 6;
-    constexpr int iconSize = 24;
-    constexpr int starGap = 2;
+    const int authorY = textBottom + (compact ? 4 : 6);
+    const int iconSize = compact ? 18 : 24;
+    const int starGap = compact ? 1 : 2;
     const int authorLineHeight = renderer_.text.getLineHeight(authorFont);
     const int iconY = authorY + (authorLineHeight - iconSize) / 2;
     const int starsWidth = ratingStars > 0 ? ratingStars * iconSize + (ratingStars - 1) * starGap : 0;
@@ -289,25 +289,24 @@ void Description::render(const int recentIndex, const int x, const int y, const 
     textBottom = authorY + std::max(authorLineHeight, iconSize);
   }
 
-  int descriptionY = textBottom + 20;
+  int descriptionY = textBottom + (compact ? 12 : 20);
   if (showProgress) {
     const float progressPercent = book.progress * 100.0f;
     const int percentage = progressPercent < 0.0f
                                ? 0
                                : std::max(0, std::min(100, static_cast<int>(progressPercent + 0.5f)));
-    const int barY = textBottom + 10;
+    const int barY = textBottom + (compact ? 6 : 10);
     renderProgress(renderer_, x + marginX, barY, width, percentage);
-    constexpr int descriptionGap = 40;
+    const int descriptionGap = compact ? 10 : 40;
     descriptionY = barY + 5 + descriptionGap;
   }
-  const int descriptionHeight = content.y + content.height - descriptionY;
+  const int descriptionHeight = content.y + content.height - bottomPadding - descriptionY;
   if (descriptionHeight <= 0 || lines_.empty()) {
     (void)shadowStyle;
     return;
   }
 
-  const int font = MONTSERRAT_12_FONT_ID;
-  const int lineHeight = renderer_.text.getLineHeight(font);
+  const int lineHeight = renderer_.text.getLineHeight(descriptionFont);
   const int visibleLines = std::max(1, descriptionHeight / std::max(1, lineHeight));
   const int lineCount = std::min(visibleLines, static_cast<int>(lines_.size()));
   int lineY = descriptionY;
@@ -317,9 +316,9 @@ void Description::render(const int recentIndex, const int x, const int y, const 
     for (const DescriptionWidgetLine::Run& run : line.runs) {
       if (textX >= x + width - marginX) break;
       const int available = x + width - marginX - textX;
-      const std::string shown = renderer_.text.truncate(font, run.text.c_str(), std::max(1, available), run.style);
-      renderer_.text.render(font, textX, lineY, shown.c_str(), true, run.style);
-      textX += renderer_.text.getWidth(font, shown.c_str(), run.style);
+      const std::string shown = renderer_.text.truncate(descriptionFont, run.text.c_str(), std::max(1, available), run.style);
+      renderer_.text.render(descriptionFont, textX, lineY, shown.c_str(), true, run.style);
+      textX += renderer_.text.getWidth(descriptionFont, shown.c_str(), run.style);
     }
     lineY += lineHeight;
   }

@@ -12,10 +12,14 @@ namespace HomeTheme {
 namespace {
 
 constexpr char kThemeFile[] = "/.system/home_themes.bin";
-constexpr uint8_t kVersion = 22;
+constexpr uint8_t kVersion = 28;
+constexpr uint8_t kSleepThemesVersion = 27;
 constexpr uint8_t kDescriptionOptionsVersion = 17;
 constexpr uint8_t kRecentOptionsVersion = 18;
 constexpr uint8_t kCarouselProgressVersion = 19;
+constexpr uint8_t kCarouselFullHeightVersion = 25;
+constexpr uint8_t kStatisticsSummaryVersion = 26;
+constexpr uint8_t kStreakCompactVersion = 28;
 constexpr uint8_t kBookDetailsOptionsVersion = 20;
 constexpr uint8_t kLegacyFavoriteIconOptionVersion = 20;
 constexpr uint8_t kVersionBeforeRecentRatingOptions = 21;
@@ -36,25 +40,29 @@ constexpr int kMaxThemes = 8;
 Theme* themeStorage = nullptr;
 Theme* themes = nullptr;
 Theme* sleepThemeStorage = nullptr;
-#define sleepTheme (*sleepThemeStorage)
+Theme* sleepThemes = nullptr;
+#define sleepTheme (sleepThemes[selectedSleepTheme])
 int themeCount = 0;
 int selectedTheme = 0;
+int sleepThemeCount = 0;
+int selectedSleepTheme = 0;
 bool loaded = false;
 
 bool ensureStorage() {
   if (themeStorage != nullptr) return true;
 
   constexpr uint32_t caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
-  themeStorage = static_cast<Theme*>(heap_caps_calloc(kMaxThemes + 1, sizeof(Theme), caps));
+  themeStorage = static_cast<Theme*>(heap_caps_calloc(kMaxThemes * 2 + 1, sizeof(Theme), caps));
   if (themeStorage == nullptr) {
     // Keep the reader functional if PSRAM is unavailable, while still
     // preferring PSRAM on the target boards.
-    themeStorage = static_cast<Theme*>(heap_caps_calloc(kMaxThemes + 1, sizeof(Theme), MALLOC_CAP_8BIT));
+    themeStorage = static_cast<Theme*>(heap_caps_calloc(kMaxThemes * 2 + 1, sizeof(Theme), MALLOC_CAP_8BIT));
   }
   if (themeStorage == nullptr) return false;
 
   themes = themeStorage;
   sleepThemeStorage = themeStorage + kMaxThemes;
+  sleepThemes = sleepThemeStorage;
   return true;
 }
 
@@ -81,6 +89,8 @@ void setDefaultLibraryFolders(Theme& theme);
 void makeDefault() {
   themeCount = 1;
   selectedTheme = 0;
+  sleepThemeCount = 1;
+  selectedSleepTheme = 0;
   themes[0] = {};
   setName(themes[0], "Home");
   themes[0].layout = Layout::OneByTwo;
@@ -113,6 +123,16 @@ void makeDefault() {
 }
 
 bool repairEmptyHomeTheme() {
+  bool repaired = false;
+  for (int index = 0; index < themeCount; ++index) {
+    if (themes[index].layout != Layout::OneByOne || themes[index].widgets[0] != Widget::RecentGrid ||
+        themes[index].widgets[1] != Widget::Empty) {
+      continue;
+    }
+    themes[index].widgets[1] = Widget::Flow;
+    repaired = true;
+  }
+  if (repaired) return true;
   if (themeCount <= 0 || themes[0].layout != Layout::OneByTwo ||
       themes[0].widgets[0] != Widget::Empty || themes[0].widgets[1] != Widget::Empty) {
     return false;
@@ -144,10 +164,10 @@ void ensureLoaded() {
   if (!loaded) load();
 }
 
-bool validLayout(const uint8_t value) { return value <= static_cast<uint8_t>(Layout::TwoByTwo); }
+bool validLayout(const uint8_t value) { return value <= static_cast<uint8_t>(Layout::HalfBottom); }
 
 bool validWidget(const uint8_t value) {
-  return value <= static_cast<uint8_t>(Widget::Description);
+  return value <= static_cast<uint8_t>(Widget::Streaks);
 }
 
 bool validBorder(const uint8_t value) {
@@ -246,6 +266,8 @@ void load() {
     loaded = true;
     themeCount = 0;
     selectedTheme = 0;
+    sleepThemeCount = 0;
+    selectedSleepTheme = 0;
     return;
   }
   loaded = true;
@@ -266,7 +288,8 @@ void load() {
        version != kLegacyMultiLibraryFoldersVersion && version != kLegacySingleLibraryFoldersVersion && version != 16 &&
        version != 17 && version != 18 && version != kCarouselProgressVersion &&
        version != kVersionBeforeRecentRatingOptions &&
-       version != kLegacyFavoriteIconOptionVersion &&
+       version != kLegacyFavoriteIconOptionVersion && version != 23 && version != 24 && version != 25 && version != 26 &&
+       version != kSleepThemesVersion &&
        version != kVersion) || storedCount == 0 ||
       storedCount > kMaxThemes) {
     file.close();
@@ -279,11 +302,15 @@ void load() {
     uint8_t layout = 0;
     serialization::readString(file, name);
     serialization::readPod(file, layout);
-    if ((!validLayout(layout) && layout != 3) || name.empty()) return false;
+    // Layout value 3 is now the real 1 x 1 layout. Older files could contain
+    // that value from an abandoned experimental build; keeping it here lets
+    // the current editor repair and save those themes instead of silently
+    // converting them back to 1 x 2 on every load.
+    if (!validLayout(layout) || name.empty()) return false;
 
     theme = {};
     setName(theme, name);
-    theme.layout = layout == 3 ? Layout::OneByTwo : static_cast<Layout>(layout);
+    theme.layout = static_cast<Layout>(layout);
     for (Widget& widget : theme.widgets) {
       uint8_t value = 0;
       serialization::readPod(file, value);
@@ -419,6 +446,30 @@ void load() {
       theme.carouselProgress[i] = theme.carouselProgress[i] != 0 ? 1 : 0;
     }
     for (int i = 0; i < 4; ++i) {
+      if (version < kCarouselFullHeightVersion) {
+        theme.carouselFullHeight[i] = 0;
+        continue;
+      }
+      serialization::readPod(file, theme.carouselFullHeight[i]);
+      theme.carouselFullHeight[i] = theme.carouselFullHeight[i] != 0 ? 1 : 0;
+    }
+    for (int i = 0; i < 4; ++i) {
+      if (version < kStatisticsSummaryVersion) {
+        theme.statisticsSummary[i] = 1;
+        continue;
+      }
+      serialization::readPod(file, theme.statisticsSummary[i]);
+      theme.statisticsSummary[i] = theme.statisticsSummary[i] != 0 ? 1 : 0;
+    }
+    for (int i = 0; i < 4; ++i) {
+      if (version < kStreakCompactVersion) {
+        theme.streakCompact[i] = 0;
+        continue;
+      }
+      serialization::readPod(file, theme.streakCompact[i]);
+      theme.streakCompact[i] = theme.streakCompact[i] != 0 ? 1 : 0;
+    }
+    for (int i = 0; i < 4; ++i) {
       if (version < kHeatmapViewVersion) {
         theme.heatmapViews[i] = HeatmapView::Weekly;
         continue;
@@ -466,8 +517,21 @@ void load() {
       setDefaultDescriptionOptions(theme);
       setDefaultRecentOptions(theme);
       setDefaultCarouselProgress(theme);
+      for (uint8_t& value : theme.carouselFullHeight) value = 0;
+      for (uint8_t& value : theme.statisticsSummary) value = 1;
+      for (uint8_t& value : theme.streakCompact) value = 0;
       for (HeatmapView& view : theme.heatmapViews) view = HeatmapView::Weekly;
       setDefaultLibraryFolders(theme);
+    } else if (theme.layout == Layout::HalfTop || theme.layout == Layout::HalfMiddle ||
+               theme.layout == Layout::HalfBottom) {
+      // The half-stack layouts are no longer offered. Keep the first two
+      // configured rows and migrate the saved theme to the supported 1 x 2
+      // layout when it is loaded.
+      theme.layout = Layout::OneByTwo;
+      for (int i = 2; i < 4; ++i) {
+        theme.widgets[i] = Widget::Empty;
+        theme.borders[i] = Border::None;
+      }
     }
     return true;
   };
@@ -480,10 +544,33 @@ void load() {
     }
     ++themeCount;
   }
-  if (version >= kSleepThemeVersion && !readTheme(sleepTheme)) {
+  sleepThemeCount = 0;
+  selectedSleepTheme = 0;
+  if (version >= kSleepThemesVersion) {
+    uint8_t storedSleepCount = 0;
+    uint8_t storedSleepActive = 0;
+    serialization::readPod(file, storedSleepCount);
+    serialization::readPod(file, storedSleepActive);
+    if (storedSleepCount == 0 || storedSleepCount > kMaxThemes) {
+      file.close();
+      makeDefault();
+      return;
+    }
+    for (uint8_t i = 0; i < storedSleepCount; ++i) {
+      if (!readTheme(sleepThemes[sleepThemeCount])) {
+        file.close();
+        makeDefault();
+        return;
+      }
+      ++sleepThemeCount;
+    }
+    selectedSleepTheme = std::min<int>(storedSleepActive, sleepThemeCount - 1);
+  } else if (version >= kSleepThemeVersion && !readTheme(sleepThemes[0])) {
     file.close();
     makeDefault();
     return;
+  } else if (version >= kSleepThemeVersion) {
+    sleepThemeCount = 1;
   }
   file.close();
 
@@ -492,11 +579,22 @@ void load() {
   } else {
     setName(themes[0], "Home");
     selectedTheme = std::min<int>(storedActive, themeCount - 1);
+    if (sleepThemeCount == 0) {
+      sleepThemeCount = 1;
+      selectedSleepTheme = 0;
+      sleepThemes[0] = {};
+      setName(sleepThemes[0], "Sleep");
+      sleepThemes[0].layout = Layout::OneByTwo;
+      sleepThemes[0].widgets[0] = Widget::Clock;
+      setDefaultLibraryFolders(sleepThemes[0]);
+    }
+    selectedSleepTheme = std::min(selectedSleepTheme, sleepThemeCount - 1);
     if (version < kLegacyCarouselShadowVersion) {
-      sleepTheme = {};
-      setName(sleepTheme, "Sleep");
-      sleepTheme.layout = Layout::OneByTwo;
-      sleepTheme.widgets[0] = Widget::Clock;
+      sleepThemes[0] = {};
+      setName(sleepThemes[0], "Sleep");
+      sleepThemes[0].layout = Layout::OneByTwo;
+      sleepThemes[0].widgets[0] = Widget::Clock;
+      setDefaultLibraryFolders(sleepThemes[0]);
     }
     if (repairEmptyHomeTheme()) {
       save();
@@ -552,6 +650,9 @@ bool save() {
       serialization::writePod(file, theme.recentRatings[i]);
     }
     for (int i = 0; i < 4; ++i) serialization::writePod(file, theme.carouselProgress[i]);
+    for (int i = 0; i < 4; ++i) serialization::writePod(file, theme.carouselFullHeight[i]);
+    for (int i = 0; i < 4; ++i) serialization::writePod(file, theme.statisticsSummary[i]);
+    for (int i = 0; i < 4; ++i) serialization::writePod(file, theme.streakCompact[i]);
     for (const HeatmapView view : theme.heatmapViews) {
       serialization::writePod(file, static_cast<uint8_t>(view));
     }
@@ -560,7 +661,11 @@ bool save() {
     }
   };
   for (int i = 0; i < themeCount; ++i) writeTheme(themes[i]);
-  writeTheme(sleepTheme);
+  const uint8_t storedSleepCount = static_cast<uint8_t>(sleepThemeCount);
+  const uint8_t storedSleepActive = static_cast<uint8_t>(selectedSleepTheme);
+  serialization::writePod(file, storedSleepCount);
+  serialization::writePod(file, storedSleepActive);
+  for (int i = 0; i < sleepThemeCount; ++i) writeTheme(sleepThemes[i]);
   file.close();
   return true;
 }
@@ -579,6 +684,29 @@ const Theme& at(const int index) {
 const Theme& sleep() {
   ensureLoaded();
   return sleepTheme;
+}
+
+int sleepCount() {
+  ensureLoaded();
+  return sleepThemeCount;
+}
+
+const Theme& sleepAt(const int index) {
+  ensureLoaded();
+  const int safeIndex = std::max(0, std::min(index, sleepThemeCount - 1));
+  return sleepThemes[safeIndex];
+}
+
+int sleepActiveIndex() {
+  ensureLoaded();
+  return selectedSleepTheme;
+}
+
+void activateSleep(const int index) {
+  ensureLoaded();
+  if (index < 0 || index >= sleepThemeCount) return;
+  selectedSleepTheme = index;
+  save();
 }
 
 int activeIndex() {
@@ -602,6 +730,8 @@ int add(const Layout layout, const Widget* widgets, const Border* borders, const
         const uint8_t* descriptionProgress, const uint8_t* descriptionRatings,
         const uint8_t* recentTitles, const uint8_t* recentAuthors,
         const uint8_t* recentProgress, const uint8_t* recentRatings, const uint8_t* carouselProgress,
+        const uint8_t* carouselFullHeight,
+        const uint8_t* statisticsSummary,
         const char (*libraryFolders)[3][128],
         const int slotCountValue) {
   ensureLoaded();
@@ -659,6 +789,12 @@ int add(const Layout layout, const Widget* widgets, const Border* borders, const
     theme.carouselProgress[i] = layout != Layout::Classic && carouselProgress && i < slotCountValue
                                     ? (carouselProgress[i] != 0 ? 1 : 0)
                                     : 1;
+    theme.carouselFullHeight[i] = layout != Layout::Classic && carouselFullHeight && i < slotCountValue
+                                      ? (carouselFullHeight[i] != 0 ? 1 : 0)
+                                      : 0;
+    theme.statisticsSummary[i] = layout != Layout::Classic && statisticsSummary && i < slotCountValue
+                                     ? (statisticsSummary[i] != 0 ? 1 : 0)
+                                     : 1;
     theme.heatmapViews[i] = layout != Layout::Classic && heatmapViews && i < slotCountValue &&
                                    validHeatmapView(static_cast<uint8_t>(heatmapViews[i]))
                                ? heatmapViews[i]
@@ -682,6 +818,8 @@ void update(const int index, const Layout layout, const Widget* widgets, const B
             const uint8_t* descriptionProgress, const uint8_t* descriptionRatings,
             const uint8_t* recentTitles, const uint8_t* recentAuthors,
             const uint8_t* recentProgress, const uint8_t* recentRatings, const uint8_t* carouselProgress,
+            const uint8_t* carouselFullHeight,
+            const uint8_t* statisticsSummary,
             const char (*libraryFolders)[3][128],
             const int slotCountValue) {
   ensureLoaded();
@@ -736,6 +874,12 @@ void update(const int index, const Layout layout, const Widget* widgets, const B
     theme.carouselProgress[i] = layout != Layout::Classic && carouselProgress && i < slotCountValue
                                     ? (carouselProgress[i] != 0 ? 1 : 0)
                                     : 1;
+    theme.carouselFullHeight[i] = layout != Layout::Classic && carouselFullHeight && i < slotCountValue
+                                      ? (carouselFullHeight[i] != 0 ? 1 : 0)
+                                      : 0;
+    theme.statisticsSummary[i] = layout != Layout::Classic && statisticsSummary && i < slotCountValue
+                                     ? (statisticsSummary[i] != 0 ? 1 : 0)
+                                     : 1;
     theme.heatmapViews[i] = layout != Layout::Classic && heatmapViews && i < slotCountValue &&
                                    validHeatmapView(static_cast<uint8_t>(heatmapViews[i]))
                                ? heatmapViews[i]
@@ -757,6 +901,8 @@ void updateSleep(const Layout layout, const Widget* widgets, const Border* borde
                  const uint8_t* descriptionProgress, const uint8_t* descriptionRatings,
                  const uint8_t* recentTitles, const uint8_t* recentAuthors,
                  const uint8_t* recentProgress, const uint8_t* recentRatings, const uint8_t* carouselProgress,
+                 const uint8_t* carouselFullHeight,
+                 const uint8_t* statisticsSummary,
                  const char (*libraryFolders)[3][128],
                  const int slotCountValue) {
   ensureLoaded();
@@ -809,6 +955,12 @@ void updateSleep(const Layout layout, const Widget* widgets, const Border* borde
     sleepTheme.carouselProgress[i] = layout != Layout::Classic && carouselProgress && i < slotCountValue
                                          ? (carouselProgress[i] != 0 ? 1 : 0)
                                          : 1;
+    sleepTheme.carouselFullHeight[i] = layout != Layout::Classic && carouselFullHeight && i < slotCountValue
+                                           ? (carouselFullHeight[i] != 0 ? 1 : 0)
+                                           : 0;
+    sleepTheme.statisticsSummary[i] = layout != Layout::Classic && statisticsSummary && i < slotCountValue
+                                          ? (statisticsSummary[i] != 0 ? 1 : 0)
+                                          : 1;
     sleepTheme.heatmapViews[i] = layout != Layout::Classic && heatmapViews && i < slotCountValue &&
                                          validHeatmapView(static_cast<uint8_t>(heatmapViews[i]))
                                      ? heatmapViews[i]
@@ -823,9 +975,85 @@ void updateSleep(const Layout layout, const Widget* widgets, const Border* borde
   save();
 }
 
+int addSleep(const Layout layout, const Widget* widgets, const Border* borders, const uint8_t* backgrounds,
+             const CarouselStyle* carouselStyles, const uint8_t* carouselLabels,
+             const CarouselLabelColor* carouselLabelColors, const CarouselShadowStyle* carouselShadowStyles,
+             const HeatmapView* heatmapViews, const uint8_t* descriptionTitles, const uint8_t* descriptionAuthors,
+             const uint8_t* descriptionProgress, const uint8_t* descriptionRatings,
+             const uint8_t* recentTitles, const uint8_t* recentAuthors, const uint8_t* recentProgress,
+             const uint8_t* recentRatings, const uint8_t* carouselProgress, const uint8_t* carouselFullHeight,
+             const uint8_t* statisticsSummary, const char (*libraryFolders)[3][128], const int slotCountValue) {
+  ensureLoaded();
+  if (sleepThemeCount >= kMaxThemes || themeCount >= kMaxThemes) return -1;
+
+  const int previousThemeCount = themeCount;
+  const int previousActiveTheme = selectedTheme;
+  const int temporaryHomeIndex = add(layout, widgets, borders, backgrounds, carouselStyles, carouselLabels,
+                                     carouselLabelColors, carouselShadowStyles, heatmapViews, descriptionTitles,
+                                     descriptionAuthors, descriptionProgress, descriptionRatings, recentTitles,
+                                     recentAuthors, recentProgress, recentRatings, carouselProgress,
+                                     carouselFullHeight, statisticsSummary, libraryFolders, slotCountValue);
+  if (temporaryHomeIndex < 0) return -1;
+
+  const int newIndex = sleepThemeCount;
+  sleepThemes[newIndex] = themes[temporaryHomeIndex];
+  setName(sleepThemes[newIndex], "Sleep " + std::to_string(newIndex + 1));
+  ++sleepThemeCount;
+  themeCount = previousThemeCount;
+  selectedTheme = std::min(previousActiveTheme, themeCount - 1);
+  selectedSleepTheme = newIndex;
+  save();
+  return newIndex;
+}
+
+void updateSleepAt(const int index, const Layout layout, const Widget* widgets, const Border* borders,
+                   const uint8_t* backgrounds, const CarouselStyle* carouselStyles, const uint8_t* carouselLabels,
+                   const CarouselLabelColor* carouselLabelColors, const CarouselShadowStyle* carouselShadowStyles,
+                   const HeatmapView* heatmapViews, const uint8_t* descriptionTitles,
+                   const uint8_t* descriptionAuthors, const uint8_t* descriptionProgress,
+                   const uint8_t* descriptionRatings, const uint8_t* recentTitles, const uint8_t* recentAuthors,
+                   const uint8_t* recentProgress, const uint8_t* recentRatings, const uint8_t* carouselProgress,
+                   const uint8_t* carouselFullHeight, const uint8_t* statisticsSummary,
+                   const char (*libraryFolders)[3][128], const int slotCountValue) {
+  ensureLoaded();
+  if (index < 0 || index >= sleepThemeCount) return;
+  const int previousActive = selectedSleepTheme;
+  selectedSleepTheme = index;
+  updateSleep(layout, widgets, borders, backgrounds, carouselStyles, carouselLabels, carouselLabelColors,
+              carouselShadowStyles, heatmapViews, descriptionTitles, descriptionAuthors, descriptionProgress,
+              descriptionRatings, recentTitles, recentAuthors, recentProgress, recentRatings, carouselProgress,
+              carouselFullHeight, statisticsSummary, libraryFolders, slotCountValue);
+  selectedSleepTheme = previousActive;
+  save();
+}
+
+void updateStreakCompact(const int index, const bool sleepMode, const uint8_t* values) {
+  ensureLoaded();
+  if (values == nullptr) return;
+  Theme* themeList = sleepMode ? sleepThemes : themes;
+  const int themeCountValue = sleepMode ? sleepThemeCount : themeCount;
+  if (index < 0 || index >= themeCountValue) return;
+  for (int i = 0; i < 4; ++i) themeList[index].streakCompact[i] = values[i] != 0 ? 1 : 0;
+  save();
+}
+
+bool removeSleep(const int index) {
+  ensureLoaded();
+  if (index < 0 || index >= sleepThemeCount || sleepThemeCount <= 1) return false;
+  for (int i = index; i < sleepThemeCount - 1; ++i) sleepThemes[i] = sleepThemes[i + 1];
+  --sleepThemeCount;
+  if (selectedSleepTheme > index) {
+    --selectedSleepTheme;
+  } else if (selectedSleepTheme == index) {
+    selectedSleepTheme = std::min(selectedSleepTheme, sleepThemeCount - 1);
+  }
+  save();
+  return true;
+}
+
 bool remove(const int index) {
   ensureLoaded();
-  if (index <= 0 || index >= themeCount || themeCount <= 1) return false;
+  if (index < 0 || index >= themeCount || themeCount <= 1) return false;
 
   for (int i = index; i < themeCount - 1; ++i) themes[i] = themes[i + 1];
   --themeCount;
@@ -838,6 +1066,20 @@ bool remove(const int index) {
   return true;
 }
 
+bool rename(const int index, const char* name) {
+  ensureLoaded();
+  if (index < 0 || index >= themeCount || name == nullptr || name[0] == '\0') return false;
+  setName(themes[index], std::string(name));
+  return save();
+}
+
+bool renameSleep(const int index, const char* name) {
+  ensureLoaded();
+  if (index < 0 || index >= sleepThemeCount || name == nullptr || name[0] == '\0') return false;
+  setName(sleepThemes[index], std::string(name));
+  return save();
+}
+
 const char* layoutLabel(const Layout layout) {
   switch (layout) {
     case Layout::Classic:
@@ -846,6 +1088,16 @@ const char* layoutLabel(const Layout layout) {
       return "1 x 2";
     case Layout::TwoByTwo:
       return "2 x 2";
+    case Layout::OneByOne:
+      return "1 x 1";
+    case Layout::OneByThree:
+      return "1 x 3";
+    case Layout::HalfTop:
+      return "40 | 30 | 30";
+    case Layout::HalfMiddle:
+      return "30 | 40 | 30";
+    case Layout::HalfBottom:
+      return "30 | 30 | 40";
     default:
       return "Unknown";
   }
@@ -881,6 +1133,16 @@ const char* widgetLabel(const Widget widget) {
       return "Library";
     case Widget::Description:
       return "Book Details";
+    case Widget::RecentGrid:
+      return "Recent 3 x 2 Grid";
+    case Widget::Flow:
+      return "Title & Description Flow";
+    case Widget::VerticalBookshelf:
+      return "Vertical Bookshelf";
+    case Widget::Statistics:
+      return "Statistics";
+    case Widget::Streaks:
+      return "Streaks";
     default:
       return "Unknown";
   }
@@ -939,7 +1201,11 @@ const char* heatmapViewLabel(const HeatmapView view) {
 }
 
 int slotCount(const Layout layout) {
-  return layout == Layout::TwoByTwo ? 4 : layout == Layout::OneByTwo ? 2 : 0;
+  return layout == Layout::TwoByTwo || layout == Layout::OneByOne ? 4
+       : layout == Layout::OneByThree || layout == Layout::HalfTop || layout == Layout::HalfMiddle ||
+                 layout == Layout::HalfBottom                 ? 3
+       : layout == Layout::OneByTwo                            ? 2
+                                                               : 0;
 }
 
 }

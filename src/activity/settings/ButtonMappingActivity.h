@@ -10,12 +10,15 @@
 #include <vector>
 
 #include "activity/ActivityWithSubactivity.h"
-#include "system/UiLayout.h"
+#include "SettingsListLayout.h"
 
 class ButtonMappingActivity final : public ActivityWithSubactivity {
  public:
-  ButtonMappingActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, std::function<void()> onDone)
-      : ActivityWithSubactivity("ButtonMapping", renderer, mappedInput), onDone_(std::move(onDone)) {}
+  enum class Section { Main, Buttons, Gestures };
+
+  ButtonMappingActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, std::function<void()> onDone,
+                        Section section = Section::Main)
+      : ActivityWithSubactivity("ButtonMapping", renderer, mappedInput), onDone_(std::move(onDone)), section_(section) {}
 
   void onEnter() override;
   void loop() override;
@@ -28,7 +31,7 @@ class ButtonMappingActivity final : public ActivityWithSubactivity {
   static constexpr int kGestureStartRow = kButtonStartRow + kButtonCount;
   static constexpr int kItemCount = kGestureStartRow + kGestureCount;
   static constexpr int kSectionHeaderHeight = 24;
-  static constexpr int kRowHeight = UiLayout::LIST_ITEM_HEIGHT;
+  static constexpr int kRowHeight = SettingsListLayout::kRowHeight;
   static constexpr int kDisableLightRow = kGestureStartRow;
   static constexpr int kPageTurnRow = kGestureStartRow + 1;
   static constexpr int kDoubleTapRow = kGestureStartRow + 2;
@@ -36,19 +39,25 @@ class ButtonMappingActivity final : public ActivityWithSubactivity {
   static constexpr int kButtonToGesturesGap = 20;
 
   void render();
+  void renderMain();
+  void renderSection();
   void openSelector(int row);
   void closeSelector();
   void commitSelector();
   void handleSelectorInput();
   void handleListInput();
+  void handleMainInput();
   void handleGestureInput(int row);
   void renderSelector();
   uint8_t* actionSlot(int row);
   const uint8_t* actionSlot(int row) const;
   int itemRowAtY(int tapY) const;
   int itemY(int row) const;
+  int sectionRowCount() const;
+  int sectionItemY(int row) const;
 
   std::function<void()> onDone_;
+  Section section_ = Section::Main;
   int selectedRow_ = 0;
   bool selectorOpen_ = false;
   bool subFinished_ = false;

@@ -44,7 +44,7 @@ constexpr int QR_SIZE = QR_PIXEL_SIZE * 33;
  */
 int renderActivityHeader(const GfxRenderer& renderer, int startY, const char* title) {
   (void)startY;
-  return SubPage::header(renderer, title);
+  return SubPage::header(renderer, title, "Wifi");
 }
 
 /**
@@ -81,34 +81,49 @@ void LocalNetworkActivity::onEnter() {
   renderingMutex = xSemaphoreCreateMutex();
   updateRequired = true;
   state = LocalNetworkState::WIFI_SELECTION;
+  firstWifiDisconnectAt = 0;
 
   enterNewActivity(
-      new WifiSelectionActivity(renderer, mappedInput, [this](bool connected) { onWifiSelectionComplete(connected); }));
+      new WifiSelectionActivity(renderer, mappedInput,
+                                [this](bool connected) { onWifiSelectionComplete(connected); },
+                                "File Transfer", "Wifi"));
 
+  renderer.syncWriteBufferFromActive();
   constexpr uint32_t LOCALNET_DISPLAY_TASK_STACK = 8192;
-  xTaskCreateWithCaps(&LocalNetworkActivity::taskTrampoline, "LocalNetTask", LOCALNET_DISPLAY_TASK_STACK, this, 1,
-                      &displayTaskHandle, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  const BaseType_t taskResult = xTaskCreateWithCaps(
+      &LocalNetworkActivity::taskTrampoline, "LocalNetTask", LOCALNET_DISPLAY_TASK_STACK, this, 1,
+      &displayTaskHandle, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  INX_SERIAL.printf("[%lu] [LOCALNET] display task result=%d handle=%p\n", millis(), static_cast<int>(taskResult),
+                    displayTaskHandle);
 }
 
 /**
  * @brief Cleans up resources when exiting the activity
  */
 void LocalNetworkActivity::onExit() {
-  ActivityWithSubactivity::onExit();
-
-  stopWebServer();
-  MDNS.end();
   wifiSelectionResultPending = false;
 
+  // Stop the parent renderer before destroying the Wi-Fi child. The child has
+  // its own renderer task, so tearing it down while this task is drawing can
+  // race through the shared framebuffer and display driver.
   if (renderingMutex) {
     xSemaphoreTake(renderingMutex, portMAX_DELAY);
+    updateRequired = false;
     if (displayTaskHandle) {
       vTaskDeleteWithCaps(displayTaskHandle);
       displayTaskHandle = nullptr;
     }
+    xSemaphoreGive(renderingMutex);
     vSemaphoreDelete(renderingMutex);
     renderingMutex = nullptr;
+  } else if (displayTaskHandle) {
+    vTaskDeleteWithCaps(displayTaskHandle);
+    displayTaskHandle = nullptr;
   }
+
+  stopWebServer();
+  MDNS.end();
+  ActivityWithSubactivity::onExit();
 }
 
 /**
@@ -177,7 +192,6 @@ void LocalNetworkActivity::loop() {
       connectedSSID = WiFi.SSID().c_str();
       INX_SERIAL.printf("[%lu] [LOCALNET] Connected to %s, IP: %s\n", millis(), connectedSSID.c_str(),
                         connectedIP.c_str());
-      exitActivity();
       state = LocalNetworkState::SERVER_STARTING;
       updateRequired = true;
 
@@ -186,8 +200,23 @@ void LocalNetworkActivity::loop() {
       }
 
       startWebServer();
+
+      // Keep WifiSelectionActivity alive so its connected card remains on
+      // screen. The parent still owns and services the local server below.
+      if (subActivity && state == LocalNetworkState::SERVER_RUNNING) {
+        serviceWebServer();
+        return;
+      }
+      if (subActivity && state == LocalNetworkState::ERROR) {
+        exitActivity();
+        return;
+      }
     }
-    return;
+
+    if (subActivity) {
+      serviceWebServer();
+      return;
+    }
   }
 
   if (SubPage::closeInput(renderer, mappedInput, onGoBack)) return;
@@ -201,41 +230,53 @@ void LocalNetworkActivity::loop() {
     }
   }
 
-  if (state == LocalNetworkState::SERVER_RUNNING && webServer && webServer->isRunning()) {
-    static unsigned long lastWifiCheck = 0;
-    if (millis() - lastWifiCheck > 2000) {
-      lastWifiCheck = millis();
-      if (WiFi.status() != WL_CONNECTED) {
-        INX_SERIAL.printf("[%lu] [LOCALNET] WiFi disconnected!\n", millis());
-        stopWebServer();
-        state = LocalNetworkState::ERROR;
-        updateRequired = true;
-        return;
-      }
-    }
-
-    esp_task_wdt_reset();
-
-    constexpr int MAX_ITERATIONS = 500;
-    for (int i = 0; i < MAX_ITERATIONS && webServer->isRunning(); i++) {
-      webServer->handleClient();
-      if ((i & 0x1F) == 0x1F) {
-        esp_task_wdt_reset();
-      }
-      if ((i & 0x3F) == 0x3F) {
-        yield();
-        if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
-          INX_SERIAL.printf("[%lu] [LOCALNET] Back button pressed\n", millis());
-          if (onGoBack) onGoBack();
-          return;
-        }
-      }
-    }
-  }
+  serviceWebServer();
 
   if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
     INX_SERIAL.printf("[%lu] [LOCALNET] Back button pressed\n", millis());
     if (onGoBack) onGoBack();
+  }
+}
+
+void LocalNetworkActivity::serviceWebServer() {
+  if (state != LocalNetworkState::SERVER_RUNNING || !webServer || !webServer->isRunning()) {
+    return;
+  }
+
+  static unsigned long lastWifiCheck = 0;
+  if (millis() - lastWifiCheck > 2000) {
+    lastWifiCheck = millis();
+    if (WiFi.status() != WL_CONNECTED) {
+      if (firstWifiDisconnectAt == 0) {
+        firstWifiDisconnectAt = millis();
+      }
+      INX_SERIAL.printf("[%lu] [LOCALNET] WiFi not connected for %lu ms; waiting for auto-reconnect\n", millis(),
+                        millis() - firstWifiDisconnectAt);
+      if (millis() - firstWifiDisconnectAt > WIFI_ABANDON_MS) {
+        INX_SERIAL.printf("[%lu] [LOCALNET] WiFi unavailable; stopping local server\n", millis());
+        stopWebServer();
+        state = LocalNetworkState::ERROR;
+        updateRequired = true;
+      }
+      return;
+    }
+    firstWifiDisconnectAt = 0;
+  }
+
+  esp_task_wdt_reset();
+
+  // Keep the web service responsive without monopolizing loopTask. A large
+  // burst here can starve IDLE0 on CPU 0 and trip the task watchdog.
+  constexpr int MAX_ITERATIONS = 8;
+  for (int i = 0; i < MAX_ITERATIONS && webServer->isRunning(); i++) {
+    webServer->handleClient();
+    esp_task_wdt_reset();
+    vTaskDelay(1 / portTICK_PERIOD_MS);
+    if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+      INX_SERIAL.printf("[%lu] [LOCALNET] Back button pressed\n", millis());
+      if (onGoBack) onGoBack();
+      return;
+    }
   }
 }
 
@@ -244,7 +285,9 @@ void LocalNetworkActivity::loop() {
  */
 void LocalNetworkActivity::displayTaskLoop() {
   while (true) {
-    if (updateRequired) {
+    // The Wi-Fi child owns rendering while it is active. Rendering the parent
+    // at the same time races the child's display task on the shared framebuffer.
+    if (state != LocalNetworkState::WIFI_SELECTION && !subActivity && updateRequired && renderingMutex) {
       updateRequired = false;
       xSemaphoreTake(renderingMutex, portMAX_DELAY);
       render();
@@ -258,6 +301,7 @@ void LocalNetworkActivity::displayTaskLoop() {
  * @brief Main rendering function that dispatches to appropriate state renderers
  */
 void LocalNetworkActivity::render() const {
+  renderer.syncWriteBufferFromActive();
   renderer.clearScreen();
 
   int screenHeight = renderer.getScreenHeight();
@@ -266,13 +310,13 @@ void LocalNetworkActivity::render() const {
   if (state == LocalNetworkState::SERVER_RUNNING) {
     renderServerRunning();
   } else if (state == LocalNetworkState::SERVER_STARTING) {
-    const int contentStart = renderActivityHeader(renderer, startY, "Local Network");
+    const int contentStart = renderActivityHeader(renderer, startY, "File Transfer");
 
     int centerY = contentStart + (screenHeight - contentStart - BOTTOM_AREA_HEIGHT) / 2;
 
     renderer.text.centered(systemFontId(), centerY, "Please wait...");
   } else if (state == LocalNetworkState::ERROR) {
-    const int contentStart = renderActivityHeader(renderer, startY, "Local Network");
+    const int contentStart = renderActivityHeader(renderer, startY, "File Transfer");
 
     int centerY = contentStart + (screenHeight - contentStart - BOTTOM_AREA_HEIGHT) / 2;
 
@@ -289,11 +333,11 @@ void LocalNetworkActivity::render() const {
  * @brief Renders the server running state UI with connection information
  */
 void LocalNetworkActivity::renderServerRunning() const {
-  const int contentStart = renderActivityHeader(renderer, 0, "Local Network");
+  const int contentStart = renderActivityHeader(renderer, 0, "File Transfer");
   const int screenWidth = renderer.getScreenWidth();
   const int screenHeight = renderer.getScreenHeight();
   const int sideMargin = 20;
-  const int labelFont = MONTSERRAT_8_FONT_ID;
+  const int labelFont = systemFontIdForPointSize(8);
   const int bodyFont = systemFontId();
   const int iconGroupWidth = ICON_SIZE * 3 + ICON_GAP * 2;
   const int iconX = (screenWidth - iconGroupWidth) / 2;
@@ -323,7 +367,7 @@ void LocalNetworkActivity::renderServerRunning() const {
                          ipUrl.c_str());
 
   const int hintY = screenHeight - 92;
-  renderer.text.centered(MONTSERRAT_8_FONT_ID, hintY, "Keep this screen open while transferring");
+  renderer.text.centered(systemFontIdForPointSize(8), hintY, "Keep this screen open while transferring");
 }
 
 void LocalNetworkActivity::drawQRCode(const int x, const int y, const std::string& data) const {

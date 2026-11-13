@@ -4,16 +4,19 @@
  */
 
 #include "ClearCacheActivity.h"
-#include "system/UiLayout.h"
+#include "SettingsListLayout.h"
 
 #include <GfxRenderer.h>
 #include <HardwareSerial.h>
+#include <ImageDisplayCache.h>
 #include <SDCardManager.h>
 
 #include <algorithm>
 #include <cstring>
 #include <string>
 #include <strings.h>
+
+#include <esp_heap_caps.h>
 
 #include "activity/page/SubPage.h"
 #include "activity/page/components/global/Button.h"
@@ -23,19 +26,25 @@
 #include "state/ReadingGoal.h"
 #include "state/RecentBooks.h"
 #include "state/Session.h"
+#include "state/Statistics.h"
 #include "state/SystemSetting.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
 #include "util/LibraryIndex.h"
 
 namespace {
-constexpr int kListItemHeight = Page::LIST_ITEM_HEIGHT;
+// Custom TTF glyph rendering enters stb_truetype and TextRender's temporary
+// glyph path. The old 4 KB task stack could not hold that call chain and
+// tripped the canary when this page used a system TTF font.
+constexpr uint32_t kDisplayTaskStack = 8192;
+constexpr int kListItemHeight = SettingsListLayout::kRowHeight;
 constexpr int kActionButtonWidth = 180;
 constexpr int kActionButtonHeight = Button::height;
-constexpr int kActionButtonBottomMargin = 64;
+constexpr int kActionButtonSideMargin = 20;
+constexpr int kActionButtonBottomMargin = 20;
 
 ButtonBounds actionButtonBounds(const int screenWidth, const int screenHeight) {
-  return {(screenWidth - kActionButtonWidth) / 2,
+  return {screenWidth - kActionButtonSideMargin - kActionButtonWidth,
           screenHeight - kActionButtonBottomMargin - kActionButtonHeight,
           kActionButtonWidth,
           kActionButtonHeight};
@@ -73,7 +82,8 @@ void ClearCacheActivity::onEnter() {
   selectedGroup = -1;
   updateRequired = true;
 
-  xTaskCreate(&ClearCacheActivity::taskTrampoline, "ClearCacheActivityTask", 4096, this, 1, &displayTaskHandle);
+  xTaskCreateWithCaps(&ClearCacheActivity::taskTrampoline, "ClearCacheActivityTask", kDisplayTaskStack, this, 1,
+                      &displayTaskHandle, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 }
 
 void ClearCacheActivity::onExit() {
@@ -92,7 +102,7 @@ void ClearCacheActivity::onExit() {
 
   xSemaphoreTake(renderingMutex, portMAX_DELAY);
   if (displayTaskHandle) {
-    vTaskDelete(displayTaskHandle);
+    vTaskDeleteWithCaps(displayTaskHandle);
     displayTaskHandle = nullptr;
   }
   vSemaphoreDelete(renderingMutex);
@@ -134,7 +144,7 @@ void ClearCacheActivity::render() {
 
   if (state == WARNING) {
     constexpr const char* names[GROUP_COUNT] = {"Display", "Book", "Thumbnails", "Recent", "Library index",
-                                                 "Network", "Daily Reading"};
+                                                 "Network", "Daily Reading", "Statistics"};
     constexpr int rowH = kListItemHeight;
     const int listTop = bodyTop + 1;
     const int left = 20;
@@ -148,7 +158,11 @@ void ClearCacheActivity::render() {
       const int textY = y + (rowH - renderer.text.getLineHeight(font)) / 2;
       renderer.text.render(font, left, textY, names[i], !focused, EpdFontFamily::REGULAR);
       ReaderFontSettingsDraw::drawToggleCheckbox(renderer, pageWidth - 24, y, rowH, focused, selectedGroups[i]);
-      renderer.line.render(0, y + rowH - 1, pageWidth, y + rowH - 1, true, LineRender::Style::Dotted);
+      if (i + 1 < GROUP_COUNT) {
+        renderer.line.render(SettingsListLayout::kDividerInset, y + rowH - 1,
+                             pageWidth - SettingsListLayout::kDividerInset, y + rowH - 1, true,
+                             LineRender::Style::Dotted);
+      }
     }
 
     const bool actionFocused = selectedGroup == GROUP_COUNT;
@@ -312,9 +326,51 @@ void ClearCacheActivity::clearCache() {
     root.close();
   };
 
+  const auto clearBookStatisticsFiles = [&](const char* rootPath) {
+    std::function<void(const std::string&)> removeStatistics;
+    removeStatistics = [&](const std::string& path) {
+      FsFile dir = SdMan.open(path.c_str());
+      if (!dir || !dir.isDirectory()) {
+        if (dir) dir.close();
+        return;
+      }
+
+      char name[128];
+      dir.rewindDirectory();
+      while (true) {
+        FsFile entry = dir.openNextFile();
+        if (!entry) break;
+        entry.getName(name, sizeof(name));
+        const std::string entryPath = path + "/" + name;
+        if (entry.isDirectory()) {
+          entry.close();
+          removeStatistics(entryPath);
+          continue;
+        }
+
+        const bool isStatistics = strcasecmp(name, "statistics.bin") == 0 ||
+                                  strcasecmp(name, "statistics.bin.tmp") == 0;
+        entry.close();
+        if (!isStatistics) continue;
+
+        INX_SERIAL.printf("[%lu] [CLEAR_CACHE] Removing statistics %s\n", millis(), entryPath.c_str());
+        if (SdMan.remove(entryPath.c_str())) {
+          clearedCount++;
+        } else {
+          failedCount++;
+          INX_SERIAL.printf("[%lu] [CLEAR_CACHE] Failed to remove statistics %s\n", millis(), entryPath.c_str());
+        }
+        yield();
+      }
+      dir.close();
+    };
+    removeStatistics(rootPath);
+  };
+
   if (selectedGroups[GROUP_DISPLAY]) {
     tryRemoveTree("/.system/cache");
     tryRemoveTree("/.display-cache");
+    ImageDisplayCache::invalidate();
   }
   if (selectedGroups[GROUP_BOOK]) {
     clearTreeExceptThumbnails("/.metadata/epub");
@@ -386,6 +442,20 @@ void ClearCacheActivity::clearCache() {
     INX_SERIAL.printf("[%lu] [CLEAR_CACHE] Clearing daily reading data\n", millis());
     ReadingGoal::clear();
     clearedCount++;
+  }
+  if (selectedGroups[GROUP_STATISTICS]) {
+    INX_SERIAL.printf("[%lu] [CLEAR_CACHE] Clearing reading statistics data\n", millis());
+    tryRemoveFile("/.system/statistics.bin");
+    tryRemoveFile("/.system/statistics.bin.tmp");
+    tryRemoveFile("/.system/book_list.bin");
+    tryRemoveFile("/.system/book_list.bin.tmp");
+    tryRemoveFile("/.system/reading_history_books.bin");
+    tryRemoveFile("/.system/reading_history_books.bin.tmp");
+    tryRemoveFile("/.system/reading_time_of_day.bin");
+    tryRemoveFile("/.system/reading_time_of_day.bin.tmp");
+    clearBookStatisticsFiles("/.metadata/epub");
+    clearBookStatisticsFiles("/.metadata/xtc");
+    clearReadingStatisticsState();
   }
 
   INX_SERIAL.printf("[%lu] [CLEAR_CACHE] Done: %d removed, %d failed\n", millis(), clearedCount, failedCount);

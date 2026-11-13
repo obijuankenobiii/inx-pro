@@ -178,7 +178,6 @@ void ReaderPresetEditorActivity::onEnter() {
   drawer_->setEmbeddedRegion(0, previewHeight_, screenW, drawerRegionHeight);
   drawer_->setEmbeddedInvalidate([this]() {
     renderPreview();
-    renderer.displayBuffer(HalDisplay::FAST_REFRESH);
   });
 
   renderer.clearScreen(0xFF);
@@ -192,7 +191,10 @@ void ReaderPresetEditorActivity::onExit() {
 
 void ReaderPresetEditorActivity::renderPreview() {
   const int screenW = renderer.getScreenWidth();
-  const int margin = std::max<int>(6, working_.screenMargin);
+  const int marginTop = std::max<int>(6, working_.marginTop);
+  const int marginLeft = std::max<int>(6, working_.marginLeft);
+  const int marginRight = std::max<int>(6, working_.marginRight);
+  const int marginBottom = std::max<int>(6, working_.marginBottom);
   const int fontId = working_.getReaderFontId();
 
   renderer.rectangle.fill(0, 0, screenW, previewHeight_, false);
@@ -203,9 +205,9 @@ void ReaderPresetEditorActivity::renderPreview() {
                              working_.statusBarRight.item != StatusBarItem::NONE);
   const int statusBarHeight = hasStatusBar ? 28 : 0;
   const int fullBarHeight = StatusBar::reservedFullBarHeight(working_);
-  const int bodyTop = 70;
-  const int bodyBottom = previewHeight_ - statusBarHeight - fullBarHeight - 6;
-  const int maxWidth = std::max(40, screenW - 2 * margin);
+  const int bodyTop = 70 + marginTop;
+  const int bodyBottom = previewHeight_ - statusBarHeight - fullBarHeight - std::max(6, marginBottom);
+  const int maxWidth = std::max(40, screenW - marginLeft - marginRight);
   const int spaceWidth = std::max(
       1, static_cast<int>(std::lround(renderer.text.getSpaceWidth(fontId) * working_.getReaderWordSpacingFactor())));
   int lineHeight = static_cast<int>(renderer.text.getLineHeight(fontId) * working_.getReaderLineCompression());
@@ -222,7 +224,7 @@ void ReaderPresetEditorActivity::renderPreview() {
     if (guideStyle != 2) return;
     const int guideY = lineY + fontAscender + kGuideClearancePx;
     if (guideY < bodyBottom) {
-      renderer.line.render(margin, guideY, screenW - margin, guideY, true, LineRender::Style::Dotted);
+      renderer.line.render(marginLeft, guideY, screenW - marginRight, guideY, true, LineRender::Style::Dotted);
     }
   };
 
@@ -294,15 +296,15 @@ void ReaderPresetEditorActivity::renderPreview() {
       const int count = widthCount;
       const bool lastLine = (i >= wordCount);
 
-      int x = margin + lineIndent;
+      int x = marginLeft + lineIndent;
       int gap = spaceWidth;
       if (align == SystemSetting::JUSTIFIED && !lastLine && count > 1) {
         const int extra = lineMaxWidth - naturalWidth;
         gap = spaceWidth + extra / (count - 1);
       } else if (align == SystemSetting::CENTER_ALIGN) {
-        x = margin + lineIndent + (lineMaxWidth - naturalWidth) / 2;
+        x = marginLeft + lineIndent + (lineMaxWidth - naturalWidth) / 2;
       } else if (align == SystemSetting::RIGHT_ALIGN) {
-        x = margin + lineIndent + (lineMaxWidth - naturalWidth);
+        x = marginLeft + lineIndent + (lineMaxWidth - naturalWidth);
       }
 
       for (int k = 0; k < count; ++k) {
@@ -318,7 +320,7 @@ void ReaderPresetEditorActivity::renderPreview() {
     if (p == 0) {
       const int dropAscender = renderer.text.getFontAscenderSize(dropCapFontId);
       const int bodyBaseline = paragraphFirstLineY + fontAscender;
-      renderer.text.render(dropCapFontId, margin, bodyBaseline - dropAscender, dropCapLetter, true, EpdFontFamily::BOLD);
+      renderer.text.render(dropCapFontId, marginLeft, bodyBaseline - dropAscender, dropCapLetter, true, EpdFontFamily::BOLD);
     }
     y += paragraphGap;
   }
@@ -329,7 +331,7 @@ void ReaderPresetEditorActivity::renderPreview() {
   for (const char* item : kListItems) {
     if (y + lineHeight > bodyBottom) break;
     const int bodyBaseline = y + fontAscender;
-    const int centerX = margin + bulletRadius;
+    const int centerX = marginLeft + bulletRadius;
     const int centerY = bodyBaseline - fontAscender / 2;
     for (int dy = -bulletRadius; dy <= bulletRadius; ++dy) {
       const int span = static_cast<int>(std::sqrt(static_cast<double>(bulletRadius * bulletRadius - dy * dy)));
@@ -337,15 +339,15 @@ void ReaderPresetEditorActivity::renderPreview() {
         renderer.drawPixel(centerX + dx, centerY + dy, true);
       }
     }
-    renderer.text.render(fontId, margin + bulletIndent, y, item, true, EpdFontFamily::REGULAR);
+    renderer.text.render(fontId, marginLeft + bulletIndent, y, item, true, EpdFontFamily::REGULAR);
     drawGuideLineUnder(y);
     y += lineHeight;
   }
 
   if (guideStyle == 1) {
-    const int contentWidth = screenW - 2 * margin;
-    const int x1 = margin + contentWidth / 3;
-    const int x2 = margin + (contentWidth * 2) / 3;
+    const int contentWidth = screenW - marginLeft - marginRight;
+    const int x1 = marginLeft + contentWidth / 3;
+    const int x2 = marginLeft + (contentWidth * 2) / 3;
     renderer.line.render(x1, bodyTop, x1, bodyBottom, true, LineRender::Style::Dotted);
     renderer.line.render(x2, bodyTop, x2, bodyBottom, true, LineRender::Style::Dotted);
   }
@@ -361,8 +363,9 @@ void ReaderPresetEditorActivity::renderPreview() {
 
 void ReaderPresetEditorActivity::renderPreviewStatusBar(int barTop, int barHeight) {
   const int screenW = renderer.getScreenWidth();
-  const int margin = std::max<int>(6, working_.screenMargin);
-  const int fontId = MONTSERRAT_8_FONT_ID;
+  const int marginLeft = std::max<int>(6, working_.marginLeft);
+  const int marginRight = std::max<int>(6, working_.marginRight);
+  const int fontId = systemFontIdForPointSize(8);
 
   const int textY = barTop + (barHeight - renderer.text.getLineHeight(fontId)) / 2 + 2;
 
@@ -371,7 +374,7 @@ void ReaderPresetEditorActivity::renderPreviewStatusBar(int barTop, int barHeigh
   const char* right = statusPlaceholder(working_.statusBarRight.item);
 
   if (left && left[0]) {
-    renderer.text.render(fontId, margin + 2, textY, left, true);
+    renderer.text.render(fontId, marginLeft + 2, textY, left, true);
   }
   if (middle && middle[0]) {
     const int w = renderer.text.getWidth(fontId, middle);
@@ -379,7 +382,7 @@ void ReaderPresetEditorActivity::renderPreviewStatusBar(int barTop, int barHeigh
   }
   if (right && right[0]) {
     const int w = renderer.text.getWidth(fontId, right);
-    renderer.text.render(fontId, screenW - margin - 2 - w, textY, right, true);
+    renderer.text.render(fontId, screenW - marginRight - 2 - w, textY, right, true);
   }
 }
 
@@ -390,7 +393,7 @@ void ReaderPresetEditorActivity::renderPreviewFullBar(int barTop, int barHeight)
   }
 
   const int screenW = renderer.getScreenWidth();
-  const int fontId = MONTSERRAT_8_FONT_ID;
+  const int fontId = systemFontIdForPointSize(8);
   const int textY = barTop + (barHeight - renderer.text.getLineHeight(fontId)) / 2 + 2;
 
   if (style == StatusBarItem::PAGE_BARS) {
@@ -443,6 +446,10 @@ void ReaderPresetEditorActivity::promptName() {
 }
 
 void ReaderPresetEditorActivity::beginExit() {
+  // A swipe-up can open this prompt while the GPIO layer still reports the
+  // completed swipe. Clear it before the prompt starts accepting taps; the
+  // input manager otherwise rejects taps while any swipe remains latched.
+  mappedInput.discardPendingSwipe();
   if (isNew_) {
     savePromptSelection_ = -1;
     savePromptOpen_ = true;
@@ -454,6 +461,8 @@ void ReaderPresetEditorActivity::beginExit() {
 }
 
 void ReaderPresetEditorActivity::doSaveAndFinish() {
+  mappedInput.discardPendingTouchTap();
+  mappedInput.discardPendingSwipe();
   if (isNew_) {
     READER_PRESETS.add(name_, working_);
   } else {
@@ -464,8 +473,25 @@ void ReaderPresetEditorActivity::doSaveAndFinish() {
 }
 
 void ReaderPresetEditorActivity::discardAndFinish() {
+  mappedInput.discardPendingTouchTap();
+  mappedInput.discardPendingSwipe();
   auto done = onDone_;
   if (done) done();
+}
+
+void ReaderPresetEditorActivity::dismissSavePrompt() {
+  savePromptOpen_ = false;
+  mappedInput.discardPendingButtonEdges();
+  mappedInput.discardPendingTouchTap();
+  mappedInput.discardPendingSwipe();
+  // The drawer owns the lower embedded region. Redraw it as a complete frame
+  // so closing the modal restores both the preview and live settings controls.
+  if (drawer_) {
+    drawer_->render();
+  } else {
+    renderPreview();
+    renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+  }
 }
 
 void ReaderPresetEditorActivity::renderSavePrompt() {
@@ -481,6 +507,13 @@ void ReaderPresetEditorActivity::handleSavePrompt() {
   static constexpr int optionCount = 2;
   const PopUpBounds box = PopUp::bounds(renderer, optionCount);
 
+  // The prompt is modal, but the editor's standard swipe-up exit gesture
+  // should still close it and return control to the page underneath.
+  if (mappedInput.wasTouchSwipeUpForRenderer(renderer)) {
+    dismissSavePrompt();
+    return;
+  }
+
   if (mappedInput.hasTouch()) {
     float tapNx = 0.0f;
     float tapNy = 0.0f;
@@ -492,21 +525,23 @@ void ReaderPresetEditorActivity::handleSavePrompt() {
         savePromptSelection_ = optionY / box.row;
         savePromptOpen_ = false;
         if (savePromptSelection_ == 0) {
+          mappedInput.discardPendingTouchTap();
           promptName();
         } else {
           discardAndFinish();
         }
         return;
       }
-      savePromptOpen_ = false;
-      if (drawer_) drawer_->render();
+      // Tapping outside the modal is equivalent to closing it. Consume the
+      // current touch sequence so the same tap cannot reach the drawer after
+      // the prompt is removed.
+      dismissSavePrompt();
       return;
     }
   }
 
   if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
-    savePromptOpen_ = false;
-    if (drawer_) drawer_->render();
+    dismissSavePrompt();
     return;
   }
   if (mappedInput.wasPressed(MappedInputManager::Button::Up) ||
@@ -524,6 +559,7 @@ void ReaderPresetEditorActivity::handleSavePrompt() {
     if (savePromptSelection_ < 0) return;
     savePromptOpen_ = false;
     if (savePromptSelection_ == 0) {
+      mappedInput.discardPendingButtonEdges();
       promptName();
     } else {
       discardAndFinish();
@@ -542,27 +578,44 @@ void ReaderPresetEditorActivity::loop() {
     return;
   }
 
-  if (millis() - enteredAtMs_ < 200) {
-    return;
-  }
-
   if (savePromptOpen_) {
     handleSavePrompt();
     return;
   }
 
-  const bool verticalSwipe = mappedInput.wasTouchSwipeUp() || mappedInput.wasTouchSwipeDown() ||
-                             mappedInput.wasTouchSwipeUpForRenderer(renderer) ||
-                             mappedInput.wasTouchSwipeDownForRenderer(renderer);
-  if (verticalSwipe) {
+  float swipeStartNx = 0.0f;
+  float swipeStartNy = 0.0f;
+  const bool swipeUp = mappedInput.wasTouchSwipeUpInScreen(renderer, swipeStartNx, swipeStartNy);
+  if (swipeUp) {
+    const bool fromBottomEdge = swipeStartNy >= 0.85f;
+    INX_SERIAL.printf("[PRESET_EDITOR][TOUCH] swipe-up start=(%.3f,%.3f) edge=%d\n", swipeStartNx,
+                      swipeStartNy, fromBottomEdge ? 1 : 0);
+    // Only the bottom edge closes the editor. Upward swipes elsewhere belong
+    // to the embedded settings drawer and must not be dropped by the editor.
+    if (fromBottomEdge) {
+      // Treat swipe-up like the editor's Back button. Existing presets save on
+      // exit; new presets show the existing Save/Discard prompt.
+      INX_SERIAL.println("[PRESET_EDITOR][TOUCH] bottom-edge swipe -> close editor");
+      beginExit();
+    } else if (drawer_) {
+      INX_SERIAL.println("[PRESET_EDITOR][TOUCH] body swipe -> drawer");
+      drawer_->handleInput(mappedInput);
+    }
+    return;
+  }
+
+  const bool swipeDown = mappedInput.wasTouchSwipeDown() || mappedInput.wasTouchSwipeDownForRenderer(renderer);
+  if (swipeDown) {
     if (drawer_) {
       drawer_->handleInput(mappedInput);
     }
     return;
   }
 
-  if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
-    beginExit();
+  // The margin editor is a child page of the drawer. Give it first refusal on
+  // every input edge so a value tap cannot be interpreted as activity Back.
+  if (drawer_ && drawer_->isMarginEditorOpen()) {
+    drawer_->handleInput(mappedInput);
     return;
   }
 
@@ -578,6 +631,16 @@ void ReaderPresetEditorActivity::loop() {
       }
       mappedInput.restoreTouchTapInScreen(renderer, tapX, tapY);
     }
+
+    if (drawer_) {
+      drawer_->handleInput(mappedInput);
+    }
+    return;
+  }
+
+  if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+    beginExit();
+    return;
   }
 
   if (drawer_) {

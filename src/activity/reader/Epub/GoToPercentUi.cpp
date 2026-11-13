@@ -205,9 +205,9 @@ void GoToPercentUi::render(EpubActivity& act) {
 
   char percentText[6];
   std::snprintf(percentText, sizeof(percentText), "%d%%", percent_);
-  const int textWidth = renderer.text.getWidth(MONTSERRAT_8_FONT_ID, percentText, EpdFontFamily::BOLD);
-  const int textHeight = renderer.text.getLineHeight(MONTSERRAT_8_FONT_ID);
-  renderer.text.render(MONTSERRAT_8_FONT_ID, knobX - textWidth / 2, bounds.trackY - textHeight / 2,
+  const int textWidth = renderer.text.getWidth(systemFontIdForPointSize(8), percentText, EpdFontFamily::BOLD);
+  const int textHeight = renderer.text.getLineHeight(systemFontIdForPointSize(8));
+  renderer.text.render(systemFontIdForPointSize(8), knobX - textWidth / 2, bounds.trackY - textHeight / 2,
                        percentText, true, EpdFontFamily::BOLD);
 
   renderer.rectangle.render(bounds.x, bounds.y, bounds.width, bounds.height, true);

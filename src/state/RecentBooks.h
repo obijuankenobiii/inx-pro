@@ -7,6 +7,7 @@
 
 #include <string>
 #include <vector>
+#include <cstdint>
 
 struct RecentBook {
   std::string path;
@@ -14,6 +15,14 @@ struct RecentBook {
   std::string title;
   std::string author;
   float progress = -1.0f;
+  // UI data is persisted with the recent entry so home widgets never need to
+  // probe the SD card for the cover or reopen the EPUB metadata cache.
+  std::string thumbnailPath;
+  std::string description;
+  std::string rating;
+  uint16_t thumbnailWidth = 0;
+  uint16_t thumbnailHeight = 0;
+  uint8_t uiMetadataReady = 0;
 
   RecentBook() = default;
 

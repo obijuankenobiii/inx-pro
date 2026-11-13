@@ -3,8 +3,8 @@
 #include <functional>
 
 #include "activity/Activity.h"
+#include "SettingsListLayout.h"
 #include "state/HomeTheme.h"
-#include "system/UiLayout.h"
 
 class BaseHeatmapActivity final : public Activity {
  public:
@@ -20,7 +20,7 @@ class BaseHeatmapActivity final : public Activity {
   void loop() override;
 
  private:
-  static constexpr int kRowHeight = UiLayout::LIST_ITEM_HEIGHT;
+  static constexpr int kRowHeight = SettingsListLayout::kRowHeight;
   HomeTheme::HeatmapView view_;
   bool showLabel_ = true;
   HomeTheme::CarouselLabelColor labelColor_ = HomeTheme::CarouselLabelColor::Black;

@@ -31,7 +31,7 @@ class FontManager {
   static constexpr int SD_FONT_START_ID = 5000;
 
   /** Point-size range exposed for TrueType/OpenType reader fonts. */
-  static constexpr uint8_t OUTLINE_FONT_MIN_POINT_SIZE = 8;
+  static constexpr uint8_t OUTLINE_FONT_MIN_POINT_SIZE = 6;
   static constexpr uint8_t OUTLINE_FONT_MAX_POINT_SIZE = 45;
 
   static void initialize(GfxRenderer& renderer);
@@ -65,6 +65,8 @@ class FontManager {
 
   static bool loadFontFromSD(int fontId, GfxRenderer& renderer, bool enableGlyphBitmapCache = true);
   static bool ensureFontReady(int fontId, GfxRenderer& renderer);
+  /** Ensure a system-font SD slot is loaded using the renderer registered at initialize(). */
+  static bool ensureSystemFontReady(int fontId);
   /** Find an installed language font that really contains this codepoint. */
   static int findLanguageFontForCodepoint(uint32_t codepoint, int preferredPt, EpdFontFamily::Style style,
                                           GfxRenderer& renderer, const char* preferredLanguageCode = nullptr);
@@ -108,6 +110,8 @@ class FontManager {
     EpdFontFamily* fontFamily;
     bool isLanguage;
     bool isLoaded;
+    bool cacheGlyphBitmaps = true;
+    uint8_t stylesAttempted = 0;
     uint32_t lastUsed;
   };
 
@@ -122,5 +126,6 @@ class FontManager {
 
   static void updateFontLRU(int fontId);
   static void cleanupFontData(SDFontEntry* entry);
+  static void loadFontStyle(void* context, EpdFontFamily::Style style);
   static void rebuildSdReaderFamilyList();
 };

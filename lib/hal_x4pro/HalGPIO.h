@@ -20,6 +20,7 @@
 
 #include <Arduino.h>
 #include <InputManager.h>
+#include "system/TouchGestureClassifier.h"
 
 class HalGPIO {
  public:
@@ -36,6 +37,8 @@ class HalGPIO {
   HalGPIO() = default;
 
   void begin();
+  /** Poll touch while the panel waveform is blocking the normal main loop. */
+  void updateDuringDisplay();
   void update();
   void injectOneShotPress(uint8_t buttonIndex);
   bool isPressed(uint8_t buttonIndex) const;
@@ -63,6 +66,8 @@ class HalGPIO {
   bool wasTouchPressedAt(float& nx, float& ny) const;
   bool isTouchHeldAt(float& nx, float& ny) const;
   bool wasTouchActivity() const;
+  /** True once on release of the capacitive Home key's short press. */
+  bool wasHomeKeyTapped() const;
   bool wasTouchTap(float& nx, float& ny) const;
   unsigned long lastTouchHeldMs() const;
 
@@ -100,6 +105,7 @@ class HalGPIO {
 
  private:
   InputManager inputMgr;
+  TouchGestureClassifier touchGesture;
 
   uint8_t touchPressedEvents = 0;
   uint8_t touchReleasedEvents = 0;
@@ -120,6 +126,14 @@ class HalGPIO {
   void serviceTouchGestures();
 
   bool suppressTouchUntilRelease = false;
+  bool touchSwipeLatchedDuringDisplay = false;
+  mutable bool suppressPostSwipeTap = false;
+  // A release event can be queried by the global gesture handler and then by
+  // the active page in the same input frame. Keep rejected post-swipe taps
+  // rejected for all of those queries.
+  mutable bool postSwipeTapBlockedThisFrame = false;
+  unsigned long swipeDetectedAtMs = 0;
+  mutable unsigned long postSwipeDuplicateBlockedUntilMs = 0;
 };
 
 extern HalGPIO gpio;

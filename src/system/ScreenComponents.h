@@ -28,10 +28,13 @@ class ScreenComponents {
   static void resetPageHeaderBackButton();
   /** Hit-test a tap against the recorded icon (with a small touch margin). */
   static bool pageHeaderBackButtonHit(int x, int y);
+
+  /** Draws a transient curved back-gesture guide anchored at the touch origin. */
   static constexpr int BATTERY_ICON_WIDTH = 28;
   static constexpr int BATTERY_ICON_HEIGHT = 14;
   static constexpr int BATTERY_TEXT_GAP = 5;
-  static constexpr int BATTERY_ICON_TOP_OFFSET = 3;
+  static constexpr int BATTERY_ICON_TOP_OFFSET = 8;
+  static constexpr int BATTERY_RIGHT_MARGIN = 20;
 
   struct PopupLayout {
     int x;
@@ -41,10 +44,16 @@ class ScreenComponents {
   };
 
   static void drawBattery(const GfxRenderer& renderer, int left, int top, bool showPercentage = true);
+  static void drawBatteryRightAligned(const GfxRenderer& renderer, int right, int top,
+                                      bool showPercentage = true);
   static bool drawMenuClock(const GfxRenderer& renderer, int left, int top);
+  static bool drawMenuClockRightAligned(const GfxRenderer& renderer, int right, int top, int* outLeft = nullptr);
   static void drawMenuClockAndBattery(const GfxRenderer& renderer, int batteryLeft, int top,
                                       bool showBatteryPercentage = true);
   static void drawBookProgressBar(const GfxRenderer& renderer, size_t bookProgress);
+
+  /** Draws a subtle white dither over existing content for modal overlays. */
+  static void drawWhiteOverlay(const GfxRenderer& renderer, int startY = 0);
 
   static PopupLayout drawPopup(const GfxRenderer& renderer, const char* message);
 

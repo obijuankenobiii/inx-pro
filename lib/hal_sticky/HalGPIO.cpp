@@ -43,14 +43,16 @@ void HalGPIO::begin() {
 
   BoardConfig::holdPowerRails();
 
+#if FREEINK_DEVICE_STICKY
+  // Sticky's GT911 needs this unit-specific calibration. Other targets that
+  // reuse this HAL wrapper (Picco) must keep their BoardConfig profile intact.
   BoardConfig::ACTIVE.touch.swapXY = false;
-
   BoardConfig::ACTIVE.touch.flipX = false;
-
   BoardConfig::ACTIVE.touch.rawMinX = 0;
   BoardConfig::ACTIVE.touch.rawMaxX = 479;
   BoardConfig::ACTIVE.touch.rawMinY = 0;
   BoardConfig::ACTIVE.touch.rawMaxY = 799;
+#endif
 
   inputMgr.begin();
   INX_SERIAL.printf("[STICKY] touch controller ready=%d ranges=x:%u..%u y:%u..%u\n", inputMgr.hasTouch() ? 1 : 0,
@@ -69,7 +71,7 @@ void HalGPIO::serviceTouchGestures() {
   }
 
   float sx = 0.0f, sy = 0.0f, ex = 0.0f, ey = 0.0f;
-  if (inputMgr.wasSwipe(sx, sy, ex, ey)) {
+  if (touchGesture.wasSwipe(sx, sy, ex, ey)) {
     touchSwipeStartNx = sx;
     touchSwipeStartNy = sy;
     const float dx = ex - sx;
@@ -83,6 +85,12 @@ void HalGPIO::serviceTouchGestures() {
 
     const bool startedAtEdge = sx < kEdgeSwipeMargin || sx > (1.0f - kEdgeSwipeMargin) || sy < kEdgeSwipeMargin ||
                                sy > (1.0f - kEdgeSwipeMargin);
+    // A rightward swipe beginning at the left edge is the hidden-sidebar
+    // gesture. Do not convert it into a synthetic Back press before the page
+    // navigation layer can consume it.
+    if (sx < kEdgeSwipeMargin && touchSwipeDirection == TouchSwipe::Right) {
+      return;
+    }
     if (startedAtEdge) {
       touchPressedEvents |= (1 << BTN_BACK);
       touchReleasedEvents |= (1 << BTN_BACK);
@@ -93,6 +101,8 @@ void HalGPIO::serviceTouchGestures() {
 
 void HalGPIO::update() {
   inputMgr.update();
+  const auto& touch = BoardConfig::ACTIVE.touch;
+  touchGesture.update(inputMgr, touch.rawMaxX - touch.rawMinX, touch.rawMaxY - touch.rawMinY);
   serviceTouchGestures();
 }
 
@@ -107,7 +117,7 @@ bool HalGPIO::isTouchHeldAt(float& nx, float& ny) const { return inputMgr.isTouc
 bool HalGPIO::wasTouchActivity() const { return inputMgr.wasTouchActivity(); }
 
 bool HalGPIO::wasTouchTap(float& nx, float& ny) const {
-  return inputMgr.wasTouchTap(nx, ny);
+  return touchGesture.wasTap(nx, ny);
 }
 
 bool HalGPIO::touchSwipeStart(float& nx, float& ny) const {
@@ -255,23 +265,18 @@ int HalGPIO::getBatteryPercentage() const {
 }
 
 bool HalGPIO::isCharging() const {
-  const int chargeStatusPin = BoardConfig::ACTIVE.batteryChargeStatus;
-  if (chargeStatusPin < 0) {
-    return false;
-  }
-  static bool chargeStatusConfigured = false;
-  if (!chargeStatusConfigured) {
-    pinMode(chargeStatusPin, INPUT_PULLUP);
-    chargeStatusConfigured = true;
-  }
-  return digitalRead(chargeStatusPin) == LOW;
+  static const BatteryMonitor battery;
+  return battery.isCharging();
 }
 
 bool HalGPIO::isUsbConnected() const {
-  if (BoardConfig::ACTIVE.usbDetect < 0) {
-    return false;
+  if (BoardConfig::ACTIVE.usbDetect >= 0) {
+    return digitalRead(BoardConfig::ACTIVE.usbDetect) == HIGH;
   }
-  return digitalRead(BoardConfig::ACTIVE.usbDetect) == HIGH;
+  static const BatteryMonitor battery;
+  bool known = false;
+  const bool present = battery.isExternalPowerPresent(&known);
+  return known ? present : battery.isCharging();
 }
 
 bool HalGPIO::readDateTime(DateTime& outDateTime) const {

@@ -5,9 +5,11 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <cstdio>
 #include <string>
 
 #include "state/Statistics.h"
+#include "state/ReadingGoal.h"
 #include "system/Fonts.h"
 
 namespace {
@@ -54,41 +56,43 @@ int toneForValue(const uint32_t value, const uint32_t maximum) {
 
 void drawCell(const GfxRenderer& renderer, const int x, const int y, const int width, const int height,
               const int tone) {
-  renderer.rectangle.fill(x, y, width, height, tone, false);
-  renderer.rectangle.render(x, y, width, height, true);
+  renderer.rectangle.fill(x, y, width, height, tone, true, false);
+  renderer.rectangle.render(x, y, width, height, true, true, false);
 }
 
 }
 
 void Heatmap::render(const int x, const int y, const int width, const int height,
                      const HomeTheme::HeatmapView view, const bool showLabel,
-                     const HomeTheme::CarouselLabelColor labelColor) const {
-  renderContent(x, y, width, height, view, false, showLabel, labelColor);
+                     const HomeTheme::CarouselLabelColor labelColor, const bool compact) const {
+  renderContent(x, y, width, height, view, false, showLabel, labelColor, compact);
 }
 
 void Heatmap::preview(const int x, const int y, const int width, const int height,
                       const HomeTheme::HeatmapView view, const bool showLabel,
-                      const HomeTheme::CarouselLabelColor labelColor) const {
-  renderContent(x, y, width, height, view, true, showLabel, labelColor);
+                      const HomeTheme::CarouselLabelColor labelColor, const bool compact) const {
+  renderContent(x, y, width, height, view, true, showLabel, labelColor, compact);
 }
 
 uint32_t Heatmap::hitTestDateKey(const int px, const int py, const int x, const int y, const int width,
-                                  const int height, const HomeTheme::HeatmapView view, const bool showLabel) const {
+                                  const int height, const HomeTheme::HeatmapView view, const bool showLabel,
+                                  const bool compact) const {
   if (width <= 0 || height <= 0) return 0;
   uint32_t today = 0;
   if (!currentRtcDateKey(today)) return 0;
 
-  const int titleFont = MONTSERRAT_10_FONT_ID;
-  const int smallFont = MONTSERRAT_8_FONT_ID;
+  const int titleFont = systemFontIdForPointSize(10);
+  const int smallFont = systemFontIdForPointSize(8);
   const int titleLine = renderer_.text.getLineHeight(titleFont);
   const int smallLine = renderer_.text.getLineHeight(smallFont);
   constexpr int paddingX = 20;
-  const int paddingY = std::max(8, std::min(14, width / 24));
+  constexpr int paddingY = 20;
+  constexpr int legendGap = 10;
   const int titleY = y + paddingY;
-  const int legendHeight = smallLine + 4;
-  const int headerLine = showLabel ? titleLine : smallLine + 2;
-  const int gridTop = titleY + headerLine + 7;
-  const int gridBottom = y + height - paddingY - legendHeight;
+  const int legendHeight = smallLine;
+  const int headerLine = showLabel ? titleLine : 0;
+  const int gridTop = titleY + headerLine + 2;
+  const int gridBottom = y + height - paddingY - legendHeight - legendGap;
   if (gridBottom <= gridTop) return 0;
 
   int columns = 14;
@@ -104,11 +108,23 @@ uint32_t Heatmap::hitTestDateKey(const int px, const int py, const int x, const 
     labelWidth = renderer_.text.getWidth(smallFont, "W") + 10;
   }
 
-  const int gridX = x + paddingX + labelWidth;
-  const int gridWidth = std::max(1, width - paddingX * 2 - labelWidth);
-  const int gap = width >= 300 ? 3 : 2;
-  const int cellWidth = std::max(2, (gridWidth - gap * (columns - 1)) / columns);
-  const int cellHeight = std::max(2, (gridBottom - gridTop - gap * (rows - 1)) / rows);
+  int gridRight = x + width - paddingX;
+  int gridLeft = x + paddingX + labelWidth;
+  const bool showWeekTotal = view == HomeTheme::HeatmapView::Weekly || view == HomeTheme::HeatmapView::Monthly;
+  if (showWeekTotal) {
+    const int minimumStatsWidth = compact ? 120 : 150;
+    const int statsWidth = minimumStatsWidth;
+    const int statsLeft = gridRight - statsWidth;
+    gridRight = statsLeft - 20;
+  }
+  const int gridWidth = std::max(1, gridRight - gridLeft);
+  const int gap = width >= 300 ? 4 : 3;
+  const int maxCellWidth = std::max(2, (gridWidth - gap * (columns - 1)) / columns);
+  const int maxCellHeight = std::max(2, (gridBottom - gridTop - gap * (rows - 1)) / rows);
+  const int cellWidth = std::max(2, std::min(maxCellWidth, maxCellHeight));
+  const int cellHeight = cellWidth;
+  const int actualGridWidth = cellWidth * columns + gap * (columns - 1);
+  const int gridX = showWeekTotal ? gridLeft : gridRight - actualGridWidth;
   const int actualGridHeight = cellHeight * rows + gap * (rows - 1);
   const int actualGridTop = gridTop + std::max(0, (gridBottom - gridTop - actualGridHeight) / 2);
   if (px < gridX || py < actualGridTop || px >= gridX + cellWidth * columns + gap * (columns - 1) ||
@@ -151,7 +167,7 @@ bool Heatmap::needsRefresh(const HomeTheme::HeatmapView view) const {
 
 void Heatmap::renderContent(const int x, const int y, const int width, const int height,
                             const HomeTheme::HeatmapView view, const bool sample, const bool showLabel,
-                            const HomeTheme::CarouselLabelColor labelColor) const {
+                            const HomeTheme::CarouselLabelColor labelColor, const bool compact) const {
   if (width <= 0 || height <= 0) return;
   renderer_.rectangle.fill(x, y, width, height, false);
 
@@ -165,15 +181,13 @@ void Heatmap::renderContent(const int x, const int y, const int width, const int
   }
   if (sample) today = 20260831;
 
-  const int titleFont = MONTSERRAT_10_FONT_ID;
-  const int smallFont = MONTSERRAT_8_FONT_ID;
+  const int titleFont = systemFontIdForPointSize(10);
+  const int smallFont = systemFontIdForPointSize(8);
   const int titleLine = renderer_.text.getLineHeight(titleFont);
   const int smallLine = renderer_.text.getLineHeight(smallFont);
   const int paddingX = 20;
-  const int paddingY = std::max(8, std::min(14, width / 24));
+  constexpr int paddingY = 20;
   const int titleY = y + paddingY;
-  const char* viewLabel = HomeTheme::heatmapViewLabel(view);
-  const int viewWidth = renderer_.text.getWidth(smallFont, viewLabel);
   if (showLabel) {
     if (labelColor == HomeTheme::CarouselLabelColor::Gray) {
       renderer_.text.renderGray(titleFont, x + paddingX, titleY, "Reading heatmap", true, EpdFontFamily::BOLD);
@@ -181,13 +195,11 @@ void Heatmap::renderContent(const int x, const int y, const int width, const int
       renderer_.text.render(titleFont, x + paddingX, titleY, "Reading heatmap", true, EpdFontFamily::BOLD);
     }
   }
-  renderer_.text.render(smallFont, x + width - paddingX - viewWidth, titleY + 2, viewLabel, true,
-                        EpdFontFamily::REGULAR);
-
-  const int legendHeight = smallLine + 4;
-  const int headerLine = showLabel ? titleLine : smallLine + 2;
-  const int gridTop = titleY + headerLine + 7;
-  const int gridBottom = y + height - paddingY - legendHeight;
+  const int legendHeight = smallLine;
+  constexpr int legendGap = 10;
+  const int headerLine = showLabel ? titleLine : 0;
+  const int gridTop = titleY + headerLine + 2;
+  const int gridBottom = y + height - paddingY - legendHeight - legendGap;
   if (gridBottom <= gridTop) return;
 
   int columns = 14;
@@ -203,11 +215,24 @@ void Heatmap::renderContent(const int x, const int y, const int width, const int
     labelWidth = renderer_.text.getWidth(smallFont, "W") + 10;
   }
 
-  const int gridX = x + paddingX + labelWidth;
-  const int gridWidth = std::max(1, width - paddingX * 2 - labelWidth);
-  const int gap = width >= 300 ? 3 : 2;
-  const int cellWidth = std::max(2, (gridWidth - gap * (columns - 1)) / columns);
-  const int cellHeight = std::max(2, (gridBottom - gridTop - gap * (rows - 1)) / rows);
+  int gridRight = x + width - paddingX;
+  int gridLeft = x + paddingX + labelWidth;
+  const bool showWeekTotal = view == HomeTheme::HeatmapView::Weekly || view == HomeTheme::HeatmapView::Monthly;
+  const int minimumStatsWidth = compact ? 120 : 150;
+  const int weeklyStatsWidth = showWeekTotal ? minimumStatsWidth : 0;
+  if (weeklyStatsWidth > 0) {
+    const int statsLeft = gridRight - weeklyStatsWidth;
+    gridRight = statsLeft - 20;
+  }
+  const int gridWidth = std::max(1, gridRight - gridLeft);
+  const int gap = width >= 300 ? 4 : 3;
+  const int maxCellWidth = std::max(2, (gridWidth - gap * (columns - 1)) / columns);
+  const int maxCellHeight = std::max(2, (gridBottom - gridTop - gap * (rows - 1)) / rows);
+  const int naturalCellWidth = std::min(maxCellWidth, maxCellHeight);
+  const int cellWidth = std::max(2, naturalCellWidth);
+  const int cellHeight = cellWidth;
+  const int actualGridWidth = cellWidth * columns + gap * (columns - 1);
+  const int gridX = showWeekTotal ? gridLeft : gridRight - actualGridWidth;
   const int actualGridHeight = cellHeight * rows + gap * (rows - 1);
   const int actualGridTop = gridTop + std::max(0, (gridBottom - gridTop - actualGridHeight) / 2);
 
@@ -261,11 +286,87 @@ void Heatmap::renderContent(const int x, const int y, const int width, const int
     }
   }
 
+  if (showWeekTotal) {
+    uint64_t totalWeekMs = 0;
+    const int64_t todayDay = readingDateToDay(today);
+    const int64_t weekStart = todayDay - mondayBasedWeekday(todayDay);
+    for (int row = 0; row < 7; ++row) {
+      const int64_t date = weekStart + row;
+      if (date > todayDay) continue;
+      if (sample) {
+        totalWeekMs += ((7 + row) % 5 == 0 ? 14U * 60000U : 0U);
+      } else {
+        totalWeekMs += timeForDate(readingDayToDate(date), history);
+      }
+    }
+
+    const ReadingGoal::Status goalStatus = ReadingGoal::status();
+    const uint64_t goalWeekMs = static_cast<uint64_t>(goalStatus.goalMinutes) * 7ULL * 60ULL * 1000ULL;
+    char goalHoursText[20];
+    if (goalWeekMs > 0) {
+      std::snprintf(goalHoursText, sizeof(goalHoursText), "%.1fh",
+                    static_cast<double>(goalWeekMs) / 3600000.0);
+    } else {
+      std::snprintf(goalHoursText, sizeof(goalHoursText), "Off");
+    }
+    char totalHoursText[20];
+    const double totalHours = static_cast<double>(totalWeekMs) / 3600000.0;
+    std::snprintf(totalHoursText, sizeof(totalHoursText), "%.1fh", totalHours);
+
+    const int statsRight = x + width - paddingX;
+    const int statsLeft = gridX + actualGridWidth + 20;
+    const int valueFont = systemFontIdForPointSize(18);
+    const int valueLine = renderer_.text.getLineHeight(valueFont);
+    constexpr int barHeight = 10;
+    const int barWidth = std::max(1, statsRight - statsLeft);
+    int barY = gridBottom - barHeight - 4;
+
+    if (compact) {
+      const int groupHeight = smallLine + 4 + valueLine;
+      const int summaryBottom = gridBottom - barHeight - 8;
+      const int groupGap = std::max(10, (summaryBottom - gridTop - groupHeight * 2) / 3);
+      const int goalLabelY = gridTop + groupGap;
+      const int goalValueY = goalLabelY + smallLine + 4;
+      const int weekLabelY = goalValueY + valueLine + groupGap;
+      const int weekValueY = weekLabelY + smallLine + 4;
+      renderer_.text.renderGray(smallFont, statsLeft, goalLabelY, "Goal", true, EpdFontFamily::REGULAR);
+      renderer_.text.renderGray(valueFont, statsLeft, goalValueY, goalHoursText, true, EpdFontFamily::REGULAR);
+      renderer_.text.render(smallFont, statsLeft, weekLabelY, "This week", true, EpdFontFamily::REGULAR);
+      renderer_.text.render(valueFont, statsLeft, weekValueY, totalHoursText, true, EpdFontFamily::REGULAR);
+    } else {
+      const int goalLabelWidth = renderer_.text.getWidth(smallFont, "Goal");
+      const int weekLabelWidth = renderer_.text.getWidth(smallFont, "This week");
+      const int goalHoursWidth = renderer_.text.getWidth(valueFont, goalHoursText, EpdFontFamily::BOLD);
+      const int statsY = gridTop + 4;
+      renderer_.text.render(smallFont, statsLeft, statsY, "This week", true, EpdFontFamily::BOLD);
+      renderer_.text.renderGray(smallFont, statsRight - goalLabelWidth, statsY, "Goal", true, EpdFontFamily::BOLD);
+      renderer_.text.render(valueFont, statsLeft, statsY + smallLine + 8, totalHoursText, true,
+                            EpdFontFamily::BOLD);
+      renderer_.text.renderGray(valueFont, statsRight - goalHoursWidth, statsY + smallLine + 8,
+                                goalHoursText, true, EpdFontFamily::BOLD);
+    }
+
+    renderer_.rectangle.fill(statsLeft, barY, barWidth, barHeight,
+                             static_cast<int>(GfxRenderer::FillTone::Paper), true);
+    if (goalWeekMs > 0) {
+      renderer_.rectangle.fill(statsLeft, barY, barWidth, barHeight,
+                               static_cast<int>(GfxRenderer::FillTone::Gray), true);
+      const int actualWidth = static_cast<int>(std::min<uint64_t>(barWidth,
+          (static_cast<uint64_t>(barWidth) * totalWeekMs + goalWeekMs / 2ULL) / goalWeekMs));
+      if (actualWidth > 0) {
+        renderer_.rectangle.fill(statsLeft, barY, actualWidth, barHeight,
+                                 static_cast<int>(GfxRenderer::FillTone::Ink), true);
+      }
+    }
+  }
+
   if (view != HomeTheme::HeatmapView::Daily) {
     static constexpr const char* const weekdayLabels[] = {"M", "T", "W", "T", "F", "S", "S"};
+    const int weekdayLabelWidth = renderer_.text.getWidth(smallFont, "W");
+    const int weekdayLabelX = gridX - weekdayLabelWidth - 6;
     for (int row = 0; row < rows; ++row) {
       const int labelY = actualGridTop + row * (cellHeight + gap) + std::max(0, (cellHeight - smallLine) / 2);
-      renderer_.text.render(smallFont, x + paddingX, labelY, weekdayLabels[row], true);
+      renderer_.text.render(smallFont, weekdayLabelX, labelY, weekdayLabels[row], true);
     }
   }
 
@@ -280,10 +381,12 @@ void Heatmap::renderContent(const int x, const int y, const int width, const int
   }
 
   const int legendY = y + height - paddingY - smallLine;
-  renderer_.text.render(smallFont, x + paddingX, legendY, "Less", true);
   const int square = std::max(4, std::min(10, smallLine - 1));
   const int squareY = legendY + std::max(0, (smallLine - square) / 2);
-  int legendX = x + paddingX + renderer_.text.getWidth(smallFont, "Less") + 5;
+  const int lessWidth = renderer_.text.getWidth(smallFont, "Less");
+  int legendX = x + paddingX;
+  renderer_.text.render(smallFont, legendX, legendY, "Less", true);
+  legendX += lessWidth + 5;
   drawCell(renderer_, legendX, squareY, square, square, static_cast<int>(GfxRenderer::FillTone::Paper));
   legendX += square + 3;
   drawCell(renderer_, legendX, squareY, square, square, static_cast<int>(GfxRenderer::FillTone::Gray));

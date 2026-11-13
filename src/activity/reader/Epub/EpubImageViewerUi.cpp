@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <vector>
 
 #include "EpubActivity.h"
 #include "images/Close.h"
@@ -186,13 +187,18 @@ void EpubImageViewerUi::render(EpubActivity& activity) {
   ImageRender::Options options;
   options.mode = READER_SETTINGS.readerImageGrayscale != 0 ? ImageRenderMode::TwoBit : ImageRenderMode::OneBit;
   options.quality = READER_SETTINGS.readerImageGrayscale == SystemSetting::READER_IMAGE_HIGH;
-  options.fastQuality = false;
+  options.fastQuality = true;
   options.useDisplayCache = true;
   options.asyncDisplayCache = true;
 
   if (options.mode == ImageRenderMode::OneBit && rasterCache && fitWidth > 0 && fitHeight > 0 &&
       renderCachedZoom(activity, x, y, width, height)) {
     present();
+    return;
+  }
+
+  if (options.mode == ImageRenderMode::TwoBit && zoomLevel > 1 &&
+      renderCachedGrayscaleZoom(activity, x, y, width, height, options)) {
     return;
   }
 
@@ -207,7 +213,27 @@ void EpubImageViewerUi::render(EpubActivity& activity) {
 
   const ImageRender image = ImageRender::create(activity.renderer, path);
   if (options.mode == ImageRenderMode::TwoBit) {
-    image.displayGrayscale(x, y, width, height, options, options.quality, [this, &activity] { buttons(activity); });
+    const bool useWindowedQuality = !isPng && options.quality && activity.renderer.supportsWindowedQuality();
+    options.allowWindowedQualityWithOverlay = useWindowedQuality;
+    const auto capturePlane = [this, &activity, x, y, width, height] {
+      if (zoomLevel == 1) {
+        captureGrayscalePlane(activity.renderer, x, y, width, height);
+      }
+    };
+    const auto drawOverlay = [this, &activity, isPng, x, y, width, height] {
+      if (!isPng && zoomLevel == 1) {
+        captureGrayscalePlane(activity.renderer, x, y, width, height);
+      }
+      buttons(activity);
+    };
+    if (useWindowedQuality) {
+      image.displayGrayscale(x, y, width, height, options, options.quality, capturePlane);
+    } else {
+      image.displayGrayscale(x, y, width, height, options, options.quality, drawOverlay);
+    }
+    if (useWindowedQuality) {
+      renderButtonsAfterWindow(activity);
+    }
   } else if (image.render(x, y, width, height, options)) {
     fitX = (screenWidth - fitWidth) / 2;
     fitY = (screenHeight - fitHeight) / 2;
@@ -228,7 +254,18 @@ void EpubImageViewerUi::releaseRasterCache() {
     heap_caps_free(rasterCache);
     rasterCache = nullptr;
   }
+  if (grayscaleLsbCache) {
+    heap_caps_free(grayscaleLsbCache);
+    grayscaleLsbCache = nullptr;
+  }
+  if (grayscaleMsbCache) {
+    heap_caps_free(grayscaleMsbCache);
+    grayscaleMsbCache = nullptr;
+  }
   rasterCacheBytes = 0;
+  grayscaleCacheBytes = 0;
+  grayscaleLsbHasInk = false;
+  grayscaleMsbHasInk = false;
   rasterWidth = 0;
   rasterHeight = 0;
 }
@@ -277,39 +314,162 @@ bool EpubImageViewerUi::renderCachedZoom(EpubActivity& activity, const int x, co
     return false;
   }
 
-  const size_t rowBytes = (static_cast<size_t>(rasterWidth) + 7u) / 8u;
   const int screenWidth = activity.renderer.getScreenWidth();
   const int screenHeight = activity.renderer.getScreenHeight();
-  const int destStartX = std::max(0, (-x + zoomLevel - 1) / zoomLevel);
-  const int destEndX = std::min(fitWidth, std::max(0, (screenWidth - x + zoomLevel - 1) / zoomLevel));
-  const int destStartY = std::max(0, (-y + zoomLevel - 1) / zoomLevel);
-  const int destEndY = std::min(fitHeight, std::max(0, (screenHeight - y + zoomLevel - 1) / zoomLevel));
-  for (int destY = destStartY; destY < destEndY; ++destY) {
-    const int sourceY = std::min(rasterHeight - 1, (destY * rasterHeight) / fitHeight);
-    const uint8_t* row = rasterCache + static_cast<size_t>(sourceY) * rowBytes;
-    for (int destX = destStartX; destX < destEndX; ++destX) {
-      const int sourceX = std::min(rasterWidth - 1, (destX * rasterWidth) / fitWidth);
-      if ((row[sourceX / 8] & (0x80u >> (sourceX % 8))) == 0) {
-        continue;
-      }
+  const int left = std::max(0, x);
+  const int right = std::min(screenWidth, x + width);
+  const int top = std::max(0, y);
+  const int bottom = std::min(screenHeight, y + height);
+  if (left >= right || top >= bottom) return true;
 
-      const int pixelX = x + destX * zoomLevel;
-      const int pixelY = y + destY * zoomLevel;
-      for (int dy = 0; dy < zoomLevel; ++dy) {
-        const int screenY = pixelY + dy;
-        if (screenY < 0 || screenY >= screenHeight) {
-          continue;
-        }
-        for (int dx = 0; dx < zoomLevel; ++dx) {
-          const int screenX = pixelX + dx;
-          if (screenX >= 0 && screenX < screenWidth) {
-            activity.renderer.drawPixel(screenX, screenY, true);
-          }
-        }
+  const size_t sourceRowBytes = (static_cast<size_t>(rasterWidth) + 7u) / 8u;
+  const int visibleWidth = right - left;
+  std::vector<uint8_t> scaledRow((static_cast<size_t>(visibleWidth) + 7u) / 8u, 0);
+  const bool wasImageRendering = activity.renderer.isImageRendering();
+  activity.renderer.setImageRendering(true);
+  for (int screenY = top; screenY < bottom; ++screenY) {
+    const int sourceY = std::min(rasterHeight - 1, std::max(0, (screenY - y) / zoomLevel));
+    const uint8_t* sourceRow = rasterCache + static_cast<size_t>(sourceY) * sourceRowBytes;
+    std::fill(scaledRow.begin(), scaledRow.end(), 0);
+    for (int screenX = left; screenX < right; ++screenX) {
+      const int sourceX = std::min(rasterWidth - 1, std::max(0, (screenX - x) / zoomLevel));
+      if ((sourceRow[sourceX / 8] & (0x80u >> (sourceX % 8))) != 0) {
+        const int outputX = screenX - left;
+        scaledRow[static_cast<size_t>(outputX) / 8] |= static_cast<uint8_t>(0x80u >> (outputX % 8));
+      }
+    }
+    activity.renderer.drawPackedRow1bpp(left, screenY, visibleWidth, scaledRow.data());
+  }
+  activity.renderer.setImageRendering(wasImageRendering);
+  return true;
+}
+
+bool EpubImageViewerUi::captureGrayscalePlane(const GfxRenderer& renderer, const int x, const int y, const int width,
+                                              const int height) {
+  if (width <= 0 || height <= 0) return false;
+  const size_t rowBytes = (static_cast<size_t>(width) + 7u) / 8u;
+  const size_t bytes = rowBytes * static_cast<size_t>(height);
+  if (!grayscaleLsbCache || !grayscaleMsbCache || grayscaleCacheBytes != bytes) {
+    if (grayscaleLsbCache) heap_caps_free(grayscaleLsbCache);
+    if (grayscaleMsbCache) heap_caps_free(grayscaleMsbCache);
+    grayscaleLsbCache = static_cast<uint8_t*>(heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    grayscaleMsbCache = static_cast<uint8_t*>(heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (!grayscaleLsbCache || !grayscaleMsbCache) {
+      if (grayscaleLsbCache) heap_caps_free(grayscaleLsbCache);
+      if (grayscaleMsbCache) heap_caps_free(grayscaleMsbCache);
+      grayscaleLsbCache = nullptr;
+      grayscaleMsbCache = nullptr;
+      grayscaleCacheBytes = 0;
+    grayscaleLsbHasInk = false;
+    grayscaleMsbHasInk = false;
+      return false;
+    }
+    grayscaleCacheBytes = bytes;
+  }
+
+  uint8_t* target = nullptr;
+  switch (renderer.getRenderMode()) {
+    case GfxRenderer::GRAY2_LSB:
+    case GfxRenderer::GRAYSCALE_LSB:
+      target = grayscaleLsbCache;
+      break;
+    case GfxRenderer::GRAY2_MSB:
+    case GfxRenderer::GRAYSCALE_MSB:
+      target = grayscaleMsbCache;
+      break;
+    default:
+      return false;
+  }
+  bool* hasInk = target == grayscaleLsbCache ? &grayscaleLsbHasInk : &grayscaleMsbHasInk;
+  *hasInk = false;
+  for (int row = 0; row < height; ++row) {
+    uint8_t* rowTarget = target + static_cast<size_t>(row) * rowBytes;
+    if (!renderer.readPackedRow1bpp(x, y + row, width, rowTarget)) {
+      return false;
+    }
+    for (size_t byte = 0; byte < rowBytes; ++byte) {
+      if (rowTarget[byte] != 0) {
+        *hasInk = true;
+        break;
       }
     }
   }
   return true;
+}
+
+bool EpubImageViewerUi::renderCachedGrayscaleZoom(EpubActivity& activity, const int x, const int y, const int width,
+                                                  const int height, const ImageRender::Options& options) const {
+  if (zoomLevel <= 1 || !grayscaleLsbCache || !grayscaleMsbCache || grayscaleCacheBytes == 0 ||
+      (!grayscaleLsbHasInk && !grayscaleMsbHasInk) || fitWidth <= 0 || fitHeight <= 0 || width <= 0 || height <= 0) {
+    return false;
+  }
+
+  const int screenWidth = activity.renderer.getScreenWidth();
+  const int screenHeight = activity.renderer.getScreenHeight();
+  const int left = std::max(0, x);
+  const int right = std::min(screenWidth, x + width);
+  const int top = std::max(0, y);
+  const int bottom = std::min(screenHeight, y + height);
+  if (left >= right || top >= bottom) return false;
+
+  const int visibleWidth = right - left;
+  const size_t sourceRowBytes = (static_cast<size_t>(fitWidth) + 7u) / 8u;
+  std::vector<uint8_t> scaledRow((static_cast<size_t>(visibleWidth) + 7u) / 8u, 0);
+  // Picco's partial waveform is safe for the initial source render, but a
+  // zoomed cache can extend beyond the panel and has a clipped logical
+  // window. Use the full HQ framebuffer path here so the cached pixels are
+  // transferred with the controller's normal full-frame baseline handling.
+  const bool useWindowedQuality = false;
+  const GfxRenderer::DisplayRegion window{x, y, width, height};
+  const bool wasImageRendering = activity.renderer.isImageRendering();
+  activity.renderer.setImageRendering(true);
+  activity.renderer.renderGrayscalePasses(
+      options.quality, /*preserveText=*/false,
+      [&] {
+        if (useWindowedQuality) {
+          activity.renderer.clearRect(window, 0xFF);
+        } else {
+          activity.renderer.clearScreen(options.quality ? 0xFF : 0x00);
+        }
+        const bool lsb = activity.renderer.getRenderMode() == GfxRenderer::GRAY2_LSB ||
+                        activity.renderer.getRenderMode() == GfxRenderer::GRAYSCALE_LSB;
+        const uint8_t* source = lsb ? grayscaleLsbCache : grayscaleMsbCache;
+        for (int screenY = top; screenY < bottom; ++screenY) {
+          const int sourceY = std::min(fitHeight - 1, std::max(0, (screenY - y) / zoomLevel));
+          const uint8_t* sourceRow = source + static_cast<size_t>(sourceY) * sourceRowBytes;
+          std::fill(scaledRow.begin(), scaledRow.end(), 0);
+          for (int screenX = left; screenX < right; ++screenX) {
+            const int sourceX = std::min(fitWidth - 1, std::max(0, (screenX - x) / zoomLevel));
+            if ((sourceRow[sourceX / 8] & (0x80u >> (sourceX % 8))) != 0) {
+              const int outputX = screenX - left;
+              scaledRow[static_cast<size_t>(outputX) / 8] |= static_cast<uint8_t>(0x80u >> (outputX % 8));
+            }
+          }
+          activity.renderer.drawPackedRow1bpp(left, screenY, visibleWidth, scaledRow.data());
+        }
+        if (!useWindowedQuality) {
+          buttons(activity);
+        }
+      },
+      options.fastQuality, useWindowedQuality ? &window : nullptr);
+  activity.renderer.setImageRendering(wasImageRendering);
+  if (useWindowedQuality) {
+    renderButtonsAfterWindow(activity);
+  }
+  return true;
+}
+
+void EpubImageViewerUi::renderButtonsAfterWindow(EpubActivity& activity) const {
+  GfxRenderer& renderer = activity.renderer;
+  renderer.syncWriteBufferFromActive();
+  buttons(activity);
+  const GfxRenderer::DisplayRegion region{
+      rotateX(renderer) - closeHitPadding,
+      closeMargin - closeHitPadding,
+      closeSize * 2 + buttonGap + closeHitPadding * 2,
+      closeSize + closeHitPadding * 2,
+  };
+  renderer.displayWindow(region, HalDisplay::FAST_REFRESH);
 }
 
 void EpubImageViewerUi::zoom(EpubActivity& activity) {

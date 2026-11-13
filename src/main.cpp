@@ -10,9 +10,6 @@
 #include <HalGPIO.h>
 #include <SDCardManager.h>
 #include <SPI.h>
-#if FREEINK_DEVICE_X4PRO
-#include <XteinkDetect.h>
-#endif
 #ifndef SIMULATOR
 #include <esp_system.h>
 #endif
@@ -25,7 +22,6 @@
 #include <tuple>
 #include <type_traits>
 
-#include "activity/OpdsServerListActivity.h"
 #include "activity/network/CalibreConnectActivity.h"
 #include "activity/network/HotspotActivity.h"
 #include "activity/network/LocalNetworkActivity.h"
@@ -38,18 +34,20 @@
 #include "activity/page/HeatmapReport.h"
 #include "activity/page/SyncActivity.h"
 #include "activity/settings/StoreActivity.h"
+#include "activity/settings/AppsActivity.h"
 #include "activity/reader/ImageViewerActivity.h"
 #include "activity/reader/ReaderActivity.h"
 #include "activity/system/BootActivity.h"
 #include "activity/system/SleepActivity.h"
 #include "activity/util/KeyboardEntryActivity.h"
 #include "activity/util/FullScreenMessageActivity.h"
+#include "DeviceRuntime.h"
 #include "state/ReaderSetting.h"
 #include "state/SystemSetting.h"
 #include "system/FontManager.h"
-#include "system/Frontlight.h"
 #include "system/Fonts.h"
 #include "system/ScreenComponents.h"
+#include "system/GlobalGestureHandler.h"
 #include "system/MappedInputManager.h"
 #include "system/PluginManager.h"
 #include "util/LibraryIndexRefresh.h"
@@ -65,15 +63,28 @@ HalGPIO gpio;
 MappedInputManager input(gpio);
 GfxRenderer renderer(display);
 GfxRenderer& render = renderer;
-
-#if INX_HAS_FRONTLIGHT
-FrontlightManager frontlight;
-#endif
+GlobalGestureHandler globalGestureHandler(renderer);
 
 Activity* currentActivity = nullptr;
 bool sdCardAvailable = false;
 bool activityLoopRunning = false;
 std::function<void()> deferredActivitySwitch;
+
+namespace {
+bool isHomeActivity(const Activity* activity) {
+  return activity && std::strcmp(activity->getName(), "Home") == 0;
+}
+
+bool isBookReaderActivity(const Activity* activity) {
+  // ReaderActivity owns the EPUB/TXT/PDF/XTC subactivities. Let those
+  // activities consume horizontal swipes for TOC/page navigation.
+  return activity && std::strcmp(activity->getName(), "Reader") == 0;
+}
+
+bool isSettingsActivity(const Activity* activity) {
+  return activity && std::strcmp(activity->getName(), "Settings") == 0;
+}
+}  // namespace
 
 unsigned long t1 = 0;
 unsigned long t2 = 0;
@@ -91,6 +102,7 @@ void openDictionaryLookup(const std::string& word);
 void onGoToFileTransfer();
 void onGoToSettings();
 void onGoToStore();
+void onGoToApps();
 void onGoToLibrary(const std::string& path = "/");
 void onGoToPluginLibrary();
 void setupDisplayAndFonts();
@@ -103,6 +115,24 @@ bool handleGlobalPowerRefresh();
 namespace {
 constexpr unsigned long kPowerDownRestartHoldMs = 2000;
 constexpr unsigned long kPowerLongPressMs = 400;
+
+const char* buttonName(const uint8_t button) {
+  static constexpr const char* kNames[] = {"Back", "Confirm", "Left", "Right", "Up", "Down", "Power"};
+  return button < (sizeof(kNames) / sizeof(kNames[0])) ? kNames[button] : "Unknown";
+}
+
+void logButtonEdges() {
+  for (uint8_t button = HalGPIO::BTN_BACK; button <= HalGPIO::BTN_POWER; ++button) {
+    if (gpio.wasPressed(button)) {
+      INX_SERIAL.printf("[INPUT][BUTTON] %s(index=%u) pressed\n", buttonName(button), button);
+    }
+    if (gpio.wasReleased(button)) {
+      INX_SERIAL.printf("[INPUT][BUTTON] %s(index=%u) released held_ms=%lu\n", buttonName(button), button,
+                        gpio.getHeldTime());
+    }
+  }
+}
+
 }
 
 template <typename T>
@@ -147,17 +177,29 @@ void switchTo(Args&&... args) {
   }
 
   ScreenComponents::resetPageHeaderBackButton();
+  DeviceRuntime::beforeActivitySwitch(display, renderer, input);
   if (currentActivity) {
     currentActivity->onExit();
+#ifdef SIMULATOR
+    // The native simulator's abstract Page vtable emits a trap in its deleting
+    // destructor; keep the old activity alive for the process lifetime so UI
+    // navigation can still exercise the real renderer.
+#else
     delete currentActivity;
+#endif
     currentActivity = nullptr;
   }
 
-#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_LILYGO
+  // A page refresh can take long enough for the next activity to be created
+  // before the outgoing touch sequence has fully settled. Clear anything the
+  // old page latched so a swipe/tap cannot be replayed against the new page
+  // after its synchronous onEnter() work finishes. In particular, a stale
+  // upward swipe would make the reader immediately call its back callback
+  // after opening a book.
+  input.discardPendingButtonEdges();
   input.discardPendingTouchTap();
   input.discardPendingSwipe();
   input.ignoreCurrentTouch();
-#endif
 
   currentActivity = new T(std::forward<Args>(args)...);
 #ifdef SIMULATOR
@@ -193,6 +235,8 @@ void openReaderFromCallback(const std::string& path, std::function<void()> retur
 void openReaderFromCallback(const std::string& path, std::function<void()> returnToCaller, const int spineIndex,
                             const int pageNumber) {
   const std::string pathCopy = path;
+  INX_SERIAL.printf("[%lu] [READER-OPEN] request path=%s spine=%d page=%d\n", millis(), pathCopy.c_str(), spineIndex,
+                    pageNumber);
   if (isExportedNoteImage(pathCopy)) {
     switchTo<ImageViewerActivity>(render, input, pathCopy, std::move(returnToCaller));
     return;
@@ -262,9 +306,6 @@ void onNetworkModeSelected(NetworkMode mode) {
     case NetworkMode::CREATE_HOTSPOT:
       switchTo<HotspotActivity>(render, input, onGoToFileTransfer);
       break;
-    case NetworkMode::OPDS_BROWSER:
-      switchTo<OpdsServerListActivity>(render, input, onGoToFileTransfer);
-      break;
   }
 }
 
@@ -272,7 +313,7 @@ void onNetworkModeSelected(NetworkMode mode) {
  * @brief Navigates to the file transfer/sync activity.
  */
 void onGoToFileTransfer() {
-  INX_SERIAL.printf("[STICKY][NAV] Device Management\n");
+  INX_SERIAL.printf("[NAV] Device Management\n");
   switchTo<SyncActivity>(render, input, onNetworkModeSelected);
 }
 
@@ -280,7 +321,7 @@ void onGoToFileTransfer() {
  * @brief Navigates to the settings activity.
  */
 void onGoToSettings() {
-  INX_SERIAL.printf("[STICKY][NAV] Settings\n");
+  INX_SERIAL.printf("[NAV] Settings\n");
   switchTo<Settings>(render, input);
 }
 
@@ -289,11 +330,16 @@ void onGoToStore() {
   switchTo<StoreActivity>(render, input, [] { onGoToHome(); });
 }
 
+/** @brief Opens the application shortcuts page. */
+void onGoToApps() {
+  switchTo<AppsActivity>(render, input, [] { onGoToHome(); });
+}
+
 /**
  * @brief Navigates to the library activity.
  */
 void onGoToLibrary(const std::string& path) {
-  INX_SERIAL.printf("[STICKY][NAV] Library path=%s\n", path.c_str());
+  INX_SERIAL.printf("[NAV] Library path=%s\n", path.c_str());
   switchTo<Library>(render, input, path);
 }
 
@@ -327,7 +373,7 @@ void enterDeepSleep() {
   switchTo<SleepActivity>(render, input);
   display.deepSleep();
   SdMan.shutdown();
-  gpio.startDeepSleep();
+  DeviceRuntime::startDeepSleep(gpio);
 }
 
 void setupDisplayAndFonts() {
@@ -352,8 +398,7 @@ bool handleGlobalPowerRefresh() {
     return false;
   }
 
-  renderer.syncWriteBufferFromActive();
-  renderer.displayBuffer(FREEINK_DEVICE_X4PRO ? HalDisplay::FULL_REFRESH : HalDisplay::HALF_REFRESH);
+  DeviceRuntime::refreshAfterPowerButton(display, renderer);
   return true;
 }
 
@@ -363,13 +408,7 @@ bool handleGlobalPowerRefresh() {
 void setup() {
   t1 = millis();
   gpio.begin();
-
-#if FREEINK_DEVICE_X4PRO
-  freeink::applyXteinkDisplayController();
-#endif
-#if INX_HAS_FRONTLIGHT
-  frontlight.begin();
-#endif
+  DeviceRuntime::initialize(gpio);
 
   sdCardAvailable = SdMan.begin();
 
@@ -394,8 +433,16 @@ void setup() {
  */
 void loop() {
   gpio.update();
-  const bool powerPressed = gpio.wasPressed(HalGPIO::BTN_POWER);
-  const bool powerReleased = gpio.wasReleased(HalGPIO::BTN_POWER);
+  logButtonEdges();
+#if FREEINK_DEVICE_X4PRO
+  if (SETTINGS.x4proHomeButton == SystemSetting::X4PRO_HOME_BUTTON_HOME &&
+      gpio.touchSwipe() == HalGPIO::TouchSwipe::None && gpio.wasHomeKeyTapped()) {
+    INX_SERIAL.printf("[%lu] [INPUT][HOME] X4 Pro Home button -> Home\n", millis());
+    onGoToHome();
+    delay(10);
+    return;
+  }
+#endif
   const bool powerHeld = gpio.isPressed(HalGPIO::BTN_POWER);
   const bool downHeld = gpio.isPressed(HalGPIO::BTN_DOWN);
   static bool powerDownComboTracking = false;
@@ -406,10 +453,10 @@ void loop() {
     if (!powerDownComboTracking) {
       powerDownComboTracking = true;
       powerDownComboStartedAt = millis();
-      INX_SERIAL.println("[STICKY][MAIN] power+down restart chord started");
+      INX_SERIAL.println("[MAIN] power+down restart chord started");
     }
     if (millis() - powerDownComboStartedAt >= kPowerDownRestartHoldMs) {
-      INX_SERIAL.println("[STICKY][MAIN] power+down restart chord triggered");
+      INX_SERIAL.println("[MAIN] power+down restart chord triggered");
 #ifndef SIMULATOR
       esp_restart();
 #else
@@ -422,11 +469,6 @@ void loop() {
   }
   powerDownComboTracking = false;
 
-  if (powerPressed || powerReleased) {
-    INX_SERIAL.printf("[STICKY][MAIN] power pressed=%d released=%d activity=%s\n", powerPressed ? 1 : 0,
-                   powerReleased ? 1 : 0, currentActivity ? currentActivity->getName() : "none");
-  }
-
   LibraryIndexRefresh::render(renderer);
   LibraryIndexRefresh::finish(renderer, currentActivity);
   static unsigned long lastActivityTime = millis();
@@ -436,7 +478,8 @@ void loop() {
     lastActivityTime = millis();
   }
 
-  if (millis() - lastActivityTime >= SETTINGS.getSleepTimeoutMs()) {
+  if (SETTINGS.sleepTimeout != SystemSetting::SLEEP_NEVER &&
+      millis() - lastActivityTime >= SETTINGS.getSleepTimeoutMs()) {
     enterDeepSleep();
     return;
   }
@@ -459,6 +502,19 @@ void loop() {
     return;
   }
 
+  // Settings pages, including the embedded preset editor, own their bottom
+  // edge swipe. Do not let the global handler intercept it first.
+  const bool allowGlobalExitGesture = !isHomeActivity(currentActivity) && !isBookReaderActivity(currentActivity) &&
+                                      !isSettingsActivity(currentActivity);
+  // The reader owns vertical swipes: swipe-down opens its book settings drawer.
+  // Keep servicing an already-open global drawer so its touch controls remain usable.
+  if (globalGestureHandler.handleInput(input, allowGlobalExitGesture, !isBookReaderActivity(currentActivity),
+                                       [] { input.injectButtonEdge(MappedInputManager::Button::Back); },
+                                       [] { onGoToHome(); })) {
+    delay(10);
+    return;
+  }
+
   if (currentActivity) {
     if (ScreenComponents::pageHeaderBackButtonVisible()) {
       input.consumeHeaderBackTap(renderer);
@@ -467,6 +523,10 @@ void loop() {
     currentActivity->loop();
     activityLoopRunning = false;
   }
+
+  // Run after BootActivity has loaded the saved brightness, so a physical
+  // switch can take precedence over the saved light state.
+  DeviceRuntime::poll(gpio, enterDeepSleep);
 
   if (deferredActivitySwitch) {
     auto action = std::move(deferredActivitySwitch);
@@ -480,10 +540,6 @@ void loop() {
   }
 
   if (currentActivity && currentActivity->skipLoopDelay()) {
-    // Server activities stay continuously ready while polling sockets. A bare
-    // yield() can keep loopTask running and starve IDLE0, which trips the task
-    // watchdog during sustained Wi-Fi transfers. Block briefly so idle and
-    // network system tasks get scheduled.
     delay(1);
   } else {
     delay(10);

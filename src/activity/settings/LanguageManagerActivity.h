@@ -12,6 +12,7 @@
 #include "activity/ActivityWithSubactivity.h"
 #include "activity/page/Page.h"
 #include "activity/page/components/global/Button.h"
+#include "SettingsListLayout.h"
 #include "system/LanguagePackageManager.h"
 
 /** Downloads and removes installed language packages. */
@@ -28,7 +29,7 @@ class LanguageManagerActivity final : public ActivityWithSubactivity {
  private:
   enum class State : uint8_t { Loading, Ready, Downloading, Failed };
 
-  static constexpr int kRowHeight = Page::LIST_ITEM_HEIGHT;
+  static constexpr int kRowHeight = SettingsListLayout::kRowHeight;
 
   const std::function<void()> goBack_;
   std::vector<LanguagePackageManager::Package> packages_;

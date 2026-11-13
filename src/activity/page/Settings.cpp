@@ -5,7 +5,6 @@
 
 #include "Settings.h"
 
-#include <cmath>
 #include <cstdio>
 #include <GfxRenderer.h>
 #include <string>
@@ -16,6 +15,7 @@
 #include "activity/settings/CategorySettingsActivity.h"
 #include "activity/settings/ReaderPresetsActivity.h"
 #include "state/SystemSetting.h"
+#include "system/FontManager.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
 
@@ -26,83 +26,59 @@ extern void onGoToStatistics();
 
 namespace {
 
-constexpr int panelTabY = navigation::Menu::height + 20;
-constexpr int panelTabHeight = Button::height - 10;
-constexpr int panelTabWidth = 120;
-constexpr int panelTabGap = 0;
-constexpr int panelTabRight = 20;
+constexpr int panelTabY = navigation::Menu::height + 10;
+constexpr int panelTabHeight = Button::height + 25;
+constexpr int panelTabCount = 3;
 
-int panelPresetsX(const GfxRenderer& renderer) {
-  return renderer.getScreenWidth() - panelTabRight - panelTabWidth;
+int panelTabHorizontalPadding() {
+  return 20;
 }
 
-int panelReaderX(const GfxRenderer& renderer) {
-  return panelPresetsX(renderer) - panelTabWidth;
-}
-
-int panelSystemX(const GfxRenderer& renderer) {
-  return panelReaderX(renderer) - panelTabGap - panelTabWidth;
+int panelTabX(const GfxRenderer& renderer, const int index) {
+  return renderer.getScreenWidth() * index / panelTabCount;
 }
 
 void renderPanelTab(const GfxRenderer& renderer, const int x, const int y, const int width, const int height,
-                    const char* label, const bool selected, const bool roundLeft, const bool roundRight) {
-  constexpr int corner = 4;
-  const int tone = selected ? static_cast<int>(GfxRenderer::FillTone::Ink)
-                            : static_cast<int>(GfxRenderer::FillTone::Paper);
-
-  renderer.rectangle.fill(x, y, width, height, tone, false);
-  renderer.rectangle.render(x, y, width, height, true, false);
-
-  auto clearOutsideCorner = [&](const int cornerX, const int cornerY, const bool left, const bool top) {
-    for (int dy = 0; dy <= corner; ++dy) {
-      for (int dx = 0; dx <= corner; ++dx) {
-        const int distanceX = left ? dx - corner : dx;
-        const int distanceY = top ? dy - corner : dy;
-        if (distanceX * distanceX + distanceY * distanceY > corner * corner) {
-          renderer.drawPixel(cornerX + dx, cornerY + dy, false);
-        }
-      }
-    }
-
-    for (int offset = 0; offset <= corner; ++offset) {
-      const int span = static_cast<int>(std::sqrt(corner * corner - (corner - offset) * (corner - offset)));
-      const int arcX = left ? cornerX + corner - span : cornerX + span;
-      const int arcY = top ? cornerY + offset : cornerY + corner - offset;
-      renderer.drawPixel(arcX, arcY, true);
-    }
-  };
-
-  if (roundLeft) {
-    clearOutsideCorner(x, y, true, true);
-    clearOutsideCorner(x, y + height - corner - 1, true, false);
-  }
-  if (roundRight) {
-    clearOutsideCorner(x + width - corner - 1, y, false, true);
-    clearOutsideCorner(x + width - corner - 1, y + height - corner - 1, false, false);
-  }
-
+                    const char* label, const int alignment, const bool selected) {
   const int font = systemFontId();
-  const std::string shown = renderer.text.truncate(font, label ? label : "", std::max(1, width - 16));
-  const int textWidth = renderer.text.getUntranslatedWidth(font, shown.c_str());
+  const int horizontalPadding = panelTabHorizontalPadding();
+  const std::string shown = renderer.text.truncate(font, label ? label : "",
+                                                   std::max(1, width - horizontalPadding * 2));
+  const EpdFontFamily::Style style = selected ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR;
+  const int textWidth = renderer.text.getUntranslatedWidth(font, shown.c_str(), style);
   const int textY = y + (height - renderer.text.getLineHeight(font)) / 2;
-  const int textX = x + (width - textWidth) / 2;
-  renderer.text.renderUntranslated(font, textX, textY, shown.c_str(), !selected, EpdFontFamily::REGULAR);
+  const int textX = alignment == 0       ? x + horizontalPadding
+                    : alignment == 2 ? x + width - horizontalPadding - textWidth
+                                     : x + (width - textWidth) / 2;
+  renderer.text.renderUntranslated(font, textX, textY, shown.c_str(), true, style);
+
+  if (selected) {
+    renderer.rectangle.fill(textX, y + height - 3, std::max(1, textWidth), 2, true);
+  }
 }
 
 std::vector<SettingInfo> buildSystemSettings() {
   std::vector<SettingInfo> settings;
   settings.reserve(40);
 
+  FontManager::scanSDFonts("/fonts", false);
+
   settings.push_back(SettingInfo::Separator("Display ", GroupType::DEVICE_DISPLAY));
+  settings.push_back(SettingInfo::Toggle("Sidebar Menu", &SystemSetting::hiddenMenu,
+                                         GroupType::DEVICE_DISPLAY));
   settings.push_back(SettingInfo::Enum(
       "Sleep Screen", &SystemSetting::sleepScreen,
-      {"Dark", "Light", "Custom", "Recent Book", "Transparent Cover", "None", "Date Time", "Widget"},
+      {"Dark", "Light", "Custom", "Recent Book", "Transparent", "None", "Widget"},
+      {SystemSetting::DARK, SystemSetting::LIGHT, SystemSetting::CUSTOM, SystemSetting::COVER,
+       SystemSetting::TRANSPARENT, SystemSetting::BLANK, SystemSetting::WIDGET},
       GroupType::DEVICE_DISPLAY));
   settings.push_back(SettingInfo::Action("Choose sleep image", GroupType::DEVICE_DISPLAY));
   settings.push_back(SettingInfo::Enum("Hide Battery %", &SystemSetting::hideBatteryPercentage,
                                        {"Never", "In Reader", "Always"}, GroupType::DEVICE_DISPLAY));
   settings.push_back(SettingInfo::Enum("Keyboard", &SystemSetting::keyboardLayout, {"QWERTY", "Numpad"},
                                        GroupType::DEVICE_DISPLAY));
+  settings.push_back(SettingInfo::Enum("System font", &SystemSetting::systemFontFamily,
+                                       FontManager::readerFontFamilyEnumLabels(), GroupType::DEVICE_DISPLAY));
   settings.push_back(SettingInfo::Enum("Text size", &SystemSetting::systemTextSize, {"Small", "Medium", "Large"},
                                        GroupType::DEVICE_DISPLAY));
   settings.push_back(SettingInfo::Toggle("Hide title for thumbnails", &SystemSetting::hideThumbnailTitles,
@@ -112,6 +88,7 @@ std::vector<SettingInfo> buildSystemSettings() {
   settings.push_back(SettingInfo::Action("Face", GroupType::CLOCK));
   settings.push_back(
       SettingInfo::Enum("Format", &SystemSetting::sleepClockTimeFormat, {"12 hour", "24 hour"}, GroupType::CLOCK));
+  settings.push_back(SettingInfo::Toggle("Hide", &SystemSetting::hideMenuClock, GroupType::CLOCK));
   settings.push_back(SettingInfo::Action("Sync", GroupType::CLOCK));
 
   settings.push_back(SettingInfo::Separator("Image", GroupType::IMAGE));
@@ -128,22 +105,34 @@ std::vector<SettingInfo> buildSystemSettings() {
 
   settings.push_back(SettingInfo::Separator("Device ", GroupType::DEVICE_ADVANCED));
   settings.push_back(SettingInfo::Enum("Time to Sleep", &SystemSetting::sleepTimeout,
-                                       {"1 min", "5 min", "10 min", "15 min", "30 min"},
+                                       {"1 min", "5 min", "10 min", "15 min", "30 min", "Never"},
                                        GroupType::DEVICE_ADVANCED));
-  settings.push_back(SettingInfo::Enum("Boot Mode", &SystemSetting::bootSetting, {"Recent Book", "Home Page"},
+  settings.push_back(SettingInfo::Enum("Boot Mode", &SystemSetting::bootSetting, {"Recent Book", "Home"},
                                        GroupType::DEVICE_ADVANCED));
+#if FREEINK_DEVICE_X4PRO
+  settings.push_back(SettingInfo::Enum("Home Button", &SystemSetting::x4proHomeButton, {"Back", "Home"},
+                                       {SystemSetting::X4PRO_HOME_BUTTON_BACK,
+                                        SystemSetting::X4PRO_HOME_BUTTON_HOME},
+                                       GroupType::DEVICE_ADVANCED));
+#endif
   settings.push_back(SettingInfo::Action("Language", GroupType::DEVICE_ADVANCED));
-#if FREEINK_DEVICE_STICKY
+#if FREEINK_DEVICE_STICKY || FREEINK_DEVICE_PICCO
   settings.push_back(SettingInfo::Enum("Flick page turn", &SystemSetting::shakePageTurn,
                                        {"Off", "Normal", "Inverted"}, GroupType::DEVICE_ADVANCED));
   settings.push_back(SettingInfo::Enum("Flick sensitivity", &SystemSetting::shakePageTurnSensitivity,
                                        {"Low", "Normal", "High"}, GroupType::DEVICE_ADVANCED));
 #endif
-  settings.push_back(SettingInfo::Enum("Short Press Power Button", &SystemSetting::shortPwrBtn,
+  settings.push_back(SettingInfo::Enum("Power Button", &SystemSetting::shortPwrBtn,
                                        {"Sleep", "Refresh"},
                                        {SystemSetting::SHORT_PWRBTN::SLEEP,
                                         SystemSetting::SHORT_PWRBTN::PAGE_REFRESH},
                                        GroupType::DEVICE_ADVANCED));
+  settings.push_back(SettingInfo::Toggle("Turn off statistics", &SystemSetting::disableStatistics,
+                                         GroupType::DEVICE_ADVANCED));
+#if FREEINK_DEVICE_PICCO
+  settings.push_back(SettingInfo::Enum("Toggle", &SystemSetting::piccoToggleMode, {"Light", "Power"},
+                                       GroupType::DEVICE_ADVANCED));
+#endif
 
   settings.push_back(SettingInfo::Separator("Actions", GroupType::DEVICE_ACTIONS));
   settings.push_back(SettingInfo::Action("Delete Cache", GroupType::DEVICE_ACTIONS));
@@ -157,10 +146,10 @@ const char* panelBackLabel(const SettingsPanel panel) {
 
 }
 
-Settings::Settings(GfxRenderer& renderer, MappedInputManager& mappedInput) : Page("Settings", renderer, mappedInput) {}
+Settings::Settings(GfxRenderer& renderer, MappedInputManager& mappedInput) : UiPage("Settings", renderer, mappedInput) {}
 
 void Settings::onEnter() {
-  Page::onEnter();
+  UiPage::onEnter();
   currentPanel = SettingsPanel::System;
   nextPanel = SettingsPanel::System;
   pending = Pending::None;
@@ -170,16 +159,47 @@ void Settings::onEnter() {
 
 void Settings::onExit() {
   closePanel();
-  Page::onExit();
+  UiPage::onExit();
 }
 
 void Settings::loop() {
-  if (!panelDetailOpen() && Page::menuInput()) return;
+#if FREEINK_DEVICE_PICCO || FREEINK_DEVICE_MURPHY_M4
+  // Picco and Murphy can report a screen bottom-to-top gesture as raw left.
+  // MappedInputManager has already converted it to screen-up; consume that
+  // edge gesture before the menu or embedded list can reinterpret it.
+  if (mappedInput.hasTouch()) {
+    float swipeStartNx = 0.0f;
+    float swipeStartNy = 0.0f;
+    if (mappedInput.wasTouchSwipeUpInScreen(renderer, swipeStartNx, swipeStartNy) && swipeStartNy >= 0.95f) {
+      if (panelDetailOpen() && panel) {
+        panel->loop();
+      } else {
+        back();
+      }
+      return;
+    }
+  }
+#endif
+
+  // The shared page shell normally consumes swipes for navigation before an
+  // embedded panel sees them. Let the presets panel own its bottom-edge close
+  // gesture first; ordinary swipes still go through the shared menu.
+  bool routedPresetCloseGesture = false;
+  if (!panelDetailOpen() && currentPanel == SettingsPanel::Presets && presetsPanel) {
+    float swipeStartNx = 0.0f;
+    float swipeStartNy = 0.0f;
+    if (mappedInput.wasTouchSwipeUpInScreen(renderer, swipeStartNx, swipeStartNy) && swipeStartNy >= 0.95f) {
+      presetsPanel->loop();
+      routedPresetCloseGesture = true;
+    }
+  }
+
+  if (!routedPresetCloseGesture && !panelDetailOpen() && UiPage::menuInput()) return;
 
   if (!panelDetailOpen() && panelTabsInput()) return;
 
   if (panel) {
-    panel->loop();
+    if (!routedPresetCloseGesture) panel->loop();
     if (runExternalNavigation()) return;
 
     if (panelDetailOpen()) {
@@ -276,7 +296,6 @@ void Settings::processPending() {
   pending = Pending::None;
 
   if (action == Pending::SwapPanel) {
-    SETTINGS.saveToFile();
     currentPanel = nextPanel;
     openPanel();
     updateRequired = true;
@@ -305,24 +324,18 @@ bool Settings::panelTabsInput() {
   const int tapX = static_cast<int>(tapNx * renderer.getScreenWidth());
   const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
   const bool inHeader = tapY >= panelTabY && tapY < panelTabY + panelTabHeight;
-  const int systemX = panelSystemX(renderer);
-  const int readerX = panelReaderX(renderer);
-  const int presetsX = panelPresetsX(renderer);
-
   if (!inHeader) {
     mappedInput.restoreTouchTapInScreen(renderer, tapNx, tapNy);
     return false;
   }
 
-  if (tapX >= systemX && tapX < systemX + panelTabWidth) {
+  const int tappedTab = std::min(panelTabCount - 1, tapX * panelTabCount / renderer.getScreenWidth());
+  if (tappedTab == 0) {
     selectPanel(SettingsPanel::System);
-  } else if (tapX >= readerX && tapX < readerX + panelTabWidth) {
+  } else if (tappedTab == 1) {
     selectPanel(SettingsPanel::Reader);
-  } else if (tapX >= presetsX && tapX < presetsX + panelTabWidth) {
-    selectPanel(SettingsPanel::Presets);
   } else {
-    mappedInput.restoreTouchTapInScreen(renderer, tapNx, tapNy);
-    return false;
+    selectPanel(SettingsPanel::Presets);
   }
 
   if (pending != Pending::None) processPending();
@@ -331,14 +344,19 @@ bool Settings::panelTabsInput() {
 }
 
 void Settings::panelTabs() {
-  const int systemX = panelSystemX(renderer);
-  const int readerX = panelReaderX(renderer);
-  renderPanelTab(renderer, systemX, panelTabY, panelTabWidth, panelTabHeight, "System",
-                 currentPanel == SettingsPanel::System, true, false);
-  renderPanelTab(renderer, readerX, panelTabY, panelTabWidth, panelTabHeight, "Reader",
-                 currentPanel == SettingsPanel::Reader, false, false);
-  renderPanelTab(renderer, panelPresetsX(renderer), panelTabY, panelTabWidth, panelTabHeight, "Presets",
-                 currentPanel == SettingsPanel::Presets, false, true);
+  const int screenWidth = renderer.getScreenWidth();
+  renderer.line.render(0, panelTabY + panelTabHeight - 1, screenWidth - 1, panelTabY + panelTabHeight - 1, true,
+                       LineRender::Style::Dotted);
+  for (int index = 0; index < panelTabCount; ++index) {
+    const int x = panelTabX(renderer, index);
+    const int width = panelTabX(renderer, index + 1) - x;
+    renderPanelTab(renderer, x, panelTabY, width, panelTabHeight,
+                   index == 0 ? "System" : index == 1 ? "Reader" : "Presets",
+                   index,
+                   (index == 0 && currentPanel == SettingsPanel::System) ||
+                       (index == 1 && currentPanel == SettingsPanel::Reader) ||
+                       (index == 2 && currentPanel == SettingsPanel::Presets));
+  }
 }
 
 void Settings::content() {
@@ -365,7 +383,7 @@ void Settings::content() {
 void Settings::menu() {
   if (!panelDetailOpen() || (readerPanel && readerPanel->isPopupOpen()) ||
       (presetsPanel && presetsPanel->isPopupOpen())) {
-    Page::menu();
+    UiPage::menu();
   }
 }
 

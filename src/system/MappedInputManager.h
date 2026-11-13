@@ -58,9 +58,12 @@ class MappedInputManager {
    */
   bool hasTouch() const { return pendingTouchTap_ || gpio.hasTouch(); }
   bool isTouchPressed() const { return gpio.isTouchPressed(); }
+  bool wasTouchActivity() const { return gpio.wasTouchActivity(); }
   bool wasTouchPressedInScreen(const GfxRenderer& renderer, float& nx, float& ny) const;
   bool isTouchHeldInScreen(const GfxRenderer& renderer, float& nx, float& ny) const;
-  bool wasTouchTap(float& nx, float& ny) const { return gpio.wasTouchTap(nx, ny); }
+  bool wasTouchTap(float& nx, float& ny) const {
+    return !gpio.isTouchPressed() && gpio.touchSwipe() == HalGPIO::TouchSwipe::None && gpio.wasTouchTap(nx, ny);
+  }
   unsigned long lastTouchHeldMs() const { return gpio.lastTouchHeldMs(); }
   bool wasTouchSwipeUp() const { return swipeForDefaultOrientation() == HalGPIO::TouchSwipe::Up; }
   bool wasTouchSwipeDown() const { return swipeForDefaultOrientation() == HalGPIO::TouchSwipe::Down; }
@@ -91,13 +94,13 @@ class MappedInputManager {
   void discardPendingTouchTap() const { pendingTouchTap_ = false; }
   /** Discards a latched swipe before an activity transition, so the gesture that ended one
    *  activity is not handled again by the next one. */
-#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_LILYGO
+#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO || FREEINK_DEVICE_LILYGO
   void discardPendingSwipe() const { gpio.discardTouchSwipe(); }
 #else
   void discardPendingSwipe() const {}
 #endif
   /** Swallow a touch still held across an activity transition, including its release. */
-#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_LILYGO
+#if FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO || FREEINK_DEVICE_LILYGO
   void ignoreCurrentTouch() const { gpio.ignoreCurrentTouchUntilRelease(); }
 #else
   void ignoreCurrentTouch() const {}
@@ -106,6 +109,11 @@ class MappedInputManager {
   bool consumeHeaderBackTap(const GfxRenderer& renderer) const;
   /** Injects one Back press/release edge for a touch-driven header action. */
   void injectButtonEdge(Button button) const;
+  /** Clears synthetic button edges when the current activity is being replaced. */
+  void discardPendingButtonEdges() const {
+    injectedPressedButton_ = -1;
+    injectedReleasedButton_ = -1;
+  }
 
   Labels mapLabels(const char* back, const char* confirm, const char* previous, const char* next) const;
 

@@ -19,8 +19,8 @@ namespace {
 constexpr int kHeatmapTop = 68;
 constexpr int kHeatmapHeight = 350;
 constexpr int kReportPadding = 20;
-constexpr int kSmallFont = MONTSERRAT_8_FONT_ID;
-constexpr int kBodyFont = MONTSERRAT_10_FONT_ID;
+int smallFont() { return systemFontIdForPointSize(8); }
+int bodyFont() { return systemFontIdForPointSize(10); }
 
 std::string titleForPath(const std::string& path, const std::vector<BookReadingStats>& stats) {
   for (const BookReadingStats& book : stats) {
@@ -65,7 +65,7 @@ void HeatmapReport::renderBookTotals(const int y, const uint32_t dateKey) const 
   }
 
   if (totals.empty()) {
-    renderer.text.render(kBodyFont, kReportPadding, y, dateKey == 0 ? "Tap a heatmap day" : "No books recorded", true,
+    renderer.text.render(bodyFont(), kReportPadding, y, dateKey == 0 ? "Tap a heatmap day" : "No books recorded", true,
                          EpdFontFamily::REGULAR);
     return;
   }
@@ -81,7 +81,7 @@ void HeatmapReport::renderBookTotals(const int y, const uint32_t dateKey) const 
     const float hours = static_cast<float>(total.readingTimeMs) / 3600000.0f;
     char hoursText[24];
     snprintf(hoursText, sizeof(hoursText), "%.1fh", hours);
-    const int hoursWidth = renderer.text.getWidth(kBodyFont, hoursText);
+    const int hoursWidth = renderer.text.getWidth(bodyFont(), hoursText);
     const int titleWidth = std::max(1, right - kReportPadding - hoursWidth - 16);
     const std::string shown = renderer.text.truncate(itemFont, title.c_str(), titleWidth);
     const int rowY = y + i * rowHeight;
@@ -97,15 +97,15 @@ void HeatmapReport::renderBookTotals(const int y, const uint32_t dateKey) const 
 
 void HeatmapReport::content() {
   heatmap_.render(0, kHeatmapTop, renderer.getScreenWidth(), kHeatmapHeight, view_, false,
-                  HomeTheme::CarouselLabelColor::Black);
+                  HomeTheme::CarouselLabelColor::Black, true);
 
   const int headingY = kHeatmapTop + kHeatmapHeight + 8;
-  renderer.text.render(kBodyFont, kReportPadding, headingY, "Books read", true, EpdFontFamily::BOLD);
+  renderer.text.render(bodyFont(), kReportPadding, headingY, "Books read", true, EpdFontFamily::BOLD);
   const std::string selectedLabel = dateLabel(selectedDateKey_);
-  const int dateWidth = renderer.text.getWidth(kSmallFont, selectedLabel.c_str());
-  renderer.text.render(kSmallFont, renderer.getScreenWidth() - kReportPadding - dateWidth, headingY + 2,
+  const int dateWidth = renderer.text.getWidth(smallFont(), selectedLabel.c_str());
+  renderer.text.render(smallFont(), renderer.getScreenWidth() - kReportPadding - dateWidth, headingY + 2,
                        selectedLabel.c_str(), true, EpdFontFamily::REGULAR);
-  renderBookTotals(headingY + renderer.text.getLineHeight(kBodyFont) + 10, selectedDateKey_);
+  renderBookTotals(headingY + renderer.text.getLineHeight(bodyFont()) + 10, selectedDateKey_);
 }
 
 void HeatmapReport::loop() {
@@ -117,7 +117,7 @@ void HeatmapReport::loop() {
       const int x = static_cast<int>(tapX * renderer.getScreenWidth());
       const int y = static_cast<int>(tapY * renderer.getScreenHeight());
       const uint32_t dateKey = heatmap_.hitTestDateKey(x, y, 0, kHeatmapTop, renderer.getScreenWidth(),
-                                                        kHeatmapHeight, view_, false);
+                                                        kHeatmapHeight, view_, false, true);
       if (dateKey != 0) {
         selectedDateKey_ = dateKey;
         updateRequired = true;

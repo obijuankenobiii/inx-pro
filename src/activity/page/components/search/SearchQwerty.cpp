@@ -59,7 +59,7 @@ void drawKey(const GfxRenderer& renderer, const int x, const int y, const int wi
   renderer.rectangle.render(x, y, width, height, true);
 
   if (!label || label[0] == '\0') return;
-  constexpr int font = MONTSERRAT_16_FONT_ID;
+  const int font = systemFontIdForPointSize(16);
   const int textWidth = renderer.text.getWidth(font, label);
   const int textY = y + (height - renderer.text.getLineHeight(font)) / 2;
   renderer.text.render(font, x + (width - textWidth) / 2, textY, label, !filled);

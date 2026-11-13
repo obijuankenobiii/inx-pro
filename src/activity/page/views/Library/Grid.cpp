@@ -13,6 +13,7 @@
 #include "images/Pdf72.h"
 #include "images/Star.h"
 #include "images/Txt72.h"
+#include "system/UiLayout.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
 #include "../../navigation/Menu.h"
@@ -98,7 +99,7 @@ void drawItemBadge(const GfxRenderer& renderer, const int x, const int y, const 
   constexpr int paddingX = 5;
   constexpr int paddingY = 3;
   constexpr int margin = 5;
-  constexpr int font = MONTSERRAT_8_FONT_ID;
+  const int font = systemFontIdForPointSize(8);
   const int badgeWidth = renderer.text.getWidth(font, label.c_str()) + paddingX * 2;
   const int badgeHeight = renderer.text.getLineHeight(font) + paddingY * 2;
   const int badgeX = x + std::max(0, width - badgeWidth - margin);
@@ -159,7 +160,8 @@ void Grid::reset() { page = 0; }
 int Grid::top() const { return navigation::Menu::height; }
 
 int Grid::visibleHeight() const {
-  return std::max(1, renderer.getScreenHeight() - top() - navigation::Menu::bottomHeight - 30);
+  const int bottomInset = SETTINGS.hiddenMenu != 0 ? UiLayout::LIBRARY_BOTTOM_BAR_HEIGHT : navigation::Menu::bottomInset();
+  return std::max(1, renderer.getScreenHeight() - top() - bottomInset - 30);
 }
 
 int Grid::pageCount() const {

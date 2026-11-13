@@ -31,7 +31,8 @@ class BitmapRender {
 
   void render(const Bitmap& bitmap, int x, int y, int maxWidth, int maxHeight, float cropX = 0.f, float cropY = 0.f,
               RoundedOutside roundedOutside = RoundedOutside::None,
-              ImageRenderMode mode = ImageRenderMode::OneBit, float cropAnchorX = 0.5f) const;
+              ImageRenderMode mode = ImageRenderMode::OneBit, float cropAnchorX = 0.5f,
+              float cropAnchorY = 0.5f) const;
 
   void icon(const uint8_t bitmap[], int x, int y, int width, int height, Orientation orientation = Orientation::None,
             bool invert = false) const;

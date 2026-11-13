@@ -4,6 +4,7 @@
  */
 
 #include "CalibreSettingsActivity.h"
+#include "SettingsListLayout.h"
 #include "system/UiLayout.h"
 
 #include <Arduino.h>
@@ -19,7 +20,7 @@
 
 namespace {
 constexpr int MENU_ITEMS = 3;
-constexpr int kListItemHeight = Page::LIST_ITEM_HEIGHT;
+constexpr int kListItemHeight = SettingsListLayout::kRowHeight;
 const char* menuNames[MENU_ITEMS] = {"OPDS Server URL", "Username", "Password"};
 }
 
@@ -199,7 +200,8 @@ void CalibreSettingsActivity::render() {
     const auto width = renderer.text.getWidth(systemFontId(), status);
     renderer.text.render(systemFontId(), pageWidth - 20 - width, settingY, status, !isSelected);
     if (i + 1 < MENU_ITEMS) {
-      renderer.line.render(0, itemY + kListItemHeight - 1, pageWidth, itemY + kListItemHeight - 1, true,
+      renderer.line.render(SettingsListLayout::kDividerInset, itemY + kListItemHeight - 1,
+                           pageWidth - SettingsListLayout::kDividerInset, itemY + kListItemHeight - 1, true,
                            LineRender::Style::Dotted);
     }
   }

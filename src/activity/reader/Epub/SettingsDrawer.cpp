@@ -16,6 +16,7 @@
 #include <esp_heap_caps.h>
 #endif
 
+#include "../../settings/SettingsListLayout.h"
 #include "../../settings/ReaderFontSettingsDraw.h"
 #include "StatusBar.h"
 #include "images/AlignCenter.h"
@@ -23,9 +24,10 @@
 #include "images/AlignJustify.h"
 #include "images/AlignLeft.h"
 #include "images/AlignRight.h"
-#if INX_HAS_FRONTLIGHT
+#include "images/Check.h"
+#if INX_HAS_FRONTLIGHT || FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO || \
+    FREEINK_DEVICE_LILYGO
 #include <BoardConfig.h>
-
 #include "images/Temp.h"
 #include "images/LightOff.h"
 #include "images/LightOn.h"
@@ -43,6 +45,7 @@
 #include "state/SystemSetting.h"
 #include "system/FontManager.h"
 #include "system/Fonts.h"
+#include "system/ScreenComponents.h"
 
 constexpr int LIST_ITEM_HEIGHT = UiLayout::LIST_ITEM_HEIGHT;
 
@@ -72,7 +75,6 @@ constexpr int standaloneRows = 5;
 #define FRONTLIGHT_ROWS 2
 #endif
 constexpr int kBottomControlHeight = 70 * FRONTLIGHT_ROWS;
-#if INX_HAS_FRONTLIGHT
 constexpr int kFrontlightRowHeight = kBottomControlHeight / FRONTLIGHT_ROWS;
 constexpr int kFrontlightCaretSize = 30;
 constexpr int kFrontlightCaretGap = 8;
@@ -81,7 +83,11 @@ constexpr int kFrontlightTrackHeight = 4;
 constexpr int kFrontlightKnobRadius = 15;
 constexpr int kFrontlightKnobBorder = 2;
 constexpr int kFrontlightControlPadding = 20;
-#endif
+
+bool landscapeDrawer(const GfxRenderer& renderer) {
+  const auto orientation = renderer.getOrientation();
+  return orientation == GfxRenderer::LandscapeClockwise || orientation == GfxRenderer::LandscapeCounterClockwise;
+}
 
 uint8_t* allocateSelectorFrame(const size_t size) {
 #if defined(ARDUINO_ARCH_ESP32)
@@ -109,7 +115,22 @@ int tabVerticalPadding(const bool embedded) {
 
 int drawerTabHeight(const bool embedded) { return tabSize + tabVerticalPadding(embedded) * 2; }
 
-int drawerListTop(const bool embedded) { return drawerTabHeight(embedded) + (FREEINK_DEVICE_X4PRO ? 5 : 1); }
+int drawerListTop(const bool embedded) {
+  return drawerTabHeight(embedded) + ((FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO) ? 5 : 1);
+}
+
+int systemSizedDrawerRowHeight(const GfxRenderer& renderer) {
+  (void)renderer;
+  return SettingsListLayout::kRowHeight;
+}
+
+int settingsValueAreaLeft(const GfxRenderer& renderer, const int drawerX, const int drawerWidth,
+                          const int valueColumnRight, const char* label) {
+  constexpr int labelValueGap = 12;
+  const int defaultLeft = drawerX + drawerWidth * 40 / 100;
+  const int labelRight = drawerX + 23 + renderer.text.getWidth(systemFontId(), label ? label : "");
+  return std::min(valueColumnRight - 48, std::max(defaultLeft, labelRight + labelValueGap));
+}
 constexpr int kDrawerListBottomPadding = 12;
 
 struct SelectorBounds {
@@ -141,35 +162,34 @@ bool isLandscapeReader(const GfxRenderer& gfx) {
 
 void drawSettingsDropdown(const GfxRenderer& renderer, int left, int right, int itemY, int itemHeight,
                           const char* value) {
-  constexpr int kPadX = 10;
-  const int boxY = itemY + 8;
-  const int boxH = itemHeight - 16;
-  renderer.rectangle.render(left, boxY, right - left, boxH, true, false);
-
-  const int textMaxW = std::max(1, right - left - 32);
-  const std::string shown = renderer.text.truncate(MONTSERRAT_8_FONT_ID, value ? value : "", textMaxW,
+  constexpr int iconSize = 30;
+  constexpr int valueCaretGap = 20;
+  const int caretX = right - iconSize;
+  const int valueRight = caretX - valueCaretGap;
+  const int textMaxW = std::max(1, valueRight - left);
+  const std::string shown = renderer.text.truncate(systemFontId(), value ? value : "", textMaxW,
                                                     EpdFontFamily::REGULAR);
-  const int textY = boxY + (boxH - renderer.text.getLineHeight(MONTSERRAT_8_FONT_ID)) / 2;
-  renderer.text.render(MONTSERRAT_8_FONT_ID, left + kPadX, textY, shown.c_str(), true,
+  const int valueWidth = renderer.text.getWidth(systemFontId(), shown.c_str(), EpdFontFamily::REGULAR);
+  const int textY = itemY + (itemHeight - renderer.text.getLineHeight(systemFontId())) / 2;
+  renderer.text.render(systemFontId(), valueRight - valueWidth, textY, shown.c_str(), true,
                        EpdFontFamily::REGULAR);
-
-  const int chevronX = right - 14;
-  const int chevronY = boxY + boxH / 2 - 2;
-  renderer.line.render(chevronX - 3, chevronY, chevronX, chevronY + 3, true);
-  renderer.line.render(chevronX, chevronY + 3, chevronX + 3, chevronY, true);
+  renderer.bitmap.icon(LibraryFilterRight, caretX, itemY + (itemHeight - iconSize) / 2, iconSize, iconSize);
 }
 
 void drawValueStepper(GfxRenderer& renderer, const char* value, int left, int right, int itemY, int itemHeight) {
   constexpr int iconSize = 30;
   constexpr int gap = 8;
-  const int valueW = renderer.text.getWidth(MONTSERRAT_10_FONT_ID, value, EpdFontFamily::REGULAR);
+  const int maxTextWidth = std::max(1, right - left - iconSize * 2 - gap * 2);
+  const std::string shown = renderer.text.truncate(systemFontId(), value ? value : "", maxTextWidth,
+                                                    EpdFontFamily::REGULAR);
+  const int valueW = renderer.text.getWidth(systemFontId(), shown.c_str(), EpdFontFamily::REGULAR);
   const int width = iconSize + gap + valueW + gap + iconSize;
   const int x = std::max(left, right - width);
   const int iconY = itemY + (itemHeight - iconSize) / 2 + 5;
-  const int textY = itemY + (itemHeight - renderer.text.getLineHeight(MONTSERRAT_10_FONT_ID)) / 2;
+  const int textY = itemY + (itemHeight - renderer.text.getLineHeight(systemFontId())) / 2;
 
   renderer.bitmap.icon(LibraryFilterLeft, x, iconY, iconSize, iconSize);
-  renderer.text.render(MONTSERRAT_10_FONT_ID, x + iconSize + gap, textY, value, true, EpdFontFamily::REGULAR);
+  renderer.text.render(systemFontId(), x + iconSize + gap, textY, shown.c_str(), true, EpdFontFamily::REGULAR);
   renderer.bitmap.icon(LibraryFilterRight, x + iconSize + gap + valueW + gap, iconY, iconSize, iconSize);
 }
 
@@ -267,7 +287,7 @@ SettingsDrawer::SettingsDrawer(GfxRenderer& renderer, BookSettings& settings, st
       onSettingsChanged(onSettingsChanged),
       lastInputTime(0),
       settingsUpdated(false) {
-  itemHeight = LIST_ITEM_HEIGHT;
+  itemHeight = systemSizedDrawerRowHeight(renderer);
   syncLayoutFromRenderer();
 
   selectedIndex = 0;
@@ -291,18 +311,20 @@ void SettingsDrawer::setEmbeddedRegion(int x, int y, int w, int h) {
   drawerY = y;
   drawerWidth = w;
   drawerHeight = h;
+  itemHeight = systemSizedDrawerRowHeight(renderer);
   itemsPerPage = std::max(1, (drawerHeight - drawerListTop(embedded_) - kDrawerListBottomPadding) / itemHeight);
   setupMenu();
 }
 
 int SettingsDrawer::snapEmbeddedHeight(int maxHeight) const {
-  const int usable = maxHeight - drawerListTop(embedded_) - kDrawerListBottomPadding;
-  const int rows = std::min(5, std::max(1, usable / LIST_ITEM_HEIGHT));
-  return drawerListTop(embedded_) + rows * LIST_ITEM_HEIGHT + kDrawerListBottomPadding;
+  const int usable = maxHeight - drawerListTop(true) - kDrawerListBottomPadding;
+  const int rowHeight = systemSizedDrawerRowHeight(renderer);
+  const int rows = std::min(5, std::max(1, usable / rowHeight));
+  return drawerListTop(true) + rows * rowHeight + kDrawerListBottomPadding;
 }
 
 void SettingsDrawer::syncLayoutFromRenderer() {
-  itemHeight = LIST_ITEM_HEIGHT;
+  itemHeight = systemSizedDrawerRowHeight(renderer);
   if (embedded_) {
     itemsPerPage = std::max(1, (drawerHeight - drawerListTop(embedded_) - kDrawerListBottomPadding) / itemHeight);
     return;
@@ -313,7 +335,12 @@ void SettingsDrawer::syncLayoutFromRenderer() {
   drawerWidth = sw;
   drawerY = 0;
 
-  const int maxRows = std::max(1, (sh - drawerListTop(embedded_)) / itemHeight);
+  int bottomReserve = 24;
+#if INX_HAS_FRONTLIGHT || FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO || \
+    FREEINK_DEVICE_LILYGO
+  if (!landscapeDrawer(renderer) && frontlight.present()) bottomReserve = kBottomControlHeight;
+#endif
+  const int maxRows = std::max(1, (sh - drawerListTop(embedded_) - bottomReserve) / itemHeight);
   itemsPerPage = std::min(standaloneRows, maxRows);
   drawerHeight = drawerListTop(embedded_) + itemsPerPage * itemHeight + 1;
 }
@@ -496,21 +523,11 @@ void SettingsDrawer::setupMenu() {
     menuItems.push_back(cssIndentEntry);
 
     MenuEntry marginEntry;
-    marginEntry.item = MenuItem::ScreenMargin;
+    marginEntry.item = MenuItem::Margins;
     marginEntry.group = GroupType::LAYOUT;
-    marginEntry.name = "Screen Margin";
-    marginEntry.getValueText = [](const BookSettings& s) -> const char* {
-      static char buf[10];
-      snprintf(buf, sizeof(buf), "%d px", s.screenMargin);
-      return buf;
-    };
-    marginEntry.change = [](BookSettings& s, int delta) {
-      int newVal = s.screenMargin + (delta * 5);
-      if (newVal >= 0 && newVal <= 80) {
-        s.screenMargin = newVal;
-        s.markCustomSettings();
-      }
-    };
+    marginEntry.name = "Margins";
+    marginEntry.getValueText = [](const BookSettings&) -> const char* { return ""; };
+    marginEntry.change = [](BookSettings&, int) {};
     menuItems.push_back(marginEntry);
 
   }
@@ -538,7 +555,7 @@ void SettingsDrawer::setupMenu() {
     MenuEntry pageAutoTurnEntry;
     pageAutoTurnEntry.item = MenuItem::PageAutoTurn;
     pageAutoTurnEntry.group = GroupType::CONTROLS;
-    pageAutoTurnEntry.name = "Page Auto Turn";
+    pageAutoTurnEntry.name = "Auto Turn";
     pageAutoTurnEntry.getValueText = [](const BookSettings& s) -> const char* {
       static char buf[12];
       if (s.pageAutoTurnSeconds == 0) return "Off";
@@ -605,7 +622,7 @@ void SettingsDrawer::setupMenu() {
     MenuEntry statusLeftEntry;
     statusLeftEntry.item = MenuItem::StatusBarLeft;
     statusLeftEntry.group = GroupType::STATUS_BAR;
-    statusLeftEntry.name = "Left Section";
+    statusLeftEntry.name = "Left";
     statusLeftEntry.getValueText = [](const BookSettings& s) -> const char* {
       return statusBarItemName(s.statusBarLeft.item);
     };
@@ -621,7 +638,7 @@ void SettingsDrawer::setupMenu() {
     MenuEntry statusMiddleEntry;
     statusMiddleEntry.item = MenuItem::StatusBarMiddle;
     statusMiddleEntry.group = GroupType::STATUS_BAR;
-    statusMiddleEntry.name = "Middle Section";
+    statusMiddleEntry.name = "Middle";
     statusMiddleEntry.getValueText = [](const BookSettings& s) -> const char* {
       return statusBarItemName(s.statusBarMiddle.item);
     };
@@ -637,7 +654,7 @@ void SettingsDrawer::setupMenu() {
     MenuEntry statusRightEntry;
     statusRightEntry.item = MenuItem::StatusBarRight;
     statusRightEntry.group = GroupType::STATUS_BAR;
-    statusRightEntry.name = "Right Section";
+    statusRightEntry.name = "Right";
     statusRightEntry.getValueText = [](const BookSettings& s) -> const char* {
       return statusBarItemName(s.statusBarRight.item);
     };
@@ -686,6 +703,7 @@ void SettingsDrawer::show() {
   visible = true;
   dismissed = false;
   closeSelector();
+  closeMarginEditor();
   selectedIndex = -1;
   scrollOffset = 0;
   renderWithRefresh(HalDisplay::FAST_REFRESH);
@@ -698,6 +716,7 @@ void SettingsDrawer::hide() {
   visible = false;
   dismissed = true;
   closeSelector();
+  closeMarginEditor();
 }
 
 void SettingsDrawer::relayoutForRendererChange() {
@@ -725,12 +744,17 @@ void SettingsDrawer::renderWithRefresh(HalDisplay::RefreshMode mode) {
     closeSelector();
   }
   syncLayoutFromRenderer();
-  if (!embedded_ && !selectorFrameRestored_) {
+  if (!selectorFrameRestored_) {
     renderer.syncWriteBufferFromActive();
+  }
+  if (!embedded_) {
+    ScreenComponents::drawWhiteOverlay(renderer);
   }
   drawBackground();
   drawMenuItems();
-  drawScrollIndicator();
+  if (!marginEditorOpen_) {
+    drawScrollIndicator();
+  }
   if (selectorOpen_) {
     drawSelectorPopup();
   }
@@ -738,6 +762,9 @@ void SettingsDrawer::renderWithRefresh(HalDisplay::RefreshMode mode) {
   renderer.line.render(drawerX, drawerY + drawerHeight - 1, drawerX + drawerWidth, drawerY + drawerHeight - 1, true);
   if (embedded_) {
     if (onEmbeddedInvalidate_) onEmbeddedInvalidate_();
+    // The embedded callback only draws the preview. Commit the preview and drawer
+    // together so a later buffer sync cannot resurrect the previous screen.
+    renderer.displayBuffer(mode);
     renderer.syncWriteBufferFromActive();
     selectorFrameRestored_ = false;
     return;
@@ -785,7 +812,7 @@ void SettingsDrawer::drawTabs() {
 
   const int y = drawerY + 1;
   const int width = std::max(1, drawerWidth / count);
-  const int iconOffset = embedded_ ? 0 : (FREEINK_DEVICE_X4PRO ? 4 : 0);
+  const int iconOffset = embedded_ ? 0 : ((FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO) ? 4 : 0);
   const int tabPadding = tabVerticalPadding(embedded_);
   const int tabHeight = drawerTabHeight(embedded_);
   for (int i = 0; i < count; ++i) {
@@ -817,12 +844,248 @@ void SettingsDrawer::drawTabs() {
  * @brief Draws all menu items in the current scroll view
  */
 void SettingsDrawer::drawMenuItems() {
+  if (marginEditorOpen_) {
+    drawMarginEditor();
+    return;
+  }
   for (int i = 0; i < itemsPerPage && (i + scrollOffset) < static_cast<int>(menuItems.size()); i++) {
     drawMenuItemRow(i, i + scrollOffset);
   }
 }
 
-#if INX_HAS_FRONTLIGHT
+void SettingsDrawer::drawMarginEditor() {
+  const int startY = drawerY + drawerListTop(embedded_);
+  const int contentHeight = std::max(1, drawerHeight - drawerListTop(embedded_));
+  const int rowHeight = std::max(1, contentHeight / 5);
+  const int backY = startY + rowHeight * 4;
+  // The in-book editor shares the drawer with the page preview. The preset
+  // editor has no mini preview, so let its controls use the full embedded
+  // panel instead of leaving the left half empty.
+  const int controlsLeft = embedded_ ? drawerX + 20 : drawerX + drawerWidth * 48 / 100;
+
+  static constexpr const char* labels[] = {"Top", "Left", "Right", "Bottom"};
+  const uint8_t values[] = {settings.marginTop, settings.marginLeft, settings.marginRight, settings.marginBottom};
+  for (int i = 0; i < 4; ++i) {
+    const int itemY = startY + i * rowHeight;
+    renderer.rectangle.fill(drawerX, itemY, drawerWidth, rowHeight, false);
+    const int textY = itemY + (rowHeight - renderer.text.getLineHeight(systemFontId())) / 2;
+    renderer.text.render(systemFontId(), controlsLeft, textY, labels[i], true);
+    char value[12];
+    snprintf(value, sizeof(value), "%u px", values[i]);
+    const int valueAreaLeft = controlsLeft + drawerWidth * 10 / 100;
+    drawValueStepper(renderer, value, valueAreaLeft, drawerX + drawerWidth - 24, itemY, rowHeight);
+    renderer.line.render(controlsLeft, itemY + rowHeight - 1, drawerX + drawerWidth, itemY + rowHeight - 1, true,
+                         LineRender::Style::Dotted);
+  }
+
+  const int actualBackHeight = std::max(1, startY + contentHeight - backY);
+  renderer.rectangle.fill(controlsLeft, backY, drawerX + drawerWidth - controlsLeft, actualBackHeight, false);
+  renderer.line.render(controlsLeft, backY, drawerX + drawerWidth, backY, true, LineRender::Style::Dotted);
+  constexpr int iconSize = 30;
+  constexpr int gap = 8;
+  const int valueColumnRight = drawerX + drawerWidth - 24;
+  const int textWidth = renderer.text.getWidth(systemFontId(), "Back", EpdFontFamily::REGULAR);
+  const int iconX = valueColumnRight - iconSize - gap - textWidth;
+  const int textY = backY + (actualBackHeight - renderer.text.getLineHeight(systemFontId())) / 2;
+  renderer.bitmap.icon(LibraryFilterLeft, iconX, backY + (actualBackHeight - iconSize) / 2, iconSize, iconSize);
+  renderer.text.render(systemFontId(), iconX + iconSize + gap, textY, "Back", true);
+
+  if (!embedded_) {
+    drawMarginPreview(drawerX, startY, std::max(1, controlsLeft - drawerX - 8), contentHeight);
+  }
+}
+
+void SettingsDrawer::drawMarginPreview(const int x, const int y, const int width, const int height) {
+  const int pageHeight = std::max(20, height - 40);
+  const int pageWidth = std::max(20, std::min(width - 20, pageHeight * 7 / 10));
+  const int pageX = x + 10;
+  const int pageY = y + (height - pageHeight) / 2;
+  renderer.rectangle.fill(pageX, pageY, pageWidth, pageHeight, false);
+  renderer.rectangle.render(pageX, pageY, pageWidth, pageHeight, true);
+
+  // Use the configured values directly. A zero margin therefore places the
+  // first stroke immediately inside the page border instead of leaving a
+  // hidden fixed inset in the preview.
+  const int left = pageX + 1 + settings.marginLeft;
+  const int right = pageX + pageWidth - 1 - settings.marginRight;
+  const int top = pageY + 1 + settings.marginTop;
+  const int bottom = pageY + pageHeight - 1 - settings.marginBottom;
+  const int contentWidth = std::max(8, right - left);
+  const int contentHeight = std::max(8, bottom - top);
+  const int lineGap = std::max(5, contentHeight / 14);
+  const int paragraphGap = std::max(lineGap * 3 + 5, contentHeight / 5);
+  const auto drawTextLine = [&](const int x1, const int lineY, const int x2) {
+    renderer.line.render(x1, lineY, x2, lineY, true);
+    if (lineY + 1 <= bottom) {
+      renderer.line.render(x1, lineY + 1, x2, lineY + 1, true);
+    }
+  };
+
+  for (int paragraph = 0; paragraph < 4; ++paragraph) {
+    const int paragraphY = top + paragraph * paragraphGap;
+    if (paragraphY >= bottom) break;
+    drawTextLine(left, paragraphY, right - (contentWidth / 5));
+    if (paragraphY + lineGap < bottom) {
+      drawTextLine(left, paragraphY + lineGap, right);
+    }
+    if (paragraphY + lineGap * 2 < bottom) {
+      drawTextLine(left, paragraphY + lineGap * 2, left + contentWidth / 2);
+    }
+  }
+  if (bottom > top) {
+    drawTextLine(left + contentWidth / 8, bottom, right - contentWidth / 12);
+  }
+}
+
+void SettingsDrawer::openMarginEditor() {
+  closeSelector();
+  marginEditorOpen_ = true;
+  marginEditorSelected_ = 0;
+}
+
+void SettingsDrawer::closeMarginEditor() {
+  marginEditorOpen_ = false;
+  marginEditorSelected_ = 0;
+}
+
+void SettingsDrawer::applyMarginChange(const int delta) {
+  uint8_t* value = nullptr;
+  switch (marginEditorSelected_) {
+    case 0:
+      value = &settings.marginTop;
+      break;
+    case 1:
+      value = &settings.marginLeft;
+      break;
+    case 2:
+      value = &settings.marginRight;
+      break;
+    case 3:
+      value = &settings.marginBottom;
+      break;
+    default:
+      return;
+  }
+  const int next = std::max(0, std::min(80, static_cast<int>(*value) + delta * 5));
+  if (next == *value) return;
+  *value = static_cast<uint8_t>(next);
+  settings.markCustomSettings();
+  settingsUpdated = true;
+  if (onSettingsChanged) onSettingsChanged();
+}
+
+bool SettingsDrawer::handleMarginEditorInput(MappedInputManager& input) {
+  if (!marginEditorOpen_) return false;
+
+  const uint32_t currentTime = xTaskGetTickCount();
+  const int startY = drawerY + drawerListTop(embedded_);
+  const int contentHeight = std::max(1, drawerHeight - drawerListTop(embedded_));
+  const int rowHeight = std::max(1, contentHeight / 5);
+  const int backY = startY + rowHeight * 4;
+  const int screenW = renderer.getScreenWidth();
+  const int screenH = renderer.getScreenHeight();
+
+  if (input.hasTouch()) {
+    suppressBackReleaseUntil_ = currentTime + pdMS_TO_TICKS(1000);
+    float tapNx = 0.0f;
+    float tapNy = 0.0f;
+    if (input.wasTouchTapInScreen(renderer, tapNx, tapNy)) {
+      const int tapX = static_cast<int>(tapNx * screenW);
+      const int tapY = static_cast<int>(tapNy * screenH);
+      const int editorTop = startY;
+      const int editorBottom = startY + contentHeight;
+      const bool insideEditor = tapX >= drawerX && tapX < drawerX + drawerWidth && tapY >= editorTop &&
+                                tapY < editorBottom;
+      if (!insideEditor) {
+        // The preset editor is embedded and has an explicit Back control. The
+        // in-book drawer is dismissed by tapping outside its content.
+        if (!embedded_) {
+          hide();
+          lastInputTime = currentTime;
+        }
+        return true;
+      }
+
+      const int controlsLeft = embedded_ ? drawerX + 20 : drawerX + drawerWidth * 48 / 100;
+      if (tapY >= backY && tapX >= controlsLeft) {
+        closeMarginEditor();
+        lastInputTime = currentTime;
+        renderWithRefresh(HalDisplay::FAST_REFRESH);
+        return true;
+      }
+
+      const int row = (tapY - startY) / rowHeight;
+      if (row >= 0 && row < 4) {
+        marginEditorSelected_ = row;
+        if (tapX < controlsLeft) {
+          return true;
+        }
+        const int valueAreaLeft = controlsLeft + drawerWidth * 10 / 100;
+        const int valueColumnRight = drawerX + drawerWidth - 24;
+        char value[12];
+        const uint8_t current[] = {settings.marginTop, settings.marginLeft, settings.marginRight,
+                                   settings.marginBottom};
+        snprintf(value, sizeof(value), "%u px", current[row]);
+        constexpr int iconSize = 30;
+        constexpr int gap = 8;
+        const int valueW = renderer.text.getWidth(systemFontId(), value, EpdFontFamily::REGULAR);
+        const int x = std::max(valueAreaLeft, valueColumnRight - (iconSize + gap + valueW + gap + iconSize));
+        const int rightX = x + iconSize + gap + valueW + gap;
+        if (tapX >= x && tapX < x + iconSize) {
+          applyMarginChange(-1);
+        } else if (tapX >= rightX && tapX < rightX + iconSize) {
+          applyMarginChange(1);
+        } else {
+          applyMarginChange(1);
+        }
+        lastInputTime = currentTime;
+        renderWithRefresh(HalDisplay::FAST_REFRESH);
+        return true;
+      }
+    }
+    return true;
+  }
+
+  if (suppressBackReleaseUntil_ != 0) {
+    if (currentTime < suppressBackReleaseUntil_) {
+      if (input.wasReleased(MappedInputManager::Button::Back)) {
+        suppressBackReleaseUntil_ = 0;
+      }
+      return true;
+    }
+    suppressBackReleaseUntil_ = 0;
+  }
+
+  if (input.wasReleased(MappedInputManager::Button::Back)) {
+    closeMarginEditor();
+    renderWithRefresh(HalDisplay::FAST_REFRESH);
+    return true;
+  }
+  if (input.wasPressed(MappedInputManager::Button::Up)) {
+    marginEditorSelected_ = (marginEditorSelected_ + 3) % 4;
+    renderWithRefresh(HalDisplay::FAST_REFRESH);
+    return true;
+  }
+  if (input.wasPressed(MappedInputManager::Button::Down)) {
+    marginEditorSelected_ = (marginEditorSelected_ + 1) % 4;
+    renderWithRefresh(HalDisplay::FAST_REFRESH);
+    return true;
+  }
+  if (input.wasPressed(MappedInputManager::Button::Left)) {
+    applyMarginChange(-1);
+    renderWithRefresh(HalDisplay::FAST_REFRESH);
+    return true;
+  }
+  if (input.wasPressed(MappedInputManager::Button::Right)) {
+    applyMarginChange(1);
+    renderWithRefresh(HalDisplay::FAST_REFRESH);
+    return true;
+  }
+  return true;
+}
+
+#if INX_HAS_FRONTLIGHT || FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO || \
+    FREEINK_DEVICE_LILYGO
 namespace {
 int frontlightPercentFromTrack(const int x, const int left, const int width, const bool brightness) {
   const int clamped = std::max(left, std::min(left + width, x));
@@ -834,8 +1097,9 @@ int frontlightPercentFromTrack(const int x, const int left, const int width, con
 #endif
 
 void SettingsDrawer::drawFrontlightBar() {
-#if INX_HAS_FRONTLIGHT
-  if (embedded_ || !frontlight.present()) return;
+#if INX_HAS_FRONTLIGHT || FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO || \
+    FREEINK_DEVICE_LILYGO
+  if (embedded_ || !frontlight.present() || landscapeDrawer(renderer)) return;
 
   const int barY = renderer.getScreenHeight() - kBottomControlHeight;
   renderer.rectangle.fill(drawerX, barY, drawerWidth, kBottomControlHeight, false);
@@ -887,8 +1151,9 @@ void SettingsDrawer::drawFrontlightBar() {
 }
 
 bool SettingsDrawer::handleFrontlightInput(MappedInputManager& input, const uint32_t currentTime) {
-#if INX_HAS_FRONTLIGHT
-  if (embedded_ || !frontlight.present()) return false;
+#if INX_HAS_FRONTLIGHT || FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO || \
+    FREEINK_DEVICE_LILYGO
+  if (embedded_ || !frontlight.present() || landscapeDrawer(renderer)) return false;
 
   const int barY = renderer.getScreenHeight() - kBottomControlHeight;
   const int barBottom = renderer.getScreenHeight();
@@ -1018,6 +1283,7 @@ void SettingsDrawer::drawMenuItemRow(int visibleRow, int menuIndex) {
   const int itemY = startY + (visibleRow * itemHeight);
   const auto& entry = menuItems[static_cast<size_t>(menuIndex)];
   const bool isSelected = false;
+  const bool isLastMenuItem = menuIndex + 1 >= static_cast<int>(menuItems.size());
 
   renderer.rectangle.fill(
       drawerX, itemY, drawerWidth, itemHeight,
@@ -1026,31 +1292,42 @@ void SettingsDrawer::drawMenuItemRow(int visibleRow, int menuIndex) {
   if (entry.item == MenuItem::Separator || entry.item == MenuItem::StatusBarSeparator ||
       entry.item == MenuItem::StatusBarFullSeparator) {
     const int textX = drawerX + 15;
-    const int textY = itemY + (itemHeight - renderer.text.getLineHeight(MONTSERRAT_10_FONT_ID)) / 2;
-    renderer.text.render(MONTSERRAT_10_FONT_ID, textX, textY, entry.name, isSelected ? 0 : 1);
+    const int textY = itemY + (itemHeight - renderer.text.getLineHeight(systemFontId())) / 2;
+    renderer.text.render(systemFontId(), textX, textY, entry.name, isSelected ? 0 : 1);
 
     const char* indicator = entry.getValueText(settings);
     if (indicator && indicator[0] != '\0') {
-      const int indicatorW = renderer.text.getWidth(MONTSERRAT_10_FONT_ID, indicator);
-      renderer.text.render(MONTSERRAT_10_FONT_ID, drawerX + drawerWidth - indicatorW - 30, textY, indicator,
+      const int indicatorW = renderer.text.getWidth(systemFontId(), indicator);
+      renderer.text.render(systemFontId(), drawerX + drawerWidth - indicatorW - 30, textY, indicator,
                            isSelected ? 0 : 1, EpdFontFamily::BOLD);
     }
 
-    renderer.line.render(drawerX, itemY + itemHeight - 1, drawerX + drawerWidth, itemY + itemHeight - 1, true,
-                         LineRender::Style::Dotted);
+    if (!isLastMenuItem) {
+      renderer.line.render(drawerX, itemY + itemHeight - 1, drawerX + drawerWidth, itemY + itemHeight - 1, true,
+                           LineRender::Style::Dotted);
+    }
     return;
   }
 
   const int textX = drawerX + 23;
-  const int textY = itemY + (itemHeight - renderer.text.getLineHeight(MONTSERRAT_10_FONT_ID)) / 2;
-  renderer.text.render(MONTSERRAT_10_FONT_ID, textX, textY, entry.name, isSelected ? 0 : 1);
+  const int textY = itemY + (itemHeight - renderer.text.getLineHeight(systemFontId())) / 2;
+  renderer.text.render(systemFontId(), textX, textY, entry.name, isSelected ? 0 : 1);
 
   const int valueColumnRight = drawerX + drawerWidth - 24;
-  const int valueAreaLeft = drawerX + drawerWidth * 40 / 100;
-  if (isDropdownItem(entry.item)) {
+  const int labelValueGap = 12;
+  const int labelRight = textX + renderer.text.getWidth(systemFontId(), entry.name);
+  // Large system text can extend into the normal 40% value column. Move the
+  // select box right in that case, shortening it instead of letting it cover
+  // the label.
+  const int valueAreaLeft = settingsValueAreaLeft(renderer, drawerX, drawerWidth, valueColumnRight, entry.name);
+  if (entry.item == MenuItem::Margins) {
+    constexpr int kIconSize = 30;
+    renderer.bitmap.icon(LibraryFilterRight, valueColumnRight - kIconSize, itemY + (itemHeight - kIconSize) / 2, kIconSize,
+                         kIconSize);
+  } else if (isDropdownItem(entry.item)) {
     drawSettingsDropdown(renderer, valueAreaLeft, valueColumnRight, itemY, itemHeight, entry.getValueText(settings));
   } else if (entry.item == MenuItem::FontSize || entry.item == MenuItem::LineHeight ||
-             entry.item == MenuItem::TextSpace || entry.item == MenuItem::ScreenMargin) {
+             entry.item == MenuItem::TextSpace) {
     drawValueStepper(renderer, entry.getValueText(settings), valueAreaLeft, valueColumnRight, itemY, itemHeight);
   } else if (entry.item == MenuItem::Alignment) {
     int alignment = settings.paragraphAlignment;
@@ -1095,14 +1372,18 @@ void SettingsDrawer::drawMenuItemRow(int visibleRow, int menuIndex) {
     } else {
       const char* val = entry.getValueText(settings);
       if (val && val[0] != '\0') {
-        const int valW = renderer.text.getWidth(MONTSERRAT_10_FONT_ID, val);
-        renderer.text.render(MONTSERRAT_10_FONT_ID, valueColumnRight - valW, textY, val, isSelected ? 0 : 1);
+        const int maxValueWidth = std::max(1, valueColumnRight - labelRight - labelValueGap);
+        const std::string shown = renderer.text.truncate(systemFontId(), val, maxValueWidth);
+        const int valW = renderer.text.getWidth(systemFontId(), shown.c_str());
+        renderer.text.render(systemFontId(), valueColumnRight - valW, textY, shown.c_str(), isSelected ? 0 : 1);
       }
     }
   }
 
-  renderer.line.render(drawerX, itemY + itemHeight - 1, drawerX + drawerWidth, itemY + itemHeight - 1, true,
-                       LineRender::Style::Dotted);
+  if (!isLastMenuItem) {
+    renderer.line.render(drawerX, itemY + itemHeight - 1, drawerX + drawerWidth, itemY + itemHeight - 1, true,
+                         LineRender::Style::Dotted);
+  }
 }
 
 bool SettingsDrawer::isDropdownItem(const MenuItem item) const {
@@ -1192,13 +1473,9 @@ void SettingsDrawer::openSelector(const int menuIndex) {
   selectorMenuIndex_ = menuIndex;
   selectorSelected_ = std::max(0, std::min(current, static_cast<int>(selectorOptions_.size()) - 1));
   selectorGroup_ = selectedGroup_;
-  const int requestedRows = std::min(selectorRows, static_cast<int>(selectorOptions_.size()));
-  const int selectedRow = selectorMenuIndex_ - scrollOffset;
-  const int fieldY = drawerY + drawerListTop(embedded_) + selectedRow * itemHeight;
-  const SelectorBounds box =
-      selectorBounds(drawerX, drawerWidth, fieldY, itemHeight, renderer.getScreenHeight(), requestedRows,
-                     selectorOpensUpward());
-  selectorScroll_ = std::max(0, selectorSelected_ - (box.rows - 1));
+  const int contentHeight = std::max(1, drawerHeight - drawerListTop(embedded_));
+  const int visibleRows = std::max(1, (contentHeight - itemHeight) / itemHeight);
+  selectorScroll_ = std::max(0, selectorSelected_ - (visibleRows - 1));
   selectorOpen_ = true;
   captureSelectorFrame();
 }
@@ -1291,7 +1568,8 @@ void SettingsDrawer::commitSelectorSelection() {
     settings.markCustomSettings();
     settingsUpdated = true;
   }
-  closeSelector();
+  // Keep the selector open after a valid choice. This lets the preset editor
+  // apply and preview several values without reopening the same row each time.
   if (onSettingsChanged) onSettingsChanged();
 }
 
@@ -1301,47 +1579,58 @@ void SettingsDrawer::drawSelectorPopup() {
     return;
   }
 
-  const int requestedRows = std::min(selectorRows, static_cast<int>(selectorOptions_.size()));
-  const int selectedRow = selectorMenuIndex_ - scrollOffset;
-  const int fieldY = drawerY + drawerListTop(embedded_) + selectedRow * itemHeight;
-  const SelectorBounds box =
-      selectorBounds(drawerX, drawerWidth, fieldY, itemHeight, renderer.getScreenHeight(), requestedRows,
-                     selectorOpensUpward());
+  const int startY = drawerY + drawerListTop(embedded_);
+  const int contentHeight = std::max(1, drawerHeight - drawerListTop(embedded_));
+  const int visibleRows = std::max(1, (contentHeight - itemHeight) / itemHeight);
+  const int optionRows = std::min(visibleRows, static_cast<int>(selectorOptions_.size()));
+  const int backY = drawerY + drawerHeight - itemHeight;
+  constexpr int selectionCheckSize = 40;
+  constexpr int selectionCheckRightInset = 20;
+  const int selectionCheckX = drawerX + drawerWidth - selectionCheckRightInset - selectionCheckSize;
 
-  renderer.rectangle.fill(box.x, box.y, box.width, box.height, false);
-
-  for (int i = 0; i < box.rows; ++i) {
+  renderer.rectangle.fill(drawerX, startY, drawerWidth, contentHeight, false);
+  for (int i = 0; i < optionRows; ++i) {
     const int optionIndex = selectorScroll_ + i;
-    const int rowY = box.y + i * selectorRowHeight;
+    const int rowY = startY + i * itemHeight;
     if (optionIndex < static_cast<int>(selectorOptions_.size())) {
-      const bool selected = optionIndex == selectorSelected_;
-      if (selected) {
-        renderer.rectangle.fill(box.x + 1, rowY, box.width - 2, selectorRowHeight,
-                                static_cast<int>(GfxRenderer::FillTone::Ink));
+      const int textY = rowY + (itemHeight - renderer.text.getLineHeight(systemFontId())) / 2;
+      const int textRight = selectionCheckX - 20;
+      const std::string shown = renderer.text.truncate(systemFontId(),
+                                                        selectorOptions_[static_cast<size_t>(optionIndex)].c_str(),
+                                                        std::max(1, textRight - (drawerX + 23)));
+      renderer.text.render(systemFontId(), drawerX + 23, textY, shown.c_str(), true);
+      if (optionIndex == selectorSelected_) {
+        renderer.bitmap.icon(Check, selectionCheckX, rowY + (itemHeight - selectionCheckSize) / 2,
+                             selectionCheckSize, selectionCheckSize);
       }
-      const int textY = rowY + (selectorRowHeight - renderer.text.getLineHeight(MONTSERRAT_10_FONT_ID)) / 2;
-      renderer.text.render(MONTSERRAT_10_FONT_ID, box.x + 12, textY,
-                           selectorOptions_[static_cast<size_t>(optionIndex)].c_str(), selected ? 0 : 1);
     }
-    if (i + 1 < box.rows) {
-      renderer.line.render(box.x, rowY + selectorRowHeight, box.x + box.width, rowY + selectorRowHeight, true,
+    if (i + 1 < optionRows) {
+      renderer.line.render(drawerX + 20, rowY + itemHeight - 1, drawerX + drawerWidth - 20,
+                           rowY + itemHeight - 1, true,
                            LineRender::Style::Dotted);
     }
   }
 
-  if (static_cast<int>(selectorOptions_.size()) > box.rows) {
-    const int trackX = box.x + box.width - 5;
-    const int trackY = box.y + 2;
-    const int trackHeight = std::max(1, box.height - 5);
+  if (static_cast<int>(selectorOptions_.size()) > visibleRows) {
+    const int trackX = drawerX + drawerWidth - 8;
+    const int trackY = startY + 2;
+    const int trackHeight = std::max(1, visibleRows * itemHeight - 5);
     const int totalOptions = static_cast<int>(selectorOptions_.size());
-    const int thumbHeight = std::max(8, trackHeight * box.rows / totalOptions);
-    const int scrollRange = std::max(1, totalOptions - box.rows);
+    const int thumbHeight = std::max(8, trackHeight * visibleRows / totalOptions);
+    const int scrollRange = std::max(1, totalOptions - visibleRows);
     const int thumbRange = std::max(0, trackHeight - thumbHeight);
     const int thumbY = trackY + thumbRange * selectorScroll_ / scrollRange;
     renderer.rectangle.fill(trackX, thumbY, 2, thumbHeight, true);
   }
 
-  renderer.rectangle.render(box.x, box.y, box.width, box.height, true);
+  renderer.line.render(drawerX, backY, drawerX + drawerWidth, backY, true, LineRender::Style::Dotted);
+  constexpr int iconSize = 30;
+  constexpr int gap = 8;
+  const int textWidth = renderer.text.getWidth(systemFontId(), "Back", EpdFontFamily::REGULAR);
+  const int iconX = drawerX + drawerWidth - 24 - iconSize - gap - textWidth;
+  const int textY = backY + (itemHeight - renderer.text.getLineHeight(systemFontId())) / 2;
+  renderer.bitmap.icon(LibraryFilterLeft, iconX, backY + (itemHeight - iconSize) / 2, iconSize, iconSize);
+  renderer.text.render(systemFontId(), iconX + iconSize + gap, textY, "Back", true);
 }
 
 bool SettingsDrawer::handleSelectorInput(MappedInputManager& input) {
@@ -1355,16 +1644,14 @@ bool SettingsDrawer::handleSelectorInput(MappedInputManager& input) {
 
   const int screenW = renderer.getScreenWidth();
   const int screenH = renderer.getScreenHeight();
-  const int requestedRows = std::min(selectorRows, static_cast<int>(selectorOptions_.size()));
-  const int selectedRow = selectorMenuIndex_ - scrollOffset;
-  const int fieldY = drawerY + drawerListTop(embedded_) + selectedRow * itemHeight;
-  const SelectorBounds box =
-      selectorBounds(drawerX, drawerWidth, fieldY, itemHeight, screenH, requestedRows, selectorOpensUpward());
+  const int startY = drawerY + drawerListTop(embedded_);
+  const int contentHeight = std::max(1, drawerHeight - drawerListTop(embedded_));
+  const int visibleRows = std::max(1, (contentHeight - itemHeight) / itemHeight);
+  const int backY = drawerY + drawerHeight - itemHeight;
 
-  if (input.hasTouch() &&
-      (input.wasTouchSwipeUpForRenderer(renderer) || input.wasTouchSwipeDownForRenderer(renderer))) {
-    const int maxScroll = std::max(0, static_cast<int>(selectorOptions_.size()) - box.rows);
-    const int page = std::max(1, box.rows);
+  if (input.wasTouchSwipeUpForRenderer(renderer) || input.wasTouchSwipeDownForRenderer(renderer)) {
+    const int maxScroll = std::max(0, static_cast<int>(selectorOptions_.size()) - visibleRows);
+    const int page = std::max(1, visibleRows);
     if (input.wasTouchSwipeUpForRenderer(renderer)) {
       selectorScroll_ = std::min(selectorScroll_ + page, maxScroll);
     } else {
@@ -1376,18 +1663,24 @@ bool SettingsDrawer::handleSelectorInput(MappedInputManager& input) {
 
   float tapNx = 0.0f;
   float tapNy = 0.0f;
-  if (input.hasTouch() && input.wasTouchTapInScreen(renderer, tapNx, tapNy)) {
+  if (input.wasTouchTapInScreen(renderer, tapNx, tapNy)) {
     const int tapX = static_cast<int>(tapNx * screenW);
     const int tapY = static_cast<int>(tapNy * screenH);
-    const int optionY = tapY - box.y;
-    if (tapX >= box.x && tapX < box.x + box.width && optionY >= 0 && optionY < box.rows * selectorRowHeight) {
-      const int optionIndex = selectorScroll_ + optionY / selectorRowHeight;
+    const int optionY = tapY - startY;
+    if (tapX >= drawerX && tapX < drawerX + drawerWidth && optionY >= 0 && optionY < visibleRows * itemHeight) {
+      const int optionIndex = selectorScroll_ + optionY / itemHeight;
       if (optionIndex >= 0 && optionIndex < static_cast<int>(selectorOptions_.size())) {
         selectorSelected_ = optionIndex;
         commitSelectorSelection();
         renderWithRefresh(HalDisplay::FAST_REFRESH);
         return true;
       }
+    }
+
+    if (tapX >= drawerX && tapX < drawerX + drawerWidth && tapY >= backY && tapY < drawerY + drawerHeight) {
+      closeSelector();
+      renderWithRefresh(HalDisplay::FAST_REFRESH);
+      return true;
     }
 
     const int listTop = drawerY + drawerListTop(embedded_);
@@ -1422,7 +1715,9 @@ bool SettingsDrawer::handleSelectorInput(MappedInputManager& input) {
     const int direction = input.wasPressed(MappedInputManager::Button::Up) ? -1 : 1;
     selectorSelected_ = (selectorSelected_ + direction + count) % count;
     if (selectorSelected_ < selectorScroll_) selectorScroll_ = selectorSelected_;
-    if (selectorSelected_ >= selectorScroll_ + box.rows) selectorScroll_ = selectorSelected_ - box.rows + 1;
+    if (selectorSelected_ >= selectorScroll_ + visibleRows) {
+      selectorScroll_ = selectorSelected_ - visibleRows + 1;
+    }
     renderWithRefresh(HalDisplay::FAST_REFRESH);
     return true;
   }
@@ -1517,7 +1812,55 @@ void SettingsDrawer::handleInput(MappedInputManager& input) {
     return;
   }
 
-  if (currentTime - lastInputTime < pdMS_TO_TICKS(150)) {
+  if (marginEditorOpen_) {
+    bool dispatchToDrawer = false;
+    if (input.hasTouch()) {
+      float tapNx = 0.0f;
+      float tapNy = 0.0f;
+      if (input.wasTouchTapInScreen(renderer, tapNx, tapNy)) {
+        const int tapX = static_cast<int>(tapNx * renderer.getScreenWidth());
+        const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
+        const int editorTop = drawerY + drawerListTop(embedded_);
+        const int editorBottom = drawerY + drawerHeight;
+        const bool insideEditor = tapX >= drawerX && tapX < drawerX + drawerWidth && tapY >= editorTop &&
+                                  tapY < editorBottom;
+        // Put the tap back so the normal drawer handler can close the drawer
+        // or activate a tab when it is outside the margin controls.
+        input.restoreTouchTapInScreen(renderer, tapNx, tapNy);
+        if (!insideEditor) {
+          closeMarginEditor();
+          // The tap that exits margin mode should still be handled by the
+          // drawer immediately (for example, when it lands on a tab).
+          lastInputTime = 0;
+          dispatchToDrawer = true;
+        }
+      }
+    }
+    if (!dispatchToDrawer) {
+      handleMarginEditorInput(input);
+      lastInputTime = currentTime;
+      return;
+    }
+  }
+
+  // An upward swipe from the bottom edge dismisses the standalone reader
+  // settings drawer. Body swipes remain list pagination, while selector and
+  // margin-editor swipes are handled by their dedicated paths above.
+  if (!embedded_ && input.hasTouch()) {
+    float swipeStartNx = 0.0f;
+    float swipeStartNy = 0.0f;
+    if (input.wasTouchSwipeUpInScreen(renderer, swipeStartNx, swipeStartNy) && swipeStartNy >= 0.85f) {
+      hide();
+      lastInputTime = currentTime;
+      return;
+    }
+  }
+
+  // The preset editor is embedded and its tab buttons are expected to feel
+  // immediate. Keep a short guard there for touch bounce, while retaining the
+  // longer debounce for the standalone reader drawer.
+  const TickType_t inputDebounce = embedded_ ? pdMS_TO_TICKS(40) : pdMS_TO_TICKS(150);
+  if (currentTime - lastInputTime < inputDebounce) {
     return;
   }
 
@@ -1569,6 +1912,9 @@ void SettingsDrawer::handleInput(MappedInputManager& input) {
         const int tab = std::min(tabCount - 1, std::max(0, (tapX - drawerX) / tabWidth));
         if (!embedded_ && tab == count) {
           touchEnabled_ = !touchEnabled_;
+          if (onTouchEnabledChanged_) {
+            onTouchEnabledChanged_(touchEnabled_);
+          }
           lastInputTime = currentTime;
           renderWithRefresh(HalDisplay::FAST_REFRESH);
           return;
@@ -1604,16 +1950,24 @@ void SettingsDrawer::handleInput(MappedInputManager& input) {
           openSelector(selectedIndex);
           lastInputTime = currentTime;
           renderWithRefresh(HalDisplay::FAST_REFRESH);
+        } else if (selectedItem == MenuItem::Margins) {
+          openMarginEditor();
+          lastInputTime = currentTime;
+          renderWithRefresh(HalDisplay::FAST_REFRESH);
         } else {
           bool appliedTouchPosition = false;
           if (selectedItem == MenuItem::FontSize || selectedItem == MenuItem::LineHeight ||
-              selectedItem == MenuItem::TextSpace || selectedItem == MenuItem::ScreenMargin) {
-            const char* value = menuItems[static_cast<size_t>(selectedIndex)].getValueText(settings);
+              selectedItem == MenuItem::TextSpace) {
+            const auto& entry = menuItems[static_cast<size_t>(selectedIndex)];
+            const char* value = entry.getValueText(settings);
             constexpr int iconSize = 30;
             constexpr int gap = 8;
-            const int valueAreaLeft = drawerX + drawerWidth * 40 / 100;
             const int valueColumnRight = drawerX + drawerWidth - 24;
-            const int valueW = renderer.text.getWidth(MONTSERRAT_10_FONT_ID, value, EpdFontFamily::REGULAR);
+            const int valueAreaLeft = settingsValueAreaLeft(renderer, drawerX, drawerWidth, valueColumnRight, entry.name);
+            const int maxTextWidth = std::max(1, valueColumnRight - valueAreaLeft - iconSize * 2 - gap * 2);
+            const std::string shown = renderer.text.truncate(systemFontId(), value ? value : "", maxTextWidth,
+                                                              EpdFontFamily::REGULAR);
+            const int valueW = renderer.text.getWidth(systemFontId(), shown.c_str(), EpdFontFamily::REGULAR);
             const int width = iconSize + gap + valueW + gap + iconSize;
             const int x = std::max(valueAreaLeft, valueColumnRight - width);
             const int rightX = x + iconSize + gap + valueW + gap;
@@ -1625,8 +1979,9 @@ void SettingsDrawer::handleInput(MappedInputManager& input) {
               appliedTouchPosition = true;
             }
           } else if (selectedItem == MenuItem::Alignment) {
-            const int valueAreaLeft = drawerX + drawerWidth * 40 / 100;
             const int valueColumnRight = drawerX + drawerWidth - 24;
+            const auto& entry = menuItems[static_cast<size_t>(selectedIndex)];
+            const int valueAreaLeft = settingsValueAreaLeft(renderer, drawerX, drawerWidth, valueColumnRight, entry.name);
             if (tapX >= valueAreaLeft && tapX <= valueColumnRight) {
               constexpr int segmentCount = 5;
               const int segmentWidth = std::max(1, (valueColumnRight - valueAreaLeft) / segmentCount);
@@ -1716,6 +2071,9 @@ void SettingsDrawer::handleInput(MappedInputManager& input) {
       } else if (isDropdownItem(selected.item)) {
         openSelector(selectedIndex);
         needRedraw = true;
+      } else if (selected.item == MenuItem::Margins) {
+        openMarginEditor();
+        needRedraw = true;
       }
     }
   }
@@ -1738,6 +2096,10 @@ void SettingsDrawer::handleInput(MappedInputManager& input) {
 void SettingsDrawer::applyChange(int delta) {
   if (selectedIndex < 0 || selectedIndex >= static_cast<int>(menuItems.size())) return;
   const MenuItem selectedItem = menuItems[selectedIndex].item;
+  if (selectedItem == MenuItem::Margins) {
+    openMarginEditor();
+    return;
+  }
   menuItems[selectedIndex].change(settings, delta);
 
   if (selectedItem == MenuItem::PresetPicker) {
@@ -1751,7 +2113,6 @@ void SettingsDrawer::applyChange(int delta) {
       case MenuItem::FontSize:
       case MenuItem::LineHeight:
       case MenuItem::TextSpace:
-      case MenuItem::ScreenMargin:
       case MenuItem::Alignment:
       case MenuItem::ExtraParagraphSpacing:
       case MenuItem::ParagraphCssIndent:
@@ -1771,6 +2132,9 @@ void SettingsDrawer::applyChange(int delta) {
       case MenuItem::StatusBarMiddle:
       case MenuItem::StatusBarRight:
       case MenuItem::StatusBarFullStyle:
+        settingsUpdated = true;
+        break;
+      case MenuItem::Margins:
         settingsUpdated = true;
         break;
       case MenuItem::RefreshRate:

@@ -5,15 +5,19 @@
 
 #include "SyncActivity.h"
 
-#include "system/UiLayout.h"
+#include <algorithm>
+
+#include <BoardConfig.h>
 
 #include <GfxRenderer.h>
 
-#include "activity/network/BackupRestoreActivity.h"
 #include "activity/settings/DeviceInfoActivity.h"
-#include "activity/settings/DictionaryPickerActivity.h"
 #include "activity/settings/KOReaderSettingsActivity.h"
 #include "activity/settings/OtaUpdateActivity.h"
+#if FREEINK_CAP_USB_MSC
+#include "activity/network/UsbFileTransferActivity.h"
+#endif
+#include "images/DeviceManagementIcons.h"
 #include "state/SystemSetting.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
@@ -21,29 +25,112 @@
 extern void onGoToHome();
 
 namespace {
-constexpr int menuItemCount = 9;
-const char* menuItems[menuItemCount] = {"Manage via wifi",   "Calibre File Transfer", "Create hotspot",
-                                        "OPDS Browser",      "Backup and restore", "KOReader Sync",
-                                        "Check for updates", "Choose dictionary",  "Device Information"};
-constexpr int listItemHeight = UiLayout::LIST_ITEM_HEIGHT;
-constexpr int headerTop = 20;
-constexpr int headerHeight = 40;
-constexpr int listGap = 30;
+struct DeviceItem {
+  const char* label;
+  const char* description;
+  const uint8_t* icon;
+  const char* tag;
+};
+
+constexpr int kIconSize = 40;
+constexpr int kSideMargin = 20;
+constexpr int kIconX = 24;
+constexpr int kTextX = 88;
+constexpr int kSubtitleGap = 5;
+constexpr int kRowHeight = 100;
+constexpr int kCompactRowHeight = 92;
+
+int rowHeight() { return SETTINGS.hiddenMenu == 0 ? kCompactRowHeight : kRowHeight; }
+#if FREEINK_CAP_USB_MSC
+constexpr int kCalibreIndex = 1;
+constexpr int kUsbFileTransferIndex = 2;
+constexpr int kCreateHotspotIndex = 3;
+constexpr int kKoReaderSyncIndex = 4;
+constexpr int kCheckForUpdatesIndex = 5;
+constexpr int kDeviceInformationIndex = 6;
+constexpr int menuItemCount = 7;
+constexpr DeviceItem menuItems[menuItemCount] = {
+    {"Wi-fi", "Manage books, settings, and files from your browser", DeviceManagementManageWifi, "File transfer"},
+    {"Calibre", "Send books to the device from Calibre", DeviceManagementCalibreTransfer, "File transfer"},
+    {"USB", "Transfer books directly over USB", DeviceManagementUsbTransfer, "File transfer"},
+    {"Hotspot", "Create a hotspot for wireless device management", DeviceManagementHotspot, "File transfer"},
+    {"KOReader Sync", "Synchronize reading progress with KOReader", DeviceManagementKoreaderSync, nullptr},
+    {"Check for updates", "Check for firmware updates", DeviceManagementUpdates, nullptr},
+    {"Device Information", "View device and firmware information", DeviceManagementDeviceInfo, nullptr},
+};
+#else
+constexpr int kCalibreIndex = 1;
+constexpr int kCreateHotspotIndex = 2;
+constexpr int kKoReaderSyncIndex = 3;
+constexpr int kCheckForUpdatesIndex = 4;
+constexpr int kDeviceInformationIndex = 5;
+constexpr int menuItemCount = 6;
+constexpr DeviceItem menuItems[menuItemCount] = {
+    {"Wi-fi", "Manage books, settings, and files from your browser", DeviceManagementManageWifi, "File transfer"},
+    {"Calibre", "Send books to the device from Calibre", DeviceManagementCalibreTransfer, "File transfer"},
+    {"Hotspot", "Create a hotspot for wireless device management", DeviceManagementHotspot, "File transfer"},
+    {"KOReader Sync", "Synchronize reading progress with KOReader", DeviceManagementKoreaderSync, nullptr},
+    {"Check for updates", "Check for firmware updates", DeviceManagementUpdates, nullptr},
+    {"Device Information", "View device and firmware information", DeviceManagementDeviceInfo, nullptr},
+};
+#endif
 }
 
 void SyncActivity::onEnter() {
-  Page::onEnter();
-  selectedIndex = 0;
-  selectedVisible = false;
+  UiPage::onEnter();
   SETTINGS.runHalfRefreshOnLoadIfEnabled(renderer, SystemSetting::RefreshOnLoadPage::Sync);
 }
 
-void SyncActivity::loop() {
-  if (!subActivity && mappedInput.hasTouch() && mappedInput.wasTouchSwipeUpForRenderer(renderer)) {
+void SyncActivity::activateItem(const int index) {
+  if (index < 0 || index >= menuItemCount) return;
+
+  NetworkMode mode = NetworkMode::JOIN_NETWORK;
+  if (index == kCalibreIndex) mode = NetworkMode::CONNECT_CALIBRE;
+  if (index == kCreateHotspotIndex) mode = NetworkMode::CREATE_HOTSPOT;
+
+#if FREEINK_CAP_USB_MSC
+  if (index == kUsbFileTransferIndex) {
+    enter(new UsbFileTransferActivity(renderer, mappedInput, [this] {
+      exit();
+      updateRequired = true;
+    }));
+    return;
+  }
+#endif
+
+  if (index == kKoReaderSyncIndex) {
+    enter(new KOReaderSettingsActivity(renderer, mappedInput, [this] {
+      exit();
+      updateRequired = true;
+    }));
+    return;
+  }
+  if (index == kCheckForUpdatesIndex) {
+    enter(new OtaUpdateActivity(renderer, mappedInput, [this] {
+      exit();
+      updateRequired = true;
+    }));
+    return;
+  }
+  if (index == kDeviceInformationIndex) {
+    enter(new DeviceInfoActivity(renderer, mappedInput, [this] {
+      exit();
+      updateRequired = true;
+    }));
     return;
   }
 
+  if (onModeSelected) onModeSelected(mode);
+}
+
+void SyncActivity::loop() {
+  // Let the shared page shell handle the hidden menu first. The hidden menu
+  // opens from the left edge on a right swipe.
   if (!subActivity && menuInput()) return;
+
+  if (!subActivity && mappedInput.hasTouch() && mappedInput.wasTouchSwipeUpForRenderer(renderer)) {
+    return;
+  }
 
   if (subActivity) {
     subActivity->loop();
@@ -55,90 +142,25 @@ void SyncActivity::loop() {
     return;
   }
 
-  bool confirmPressed = mappedInput.wasPressed(MappedInputManager::Button::Confirm);
-  const bool upPressed = mappedInput.wasPressed(MappedInputManager::Button::Up);
-  const bool downPressed = mappedInput.wasPressed(MappedInputManager::Button::Down);
-
   if (mappedInput.hasTouch()) {
     float tapNx = 0.0f;
     float tapNy = 0.0f;
     if (mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy)) {
       const int tapX = static_cast<int>(tapNx * renderer.getScreenWidth());
       const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
-      const int listStartY = headerTop + headerHeight + listGap;
-      const int contentBottom = renderer.getScreenHeight() - navigation::Menu::bottomHeight - 10;
-      const int tappedIndex = (tapY - listStartY) / listItemHeight;
+      const int listStartY = FREEINK_DEVICE_X4PRO ? 80 : 70;
+      const int contentBottom = renderer.getScreenHeight() - navigation::Menu::bottomInset() - 10;
+      const int currentRowHeight = rowHeight();
+      const int tappedIndex = (tapY - listStartY) / currentRowHeight;
 
       if (tapY >= listStartY && tapY < contentBottom && tappedIndex >= 0 && tappedIndex < menuItemCount) {
-        selectedIndex = tappedIndex;
-        selectedVisible = true;
-        confirmPressed = true;
-        INX_SERIAL.printf("[STICKY][TOUCH] DEVICE_ROW index=%d label=%s\n", selectedIndex, menuItems[selectedIndex]);
+        INX_SERIAL.printf("[DEVICE][TOUCH] row=%d label=%s\n", tappedIndex, menuItems[tappedIndex].label);
+        activateItem(tappedIndex);
+        return;
       } else if (routeMenuAction(navigation::Menu::handleTap(tapX, tapY))) {
         return;
       }
     }
-  }
-
-  if (confirmPressed) {
-    NetworkMode mode = NetworkMode::JOIN_NETWORK;
-    if (selectedIndex == 1) mode = NetworkMode::CONNECT_CALIBRE;
-    if (selectedIndex == 2) mode = NetworkMode::CREATE_HOTSPOT;
-    if (selectedIndex == 3) mode = NetworkMode::OPDS_BROWSER;
-
-    if (selectedIndex == 4) {
-      enter(new BackupRestoreActivity(renderer, mappedInput, [this] {
-        exit();
-        selectedVisible = false;
-        updateRequired = true;
-      }));
-      return;
-    }
-    if (selectedIndex == 5) {
-      enter(new KOReaderSettingsActivity(renderer, mappedInput, [this] {
-        exit();
-        selectedVisible = false;
-        updateRequired = true;
-      }));
-      return;
-    }
-    if (selectedIndex == 6) {
-      enter(new OtaUpdateActivity(renderer, mappedInput, [this] {
-        exit();
-        selectedVisible = false;
-        updateRequired = true;
-      }));
-      return;
-    }
-    if (selectedIndex == 7) {
-      enter(new DictionaryPickerActivity(renderer, mappedInput, [this] {
-        exit();
-        selectedVisible = false;
-        updateRequired = true;
-      }));
-      return;
-    }
-    if (selectedIndex == 8) {
-      enter(new DeviceInfoActivity(renderer, mappedInput, [this] {
-        exit();
-        updateRequired = true;
-      }));
-      return;
-    }
-
-    if (onModeSelected) onModeSelected(mode);
-    return;
-  }
-
-  if (upPressed) {
-    selectedIndex = (selectedIndex + menuItemCount - 1) % menuItemCount;
-    selectedVisible = true;
-    updateRequired = true;
-  }
-  if (downPressed) {
-    selectedIndex = (selectedIndex + 1) % menuItemCount;
-    selectedVisible = true;
-    updateRequired = true;
   }
 
   renderPage();
@@ -147,35 +169,49 @@ void SyncActivity::loop() {
 void SyncActivity::content() {
   const int screenWidth = renderer.getScreenWidth();
   const int screenHeight = renderer.getScreenHeight();
+  const int listStartY = FREEINK_DEVICE_X4PRO ? 80 : 70;
+  const int currentRowHeight = rowHeight();
+  const int titleFont = systemFontId();
+  const int subtitleFont = systemFontIdForPointSize(8);
+  const int maxTextWidth = std::max(1, screenWidth - kTextX - kSideMargin);
+  const int titleHeight = renderer.text.getLineHeight(titleFont);
+  const int subtitleHeight = renderer.text.getLineHeight(subtitleFont);
+  const int contentHeight = titleHeight + kSubtitleGap + subtitleHeight;
+  const int contentBottom = screenHeight - navigation::Menu::bottomInset() - 10;
 
-  const int listStartY = headerTop + headerHeight + listGap;
-
-  const int contentBottom = screenHeight - navigation::Menu::bottomHeight - 10;
+  const int tagFont = systemFontIdForPointSize(8);
+  const int tagLineHeight = renderer.text.getLineHeight(tagFont);
   for (int index = 0; index < menuItemCount; ++index) {
-    const int itemY = listStartY + index * listItemHeight;
-    if (itemY >= contentBottom || itemY + listItemHeight <= listStartY) continue;
+    const int itemY = listStartY + index * currentRowHeight;
+    if (itemY >= contentBottom || itemY + currentRowHeight <= listStartY) continue;
 
-    const bool selected = selectedVisible && index == selectedIndex;
-    if (selected) {
-      renderer.rectangle.fill(0, itemY, screenWidth, listItemHeight, static_cast<int>(GfxRenderer::FillTone::Ink));
+    const int titleY = itemY + (currentRowHeight - contentHeight) / 2;
+    renderer.bitmap.icon(menuItems[index].icon, kIconX,
+                         itemY + (currentRowHeight - kIconSize) / 2, kIconSize,
+                         kIconSize);
+    renderer.text.render(titleFont, kTextX, titleY, menuItems[index].label, true, EpdFontFamily::REGULAR);
+    if (menuItems[index].tag != nullptr) {
+      const int labelWidth = renderer.text.getWidth(titleFont, menuItems[index].label);
+      renderer.text.renderGray(tagFont, kTextX + labelWidth + 12,
+                               titleY + (titleHeight - tagLineHeight) / 2, menuItems[index].tag, true,
+                               EpdFontFamily::REGULAR);
     }
-
-    const int titleY = itemY +
-                       (listItemHeight - renderer.text.getLineHeight(systemFontId())) / 2;
-    renderer.text.render(systemFontId(), 20, titleY, menuItems[index], !selected);
-    const int caretWidth = renderer.text.getWidth(systemFontId(), "›");
-    renderer.text.render(systemFontId(), screenWidth - caretWidth - 30, titleY, "›", !selected);
+    const std::string subtitle = renderer.text.truncate(subtitleFont, menuItems[index].description, maxTextWidth);
+    renderer.text.render(subtitleFont, kTextX, titleY + titleHeight + kSubtitleGap, subtitle.c_str(), true,
+                         EpdFontFamily::REGULAR);
 
     if (index + 1 < menuItemCount) {
-      renderer.line.render(0, itemY + listItemHeight - 1, screenWidth, itemY + listItemHeight - 1, true,
-                           LineRender::Style::Dotted);
+      renderer.line.render(kSideMargin, itemY + currentRowHeight - 1, screenWidth - kSideMargin,
+                           itemY + currentRowHeight - 1, true, LineRender::Style::Dotted);
     }
   }
+
+  mappedInput.mapLabels("\xC2\xAB Back", "Open", "Up", "Down");
 }
 
 void SyncActivity::onExit() {
   exit();
-  Page::onExit();
+  UiPage::onExit();
 }
 
 void SyncActivity::enter(Activity* activity) {

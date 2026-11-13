@@ -11,6 +11,7 @@
 
 #include "activity/ActivityWithSubactivity.h"
 #include "activity/page/Page.h"
+#include "SettingsListLayout.h"
 #include "system/DictionaryPackageManager.h"
 
 /** Downloads and removes compressed StarDict dictionaries. */
@@ -28,7 +29,7 @@ class DictionaryManagerActivity final : public ActivityWithSubactivity {
  private:
   enum class State : uint8_t { Ready, Downloading, Failed };
 
-  static constexpr int kRowHeight = Page::LIST_ITEM_HEIGHT;
+  static constexpr int kRowHeight = SettingsListLayout::kRowHeight;
 
   const std::function<void()> goBack_;
   std::vector<DictionaryPackageManager::Package> packages_;
@@ -45,6 +46,7 @@ class DictionaryManagerActivity final : public ActivityWithSubactivity {
   volatile bool shuttingDown_ = false;
   volatile int lastProgressPercent_ = -1;
   volatile unsigned long lastProgressUpdateMs_ = 0;
+  volatile bool installing_ = false;
 
   void loadPackages();
   void installSelected();

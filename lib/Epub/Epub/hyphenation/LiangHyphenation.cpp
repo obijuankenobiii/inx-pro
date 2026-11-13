@@ -108,9 +108,12 @@ EmbeddedAutomaton parseAutomaton(const SerializedHyphenationPatterns& patterns) 
 
   automaton.data = patterns.data;
   automaton.size = patterns.size;
-  automaton.rootOffset = (static_cast<uint32_t>(patterns.data[0]) << 24) |
-                         (static_cast<uint32_t>(patterns.data[1]) << 16) |
-                         (static_cast<uint32_t>(patterns.data[2]) << 8) | static_cast<uint32_t>(patterns.data[3]);
+  automaton.rootOffset = patterns.rootOffset != 0
+                             ? patterns.rootOffset
+                             : (static_cast<uint32_t>(patterns.data[0]) << 24) |
+                                   (static_cast<uint32_t>(patterns.data[1]) << 16) |
+                                   (static_cast<uint32_t>(patterns.data[2]) << 8) |
+                                   static_cast<uint32_t>(patterns.data[3]);
   if (automaton.rootOffset >= automaton.size) {
     automaton.data = nullptr;
     automaton.size = 0;

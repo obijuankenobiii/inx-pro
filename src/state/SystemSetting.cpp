@@ -16,7 +16,10 @@
 #include <cstdio>
 #include <cctype>
 #include <cstring>
+#include <cstdlib>
+#include <algorithm>
 #include <string>
+#include <vector>
 
 #ifndef INX_SIMULATOR_WEB_ONLY
 #include "system/FontManager.h"
@@ -42,8 +45,9 @@ void readAndValidate(FsFile& file, uint8_t& member, const uint8_t maxValue) {
 
 namespace {
 constexpr uint8_t SETTINGS_FILE_VERSION = 1;
-constexpr uint8_t SETTINGS_COUNT = 39;
+constexpr uint8_t SETTINGS_COUNT = 48;
 constexpr char SETTINGS_FILE[] = "/.system/settings.bin";
+constexpr char SYSTEM_FONT_SELECTION_FILE[] = "/.system/system_font_selection.txt";
 constexpr uint32_t FNV1A_OFFSET = 2166136261UL;
 constexpr uint32_t FNV1A_PRIME = 16777619UL;
 
@@ -84,6 +88,47 @@ bool hashFile(const char* path, uint32_t& hash) {
   }
   file.close();
   return true;
+}
+
+struct PersistedSystemFont {
+  std::string family;
+  int pointSize = 0;
+};
+
+PersistedSystemFont loadSystemFontSelection() {
+  FsFile file;
+  if (!SdMan.openFileForRead("CPS", SYSTEM_FONT_SELECTION_FILE, file)) return {};
+  char value[96] = {0};
+  const int count = file.read(reinterpret_cast<uint8_t*>(value), sizeof(value) - 1);
+  file.close();
+  if (count <= 0) return {};
+  value[count] = '\0';
+  PersistedSystemFont result;
+  result.family = value;
+  const char* separator = strchr(value, '\n');
+  if (separator != nullptr) {
+    result.family.assign(value, static_cast<size_t>(separator - value));
+    result.pointSize = atoi(separator + 1);
+  }
+  return result;
+}
+
+void saveSystemFontSelection(const std::string& family, const int pointSize) {
+  FsFile file;
+  if (!SdMan.openFileForWrite("CPS", SYSTEM_FONT_SELECTION_FILE, file)) return;
+  const std::string value = family + "\n" + std::to_string(pointSize);
+  file.write(reinterpret_cast<const uint8_t*>(value.c_str()), value.size());
+  file.close();
+}
+
+int systemFontPointSize(const uint8_t size) {
+  return size == SystemSetting::SYSTEM_TEXT_MEDIUM ? 12 : size == SystemSetting::SYSTEM_TEXT_LARGE ? 14 : 10;
+}
+
+uint8_t systemTextSizeForPointSize(const int pointSize) {
+  if (pointSize >= 13) return SystemSetting::SYSTEM_TEXT_LARGE;
+  if (pointSize >= 11) return SystemSetting::SYSTEM_TEXT_MEDIUM;
+  return SystemSetting::SYSTEM_TEXT_SMALL;
 }
 
 void sanitizeSleepCustomBmp(char* buf) {
@@ -159,6 +204,10 @@ uint32_t settingsHash(const SystemSetting& settings) {
   hashPod(hash, settings.shakePageTurn);
   hashPod(hash, settings.shakePageTurnSensitivity);
   hashPod(hash, settings.showMenuClock);
+  hashPod(hash, settings.hiddenMenu);
+  hashPod(hash, settings.exitAnimation);
+  hashPod(hash, settings.legacyMenuX);
+  hashPod(hash, settings.legacyMenuY);
   hashPod(hash, settings.keyboardLayout);
   hashPod(hash, settings.systemTextSize);
   hashPod(hash, settings.darkMode);
@@ -166,6 +215,11 @@ uint32_t settingsHash(const SystemSetting& settings) {
   hashPod(hash, settings.hideFinishedBooks);
   hashPod(hash, settings.thumbnailSize);
   hashString(hash, settings.languageCode);
+  hashPod(hash, settings.piccoToggleMode);
+  hashPod(hash, settings.hideMenuClock);
+  hashPod(hash, settings.disableStatistics);
+  hashPod(hash, settings.systemFontFamily);
+  hashPod(hash, settings.x4proHomeButton);
   return hash;
 }
 
@@ -225,7 +279,10 @@ bool SystemSetting::saveToFile() const {
     if (mut->shakePageTurnSensitivity > 2) mut->shakePageTurnSensitivity = 1;
     if (mut->keyboardLayout >= KEYBOARD_LAYOUT_COUNT) mut->keyboardLayout = KEYBOARD_QWERTY;
     if (mut->thumbnailSize >= THUMBNAIL_SIZE_COUNT) mut->thumbnailSize = THUMBNAIL_ACTUAL;
+    if (mut->piccoToggleMode >= PICCO_TOGGLE_MODE_COUNT) mut->piccoToggleMode = PICCO_TOGGLE_LIGHT;
   }
+
+  saveSystemFontSelection(FontManager::readerFontFamilyLabel(systemFontFamily), systemFontPointSize(systemTextSize));
 
   const uint32_t currentHash = settingsHash(*this);
   uint32_t storedHash = 0;
@@ -282,6 +339,15 @@ bool SystemSetting::saveToFile() const {
   serialization::writePod(outputFile, timeZoneAutoDetectEnabled);
   serialization::writeString(outputFile, std::string(timeZoneId));
   serialization::writeString(outputFile, std::string(languageCode));
+  serialization::writePod(outputFile, hiddenMenu);
+  serialization::writePod(outputFile, legacyMenuX);
+  serialization::writePod(outputFile, legacyMenuY);
+  serialization::writePod(outputFile, piccoToggleMode);
+  serialization::writePod(outputFile, hideMenuClock);
+  serialization::writePod(outputFile, exitAnimation);
+  serialization::writePod(outputFile, disableStatistics);
+  serialization::writePod(outputFile, systemFontFamily);
+  serialization::writePod(outputFile, x4proHomeButton);
 
   outputFile.close();
 
@@ -316,7 +382,7 @@ bool SystemSetting::loadFromFile() {
   uint8_t fileSettingsCount = 0;
   serialization::readPod(inputFile, fileSettingsCount);
 
-  if (fileSettingsCount != SETTINGS_COUNT) {
+  if (fileSettingsCount > SETTINGS_COUNT) {
     INX_SERIAL.printf("[%lu] [CPS] Deserialization failed: Expected %u settings, found %u\n", millis(),
                       SETTINGS_COUNT, fileSettingsCount);
     inputFile.close();
@@ -502,14 +568,77 @@ bool SystemSetting::loadFromFile() {
       }
       ++settingsRead;
     }
+    if (settingsRead < fileSettingsCount) {
+      serialization::readPod(inputFile, hiddenMenu);
+      if (hiddenMenu > 1) hiddenMenu = 0;
+      ++settingsRead;
+    }
+    if (settingsRead < fileSettingsCount) {
+      serialization::readPod(inputFile, legacyMenuX);
+      ++settingsRead;
+    }
+    if (settingsRead < fileSettingsCount) {
+      serialization::readPod(inputFile, legacyMenuY);
+      ++settingsRead;
+    }
+    if (settingsRead < fileSettingsCount) {
+      serialization::readPod(inputFile, piccoToggleMode);
+      if (piccoToggleMode >= PICCO_TOGGLE_MODE_COUNT) piccoToggleMode = PICCO_TOGGLE_LIGHT;
+      ++settingsRead;
+    }
+    if (settingsRead < fileSettingsCount) {
+      serialization::readPod(inputFile, hideMenuClock);
+      if (hideMenuClock > 1) hideMenuClock = 0;
+      ++settingsRead;
+    }
+    if (settingsRead < fileSettingsCount) {
+      serialization::readPod(inputFile, exitAnimation);
+      if (exitAnimation > 1) exitAnimation = 1;
+      ++settingsRead;
+    }
+    if (settingsRead < fileSettingsCount) {
+      serialization::readPod(inputFile, disableStatistics);
+      if (disableStatistics > 1) disableStatistics = 0;
+      ++settingsRead;
+    }
+    if (settingsRead < fileSettingsCount) {
+      serialization::readPod(inputFile, systemFontFamily);
+      ++settingsRead;
+    }
+    if (settingsRead < fileSettingsCount) {
+      serialization::readPod(inputFile, x4proHomeButton);
+      if (x4proHomeButton >= X4PRO_HOME_BUTTON_COUNT) x4proHomeButton = X4PRO_HOME_BUTTON_BACK;
+      ++settingsRead;
+    }
 
   } while (false);
 
   inputFile.close();
 
   if (showMenuClock > 1) showMenuClock = 1;
+  if (hideMenuClock > 1) hideMenuClock = 0;
+  if (hiddenMenu > 1) hiddenMenu = 0;
+  if (exitAnimation > 1) exitAnimation = 1;
+  if (disableStatistics > 1) disableStatistics = 0;
+  if (x4proHomeButton >= X4PRO_HOME_BUTTON_COUNT) x4proHomeButton = X4PRO_HOME_BUTTON_BACK;
   if (keyboardLayout >= KEYBOARD_LAYOUT_COUNT) keyboardLayout = KEYBOARD_QWERTY;
   if (systemTextSize >= SYSTEM_TEXT_SIZE_COUNT) systemTextSize = SYSTEM_TEXT_SMALL;
+#ifndef INX_SIMULATOR_WEB_ONLY
+  FontManager::clampReaderFontFamilySlot(systemFontFamily);
+  const PersistedSystemFont persistedFont = loadSystemFontSelection();
+  if (!persistedFont.family.empty()) {
+    const std::vector<std::string> families = FontManager::readerFontFamilyEnumLabels();
+    const auto familyIt = std::find(families.begin(), families.end(), persistedFont.family);
+    if (familyIt != families.end()) {
+      systemFontFamily = static_cast<uint8_t>(std::distance(families.begin(), familyIt));
+      if (persistedFont.pointSize >= FontManager::OUTLINE_FONT_MIN_POINT_SIZE &&
+          persistedFont.pointSize <= FontManager::OUTLINE_FONT_MAX_POINT_SIZE &&
+          FontManager::isOutlineFontFamily(persistedFont.family)) {
+        systemTextSize = systemTextSizeForPointSize(persistedFont.pointSize);
+      }
+    }
+  }
+#endif
   if (darkMode > 1) darkMode = 0;
   if (hideThumbnailTitles > 1) hideThumbnailTitles = 0;
   if (hideFinishedBooks > 1) hideFinishedBooks = 0;
@@ -525,6 +654,10 @@ bool SystemSetting::loadFromFile() {
   if (libraryViewMode >= LIBRARY_VIEW_MODE_COUNT) {
     libraryViewMode = LIBRARY_VIEW_FOLDERS;
   }
+  if (piccoToggleMode >= PICCO_TOGGLE_MODE_COUNT) piccoToggleMode = PICCO_TOGGLE_LIGHT;
+  // Date/time was replaced by the configurable Sleep theme. Keep old settings
+  // files compatible, but migrate the legacy value to the widget screen.
+  if (sleepScreen == SLEEP_SCREEN_MODE::DATETIME_LEGACY) sleepScreen = SLEEP_SCREEN_MODE::WIDGET;
 
   INX_SERIAL.printf("[%lu] [CPS] Settings loaded (version %u, %u items)\n", millis(), version, settingsRead);
 
@@ -548,6 +681,8 @@ unsigned long SystemSetting::getSleepTimeoutMs() const {
       return 15UL * 60 * 1000;
     case SLEEP_30_MIN:
       return 30UL * 60 * 1000;
+    case SLEEP_NEVER:
+      return 0xFFFFFFFFUL;
   }
 }
 

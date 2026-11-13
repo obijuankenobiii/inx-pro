@@ -142,8 +142,8 @@ void PresetPickerUi::render(EpubActivity& act) {
 
   renderer.rectangle.fill(boxX, boxY, boxW, boxH, false);
 
-  const int titleY = boxY + (overlayHeaderH - renderer.text.getLineHeight(MONTSERRAT_10_FONT_ID)) / 2;
-  renderer.text.render(MONTSERRAT_10_FONT_ID, boxX + 16, titleY, "Apply Preset", true,
+  const int titleY = boxY + (overlayHeaderH - renderer.text.getLineHeight(systemFontIdForPointSize(10))) / 2;
+  renderer.text.render(systemFontIdForPointSize(10), boxX + 16, titleY, "Apply Preset", true,
                        EpdFontFamily::BOLD);
 
   clampScroll();
@@ -159,9 +159,9 @@ void PresetPickerUi::render(EpubActivity& act) {
     }
 
     const std::string name =
-        renderer.text.truncate(MONTSERRAT_10_FONT_ID, READER_PRESETS.nameOf(presetIndex).c_str(), boxW - 40);
-    const int textY = rowY + (rowH - renderer.text.getLineHeight(MONTSERRAT_10_FONT_ID)) / 2;
-    renderer.text.render(MONTSERRAT_10_FONT_ID, boxX + 20, textY, name.c_str(), sel ? 0 : 1);
+        renderer.text.truncate(systemFontIdForPointSize(10), READER_PRESETS.nameOf(presetIndex).c_str(), boxW - 40);
+    const int textY = rowY + (rowH - renderer.text.getLineHeight(systemFontIdForPointSize(10))) / 2;
+    renderer.text.render(systemFontIdForPointSize(10), boxX + 20, textY, name.c_str(), sel ? 0 : 1);
     if (i + 1 < rows) {
       renderer.line.render(boxX, rowY + rowH, boxX + boxW, rowY + rowH, !sel, LineRender::Style::Dotted);
     }

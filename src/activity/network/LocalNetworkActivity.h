@@ -77,7 +77,10 @@ class LocalNetworkActivity final : public ActivityWithSubactivity {
    * @brief Prevents auto sleep during active connections
    * @return true when server is running to maintain connection
    */
-  bool preventAutoSleep() override { return state == LocalNetworkState::SERVER_RUNNING; }
+  bool preventAutoSleep() override {
+    return state == LocalNetworkState::SERVER_RUNNING ||
+           (subActivity && subActivity->preventAutoSleep());
+  }
 
  private:
   /**
@@ -113,9 +116,12 @@ class LocalNetworkActivity final : public ActivityWithSubactivity {
   /** @brief Stops the web server and cleans up resources */
   void stopWebServer();
 
+  /** @brief Services the transfer server while its Wi-Fi selector remains visible */
+  void serviceWebServer();
+
   TaskHandle_t displayTaskHandle;   /**< Handle for display update task */
   SemaphoreHandle_t renderingMutex; /**< Mutex for thread-safe rendering */
-  bool updateRequired;              /**< Flag indicating render update needed */
+  volatile bool updateRequired;     /**< Flag indicating render update needed */
   LocalNetworkState state;          /**< Current activity state */
   bool wifiSelectionResultPending = false;
   bool wifiSelectionConnected = false;
@@ -123,6 +129,9 @@ class LocalNetworkActivity final : public ActivityWithSubactivity {
   std::string connectedIP;                /**< IP address of connected WiFi */
   std::string connectedSSID;              /**< SSID of connected WiFi network */
   std::unique_ptr<LocalServer> webServer; /**< Web server instance */
+
+  unsigned long firstWifiDisconnectAt = 0;
+  static constexpr unsigned long WIFI_ABANDON_MS = 5UL * 60UL * 1000UL;
 
   const std::function<void()> onGoBack; /**< Callback invoked when going back */
 };

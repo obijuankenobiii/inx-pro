@@ -8,6 +8,7 @@
 #include <ctime>
 
 #include "EpubActivity.h"
+#include "EpubAnnotationStorage.h"
 #include "activity/page/components/global/Button.h"
 #include "images/Close.h"
 #include "system/FontManager.h"
@@ -888,6 +889,51 @@ bool EpubAnnotationUi::saveExternalHighlight(EpubActivity& act, const std::strin
   annotations_.ensurePageLoaded(cachePath, act.currentSpineIndex, act.section->currentPage);
   clearWordIndexCache();
   INX_SERIAL.printf("[%lu] [ANNOTATION] external highlight saved spine=%d page=%d words=%u..%u\n", millis(),
+                    act.currentSpineIndex, act.section->currentPage, static_cast<unsigned>(wordLo),
+                    static_cast<unsigned>(wordHi));
+  return true;
+}
+
+bool EpubAnnotationUi::removeExternalHighlight(EpubActivity& act, const size_t wordLo, const size_t wordHi) {
+  if (!act.epub || !act.section || wordLo > wordHi) {
+    return false;
+  }
+
+  const std::string cachePath = act.epub->getCachePath();
+  annotations_.ensurePageLoaded(cachePath, act.currentSpineIndex, act.section->currentPage);
+
+  std::vector<EpubAnnotationRecord> matches;
+  for (const EpubAnnotationRecord& record : annotations_.records()) {
+    if (!EpubAnnotations::recordTouchesPage(record, act.currentSpineIndex, act.section->currentPage) ||
+        record.pageWordLo == EpubAnnotations::kWildcard || record.pageWordHi == EpubAnnotations::kWildcard) {
+      continue;
+    }
+    const size_t recordLo = record.pageWordLo;
+    const size_t recordHi = record.pageWordHi;
+    if (recordLo <= wordHi && wordLo <= recordHi) {
+      matches.push_back(record);
+    }
+  }
+
+  if (matches.empty()) {
+    return false;
+  }
+
+  bool removed = false;
+  for (const EpubAnnotationRecord& record : matches) {
+    removed = EpubAnnotationStorage::remove(cachePath, record) || removed;
+  }
+  if (!removed) {
+    return false;
+  }
+
+  annotations_.clearSession();
+  annotations_.ensurePageLoaded(cachePath, act.currentSpineIndex, act.section->currentPage);
+  storedRanges_.clear();
+  updateStoredRangesForPage(act);
+  clearWordIndexCache();
+  act.updateRequired = true;
+  INX_SERIAL.printf("[%lu] [ANNOTATION] external highlight removed spine=%d page=%d words=%u..%u\n", millis(),
                     act.currentSpineIndex, act.section->currentPage, static_cast<unsigned>(wordLo),
                     static_cast<unsigned>(wordHi));
   return true;

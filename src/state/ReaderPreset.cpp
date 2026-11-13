@@ -43,7 +43,8 @@ void ReaderPresetStore::load() {
     return;
   }
 
-  const size_t recordSize = version >= 8   ? BookSettings::kSerializedSize
+  const size_t recordSize = version >= 9   ? BookSettings::kSerializedSize
+                            : version >= 8 ? BookSettings::kSerializedSizeV8
                             : version >= 6 ? BookSettings::kSerializedSizeV6V7
                             : version >= 5 ? BookSettings::kSerializedSizeV5
                             : version >= 4 ? BookSettings::kSerializedSizeV4
@@ -238,6 +239,20 @@ bool ReaderPresetStore::remove(int index) {
     --defaultPresetIndex_;
   }
   return save();
+}
+
+bool ReaderPresetStore::remapFontFamilySlots(const std::vector<std::string>& oldLabels,
+                                             const std::vector<std::string>& newLabels) {
+  load();
+  if (oldLabels.empty() || newLabels.empty()) {
+    return false;
+  }
+
+  bool changed = false;
+  for (ReaderPreset& preset : userPresets_) {
+    changed = preset.settings.remapFontFamilySlot(oldLabels, newLabels) || changed;
+  }
+  return changed ? save() : true;
 }
 
 void ReaderPresetStore::applyToBook(int index, BookSettings& book) {

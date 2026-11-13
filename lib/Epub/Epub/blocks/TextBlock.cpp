@@ -356,15 +356,20 @@ void TextBlock::render(GfxRenderer& renderer, const int fontId, const int x, con
       continue;
     }
 
-    if (prefixBytes == 0 || prefixBytes >= slot.text.size()) {
+    if (prefixBytes == 0) {
       endX = renderWordSegment(renderer, fontId, startX, y, slot.text, wordStyle, smallCaps, verticalAlign, black);
     } else {
-      const std::string prefix = slot.text.substr(0, prefixBytes);
-      const std::string suffix = slot.text.substr(prefixBytes);
-      const auto prefixStyle = bionicStyleFor(wordStyle);
-      const int suffixX =
-          renderWordSegment(renderer, fontId, startX, y, prefix, prefixStyle, smallCaps, verticalAlign, black);
-      endX = renderWordSegment(renderer, fontId, suffixX, y, suffix, wordStyle, smallCaps, verticalAlign, black);
+      std::string prefix;
+      std::string suffix;
+      RtlText::splitBionicWord(slot.text, true, prefix, suffix);
+      if (prefix.empty()) {
+        endX = renderWordSegment(renderer, fontId, startX, y, suffix, wordStyle, smallCaps, verticalAlign, black);
+      } else {
+        const auto prefixStyle = bionicStyleFor(wordStyle);
+        const int suffixX =
+            renderWordSegment(renderer, fontId, startX, y, prefix, prefixStyle, smallCaps, verticalAlign, black);
+        endX = renderWordSegment(renderer, fontId, suffixX, y, suffix, wordStyle, smallCaps, verticalAlign, black);
+      }
     }
     if (underline && endX <= startX) {
       endX = startX + measureWordSegment(renderer, fontId, slot.text, wordStyle, smallCaps, verticalAlign);

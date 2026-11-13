@@ -5,12 +5,16 @@
 #include <algorithm>
 
 #include "../../navigation/Menu.h"
+#include "activity/page/SubPage.h"
 #include "system/Fonts.h"
+#include "system/ScreenComponents.h"
 
 namespace {
 constexpr int kInnerPadding = 16;
 constexpr int kTopPadding = 24;
 constexpr int kRowGap = 8;
+constexpr int kHeaderIconSize = 40;
+constexpr int kHeaderRightPadding = 16;
 }
 
 int Sidebar::width(const GfxRenderer& renderer) {
@@ -27,11 +31,17 @@ int Sidebar::visibleRows(const GfxRenderer& renderer) {
 
 void Sidebar::renderFrame(const GfxRenderer& renderer, const char* title) {
   const int drawerWidth = width(renderer);
+  ScreenComponents::drawWhiteOverlay(renderer, 0);
   renderer.rectangle.fill(0, 0, drawerWidth, renderer.getScreenHeight(), false);
   renderer.line.render(drawerWidth - 1, 0, drawerWidth - 1, renderer.getScreenHeight(), true);
-  renderer.text.render(MONTSERRAT_16_FONT_ID, 20, 25, title ? title : "", true, EpdFontFamily::BOLD);
-  renderer.line.render(20, navigation::Menu::height + 14, drawerWidth - 20,
-                       navigation::Menu::height + 14, true);
+  const int font = systemFontIdForPointSize(16);
+  const int textY = navigation::Menu::topPadding +
+                    (navigation::Menu::iconSize - renderer.text.getLineHeight(font)) / 2;
+  renderer.text.render(font, navigation::Menu::leftMargin, textY, title ? title : "", true,
+                       EpdFontFamily::BOLD);
+  const int closeX = drawerWidth - kHeaderRightPadding - kHeaderIconSize;
+  const int closeY = navigation::Menu::topPadding + (navigation::Menu::iconSize - kHeaderIconSize) / 2;
+  SubPage::closeIcon(renderer, closeX, closeY, kHeaderIconSize);
 }
 
 void Sidebar::renderTextList(const GfxRenderer& renderer, const char* const* labels, const size_t count,
@@ -61,8 +71,9 @@ int Sidebar::hitTest(const GfxRenderer& renderer, const int tapX, const int tapY
   const int drawerWidth = width(renderer);
   const int contentTop = listTop() + kTopPadding;
   const int contentBottom = renderer.getScreenHeight() - kInnerPadding;
-  if (tapX < kInnerPadding || tapX >= drawerWidth - kInnerPadding || tapY < contentTop ||
-      tapY >= contentBottom) {
+  // The rendered rows span the drawer; keep the horizontal hit target just as
+  // wide so taps near the label's right edge are not discarded.
+  if (tapX < 0 || tapX >= drawerWidth || tapY < contentTop || tapY >= contentBottom) {
     return -1;
   }
   const int index = (tapY - contentTop) / (rowHeight + kRowGap);

@@ -6,6 +6,7 @@
  */
 
 #include <cstdint>
+#include <functional>
 #include <string>
 
 #include "BitmapRender.h"
@@ -18,6 +19,7 @@ struct ImageDisplayCacheOptions {
   ImageRenderMode mode = ImageRenderMode::OneBit;
   uint8_t renderPlane = 0;
   uint8_t cropAnchor = 128;
+  uint8_t cropAnchorY = 128;
   BitmapRender::RoundedOutside roundedOutside = BitmapRender::RoundedOutside::None;
   bool quality = false;
 };
@@ -46,7 +48,8 @@ class ImageDisplayCache {
    * contract as displayTwoBitIfAvailable() - single SD open instead of two. */
   static bool renderCombinedTwoBit(GfxRenderer& renderer, const std::string& sourcePath, int x, int y, int width,
                                    int height, const ImageDisplayCacheOptions& options, bool quality,
-                                   bool fastQuality);
+                                   bool fastQuality, const std::function<void()>& overlay = {},
+                                   bool allowWindowedQualityWithOverlay = false);
   /** Captures the plane currently in the framebuffer into an in-memory scratch slot (call once per pass,
    * right after rendering it, before the next pass overwrites the framebuffer). */
   static bool captureTwoBitPlane(GfxRenderer& renderer, int x, int y, int width, int height, bool isMsbPlane);
@@ -61,10 +64,11 @@ class ImageDisplayCache {
                     const ImageDisplayCacheOptions& options);
   static bool storeAsync(GfxRenderer& renderer, const std::string& sourcePath, int x, int y, int width, int height,
                          const ImageDisplayCacheOptions& options);
+  /** Invalidates in-memory metadata and pending writes after the durable cache is cleared. */
+  static void invalidate();
   /**
-   * Writes at most `maximumJobs` previously captured cache planes. Call this
-   * from the main loop after UI work: the pixels are already usable from the
-   * PSRAM cache, and SD/SPI remains owned by the loop task.
+   * Writes at most `maximumJobs` previously captured cache planes from the
+   * owning UI task. SD/SPI transactions must not cross FreeRTOS tasks.
    */
   static void flushDeferredWrites(uint8_t maximumJobs = 1);
   static bool hasCached(GfxRenderer& renderer, const std::string& sourcePath, int x, int y, int width, int height,

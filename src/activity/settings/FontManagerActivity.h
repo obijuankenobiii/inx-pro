@@ -11,6 +11,7 @@
 #include "activity/ActivityWithSubactivity.h"
 #include "activity/page/Page.h"
 #include "activity/page/components/global/Button.h"
+#include "SettingsListLayout.h"
 #include "system/FontPackageManager.h"
 
 /** Downloads TTF/OTF font packages and refreshes the local FontManager catalog. */
@@ -29,7 +30,7 @@ class FontManagerActivity final : public ActivityWithSubactivity {
   enum class State : uint8_t { Ready, Downloading, Failed };
   enum class CategoryFilter : uint8_t { All, SansSerif, Serif };
 
-  static constexpr int kRowHeight = Page::LIST_ITEM_HEIGHT;
+  static constexpr int kRowHeight = SettingsListLayout::kRowHeight;
   static constexpr int kFilterHeight = Button::height - 10;
 
   const std::function<void()> goBack_;
@@ -37,6 +38,7 @@ class FontManagerActivity final : public ActivityWithSubactivity {
   std::string status_;
   int selectedIndex_ = 0;
   int scrollOffset_ = 0;
+  int paginatorPage_ = 0;
   bool selectedVisible_ = false;
   bool categoryFilterOpen_ = false;
   CategoryFilter categoryFilter_ = CategoryFilter::All;
@@ -45,9 +47,11 @@ class FontManagerActivity final : public ActivityWithSubactivity {
   volatile size_t progressTotal_ = 0;
   volatile bool updateRequired_ = false;
   volatile State state_ = State::Ready;
-  volatile bool showCompletionCheck_ = false;
-  volatile uint32_t completionCheckExpiresAt_ = 0;
+  volatile bool installingFont_ = false;
   bool fontCatalogNeedsRescan_ = false;
+  std::vector<std::string> fontFamilyLabelsBeforeInstall_;
+  std::string globalFontFamilyBeforeInstall_;
+  std::string systemFontFamilyBeforeInstall_;
   TaskHandle_t displayTaskHandle_ = nullptr;
   TaskHandle_t installTaskHandle_ = nullptr;
   SemaphoreHandle_t renderingMutex_ = nullptr;
@@ -66,6 +70,7 @@ class FontManagerActivity final : public ActivityWithSubactivity {
   static void installTaskTrampoline(void* param);
   [[noreturn]] void displayTaskLoop();
   void installTaskLoop();
+  void rescanFontCatalogPreservingSettings();
   void render();
   void updateDisplay();
   int visibleRowCount(int bodyTop) const;

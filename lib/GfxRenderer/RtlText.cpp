@@ -33,7 +33,9 @@ bool isArabicJoiningCodepoint(const uint32_t cp) {
 }
 
 bool isTransparentArabicMark(const uint32_t cp) {
-  return (cp >= 0x064B && cp <= 0x065F) || cp == 0x0670 || (cp >= 0x06D6 && cp <= 0x06ED) ||
+  return (cp >= 0x0610 && cp <= 0x061A) || (cp >= 0x064B && cp <= 0x065F) || cp == 0x0670 ||
+         (cp >= 0x06D6 && cp <= 0x06DC) || (cp >= 0x06DF && cp <= 0x06E4) ||
+         (cp >= 0x06E7 && cp <= 0x06E8) || (cp >= 0x06EA && cp <= 0x06ED) ||
          (cp >= 0x08D3 && cp <= 0x08FF);
 }
 
@@ -61,6 +63,43 @@ uint32_t decodeUtf8(const char* text, size_t length, size_t& offset) {
     return ((first & 0x07) << 18) | ((second & 0x3F) << 12) | ((third & 0x3F) << 6) | (fourth & 0x3F);
   }
   return 0xFFFD;
+}
+
+void appendNormalizedCodepoint(const uint32_t cp, std::vector<uint32_t>& output, bool& changed) {
+  if (cp == 0x00AD) {  // SOFT HYPHEN: layout-only formatting marker.
+    changed = true;
+    return;
+  }
+
+  // Unicode alphabetic presentation ligatures. They are common in EPUB text,
+  // but are not guaranteed to exist in the selected bold/fallback font.
+  static constexpr uint32_t kLigatureExpansions[][4] = {
+      {'f', 'f', 0, 0},       // U+FB00 LATIN SMALL LIGATURE FF
+      {'f', 'i', 0, 0},       // U+FB01 LATIN SMALL LIGATURE FI
+      {'f', 'l', 0, 0},       // U+FB02 LATIN SMALL LIGATURE FL
+      {'f', 'f', 'i', 0},      // U+FB03 LATIN SMALL LIGATURE FFI
+      {'f', 'f', 'l', 0},      // U+FB04 LATIN SMALL LIGATURE FFL
+      {'s', 't', 0, 0},       // U+FB05 LATIN SMALL LIGATURE LONG S T
+      {'s', 't', 0, 0},       // U+FB06 LATIN SMALL LIGATURE ST
+  };
+  if (cp >= 0xFB00 && cp <= 0xFB06) {
+    const uint32_t* expansion = kLigatureExpansions[cp - 0xFB00];
+    for (size_t i = 0; i < 4 && expansion[i] != 0; ++i) output.push_back(expansion[i]);
+    changed = true;
+    return;
+  }
+
+  output.push_back(cp);
+}
+
+std::vector<uint32_t> normalizedCodepoints(const char* text, const size_t length, bool& changed) {
+  std::vector<uint32_t> codepoints;
+  codepoints.reserve(length);
+  size_t offset = 0;
+  while (offset < length) {
+    appendNormalizedCodepoint(decodeUtf8(text, length, offset), codepoints, changed);
+  }
+  return codepoints;
 }
 
 void appendUtf8(std::string& output, const uint32_t cp) {
@@ -109,20 +148,52 @@ uint32_t arabPresentation(const uint32_t cp, const uint8_t form) {
   return forms->forms[form - 1];
 }
 
-std::vector<uint32_t> shapeArabic(const std::vector<uint32_t>& input) {
-  std::vector<uint32_t> output = input;
+const freeink::book::ArabLamAlef* lamAlefFor(const uint32_t alef) {
+  for (uint32_t i = 0; i < freeink::book::kArabLamAlefCount; ++i) {
+    if (freeink::book::kArabLamAlef[i].alef == alef) return &freeink::book::kArabLamAlef[i];
+  }
+  return nullptr;
+}
+
+std::vector<uint32_t> shapeArabic(const std::vector<uint32_t>& input, const RtlText::GlyphCoverage coverage,
+                                  void* const coverageContext) {
+  std::vector<uint32_t> output;
+  output.reserve(input.size());
   bool previousJoinsForward = false;
 
   for (size_t i = 0; i < input.size(); ++i) {
     const uint32_t cp = input[i];
     const uint8_t joinType = arabJoin(cp);
-    if (joinType == freeink::book::kJoinT) continue;
+    if (joinType == freeink::book::kJoinT) {
+      output.push_back(cp);
+      continue;
+    }
 
     const ArabForms* forms = arabFormsFor(cp);
     if (!forms) {
       previousJoinsForward = joinType == freeink::book::kJoinC || joinType == freeink::book::kJoinD ||
                              joinType == freeink::book::kJoinL;
+      output.push_back(cp);
       continue;
+    }
+
+    // Lam + alef is a mandatory Arabic presentation-form ligature. CrossPoint
+    // consumes the alef during shaping so measurement and drawing agree. Keep
+    // the same adjacency rule here: a mark between the two letters defeats
+    // the ligature, but transparent marks still participate in joining.
+    if (cp == 0x0644 && i + 1 < input.size()) {
+      if (const auto* lamAlef = lamAlefFor(input[i + 1])) {
+        const uint32_t ligature = previousJoinsForward ? lamAlef->final : lamAlef->isolated;
+        // Shape before font fallback is resolved.  The normal reader font is
+        // often Montserrat while Arabic is supplied by a language font; if
+        // shaping is gated on the primary font's coverage, the base Arabic
+        // codepoint reaches the fallback one character at a time and loses
+        // its joining form.
+        output.push_back(ligature);
+        ++i;
+        previousJoinsForward = false;
+        continue;
+      }
     }
 
     bool nextAcceptsJoin = false;
@@ -138,7 +209,15 @@ std::vector<uint32_t> shapeArabic(const std::vector<uint32_t>& input) {
                                (joinType == freeink::book::kJoinD || joinType == freeink::book::kJoinR);
     const bool joinsNext = joinType == freeink::book::kJoinD && nextAcceptsJoin;
     const uint8_t form = joinsPrevious && joinsNext ? 4 : joinsPrevious ? 2 : joinsNext ? 3 : 1;
-    if (const uint32_t shaped = arabPresentation(cp, form)) output[i] = shaped;
+    if (const uint32_t shaped = arabPresentation(cp, form); shaped != 0) {
+      output.push_back(shaped);
+    } else {
+      // Fonts without Arabic presentation forms still get the original base
+      // codepoint instead of a replacement box. This matches CrossPoint's
+      // coverage guard while letting the normal font fallback path decide how
+      // that base glyph is supplied.
+      output.push_back(cp);
+    }
     previousJoinsForward = joinType == freeink::book::kJoinD;
   }
   return output;
@@ -164,6 +243,15 @@ uint32_t mirrored(const uint32_t cp) {
 
 namespace RtlText {
 
+bool isTransparentMark(const uint32_t codepoint) {
+  // This mirrors the NSM ranges CrossPoint classifies as transparent for
+  // Arabic joining. The explicit ranges avoid bringing a second bidi table
+  // into this small renderer helper.
+  return (codepoint >= 0x0591 && codepoint <= 0x05C7 && codepoint != 0x05BE &&
+          codepoint != 0x05C0 && codepoint != 0x05C3) ||
+         isTransparentArabicMark(codepoint);
+}
+
 Direction firstStrongDirection(const char* text) {
   if (!text) return Direction::NONE;
   const size_t length = strlen(text);
@@ -176,18 +264,54 @@ Direction firstStrongDirection(const char* text) {
   return Direction::NONE;
 }
 
-const char* prepareForRender(const char* text, std::string& outputStorage) {
+std::string normalizeForLayout(const std::string& text) {
+  if (text.empty()) return text;
+
+  bool changed = false;
+  const std::vector<uint32_t> codepoints = normalizedCodepoints(text.c_str(), text.size(), changed);
+  if (!changed) return text;
+
+  std::string normalized;
+  normalized.reserve(text.size() + 4);
+  for (const uint32_t cp : codepoints) appendUtf8(normalized, cp);
+  return normalized;
+}
+
+void splitBionicWord(const std::string& text, const bool enabled, std::string& prefix, std::string& suffix) {
+  const std::string normalized = normalizeForLayout(text);
+  prefix.clear();
+  suffix = normalized;
+  if (!enabled || normalized.empty()) return;
+
+  std::vector<size_t> boundaries;
+  boundaries.reserve(normalized.size() + 1);
+  boundaries.push_back(0);
+  size_t offset = 0;
+  while (offset < normalized.size()) {
+    const size_t before = offset;
+    (void)decodeUtf8(normalized.c_str(), normalized.size(), offset);
+    if (offset <= before) break;
+    boundaries.push_back(offset);
+  }
+  const size_t codepointCount = boundaries.size() - 1;
+  if (codepointCount < 4) return;
+
+  const size_t prefixCodepoints = std::min<size_t>(4, std::max<size_t>(1, (codepointCount + 1) / 2));
+  const size_t splitOffset = boundaries[prefixCodepoints];
+  prefix = normalized.substr(0, splitOffset);
+  suffix = normalized.substr(splitOffset);
+}
+
+const char* prepareForRender(const char* text, std::string& outputStorage,
+                             const GlyphCoverage coverage, void* const coverageContext) {
   if (!text || *text == '\0') return text;
 
   const size_t length = strlen(text);
-  std::vector<uint32_t> codepoints;
-  codepoints.reserve(length);
-  size_t offset = 0;
+  bool normalized = false;
+  std::vector<uint32_t> codepoints = normalizedCodepoints(text, length, normalized);
   Direction baseDirection = Direction::NONE;
   bool hasRtl = false;
-  while (offset < length) {
-    const uint32_t cp = decodeUtf8(text, length, offset);
-    codepoints.push_back(cp);
+  for (const uint32_t cp : codepoints) {
     if (baseDirection == Direction::NONE) {
       if (isRtlCodepoint(cp)) {
         baseDirection = Direction::RTL;
@@ -197,9 +321,15 @@ const char* prepareForRender(const char* text, std::string& outputStorage) {
     }
     hasRtl = hasRtl || isRtlCodepoint(cp);
   }
-  if (!hasRtl || baseDirection == Direction::NONE) return text;
+  if (!hasRtl || baseDirection == Direction::NONE) {
+    if (!normalized) return text;
+    outputStorage.clear();
+    outputStorage.reserve(length + 4);
+    for (const uint32_t cp : codepoints) appendUtf8(outputStorage, cp);
+    return outputStorage.c_str();
+  }
 
-  codepoints = shapeArabic(codepoints);
+  codepoints = shapeArabic(codepoints, coverage, coverageContext);
 
   std::vector<Unit> units;
   units.reserve(codepoints.size());

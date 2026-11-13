@@ -9,13 +9,14 @@
 
 #include "activity/network/WifiSelectionActivity.h"
 #include "activity/page/SubPage.h"
+#include "DownloadTransferUi.h"
 #include "images/Download.h"
 #include "images/Trash.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
 
 namespace {
-constexpr uint32_t kDisplayTaskStack = 4096;
+constexpr uint32_t kDisplayTaskStack = 8192;
 constexpr uint32_t kInstallTaskStack = 8192;
 constexpr int kBottomMargin = 44;
 constexpr int kSideMargin = 20;
@@ -54,6 +55,7 @@ void DictionaryManagerActivity::onEnter() {
   shuttingDown_ = false;
   lastProgressPercent_ = -1;
   lastProgressUpdateMs_ = 0;
+  installing_ = false;
   loadPackages();
 }
 
@@ -141,6 +143,7 @@ void DictionaryManagerActivity::installSelected() {
   progressTotal_ = 0;
   lastProgressPercent_ = -1;
   lastProgressUpdateMs_ = 0;
+  installing_ = false;
   startInstallation();
 }
 
@@ -167,6 +170,7 @@ void DictionaryManagerActivity::installTaskLoop() {
         [this](const size_t downloaded, const size_t total) {
           progressDownloaded_ = downloaded;
           progressTotal_ = total;
+          if (total > 0 && downloaded >= total) installing_ = true;
           const int percent = total > 0 ? static_cast<int>((downloaded * 100) / total) : 0;
           const unsigned long now = millis();
           if (percent != lastProgressPercent_ || now - lastProgressUpdateMs_ >= 750) {
@@ -195,7 +199,8 @@ void DictionaryManagerActivity::updateDisplay() {
 
 void DictionaryManagerActivity::launchWifiSelection() {
   enterNewActivity(new WifiSelectionActivity(renderer, mappedInput,
-                                             [this](const bool connected) { onWifiSelectionComplete(connected); }));
+                                             [this](const bool connected) { onWifiSelectionComplete(connected); },
+                                             "Download", "Dictionaries"));
 }
 
 void DictionaryManagerActivity::onWifiSelectionComplete(const bool connected) {
@@ -211,34 +216,18 @@ void DictionaryManagerActivity::onWifiSelectionComplete(const bool connected) {
 
 void DictionaryManagerActivity::render() {
   renderer.clearScreen();
-  const int bodyTop = SubPage::header(renderer, "Dictionary Manager");
+  const int bodyTop = SubPage::header(renderer, "Download", "Dictionary");
   const int font = systemFontId();
   const int screenW = renderer.getScreenWidth();
   const int screenH = renderer.getScreenHeight();
 
   if (state_ == State::Downloading) {
-    const int centerY = bodyTop + (screenH - bodyTop - 80) / 2;
-    renderer.text.centered(font, centerY - 72, "DOWNLOADING DICTIONARY", true, EpdFontFamily::BOLD);
     const int index = installingPackageIndex_;
-    const char* name = index >= 0 && index < static_cast<int>(packages_.size())
-                           ? packages_[static_cast<size_t>(index)].name.c_str()
-                           : "Dictionary";
-    renderer.text.centered(font, centerY - 34, name, true, EpdFontFamily::BOLD);
-    renderer.text.centered(font, centerY + 4, "Downloading and extracting to SD", true, EpdFontFamily::REGULAR);
-    const size_t downloaded = progressDownloaded_;
-    const size_t total = progressTotal_;
-    const int percent = total > 0 ? std::max(0, std::min(100, static_cast<int>((downloaded * 100) / total))) : 0;
-    char percentText[8];
-    std::snprintf(percentText, sizeof(percentText), "%d%%", percent);
-    constexpr int barHeight = 6;
-    constexpr int barWidth = 260;
-    const int percentWidth = renderer.text.getWidth(font, percentText);
-    const int groupWidth = barWidth + 14 + percentWidth;
-    const int groupX = (screenW - groupWidth) / 2;
-    drawProgressBar(renderer, groupX, centerY + 36, barWidth, barHeight, percent);
-    renderer.text.render(font, groupX + barWidth + 14,
-                         centerY + 36 + (barHeight - renderer.text.getLineHeight(font)) / 2, percentText, true,
-                         EpdFontFamily::REGULAR);
+    const std::string name = index >= 0 && index < static_cast<int>(packages_.size())
+                                 ? packages_[static_cast<size_t>(index)].name
+                                 : "Dictionary";
+    DownloadTransferUi::render(renderer, bodyTop, font, "Dictionary download", name, progressDownloaded_,
+                               progressTotal_, installing_);
     mappedInput.mapLabels("\xC2\xAB Back", "", "", "");
     renderer.displayBuffer();
     return;
@@ -259,10 +248,11 @@ void DictionaryManagerActivity::render() {
       renderer.bitmap.icon(Download, iconX, iconY, kActionIconSize, kActionIconSize,
                            BitmapRender::Orientation::None, false);
     }
-    renderer.line.render(kSideMargin, y + kRowHeight - 1, screenW - kSideMargin, y + kRowHeight - 1, true,
+    renderer.line.render(SettingsListLayout::kDividerInset, y + kRowHeight - 1,
+                         screenW - SettingsListLayout::kDividerInset, y + kRowHeight - 1, true,
                          LineRender::Style::Dotted);
     if (installed) {
-      renderer.text.centered(MONTSERRAT_8_FONT_ID, y + kRowHeight + 20, "Installed — tap to remove", true,
+      renderer.text.centered(systemFontIdForPointSize(8), y + kRowHeight + 20, "Installed — tap to remove", true,
                              EpdFontFamily::REGULAR);
     }
     mappedInput.mapLabels("\xC2\xAB Back", installed ? "Remove" : "Download", "", "");

@@ -11,6 +11,8 @@
 
 #include <esp_heap_caps.h>
 
+#include "TtfAllocator.h"
+
 #define STBTT_STATIC
 #define STB_TRUETYPE_IMPLEMENTATION
 #include "../../freeink-sdk/libs/book/FreeInkBook/third_party/stb/stb_truetype.h"
@@ -28,7 +30,7 @@ ExternalFont::GlyphBitmapCacheSlot* ExternalFont::s_bitmapCache = nullptr;
 uint32_t ExternalFont::s_bitmapCacheGen = 0;
 uint8_t ExternalFont::s_bitmapCacheUsers = 0;
 bool ExternalFont::s_bitmapCacheInPsram = false;
-ExternalFont::TtfSharedCacheSlot ExternalFont::s_ttfSharedCache[ExternalFont::kTtfSharedCacheSlots];
+std::vector<ExternalFont::TtfSharedCacheSlot> ExternalFont::s_ttfSharedCache;
 uint32_t ExternalFont::s_ttfSharedCacheGeneration = 0;
 
 namespace {
@@ -36,26 +38,19 @@ namespace {
 constexpr uint32_t kPackedFontMagic = 0x45504446u;
 constexpr uint32_t kPackedFontVersion = 1u;
 
-uint8_t* allocateFontBuffer(const size_t bytes, bool* inPsram) {
-  if (inPsram) *inPsram = false;
-#if defined(ARDUINO_ARCH_ESP32)
-  if (uint8_t* psram = static_cast<uint8_t*>(heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT))) {
-    if (inPsram) *inPsram = true;
-    return psram;
-  }
-  return static_cast<uint8_t*>(heap_caps_malloc(bytes, MALLOC_CAP_8BIT));
-#else
-  return static_cast<uint8_t*>(std::malloc(bytes));
-#endif
+// Outline fonts are intentionally kept out of the internal heap. stb_truetype
+// reads the font face repeatedly while rasterizing glyphs, so falling back to
+// internal RAM here both competes with the display/input tasks and makes the
+// result dependent on allocation order. The ESP32 targets all provide PSRAM;
+// fail the load cleanly if it is unavailable instead of silently moving a TTF
+// into internal RAM.
+uint8_t* allocateTtfPsramBuffer(const size_t bytes) {
+  return inx::ttf::allocate(bytes);
 }
 
 void releaseFontBuffer(void* buffer) {
   if (!buffer) return;
-#if defined(ARDUINO_ARCH_ESP32)
-  heap_caps_free(buffer);
-#else
-  std::free(buffer);
-#endif
+  inx::ttf::release(buffer);
 }
 
 bool pathHasExtension(const char* path, const char* extension) {
@@ -79,6 +74,24 @@ int roundedMetric(const float value) {
 // Reader font sizes are point sizes. Keep the TTF path consistent with the
 // legacy FreeType converter, which renders at 150 DPI (pt * 150 / 72 px/em).
 constexpr float kReaderFontDpi = 150.0f;
+
+uint8_t quantizeReaderTextCoverage(const uint8_t coverage) {
+#if defined(FREEINK_DEVICE_MURPHY_M4)
+  // Murphy's SSD1677 medium-AA waveform renders the two edge tones lighter
+  // than the other reader panels. Lift the coverage only for this target so
+  // the anti-aliased edges retain their shape without changing X4 Pro or
+  // other devices.
+  constexpr uint8_t kMurphyTextCoverageBoost = 20;
+  const uint16_t boosted = std::min<uint16_t>(255u, static_cast<uint16_t>(coverage) + kMurphyTextCoverageBoost);
+  return static_cast<uint8_t>((boosted * 3u + 127u) / 255u);
+#else
+  // Map coverage to the nearest of the four panel tones. The old fixed
+  // thresholds plus a coverage boost made curved stems change tone too early,
+  // which produced lumpy edges and uneven bowls. Midpoint quantization keeps
+  // the average glyph coverage intact instead of systematically thickening it.
+  return static_cast<uint8_t>((static_cast<uint16_t>(coverage) * 3u + 127u) / 255u);
+#endif
+}
 
 float ttfScaleForPointSize(const stbtt_fontinfo* font, const uint16_t pointSize) {
   const float pixelsPerEm = static_cast<float>(pointSize) * kReaderFontDpi / 72.0f;
@@ -331,7 +344,7 @@ bool ExternalFont::loadTtf(const char* path, const uint16_t pointSize) {
 
   m_filePath = path;
 
-  for (size_t i = 0; i < kTtfSharedCacheSlots; ++i) {
+  for (size_t i = 0; i < s_ttfSharedCache.size(); ++i) {
     auto& slot = s_ttfSharedCache[i];
     if (slot.data != nullptr && slot.path == path) {
       slot.users++;
@@ -339,7 +352,7 @@ bool ExternalFont::loadTtf(const char* path, const uint16_t pointSize) {
       m_ttfData = slot.data;
       m_ttfDataSize = slot.size;
       m_ttfDataInPsram = slot.inPsram;
-      m_ttfSharedCacheSlot = static_cast<int8_t>(i);
+      m_ttfSharedCacheSlot = static_cast<int32_t>(i);
       INX_SERIAL.printf("[ExternalFont] Reused cached TTF %s (%lu bytes, %upt)\n", path,
                         static_cast<unsigned long>(m_ttfDataSize), static_cast<unsigned>(pointSize));
       break;
@@ -361,7 +374,13 @@ bool ExternalFont::loadTtf(const char* path, const uint16_t pointSize) {
     }
 
     m_ttfDataSize = static_cast<uint32_t>(fileSize);
-    m_ttfData = allocateFontBuffer(m_ttfDataSize, &m_ttfDataInPsram);
+    m_ttfData = allocateTtfPsramBuffer(m_ttfDataSize);
+    if (!m_ttfData) {
+      // Retired faces must not prevent loading the current system/reader face.
+      clearTtfCache();
+      m_ttfData = allocateTtfPsramBuffer(m_ttfDataSize);
+    }
+    m_ttfDataInPsram = m_ttfData != nullptr;
     if (!m_ttfData) {
       INX_SERIAL.printf("[ExternalFont] Could not allocate %lu bytes for TTF/OTF %s\n",
                         static_cast<unsigned long>(m_ttfDataSize), path);
@@ -388,14 +407,20 @@ bool ExternalFont::loadTtf(const char* path, const uint16_t pointSize) {
 
     int cacheSlot = -1;
     uint32_t oldest = UINT32_MAX;
-    for (size_t i = 0; i < kTtfSharedCacheSlots; ++i) {
+    for (size_t i = 0; i < s_ttfSharedCache.size(); ++i) {
       auto& slot = s_ttfSharedCache[i];
       if (slot.users == 0 && (slot.data == nullptr || slot.lastUsed < oldest)) {
         oldest = slot.lastUsed;
         cacheSlot = static_cast<int>(i);
       }
     }
-    if (cacheSlot >= 0) {
+    if (cacheSlot < 0) {
+      // Every live file must remain shareable across sizes and styles. A fixed
+      // eight-face table made additional sizes copy entire TTF files again.
+      cacheSlot = static_cast<int>(s_ttfSharedCache.size());
+      s_ttfSharedCache.emplace_back();
+    }
+    {
       auto& slot = s_ttfSharedCache[cacheSlot];
       releaseFontBuffer(slot.data);
       slot.path = path;
@@ -404,7 +429,7 @@ bool ExternalFont::loadTtf(const char* path, const uint16_t pointSize) {
       slot.lastUsed = ++s_ttfSharedCacheGeneration;
       slot.users = 1;
       slot.inPsram = m_ttfDataInPsram;
-      m_ttfSharedCacheSlot = static_cast<int8_t>(cacheSlot);
+      m_ttfSharedCacheSlot = cacheSlot;
     }
   }
 
@@ -452,7 +477,7 @@ bool ExternalFont::loadTtf(const char* path, const uint16_t pointSize) {
 
 /** Release the in-memory TrueType file and reusable glyph bitmap buffer. */
 void ExternalFont::releaseTtfResources() {
-  if (m_ttfSharedCacheSlot >= 0 && m_ttfSharedCacheSlot < static_cast<int8_t>(kTtfSharedCacheSlots)) {
+  if (m_ttfSharedCacheSlot >= 0 && static_cast<size_t>(m_ttfSharedCacheSlot) < s_ttfSharedCache.size()) {
     auto& slot = s_ttfSharedCache[static_cast<size_t>(m_ttfSharedCacheSlot)];
     if (slot.users > 0) {
       --slot.users;
@@ -794,7 +819,10 @@ bool ExternalFont::ensureTtfBitmap(const size_t metaSlot) {
   const size_t pixelCount = static_cast<size_t>(glyph.width) * static_cast<size_t>(glyph.height);
   if (!m_ttfBitmapBuffer || m_ttfBitmapBufferSize < pixelCount) {
     releaseFontBuffer(m_ttfBitmapBuffer);
-    m_ttfBitmapBuffer = allocateFontBuffer(pixelCount, nullptr);
+    // Keep the temporary grayscale glyph raster in PSRAM too. This buffer can
+    // grow for large glyphs and must not consume the internal heap used by the
+    // display and font UI tasks.
+    m_ttfBitmapBuffer = allocateTtfPsramBuffer(pixelCount);
     m_ttfBitmapBufferSize = m_ttfBitmapBuffer ? pixelCount : 0;
   }
   if (!m_ttfBitmapBuffer) return false;
@@ -810,7 +838,7 @@ bool ExternalFont::ensureTtfBitmap(const size_t metaSlot) {
     const size_t count = std::min<size_t>(4, pixelCount - pixel);
     for (size_t i = 0; i < count; ++i) {
       const uint8_t coverage = m_ttfBitmapBuffer[pixel + i];
-      const uint8_t level = coverage >= 192 ? 3 : (coverage >= 128 ? 2 : (coverage >= 64 ? 1 : 0));
+      const uint8_t level = quantizeReaderTextCoverage(coverage);
       packed = static_cast<uint8_t>((packed << 2) | level);
     }
     if (count < 4) packed = static_cast<uint8_t>(packed << ((4 - count) * 2));

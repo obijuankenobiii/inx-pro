@@ -33,7 +33,8 @@ class ClearCacheActivity final : public ActivityWithSubactivity {
     GROUP_LIBRARY_INDEX = 4,
     GROUP_NETWORK = 5,
     GROUP_DAILY_READING = 6,
-    GROUP_COUNT = 7
+    GROUP_STATISTICS = 7,
+    GROUP_COUNT = 8
   };
 
   State state = WARNING;
@@ -46,7 +47,7 @@ class ClearCacheActivity final : public ActivityWithSubactivity {
   int clearedCount = 0;
   int failedCount = 0;
   int selectedGroup = -1;
-  bool selectedGroups[GROUP_COUNT] = {true, true, false, true, false, false, false};
+  bool selectedGroups[GROUP_COUNT] = {true, true, false, true, false, false, false, false};
 
   static void taskTrampoline(void* param);
   static void clearTaskTrampoline(void* param);

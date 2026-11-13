@@ -48,7 +48,11 @@ void BaseLibraryActivity::render() {
     renderer.text.render(font, width - folderWidth - 20,
                          folderY + (kRowHeight - renderer.text.getLineHeight(font)) / 2, folderLabel.c_str(), true,
                          EpdFontFamily::REGULAR);
-    if (slot > 0) renderer.line.render(0, folderY - 1, width, folderY - 1, true, LineRender::Style::Dotted);
+    if (slot > 0) {
+      renderer.line.render(SettingsListLayout::kDividerInset, folderY - 1,
+                           width - SettingsListLayout::kDividerInset, folderY - 1, true,
+                           LineRender::Style::Dotted);
+    }
   }
   const int backgroundY = contentTop + kRowHeight * LibraryWidget::kVisibleFolderCount;
   const int labelY = backgroundY + kRowHeight;
@@ -60,8 +64,12 @@ void BaseLibraryActivity::render() {
   renderer.text.render(font, 20, labelY + (kRowHeight - renderer.text.getLineHeight(font)) / 2, "Label", true,
                        EpdFontFamily::REGULAR);
   Toggle::render(renderer, width - 20, labelY, kRowHeight, showLabel_);
-  renderer.line.render(0, backgroundY - 1, width, backgroundY - 1, true, LineRender::Style::Dotted);
-  renderer.line.render(0, labelY - 1, width, labelY - 1, true, LineRender::Style::Dotted);
+  renderer.line.render(SettingsListLayout::kDividerInset, backgroundY - 1,
+                       width - SettingsListLayout::kDividerInset, backgroundY - 1, true,
+                       LineRender::Style::Dotted);
+  renderer.line.render(SettingsListLayout::kDividerInset, labelY - 1,
+                       width - SettingsListLayout::kDividerInset, labelY - 1, true,
+                       LineRender::Style::Dotted);
   if (folderPopup_) renderFolderPopup();
   renderer.displayBuffer();
 }
@@ -164,8 +172,7 @@ void BaseLibraryActivity::loop() {
       render();
       return;
     }
-  } else if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
-    close();
+  } else if (SubPage::closeInput(renderer, mappedInput, [this] { close(); })) {
     return;
   }
   if (mappedInput.hasTouch()) {

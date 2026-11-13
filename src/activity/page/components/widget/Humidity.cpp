@@ -18,10 +18,10 @@ void Humidity::renderCard(const int x, const int y, const int width, const int h
   renderer_.rectangle.fill(x, y, width, height, false, true, true);
 
   const int padding = std::max(16, std::min(26, width / 10));
-  const int labelFont = MONTSERRAT_14_FONT_ID;
+  const int labelFont = systemFontIdForPointSize(14);
   const int labelLineHeight = renderer_.text.getLineHeight(labelFont);
   const bool wideCard = width >= 300 && height >= 220;
-  const int valueFont = wideCard ? MONTSERRAT_CLOCK_70_FONT_ID : MONTSERRAT_16_FONT_ID;
+  const int valueFont = wideCard ? systemFontIdForPointSize(70) : systemFontIdForPointSize(16);
   constexpr int kClockVisibleHeight = 106;
   const int valueHeight = wideCard ? kClockVisibleHeight : renderer_.text.getLineHeight(valueFont);
   const int contentHeight = labelLineHeight + 30 + valueHeight;
@@ -41,14 +41,14 @@ void Humidity::renderCard(const int x, const int y, const int width, const int h
     renderer_.text.render(valueFont, valueX, valueY, humidityValue, true, EpdFontFamily::BOLD);
 
     const int clockBottom = valueY + clockTopInset + kClockGlyphTop + 2;
-    const int unitFont = MONTSERRAT_14_FONT_ID;
+    const int unitFont = systemFontIdForPointSize(14);
     const int unitY = clockBottom - renderer_.text.getLineHeight(unitFont) + 3;
     const int unitX = valueX + renderer_.text.getWidth(valueFont, humidityValue, EpdFontFamily::BOLD) + 8;
     renderer_.text.renderGray(unitFont, unitX, unitY, "%", true, EpdFontFamily::BOLD);
   } else {
     renderer_.text.render(valueFont, x + padding, valueTop, humidityValue, true, EpdFontFamily::BOLD);
     const int numberWidth = renderer_.text.getWidth(valueFont, humidityValue, EpdFontFamily::BOLD);
-    const int unitFont = MONTSERRAT_14_FONT_ID;
+    const int unitFont = systemFontIdForPointSize(14);
     const int unitY = valueTop + renderer_.text.getLineHeight(valueFont) - renderer_.text.getLineHeight(unitFont);
     renderer_.text.renderGray(unitFont, x + padding + numberWidth + 6, unitY, "%", true, EpdFontFamily::BOLD);
   }
@@ -69,9 +69,9 @@ void Humidity::render(const int x, const int y, const int width, const int heigh
 
   if (!available) {
     renderer_.rectangle.fill(x, y, width, height, false);
-    renderer_.text.render(MONTSERRAT_10_FONT_ID, x + 16, y + std::max(0, height / 2 - 16),
+    renderer_.text.render(systemFontIdForPointSize(10), x + 16, y + std::max(0, height / 2 - 16),
                           "Humidity unavailable", true, EpdFontFamily::BOLD);
-    renderer_.text.render(MONTSERRAT_8_FONT_ID, x + 16, y + height / 2 + 12, "Sensor not found", true);
+    renderer_.text.render(systemFontIdForPointSize(8), x + 16, y + height / 2 + 12, "Sensor not found", true);
     return;
   }
 
