@@ -179,6 +179,11 @@ void ThumbnailList::renderThumbnail(const LibraryIndex::Book& book, const int x,
                                                                : BitmapRender::RoundedOutside::None;
   if (!path.empty() && ImageRender::create(renderer, path).render(x + 2, y + 2, thumbnailWidth - 4,
                                                                    thumbnailHeight - 4, options)) {
+    if (SETTINGS.bitmapRoundedCorners == 0) {
+      renderer.rectangle.render(x, y, thumbnailWidth, thumbnailHeight, true);
+    } else {
+      renderer.rectangle.render(x, y, thumbnailWidth, thumbnailHeight, true, true);
+    }
     return;
   }
 
