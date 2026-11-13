@@ -53,7 +53,7 @@ PreviewBounds widgetPreviewBounds(const GfxRenderer& renderer) {
 ButtonBounds newThemeButtonBounds(const GfxRenderer& renderer, const int font) {
   constexpr const char* label = "New theme +";
   const int width = Button::width(renderer, label, font);
-  const int y = renderer.getScreenHeight() - navigation::Menu::bottomInset() - kBottomButtonMargin - Button::height;
+  const int y = renderer.getScreenHeight() - kBottomButtonMargin - Button::height;
   return {renderer.getScreenWidth() - 20 - width, y, width, Button::height};
 }
 
