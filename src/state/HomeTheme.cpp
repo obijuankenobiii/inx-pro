@@ -164,7 +164,7 @@ void ensureLoaded() {
   if (!loaded) load();
 }
 
-bool validLayout(const uint8_t value) { return value <= static_cast<uint8_t>(Layout::HalfBottom); }
+bool validLayout(const uint8_t value) { return value <= static_cast<uint8_t>(Layout::HalfMiddleBottom40); }
 
 bool validWidget(const uint8_t value) {
   return value <= static_cast<uint8_t>(Widget::Streaks);
@@ -522,16 +522,6 @@ void load() {
       for (uint8_t& value : theme.streakCompact) value = 0;
       for (HeatmapView& view : theme.heatmapViews) view = HeatmapView::Weekly;
       setDefaultLibraryFolders(theme);
-    } else if (theme.layout == Layout::HalfTop || theme.layout == Layout::HalfMiddle ||
-               theme.layout == Layout::HalfBottom) {
-      // The half-stack layouts are no longer offered. Keep the first two
-      // configured rows and migrate the saved theme to the supported 1 x 2
-      // layout when it is loaded.
-      theme.layout = Layout::OneByTwo;
-      for (int i = 2; i < 4; ++i) {
-        theme.widgets[i] = Widget::Empty;
-        theme.borders[i] = Border::None;
-      }
     }
     return true;
   };
@@ -1098,6 +1088,18 @@ const char* layoutLabel(const Layout layout) {
       return "30 | 40 | 30";
     case Layout::HalfBottom:
       return "30 | 30 | 40";
+    case Layout::HalfTop50:
+      return "50 | 25 | 25";
+    case Layout::HalfMiddle50:
+      return "25 | 50 | 25";
+    case Layout::HalfBottom50:
+      return "25 | 25 | 50";
+    case Layout::HalfTopMiddle40:
+      return "40 | 40 | 20";
+    case Layout::HalfTopBottom40:
+      return "40 | 20 | 40";
+    case Layout::HalfMiddleBottom40:
+      return "20 | 40 | 40";
     default:
       return "Unknown";
   }
@@ -1203,7 +1205,10 @@ const char* heatmapViewLabel(const HeatmapView view) {
 int slotCount(const Layout layout) {
   return layout == Layout::TwoByTwo || layout == Layout::OneByOne ? 4
        : layout == Layout::OneByThree || layout == Layout::HalfTop || layout == Layout::HalfMiddle ||
-                 layout == Layout::HalfBottom                 ? 3
+                 layout == Layout::HalfBottom || layout == Layout::HalfTop50 ||
+                 layout == Layout::HalfMiddle50 || layout == Layout::HalfBottom50 ||
+                 layout == Layout::HalfTopMiddle40 || layout == Layout::HalfTopBottom40 ||
+                 layout == Layout::HalfMiddleBottom40 ? 3
        : layout == Layout::OneByTwo                            ? 2
                                                                : 0;
 }

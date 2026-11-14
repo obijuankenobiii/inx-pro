@@ -79,6 +79,7 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
   bool openSleepTheme_ = false;
   bool widgetPopup_ = false;
   bool borderPopup_ = false;
+  bool ratioPopup_ = false;
   bool themeActionPopup_ = false;
   bool carouselSettingsFinished_ = false;
   bool heatmapSettingsFinished_ = false;
@@ -90,6 +91,7 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
   int popupSelected_ = 0;
   int widgetPopupScroll_ = 0;
   int borderPopupSelected_ = 0;
+  int ratioPopupSelected_ = 0;
   int themeActionSelected_ = 0;
   Carousel carousel_;
   Shortcut shortcut_;
@@ -124,11 +126,12 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
                            bool descriptionShowProgress, bool descriptionShowRating,
                            bool recentShowTitle, bool recentShowAuthor,
                            bool recentShowProgress, bool recentShowRating, bool carouselShowProgress,
-                           bool carouselFullHeight, bool statisticsSummary, bool streakCompact,
+                           bool carouselFullHeight, bool statisticsSummary, bool streakCompact, bool compact20,
+                           bool sideBySideStats,
                            bool stackedHeatmapPreview = false, bool showEmptyAddLabel = false);
   void renderDividerBorder(HomeTheme::Border border, int x, int y, int width);
   void renderBorder(HomeTheme::Border border, int x, int y, int width, int height);
-  void handleTouch(int x, int y);
+  void handleTouch(int x, int y, bool longPress = false);
   void beginNewTheme();
   void beginEditTheme();
   void initializeNewThemeEditor();
@@ -143,6 +146,9 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
   void openWidgetPopup(int slot);
   void renderWidgetPopup();
   void openBorderPopup(int slot);
+  void openRatioPopup(int slot);
+  void renderRatioPopup();
+  void applyRatioSelection(int ratio);
   void openCarouselSettings(int slot);
   void openHeatmapSettings(int slot);
   void openTemperatureSettings(int slot);

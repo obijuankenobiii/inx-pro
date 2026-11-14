@@ -8,28 +8,75 @@ namespace {
 
 int gridRows(const HomeTheme::Layout layout) {
   return layout == HomeTheme::Layout::OneByThree || layout == HomeTheme::Layout::HalfTop ||
-                 layout == HomeTheme::Layout::HalfMiddle || layout == HomeTheme::Layout::HalfBottom
+                 layout == HomeTheme::Layout::HalfMiddle || layout == HomeTheme::Layout::HalfBottom ||
+                 layout == HomeTheme::Layout::HalfTop50 || layout == HomeTheme::Layout::HalfMiddle50 ||
+                 layout == HomeTheme::Layout::HalfBottom50 || layout == HomeTheme::Layout::HalfTopMiddle40 ||
+                 layout == HomeTheme::Layout::HalfTopBottom40 || layout == HomeTheme::Layout::HalfMiddleBottom40
              ? 3
              : 2;
 }
 
 bool isHalfStackLayout(const HomeTheme::Layout layout) {
   return layout == HomeTheme::Layout::HalfTop || layout == HomeTheme::Layout::HalfMiddle ||
-         layout == HomeTheme::Layout::HalfBottom;
+         layout == HomeTheme::Layout::HalfBottom || layout == HomeTheme::Layout::HalfTop50 ||
+         layout == HomeTheme::Layout::HalfMiddle50 || layout == HomeTheme::Layout::HalfBottom50 ||
+         layout == HomeTheme::Layout::HalfTopMiddle40 || layout == HomeTheme::Layout::HalfTopBottom40 ||
+         layout == HomeTheme::Layout::HalfMiddleBottom40;
+}
+
+int halfStackRowPercent(const HomeTheme::Layout layout, const int row) {
+  if (layout == HomeTheme::Layout::HalfTop50) return row == 0 ? 50 : 25;
+  if (layout == HomeTheme::Layout::HalfMiddle50) return row == 1 ? 50 : 25;
+  if (layout == HomeTheme::Layout::HalfBottom50) return row == 2 ? 50 : 25;
+  if (layout == HomeTheme::Layout::HalfTopMiddle40) return row < 2 ? 40 : 20;
+  if (layout == HomeTheme::Layout::HalfTopBottom40) return row == 1 ? 20 : 40;
+  if (layout == HomeTheme::Layout::HalfMiddleBottom40) return row == 0 ? 20 : 40;
+  if (layout == HomeTheme::Layout::HalfTop) return row == 0 ? 40 : 30;
+  if (layout == HomeTheme::Layout::HalfMiddle) return row == 1 ? 40 : 30;
+  if (layout == HomeTheme::Layout::HalfBottom) return row == 2 ? 40 : 30;
+  return 0;
 }
 
 bool isCompactLayout(const HomeTheme::Layout layout) {
   return layout == HomeTheme::Layout::OneByThree || isHalfStackLayout(layout);
 }
 
-int halfStackRowHeight(const HomeTheme::Layout layout, const int areaH, const int gap, const int row) {
+void halfStackRowHeights(const HomeTheme::Layout layout, const int areaH, const int gap, int heights[3]) {
   const int availableHeight = std::max(0, areaH - gap * 2);
-  const int smallHeight = availableHeight * 30 / 100;
-  const int bigHeight = availableHeight - smallHeight * 2;
-  const bool bigRow = (layout == HomeTheme::Layout::HalfTop && row == 0) ||
-                      (layout == HomeTheme::Layout::HalfMiddle && row == 1) ||
-                      (layout == HomeTheme::Layout::HalfBottom && row == 2);
-  return bigRow ? bigHeight : smallHeight;
+  const int bottomInset = navigation::Menu::bottomInset();
+  const bool bottomMenuPresent = isHalfStackLayout(layout) && bottomInset > 0;
+  const int baseHeight = availableHeight + (bottomMenuPresent ? bottomInset : 0);
+
+  heights[0] = baseHeight * halfStackRowPercent(layout, 0) / 100;
+  heights[1] = baseHeight * halfStackRowPercent(layout, 1) / 100;
+  heights[2] = baseHeight - heights[0] - heights[1];
+
+  if (!bottomMenuPresent) return;
+
+  // Keep the smaller rows at their original height. The bottom menu consumes
+  // space from the larger row(s), including both 40% rows in a 40/40/20 layout.
+  const int smallestPercent = std::min({halfStackRowPercent(layout, 0), halfStackRowPercent(layout, 1),
+                                        halfStackRowPercent(layout, 2)});
+  int largeRowCount = 0;
+  for (int index = 0; index < 3; ++index) {
+    if (halfStackRowPercent(layout, index) > smallestPercent) ++largeRowCount;
+  }
+
+  int remainingInset = bottomInset;
+  int remainingLargeRows = largeRowCount;
+  for (int index = 0; index < 3; ++index) {
+    if (halfStackRowPercent(layout, index) <= smallestPercent) continue;
+    const int reduction = (remainingInset + remainingLargeRows - 1) / remainingLargeRows;
+    heights[index] = std::max(0, heights[index] - reduction);
+    remainingInset -= reduction;
+    --remainingLargeRows;
+  }
+}
+
+int halfStackRowHeight(const HomeTheme::Layout layout, const int areaH, const int gap, const int row) {
+  int heights[3] = {0, 0, 0};
+  halfStackRowHeights(layout, areaH, gap, heights);
+  return heights[std::min(2, std::max(0, row))];
 }
 
 int halfStackRowY(const HomeTheme::Layout layout, const int areaY, const int areaH, const int gap, const int row) {
@@ -38,6 +85,10 @@ int halfStackRowY(const HomeTheme::Layout layout, const int areaY, const int are
     y += halfStackRowHeight(layout, areaH, gap, previous) + gap;
   }
   return y;
+}
+
+bool isTwentyPercentRow(const HomeTheme::Layout layout, const int slot) {
+  return isHalfStackLayout(layout) && halfStackRowPercent(layout, slot) == 20;
 }
 
 }  // namespace
@@ -75,6 +126,12 @@ void HomeWidgetLayout::render(const HomeTheme::Theme& theme, const int carouselI
     case HomeTheme::Layout::HalfTop:
     case HomeTheme::Layout::HalfMiddle:
     case HomeTheme::Layout::HalfBottom:
+    case HomeTheme::Layout::HalfTop50:
+    case HomeTheme::Layout::HalfMiddle50:
+    case HomeTheme::Layout::HalfBottom50:
+    case HomeTheme::Layout::HalfTopMiddle40:
+    case HomeTheme::Layout::HalfTopBottom40:
+    case HomeTheme::Layout::HalfMiddleBottom40:
       renderGrid(theme, carouselIndex, favoriteIndex);
       return;
     case HomeTheme::Layout::OneByOne:
@@ -295,7 +352,8 @@ void HomeWidgetLayout::renderSlot(const HomeTheme::Theme& theme, const int slot,
     case HomeTheme::Widget::Shortcuts: shortcut_.render(bounds.x, bounds.y, bounds.width, bounds.height); break;
     case HomeTheme::Widget::ListShortcuts: shortcutList_.render(bounds.x, bounds.y, bounds.width, bounds.height); break;
     case HomeTheme::Widget::Clock:
-      clock_.render(bounds.x, bounds.y, bounds.width, bounds.height, isCompactLayout(theme.layout));
+      clock_.render(bounds.x, bounds.y, bounds.width, bounds.height, isCompactLayout(theme.layout),
+                    isTwentyPercentRow(theme.layout, slot));
       break;
     case HomeTheme::Widget::Calendar:
       calendar_.render(bounds.x, bounds.y, bounds.width, bounds.height,
@@ -324,7 +382,7 @@ void HomeWidgetLayout::renderSlot(const HomeTheme::Theme& theme, const int slot,
 #endif
     case HomeTheme::Widget::TodaysReading:
       todaysReading_.render(bounds.x, bounds.y, bounds.width, bounds.height,
-                            isCompactLayout(theme.layout));
+                            isCompactLayout(theme.layout), isTwentyPercentRow(theme.layout, slot));
       break;
     case HomeTheme::Widget::Statistics:
       weeklyStatistics_.render(bounds.x, bounds.y, bounds.width, bounds.height,
@@ -336,7 +394,8 @@ void HomeWidgetLayout::renderSlot(const HomeTheme::Theme& theme, const int slot,
       {
         const bool compact = isCompactLayout(theme.layout) || theme.streakCompact[slot] != 0;
         streaks_.render(bounds.x, bounds.y, bounds.width, bounds.height,
-                        theme.layout == HomeTheme::Layout::OneByTwo && !compact, compact);
+                        theme.layout == HomeTheme::Layout::OneByTwo && !compact, compact,
+                        isTwentyPercentRow(theme.layout, slot));
       }
       break;
     case HomeTheme::Widget::Favorites:
@@ -347,7 +406,12 @@ void HomeWidgetLayout::renderSlot(const HomeTheme::Theme& theme, const int slot,
       break;
     case HomeTheme::Widget::Heatmap:
       heatmap_.render(bounds.x, bounds.y, bounds.width, bounds.height, HomeTheme::HeatmapView::Monthly, false,
-                      theme.carouselLabelColors[slot], theme.layout == HomeTheme::Layout::OneByTwo);
+                      theme.carouselLabelColors[slot], isCompactLayout(theme.layout),
+                      isCompactLayout(theme.layout) && !isTwentyPercentRow(theme.layout, slot),
+                      isTwentyPercentRow(theme.layout, slot),
+                      theme.layout == HomeTheme::Layout::OneByThree && navigation::Menu::bottomInset() > 0,
+                      theme.layout == HomeTheme::Layout::OneByThree ||
+                          (isHalfStackLayout(theme.layout) && halfStackRowPercent(theme.layout, slot) < 40));
       break;
     case HomeTheme::Widget::Library:
       library_.render(bounds.x, bounds.y, bounds.width, bounds.height, theme.libraryFolders[slot],
@@ -659,7 +723,7 @@ int HomeWidgetLayout::todaysReadingAt(const HomeTheme::Theme& theme, const int x
     if (theme.widgets[slot] != HomeTheme::Widget::TodaysReading) continue;
     const Bounds bounds = slotBounds(layout, slot);
     if (todaysReading_.buttonHitTest(x, y, bounds.x, bounds.y, bounds.width, bounds.height,
-                                     isCompactLayout(theme.layout)))
+                                     isCompactLayout(theme.layout), isTwentyPercentRow(theme.layout, slot)))
       return slot;
   }
   return -1;

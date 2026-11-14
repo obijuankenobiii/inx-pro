@@ -27,10 +27,11 @@ inline std::array<FourBookCarouselCard, 4> fourBookCarouselLayout(int x, int y, 
     height = std::max(1, height - verticalPadding * 2);
   }
 
-  // Keep the full-height variant tight, while giving the regular variant
-  // 10pt top/bottom padding and 10pt gaps between thumbnails.
-  const int gap = fullHeight ? (width >= 360 ? 4 : 2) : 10;
-  const int available = std::max(4, width - gap * 3);
+  // Keep the full-height thumbnail dimensions unchanged. The larger gap is
+  // applied only when positioning cards horizontally.
+  constexpr int gap = 10;
+  const int sizingGap = fullHeight ? (width >= 360 ? 4 : 2) : gap;
+  const int available = std::max(4, width - sizingGap * 3);
   const auto main = carouselCoverSize(available * 5 / 13, std::min(300, height - (fullHeight ? 6 : 8)));
   // The 1x3 carousel keeps every thumbnail on the same visual baseline.  Do
   // not make the second (center) thumbnail taller than the others.
@@ -41,9 +42,10 @@ inline std::array<FourBookCarouselCard, 4> fourBookCarouselLayout(int x, int y, 
   const int sideHeight = side.height;
   const int mainY = y + (height - mainHeight) / 2;
   const int sideY = y + (height - sideHeight) / 2;
-  const int stripWidth = mainWidth + sideWidth * 3 + gap * 3;
-  const int firstX = x + (width - stripWidth) / 2;
-  const int mainX = firstX + sideWidth + gap;
+  const int sizingStripWidth = mainWidth + sideWidth * 3 + sizingGap * 3;
+  const int sizingFirstX = x + (width - sizingStripWidth) / 2;
+  const int mainX = sizingFirstX + sideWidth + sizingGap;
+  const int firstX = mainX - sideWidth - gap;
   const int nextX = mainX + mainWidth + gap;
   const int lastX = nextX + sideWidth + gap;
   const int firstVisibleX = std::max(x, firstX);
@@ -70,25 +72,28 @@ inline std::array<FourBookCarouselCard, 5> fiveBookCarouselLayout(int x, int y, 
     height = std::max(1, height - verticalPadding * 2);
   }
 
-  const int gap = fullHeight ? (width >= 360 ? 4 : 2) : 10;
-  const int available = std::max(4, width - gap * 4);
+  constexpr int gap = 10;
+  const int sizingGap = fullHeight ? (width >= 360 ? 4 : 2) : gap;
+  const int available = std::max(4, width - sizingGap * 4);
   const int maxHeight = std::max(1, height - (fullHeight ? 6 : 8));
   // Size the three full middle cards to nearly fill the row. This leaves only
   // a small edge sliver for the first and last preview cards.
   const auto card = carouselCoverSize(available / 3, std::min(300, maxHeight));
   const int cardWidth = card.width;
   const int cardHeight = card.height;
-  const int stripWidth = cardWidth * 5 + gap * 4;
-  const int firstX = x + (width - stripWidth) / 2;
+  const int sizingStripWidth = cardWidth * 5 + sizingGap * 4;
+  const int sizingFirstX = x + (width - sizingStripWidth) / 2;
   const int cardY = y + (height - cardHeight) / 2;
+  const int firstFullX = sizingFirstX + cardWidth + sizingGap;
+  const int firstX = firstFullX - cardWidth - gap;
   const int firstVisibleX = std::max(x, firstX);
   const int firstVisibleWidth = std::min(x + width, firstX + cardWidth) - firstVisibleX;
-  const int lastX = firstX + 4 * (cardWidth + gap);
+  const int lastX = firstFullX + 3 * (cardWidth + gap);
   const int lastVisibleWidth = std::min(cardWidth, x + width - lastX);
 
   return {{{firstVisibleX, cardY, firstVisibleWidth, cardHeight, -1, 0.5f, cardWidth},
-           {firstX + cardWidth + gap, cardY, cardWidth, cardHeight, 0, 0.5f, cardWidth},
-           {firstX + 2 * (cardWidth + gap), cardY, cardWidth, cardHeight, 1, 0.5f, cardWidth},
-           {firstX + 3 * (cardWidth + gap), cardY, cardWidth, cardHeight, 2, 0.5f, cardWidth},
+           {firstFullX, cardY, cardWidth, cardHeight, 0, 0.5f, cardWidth},
+           {firstFullX + cardWidth + gap, cardY, cardWidth, cardHeight, 1, 0.5f, cardWidth},
+           {firstFullX + 2 * (cardWidth + gap), cardY, cardWidth, cardHeight, 2, 0.5f, cardWidth},
            {lastX, cardY, lastVisibleWidth, cardHeight, 3, 0.5f, cardWidth}}};
 }

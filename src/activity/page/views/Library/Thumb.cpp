@@ -82,21 +82,24 @@ void drawFolderBookCountBadge(const GfxRenderer& renderer, const int x, const in
   renderer.text.render(font, badgeX + paddingX, badgeY + paddingY, label.c_str(), false);
 }
 
-void drawItemBadge(const GfxRenderer& renderer, const int x, const int y, const int width,
+void drawItemBadge(const GfxRenderer& renderer, const int x, const int y, const int width, const int height,
                    const std::string& label) {
-  if (label.empty() || width < 8) return;
+  if (label.empty() || width < 8 || height < 8) return;
   constexpr int paddingX = 6;
   constexpr int paddingY = 4;
   constexpr int margin = 5;
   const int font = systemFontIdForPointSize(8);
-  const int badgeWidth = renderer.text.getWidth(font, label.c_str()) + paddingX * 2;
-  const int badgeHeight = renderer.text.getLineHeight(font) + paddingY * 2;
-  const int badgeX = x + std::max(0, width - badgeWidth - margin);
-  const int badgeY = y + margin;
+  const int maxTextWidth = std::max(1, width - paddingX * 2);
+  const std::string shown = renderer.text.truncate(font, label.c_str(), maxTextWidth);
+  const int badgeWidth = std::min(width, renderer.text.getWidth(font, shown.c_str()) + paddingX * 2);
+  const int badgeHeight = std::min(height, renderer.text.getLineHeight(font) + paddingY * 2);
+  const int badgeX = x + std::max(0, width - badgeWidth - std::min(margin, width - badgeWidth));
+  const int badgeY = y + std::min(margin, height - badgeHeight);
   renderer.rectangle.fill(badgeX, badgeY, badgeWidth, badgeHeight,
                           static_cast<int>(GfxRenderer::FillTone::Ink), true);
   renderer.rectangle.render(badgeX, badgeY, badgeWidth, badgeHeight, false, true);
-  renderer.text.render(font, badgeX + paddingX, badgeY + paddingY, label.c_str(), false);
+  renderer.text.render(font, badgeX + std::min(paddingX, badgeWidth / 2),
+                       badgeY + std::max(0, (badgeHeight - renderer.text.getLineHeight(font)) / 2), shown.c_str(), false);
 }
 
 std::string parent(const std::string& path) {
@@ -138,7 +141,11 @@ void drawContrastFrame(GfxRenderer& renderer, const int x, const int y, const in
                        const bool rounded) {
   if (width < 1 || height < 1) return;
   renderer.rectangle.render(x, y, width, height, true, rounded);
-  if (width > 3 && height > 3) {
+  // A white inset frame produces sharp white pixels at the lower corners of
+  // rounded covers, especially when the artwork has a dark/gray shadow.
+  // The outer border is sufficient for rounded thumbnails; retain the inset
+  // cleanup only for square thumbnails.
+  if (!rounded && width > 3 && height > 3) {
     renderer.rectangle.render(x + 1, y + 1, width - 2, height - 2, false, rounded);
   }
 }
@@ -188,6 +195,28 @@ bool cover(GfxRenderer& renderer, const std::string& path, const int x, const in
   }
   if (frame) drawContrastFrame(renderer, x, y, width, height, rounded);
   return true;
+}
+
+struct FittedCoverBounds {
+  int x;
+  int y;
+  int width;
+  int height;
+};
+
+FittedCoverBounds fittedCoverBounds(const std::string& path, const int x, const int y, const int width,
+                                    const int height) {
+  if (path.empty() || width < 1 || height < 1) return {x, y, width, height};
+  int sourceWidth = 0;
+  int sourceHeight = 0;
+  if (!ImageRender::getDimensions(path, &sourceWidth, &sourceHeight) || sourceWidth <= 0 || sourceHeight <= 0) {
+    return {x, y, width, height};
+  }
+  const float scale = std::min(static_cast<float>(width) / sourceWidth,
+                               static_cast<float>(height) / sourceHeight);
+  const int fittedWidth = std::max(1, static_cast<int>(std::lround(sourceWidth * scale)));
+  const int fittedHeight = std::max(1, static_cast<int>(std::lround(sourceHeight * scale)));
+  return {x + (width - fittedWidth) / 2, y + (height - fittedHeight) / 2, fittedWidth, fittedHeight};
 }
 
 // Keep a small gap between the cover and the title at the bottom of a tile.
@@ -569,7 +598,8 @@ void Thumb::preloadFolderCache(const Thumbnail& thumbnail, const int x, const in
   const int imageY = y + padding;
   const int imageHeight = std::max(8, height - titleHeight - padding * 2);
   const int imageWidth = std::max(12, width - padding * 2);
-  preloadImageCache(frontPath, x + padding, imageY, imageWidth, imageHeight, hideTitle, 0.5f);
+  const FittedCoverBounds image = fittedCoverBounds(frontPath, x + padding, imageY, imageWidth, imageHeight);
+  preloadImageCache(frontPath, image.x, image.y, image.width, image.height, false, 0.5f);
 }
 
 const Thumb::Thumbnail* Thumb::find(const std::string& item) const {
@@ -593,12 +623,13 @@ void Thumb::drawItem(const LibraryIndex::Book& item, const int x, const int y, c
     const int imageHeight = std::max(8, height - titleHeight - padding * 2);
     if (thumbnail && thumbnail->loaded && !thumbnail->first.empty()) {
       const int imageWidth = std::max(12, width - padding * 2);
-      cover(renderer, thumbnail->first, x + padding, imageY, imageWidth, imageHeight, rounded, true, hideTitle);
+      const FittedCoverBounds image = fittedCoverBounds(thumbnail->first, x + padding, imageY, imageWidth, imageHeight);
+      cover(renderer, thumbnail->first, image.x, image.y, image.width, image.height, rounded, true, false);
       if (!hideTitle) {
         folderLabel(renderer, bookTitle(item), x + padding, imageWidth, y, height, evenThumbnails ? 5 : 10);
       }
-      drawFavoriteBadge(renderer, x + padding, imageY, imageWidth, favorite, false);
-      drawFolderBookCountBadge(renderer, x + padding, imageY, imageWidth, imageHeight, thumbnail->bookCount);
+      drawFavoriteBadge(renderer, image.x, image.y, image.width, favorite, false);
+      drawFolderBookCountBadge(renderer, image.x, image.y, image.width, image.height, thumbnail->bookCount);
       return;
     }
 
@@ -607,14 +638,15 @@ void Thumb::drawItem(const LibraryIndex::Book& item, const int x, const int y, c
 
     if (thumbnail && thumbnail->loaded && !thumbnail->image.empty()) {
       const int imageWidth = std::max(12, width - padding * 2);
-      cover(renderer, thumbnail->image, x + padding, imageY, imageWidth, imageHeight, rounded, true, hideTitle);
+      const FittedCoverBounds image = fittedCoverBounds(thumbnail->image, x + padding, imageY, imageWidth, imageHeight);
+      cover(renderer, thumbnail->image, image.x, image.y, image.width, image.height, rounded, true, false);
       if (!hideTitle) {
         folderLabel(renderer, singleBookTitle.empty() ? bookTitle(item) : singleBookTitle, x + padding, imageWidth, y,
                     height, evenThumbnails ? 5 : 10);
       }
-      drawFavoriteBadge(renderer, x + padding, imageY, imageWidth, favorite, false);
+      drawFavoriteBadge(renderer, image.x, image.y, image.width, favorite, false);
       if (!singleBook) {
-        drawFolderBookCountBadge(renderer, x + padding, imageY, imageWidth, imageHeight, thumbnail->bookCount);
+        drawFolderBookCountBadge(renderer, image.x, image.y, image.width, image.height, thumbnail->bookCount);
       }
       return;
     }
@@ -650,7 +682,7 @@ void Thumb::drawItem(const LibraryIndex::Book& item, const int x, const int y, c
               hasSize, hideTitle)) {
       if (!hideTitle) folderLabel(renderer, bookTitle(item), x + padding, imageAreaWidth, y, height);
       drawFavoriteBadge(renderer, imageX, imageY, imageWidth, favorite);
-      drawItemBadge(renderer, imageX, imageY, imageWidth, item.badge);
+      drawItemBadge(renderer, imageX, imageY, imageWidth, imageHeight, item.badge);
       return;
     }
   }
@@ -666,7 +698,7 @@ void Thumb::drawItem(const LibraryIndex::Book& item, const int x, const int y, c
               hideTitle ? bookTitle(item) : "");
   if (!hideTitle) folderLabel(renderer, bookTitle(item), x + padding, std::max(8, width - padding * 2), y, height);
   drawFavoriteBadge(renderer, placeholderX, imageAreaY, placeholderWidth, favorite);
-  drawItemBadge(renderer, placeholderX, imageAreaY, placeholderWidth, item.badge);
+  drawItemBadge(renderer, placeholderX, imageAreaY, placeholderWidth, imageAreaHeight, item.badge);
 }
 
 void Thumb::itemBounds(const int index, int& x, int& y, int& width, int& height) const {
