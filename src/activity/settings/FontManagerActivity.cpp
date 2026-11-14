@@ -20,6 +20,7 @@
 #include "state/ReaderPreset.h"
 #include "state/ReaderSetting.h"
 #include "system/FontManager.h"
+#include "system/FontPreviews.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
 #include "util/StringUtils.h"
@@ -624,8 +625,14 @@ void FontManagerActivity::render() {
     renderer.rectangle.render(cardX, cardY, cardWidth, cardHeight, true, rounded);
     const int contentX = cardX + kTransferCardPadding;
     renderer.text.render(font, contentX, headerY, "Font download", true, EpdFontFamily::BOLD);
-    const std::string displayName = renderer.text.truncate(font, packageName.c_str(), cardWidth - 2 * kTransferCardPadding);
-    renderer.text.render(font, contentX, nameY, displayName.c_str(), true);
+    const int packagePreviewFont = packageIndex >= 0 && packageIndex < static_cast<int>(packages_.size())
+                                       ? FontPreviews::fontIdForFamily(
+                                             packages_[static_cast<size_t>(packageIndex)].installFamily)
+                                       : -1;
+    const int nameFont = packagePreviewFont >= 0 ? packagePreviewFont : font;
+    const std::string displayName = renderer.text.truncate(nameFont, packageName.c_str(),
+                                                            cardWidth - 2 * kTransferCardPadding);
+    renderer.text.render(nameFont, contentX, nameY, displayName.c_str(), true);
     renderer.text.render(font, contentX, firstRowY, "Download", true);
     char percentText[8];
     std::snprintf(percentText, sizeof(percentText), "%d%%", percent);
@@ -676,10 +683,9 @@ void FontManagerActivity::render() {
                                    ? screenW - (kSideMargin * 2) - percentWidth - 20
                                    : screenW - (kSideMargin * 2) - kActionIconSize - 20;
       const std::string displayName = displayFontName(packages_[static_cast<size_t>(packageIndex)].name);
-      // Keep the Store download list on the configured system font. Package
-      // names used to switch to a preview font here, which made this page
-      // ignore Settings -> Display -> System Font.
-      const int nameFont = font;
+      const int previewFont =
+          FontPreviews::fontIdForFamily(packages_[static_cast<size_t>(packageIndex)].installFamily);
+      const int nameFont = previewFont >= 0 ? previewFont : font;
       const int textY = y + (kRowHeight - renderer.text.getLineHeight(nameFont)) / 2;
       const std::string packageName = renderer.text.truncate(nameFont, displayName.c_str(), maxNameWidth,
                                                               EpdFontFamily::REGULAR);

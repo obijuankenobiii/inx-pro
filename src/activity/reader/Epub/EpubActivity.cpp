@@ -75,6 +75,7 @@ constexpr int kWordSelectionActionGap = 14;
 constexpr int kWordSelectionActionBarPadding = 20;
 constexpr bool kWordSelectionActionBarVertical = true;
 constexpr float kTocSwipeStartNx = 0.12f;
+constexpr float kSettingsSwipeStartMaxNy = 0.15f;
 
 bool pageImageFootprintAtLeastHalfScreen(const Page& page, const GfxRenderer& renderer, int marginLeft, int marginTop) {
   if (!page.hasImages()) {
@@ -1677,14 +1678,28 @@ void EpubActivity::loop() {
     return;
   }
 
+  const bool readerTouchEnabled = readerTouchEnabled_;
+
   // Opening the in-book settings drawer remains available even when reader
   // touch actions are disabled. The drawer itself owns input while visible.
-  if (mappedInput.wasTouchSwipeDownForRenderer(renderer)) {
+  float settingsSwipeStartNx = 0.0f;
+  float settingsSwipeStartNy = 0.0f;
+  if (mappedInput.wasTouchSwipeDownInScreen(renderer, settingsSwipeStartNx, settingsSwipeStartNy) &&
+      settingsSwipeStartNy <= kSettingsSwipeStartMaxNy) {
     pauseReadingStats();
     toggleSettingsDrawer();
     lastAutoPageTurnTime = millis();
     return;
   }
+
+#if INX_HAS_FRONTLIGHT || FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
+  // An upward swipe from the reader's edge bands controls the frontlight. Check
+  // this before the generic upward swipe, which otherwise exits the reader.
+  if (readerTouchEnabled && !READER_SETTINGS.disableLightControl &&
+      frontlight_ui::handleEdgeSwipe(mappedInput, renderer)) {
+    return;
+  }
+#endif
 
   if (mappedInput.wasTouchSwipeUpForRenderer(renderer)) {
     pauseReadingStats();
@@ -1693,15 +1708,7 @@ void EpubActivity::loop() {
     return;
   }
 
-  const bool readerTouchEnabled = readerTouchEnabled_;
-
   if (readerTouchEnabled) {
-#if INX_HAS_FRONTLIGHT || FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
-  if (!READER_SETTINGS.disableLightControl && frontlight_ui::handleEdgeSwipe(mappedInput, renderer)) {
-    return;
-  }
-#endif
-
   float backGestureStartX = 0.0f;
   float backGestureStartY = 0.0f;
   if (mappedInput.wasTouchSwipeRightInScreen(renderer, backGestureStartX, backGestureStartY) &&

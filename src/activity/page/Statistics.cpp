@@ -1805,7 +1805,8 @@ void Statistics::renderSingleBookTopSection(const int bookIdx) const {
     const int itemY = timeListTop + index * (timeItemHeight + kTimeItemGap);
     const bool selected = index == selectedTime;
     constexpr int kSelectedTimeHorizontalInset = 10;
-    const int iconSize = std::max(1, std::min(40, timeItemHeight - 8));
+    constexpr int kTimeIconMaxSize = 30;
+    const int iconSize = std::max(1, std::min(kTimeIconMaxSize, timeItemHeight - 12));
     const int iconX = timeListX + kSelectedTimeHorizontalInset + 7;
     const int iconY = itemY + (timeItemHeight - iconSize) / 2;
     if (selected) {
