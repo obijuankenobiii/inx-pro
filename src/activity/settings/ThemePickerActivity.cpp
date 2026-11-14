@@ -1120,7 +1120,12 @@ void ThemePickerActivity::initializeNewThemeEditor() {
 }
 
 void ThemePickerActivity::applySelectedLayout() {
-  const HomeTheme::Layout nextLayout = layoutAtIndex(layoutSelection_);
+  // Half-stack layouts share the 1x3 picker entry. In edit mode, confirming
+  // that already-selected entry must not discard the saved section ratios.
+  const HomeTheme::Layout nextLayout = !creatingTheme_ && isHalfStackLayout(layout_) &&
+                                               layoutSelection_ == layoutIndex(layout_)
+                                           ? layout_
+                                           : layoutAtIndex(layoutSelection_);
   if (creatingTheme_) {
     layout_ = nextLayout;
     initializeNewThemeEditor();
