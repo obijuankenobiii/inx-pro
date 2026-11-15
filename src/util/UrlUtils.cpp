@@ -34,6 +34,12 @@ std::string buildUrl(const std::string& serverUrl, const std::string& path) {
   if (path.empty()) {
     return urlWithProtocol;
   }
+  // OPDS feeds commonly provide absolute acquisition links. Do not append
+  // those to the catalog URL (which would turn https://... into a relative
+  // path such as /search.opds/https://...).
+  if (path.find("://") != std::string::npos) {
+    return path;
+  }
   if (path[0] == '/') {
     return extractHost(urlWithProtocol) + path;
   }

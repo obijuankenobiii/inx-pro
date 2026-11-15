@@ -15,54 +15,29 @@
 #include "activity/page/SubPage.h"
 #include "activity/page/components/global/Button.h"
 #include "activity/network/WifiSelectionActivity.h"
-#include "images/Download.h"
 #include "network/HttpDownloader.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
 #include "system/ScreenComponents.h"
+#include "activity/settings/SettingsListLayout.h"
 #include "util/StringUtils.h"
 #include "util/UrlUtils.h"
 
 namespace {
 constexpr uint32_t kDisplayTaskStack = 8192;
-constexpr int PAGE_ITEMS = 8;
 constexpr int SKIP_PAGE_MS = 700;
-constexpr int kListItemHeight = UiPage::LIST_ITEM_HEIGHT;
-constexpr int kBodyTop = FREEINK_DEVICE_X4PRO ? 80 : 70;
+constexpr int kListItemHeight = SettingsListLayout::kRowHeight;
+constexpr int kDividerInset = SettingsListLayout::kDividerInset;
+constexpr int kBodyTop = FREEINK_DEVICE_X4PRO ? 80 : 75;
+
+int pageItemCount(const GfxRenderer& renderer) {
+  return std::max(1, (renderer.getScreenHeight() - kBodyTop) / kListItemHeight);
+}
 
 ButtonBounds retryButtonBounds(const GfxRenderer& renderer) {
   const int width = Button::width(renderer, "Retry", systemFontId());
   return {renderer.getScreenWidth() - width - 20, renderer.getScreenHeight() - Button::height - 20, width,
           Button::height};
-}
-
-constexpr int kActionIconSize = 40;
-constexpr int kActionGap = 10;
-constexpr int kActionRightMargin = 20;
-constexpr int kActionBottomMargin = 20;
-
-int actionButtonWidth(const GfxRenderer& renderer, const char* label) {
-  return renderer.text.getWidth(systemFontId(), label) + kActionIconSize + kActionGap + Button::horizontalPadding * 2;
-}
-
-ButtonBounds downloadButtonBounds(const GfxRenderer& renderer) {
-  const int width = actionButtonWidth(renderer, "Download");
-  return {renderer.getScreenWidth() - kActionRightMargin - width,
-          renderer.getScreenHeight() - kActionBottomMargin - Button::height, width, Button::height};
-}
-
-void renderDownloadButton(const GfxRenderer& renderer, const ButtonBounds& bounds) {
-  const int font = systemFontId();
-  const int labelWidth = renderer.text.getWidth(font, "Download");
-  const int contentWidth = labelWidth + kActionGap + kActionIconSize;
-  const int contentX = bounds.x + (bounds.width - contentWidth) / 2;
-  const int textY = bounds.y + (bounds.height - renderer.text.getLineHeight(font)) / 2;
-  const int iconY = bounds.y + (bounds.height - kActionIconSize) / 2;
-
-  Button::render(renderer, bounds, "", true, font);
-  renderer.text.render(font, contentX, textY, "Download", false, EpdFontFamily::REGULAR);
-  renderer.bitmap.icon(Download, contentX + labelWidth + kActionGap, iconY, kActionIconSize, kActionIconSize,
-                       BitmapRender::Orientation::None, true);
 }
 
 bool contains(const ButtonBounds& bounds, const int x, const int y) {
@@ -186,20 +161,12 @@ void OpdsBookBrowserActivity::loop() {
       float tapNx = 0.0f;
       float tapNy = 0.0f;
       if (mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy)) {
-        if (!entries.empty() && entries[static_cast<size_t>(selectorIndex)].type == OpdsEntryType::BOOK) {
-          const int tapX = static_cast<int>(tapNx * renderer.getScreenWidth());
-          const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
-          if (contains(downloadButtonBounds(renderer), tapX, tapY)) {
-            downloadBook(entries[static_cast<size_t>(selectorIndex)]);
-            return;
-          }
-        }
-
         const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
-        const int pageStartIndex = selectorIndex / PAGE_ITEMS * PAGE_ITEMS;
+        const int itemsPerPage = pageItemCount(renderer);
+        const int pageStartIndex = selectorIndex / itemsPerPage * itemsPerPage;
         const int visibleIndex = (tapY - kBodyTop) / kListItemHeight;
         const int tappedIndex = pageStartIndex + visibleIndex;
-        if (tapY >= kBodyTop && visibleIndex >= 0 && visibleIndex < PAGE_ITEMS &&
+        if (tapY >= kBodyTop && visibleIndex >= 0 && visibleIndex < itemsPerPage &&
             tappedIndex >= 0 && tappedIndex < static_cast<int>(entries.size())) {
           selectorIndex = tappedIndex;
           const auto& entry = entries[static_cast<size_t>(tappedIndex)];
@@ -231,14 +198,16 @@ void OpdsBookBrowserActivity::loop() {
       navigateBack();
     } else if (prevReleased && !entries.empty()) {
       if (skipPage) {
-        selectorIndex = ((selectorIndex / PAGE_ITEMS - 1) * PAGE_ITEMS + entries.size()) % entries.size();
+        const int itemsPerPage = pageItemCount(renderer);
+        selectorIndex = ((selectorIndex / itemsPerPage - 1) * itemsPerPage + entries.size()) % entries.size();
       } else {
         selectorIndex = (selectorIndex + entries.size() - 1) % entries.size();
       }
       updateRequired = true;
     } else if (nextReleased && !entries.empty()) {
       if (skipPage) {
-        selectorIndex = ((selectorIndex / PAGE_ITEMS + 1) * PAGE_ITEMS) % entries.size();
+        const int itemsPerPage = pageItemCount(renderer);
+        selectorIndex = ((selectorIndex / itemsPerPage + 1) * itemsPerPage) % entries.size();
       } else {
         selectorIndex = (selectorIndex + 1) % entries.size();
       }
@@ -312,11 +281,7 @@ void OpdsBookBrowserActivity::render() const {
     return;
   }
 
-  const char* confirmLabel = "Open";
-  if (!entries.empty() && entries[selectorIndex].type == OpdsEntryType::BOOK) {
-    confirmLabel = "Download";
-  }
-  const auto labels = mappedInput.mapLabels("« Back", confirmLabel, "", "");
+  const auto labels = mappedInput.mapLabels("« Back", "Select", "", "");
 
   if (entries.empty()) {
     renderer.text.centered(systemFontId(), bodyTop + (pageHeight - bodyTop - 80) / 2,
@@ -325,20 +290,17 @@ void OpdsBookBrowserActivity::render() const {
     return;
   }
 
-  const auto pageStartIndex = selectorIndex / PAGE_ITEMS * PAGE_ITEMS;
+  const int itemsPerPage = pageItemCount(renderer);
+  const auto pageStartIndex = selectorIndex / itemsPerPage * itemsPerPage;
 
-  for (size_t i = pageStartIndex; i < entries.size() && i < static_cast<size_t>(pageStartIndex + PAGE_ITEMS); i++) {
+  for (size_t i = pageStartIndex; i < entries.size() && i < static_cast<size_t>(pageStartIndex + itemsPerPage); i++) {
     const auto& entry = entries[i];
     const int visibleIndex = static_cast<int>(i - pageStartIndex);
     const int itemY = bodyTop + visibleIndex * kListItemHeight;
-    const bool isSelected = i == static_cast<size_t>(selectorIndex);
-    if (isSelected) {
-      renderer.rectangle.fill(0, itemY, pageWidth, kListItemHeight, static_cast<int>(GfxRenderer::FillTone::Ink));
-    }
 
     std::string displayText;
     if (entry.type == OpdsEntryType::NAVIGATION) {
-      displayText = "> " + entry.title;
+      displayText = entry.title;
     } else {
       displayText = entry.title;
       if (!entry.author.empty()) {
@@ -346,16 +308,15 @@ void OpdsBookBrowserActivity::render() const {
       }
     }
 
-    auto item =
-        renderer.text.truncate(systemFontId(), displayText.c_str(), renderer.getScreenWidth() - 40);
+    auto item = renderer.text.truncate(systemFontId(), displayText.c_str(), renderer.getScreenWidth() - 40);
     const int textY = itemY + (kListItemHeight - renderer.text.getLineHeight(systemFontId())) / 2;
-    renderer.text.render(systemFontId(), 20, textY, item.c_str(), !isSelected);
-    renderer.line.render(0, itemY + kListItemHeight - 1, pageWidth, itemY + kListItemHeight - 1, true,
-                         LineRender::Style::Dotted);
-  }
-
-  if (entries[static_cast<size_t>(selectorIndex)].type == OpdsEntryType::BOOK) {
-    renderDownloadButton(renderer, downloadButtonBounds(renderer));
+    renderer.text.render(systemFontId(), 20, textY, item.c_str(), true);
+    const bool hasNextVisibleItem = i + 1 < entries.size() &&
+                                    i + 1 < static_cast<size_t>(pageStartIndex + itemsPerPage);
+    if (hasNextVisibleItem) {
+      renderer.line.render(kDividerInset, itemY + kListItemHeight - 1, pageWidth - kDividerInset,
+                           itemY + kListItemHeight - 1, true, LineRender::Style::Dotted);
+    }
   }
 
   renderer.displayBuffer();
