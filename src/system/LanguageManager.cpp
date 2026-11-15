@@ -425,8 +425,6 @@ constexpr FallbackKey kFallbackKeys[] = {
     {"Gestures", "settings.gestures"},
     {"Set up quick actions menu", "settings.quick_actions_setup"},
     {"Disable light control", "settings.disable_light_control"},
-    {"Page turn", "settings.page_turn"},
-    {"Double tap", "settings.double_tap"},
     {"Swipe", "value.swipe"},
     {"Tap", "value.tap"},
     {"Table of Content", "reader_action.table_of_content"},

@@ -11,6 +11,7 @@
 
 #include "activity/ActivityWithSubactivity.h"
 #include "SettingsListLayout.h"
+#include "state/ReaderSetting.h"
 
 class ButtonMappingActivity final : public ActivityWithSubactivity {
  public:
@@ -25,7 +26,7 @@ class ButtonMappingActivity final : public ActivityWithSubactivity {
 
  private:
   static constexpr int kButtonCount = 5;
-  static constexpr int kGestureCount = 3;
+  static constexpr int kGestureCount = 4;
   static constexpr int kQuickActionRow = 0;
   static constexpr int kButtonStartRow = kQuickActionRow + 1;
   static constexpr int kGestureStartRow = kButtonStartRow + kButtonCount;
@@ -33,8 +34,15 @@ class ButtonMappingActivity final : public ActivityWithSubactivity {
   static constexpr int kSectionHeaderHeight = 24;
   static constexpr int kRowHeight = SettingsListLayout::kRowHeight;
   static constexpr int kDisableLightRow = kGestureStartRow;
-  static constexpr int kPageTurnRow = kGestureStartRow + 1;
-  static constexpr int kDoubleTapRow = kGestureStartRow + 2;
+  static constexpr int kTapZoneRow = kGestureStartRow + 1;
+  static constexpr int kDoubleTapZoneRow = kGestureStartRow + 2;
+  static constexpr int kSwipeZoneRow = kGestureStartRow + 3;
+  static constexpr int kTapZoneSelectorRow = -2;
+  static constexpr int kSwipeZoneSelectorRow = -3;
+  enum class SwipeDirection : uint8_t { Up, Down, Left, Right };
+  static constexpr int kTapZoneColumns = ReaderSetting::TAP_ZONE_COLUMNS;
+  static constexpr int kTapZoneRows = ReaderSetting::TAP_ZONE_ROWS;
+  static constexpr int kTapZoneCount = ReaderSetting::TAP_ZONE_COUNT;
   static constexpr int kQuickActionToButtonGap = 20;
   static constexpr int kButtonToGesturesGap = 20;
 
@@ -48,7 +56,13 @@ class ButtonMappingActivity final : public ActivityWithSubactivity {
   void handleListInput();
   void handleMainInput();
   void handleGestureInput(int row);
+  void handleTapGridInput();
+  void handleSwipeGridInput();
   void renderSelector();
+  void renderTapGrid();
+  void renderSwipeGrid();
+  void openTapZoneSelector(int cell);
+  void openSwipeZoneSelector(int cell, SwipeDirection direction);
   uint8_t* actionSlot(int row);
   const uint8_t* actionSlot(int row) const;
   int itemRowAtY(int tapY) const;
@@ -60,9 +74,15 @@ class ButtonMappingActivity final : public ActivityWithSubactivity {
   Section section_ = Section::Main;
   int selectedRow_ = 0;
   bool selectorOpen_ = false;
+  bool tapGridOpen_ = false;
+  bool swipeGridOpen_ = false;
   bool subFinished_ = false;
   int selectorRow_ = -1;
   int selectorSelected_ = 0;
   int selectorScroll_ = 0;
+  int tapZoneCell_ = -1;
+  bool tapGridDoubleTap_ = false;
+  int swipeZoneCell_ = -1;
+  SwipeDirection swipeGridDirection_ = SwipeDirection::Up;
   std::vector<uint8_t> selectorActions_;
 };

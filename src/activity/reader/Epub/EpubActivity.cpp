@@ -1680,6 +1680,12 @@ void EpubActivity::loop() {
 
   const bool readerTouchEnabled = readerTouchEnabled_;
 
+  // Configured swipe zones take priority over the reader's built-in vertical
+  // gestures. An unconfigured zone falls through to the normal behavior below.
+  if (readerTouchEnabled && btnBindings_.handleTouchSwipe(*this)) {
+    return;
+  }
+
   // Opening the in-book settings drawer remains available even when reader
   // touch actions are disabled. The drawer itself owns input while visible.
   float settingsSwipeStartNx = 0.0f;
@@ -1722,23 +1728,16 @@ void EpubActivity::loop() {
     return;
   }
 
-  if (READER_SETTINGS.pageTurnMode == ReaderSetting::PAGE_TURN_SWIPE) {
-    if (mappedInput.wasTouchSwipeLeftForRenderer(renderer)) {
-      endPageTimer();
-      pageTurn(true);
-      lastAutoPageTurnTime = millis();
-      return;
-    }
-    if (mappedInput.wasTouchSwipeRightForRenderer(renderer)) {
-      endPageTimer();
-      pageTurn(false);
-      lastAutoPageTurnTime = millis();
-      return;
-    }
-  } else if (mappedInput.wasTouchSwipeRightInScreen(renderer, backGestureStartX, backGestureStartY) &&
-             backGestureStartX <= kTocSwipeStartNx) {
-    pauseReadingStats();
-    openTableOfContents();
+  if (mappedInput.wasTouchSwipeLeftForRenderer(renderer)) {
+    endPageTimer();
+    pageTurn(true);
+    lastAutoPageTurnTime = millis();
+    return;
+  }
+  if (mappedInput.wasTouchSwipeRightForRenderer(renderer)) {
+    endPageTimer();
+    pageTurn(false);
+    lastAutoPageTurnTime = millis();
     return;
   }
 

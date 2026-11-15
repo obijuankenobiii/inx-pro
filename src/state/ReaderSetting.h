@@ -119,6 +119,30 @@ class ReaderSetting {
   /** Reader double-tap action. BTN_ACTION_NONE disables the gesture. */
   uint8_t doubleTapAction = SystemSetting::BTN_ACTION_NONE;
 
+  /** Action assigned to each reader tap zone, stored as three full-height vertical zones. */
+  static constexpr uint8_t TAP_ZONE_COLUMNS = 3;
+  static constexpr uint8_t TAP_ZONE_ROWS = 1;
+  static constexpr uint8_t TAP_ZONE_COUNT = TAP_ZONE_COLUMNS * TAP_ZONE_ROWS;
+  /** Storage remains 12 entries so settings files written by the previous 3x4 editor stay readable. */
+  static constexpr uint8_t TAP_ZONE_STORAGE_COUNT = 12;
+  uint8_t tapZoneActions[TAP_ZONE_STORAGE_COUNT] = {
+      SystemSetting::BTN_ACTION_PAGE_PREVIOUS, SystemSetting::BTN_ACTION_PAGE_NEXT,
+      SystemSetting::BTN_ACTION_PAGE_NEXT,     SystemSetting::BTN_ACTION_PAGE_PREVIOUS,
+      SystemSetting::BTN_ACTION_PAGE_NEXT,     SystemSetting::BTN_ACTION_PAGE_NEXT,
+      SystemSetting::BTN_ACTION_PAGE_PREVIOUS, SystemSetting::BTN_ACTION_PAGE_NEXT,
+      SystemSetting::BTN_ACTION_PAGE_NEXT,     SystemSetting::BTN_ACTION_PAGE_PREVIOUS,
+      SystemSetting::BTN_ACTION_PAGE_NEXT,     SystemSetting::BTN_ACTION_PAGE_NEXT};
+  uint8_t doubleTapZoneActions[TAP_ZONE_STORAGE_COUNT] = {};
+
+  /** Actions assigned to exactly three full-height reader swipe zones. */
+  static constexpr uint8_t SWIPE_ZONE_COLUMNS = 3;
+  static constexpr uint8_t SWIPE_ZONE_ROWS = 1;
+  static constexpr uint8_t SWIPE_ZONE_COUNT = SWIPE_ZONE_COLUMNS * SWIPE_ZONE_ROWS;
+  uint8_t swipeUpZoneActions[SWIPE_ZONE_COUNT] = {};
+  uint8_t swipeDownZoneActions[SWIPE_ZONE_COUNT] = {};
+  uint8_t swipeLeftZoneActions[SWIPE_ZONE_COUNT] = {};
+  uint8_t swipeRightZoneActions[SWIPE_ZONE_COUNT] = {};
+
   /** Default language package for books. Empty means follow the system UI language. */
   char defaultLanguageCode[33] = "";
 

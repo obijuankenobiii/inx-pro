@@ -14,6 +14,7 @@
 
 #include "activity/page/SubPage.h"
 #include "activity/page/components/global/PopUp.h"
+#include "activity/page/navigation/Menu.h"
 #include "activity/settings/QuickActionsSettingsActivity.h"
 #include "activity/settings/ReaderFontSettingsDraw.h"
 #include "images/LibraryFilterRight.h"
@@ -41,8 +42,6 @@ const char* buttonLabel(const int row) {
   return kLabels[row];
 }
 
-const char* pageTurnLabel(const uint8_t mode) { return mode == ReaderSetting::PAGE_TURN_SWIPE ? "Swipe" : "Tap"; }
-
 bool isSupportedReaderAction(const int action) {
 #if INX_HAS_FRONTLIGHT
   return true;
@@ -63,9 +62,177 @@ std::vector<uint8_t> doubleTapActions() {
   return actions;
 }
 
-const char* doubleTapActionLabel(const uint8_t action) {
-  return action == SystemSetting::BTN_ACTION_TABLE_OF_CONTENTS ? "Table of Content"
-                                                                : SystemSetting::readerButtonActionLabel(action);
+constexpr int kTapGridInset = 20;
+constexpr int kTapGridTopPadding = 10;
+constexpr int kTapGridBottomPadding = 20;
+constexpr int kTapGridGap = 0;
+constexpr int kTapGridDotSpacing = 4;
+
+int tapGridBodyTop() {
+  return navigation::Menu::topPadding + navigation::Menu::iconSize + 20;
+}
+
+struct TapGridCellBounds {
+  int x;
+  int y;
+  int width;
+  int height;
+};
+
+TapGridCellBounds tapGridCellBounds(const GfxRenderer& renderer, const int cell) {
+  const int gridX = kTapGridInset;
+  const int gridY = tapGridBodyTop() + kTapGridTopPadding;
+  const int gridWidth = renderer.getScreenWidth() - kTapGridInset * 2;
+  const int gridHeight = renderer.getScreenHeight() - gridY - kTapGridBottomPadding;
+  const int cellWidth = (gridWidth - kTapGridGap * (ReaderSetting::TAP_ZONE_COLUMNS - 1)) /
+                        ReaderSetting::TAP_ZONE_COLUMNS;
+  const int cellHeight = (gridHeight - kTapGridGap * (ReaderSetting::TAP_ZONE_ROWS - 1)) /
+                         ReaderSetting::TAP_ZONE_ROWS;
+  const int column = cell % ReaderSetting::TAP_ZONE_COLUMNS;
+  const int row = cell / ReaderSetting::TAP_ZONE_COLUMNS;
+  return {gridX + column * (cellWidth + kTapGridGap), gridY + row * (cellHeight + kTapGridGap), cellWidth,
+          cellHeight};
+}
+
+TapGridCellBounds swipeGridCellBounds(const GfxRenderer& renderer, const int cell) {
+  const int gridX = kTapGridInset;
+  const int gridY = tapGridBodyTop() + kTapGridTopPadding;
+  const int gridWidth = renderer.getScreenWidth() - kTapGridInset * 2;
+  const int gridHeight = renderer.getScreenHeight() - gridY - kTapGridBottomPadding;
+  const int cellWidth = (gridWidth - kTapGridGap * (ReaderSetting::SWIPE_ZONE_COLUMNS - 1)) /
+                        ReaderSetting::SWIPE_ZONE_COLUMNS;
+  const int cellHeight = (gridHeight - kTapGridGap * (ReaderSetting::SWIPE_ZONE_ROWS - 1)) /
+                         ReaderSetting::SWIPE_ZONE_ROWS;
+  const int column = cell % ReaderSetting::SWIPE_ZONE_COLUMNS;
+  const int row = 0;
+  return {gridX + column * (cellWidth + kTapGridGap), gridY + row * (cellHeight + kTapGridGap), cellWidth,
+          cellHeight};
+}
+
+std::vector<std::string> wrapTapZoneLabel(const GfxRenderer& renderer, const int font, const std::string& label,
+                                          const int maxWidth) {
+  std::vector<std::string> lines;
+  std::string current;
+  size_t start = 0;
+  while (start < label.size()) {
+    const size_t end = label.find(' ', start);
+    const std::string word = label.substr(start, end == std::string::npos ? std::string::npos : end - start);
+    const std::string candidate = current.empty() ? word : current + " " + word;
+    if (!current.empty() && renderer.text.getWidth(font, candidate.c_str()) > maxWidth) {
+      lines.push_back(current);
+      current = word;
+    } else {
+      current = candidate;
+    }
+    if (end == std::string::npos) break;
+    start = end + 1;
+  }
+  if (!current.empty()) lines.push_back(current);
+  return lines;
+}
+
+void drawTapZoneDither(const GfxRenderer& renderer, const TapGridCellBounds& bounds) {
+  constexpr int inset = 1;
+  int row = 0;
+  for (int y = bounds.y + inset; y < bounds.y + bounds.height - inset; y += kTapGridDotSpacing, ++row) {
+    const int stagger = (row & 1) == 0 ? 0 : kTapGridDotSpacing / 2;
+    for (int x = bounds.x + inset + stagger; x < bounds.x + bounds.width - inset; x += kTapGridDotSpacing) {
+      renderer.drawPixel(x, y, true);
+    }
+  }
+}
+
+void renderCenteredRotatedLabel(const GfxRenderer& renderer, const TapGridCellBounds& bounds, const int font,
+                                const int centerX, const int centerY, const char* label) {
+  if (!label || *label == '\0') return;
+  const int sourceWidth = renderer.text.getWidth(font, label);
+  const int textHeight = renderer.text.getLineHeight(font);
+  const int topInset = renderer.text.getFontTopInset(font);
+  renderer.text.rotated90CW(font, centerX - textHeight / 2 - topInset, centerY + sourceWidth / 2,
+                            label, true, EpdFontFamily::REGULAR);
+}
+
+void drawVerticalSwipeAction(const GfxRenderer& renderer, const TapGridCellBounds& bounds, const int font,
+                             const int labelCenterX, const uint8_t action, const bool up) {
+  if (action == SystemSetting::BTN_ACTION_NONE) return;
+  constexpr int arrowSize = 13;
+  const int labelHeight = renderer.text.getLineHeight(font);
+  // Keep a 20pt clear gap between the rotated label and the arrowhead.
+  const int arrowX = labelCenterX + labelHeight / 2 + 20 + arrowSize;
+  // The supplied bounds are one visual third of a side column. The arrow shaft
+  // stays inside that third, with Down at its bottom and Up at its top.
+  const int arrowTipY = up ? bounds.y + 14 : bounds.y + bounds.height - 14;
+  const int baseY = up ? arrowTipY + arrowSize : arrowTipY - arrowSize;
+  const int pointsX[] = {arrowX, arrowX - arrowSize, arrowX + arrowSize};
+  const int pointsY[] = {arrowTipY, baseY, baseY};
+  renderer.polygon.render(pointsX, pointsY, 3, true, true);
+  if (up) {
+    renderer.line.render(arrowX, baseY, arrowX, bounds.y + bounds.height - 8, true);
+  } else {
+    renderer.line.render(arrowX, bounds.y + 8, arrowX, baseY, true);
+  }
+  const char* label = SystemSetting::readerButtonActionLabel(action);
+  const int labelWidth = renderer.text.getWidth(font, label);
+  // Keep the rotated label 20pt inside the corresponding visual third.
+  const int labelCenterY = up ? bounds.y + bounds.height - 20 - labelWidth / 2
+                              : bounds.y + 20 + labelWidth / 2;
+  renderCenteredRotatedLabel(renderer, bounds, font, labelCenterX, labelCenterY, label);
+}
+
+void drawHorizontalSwipeAction(const GfxRenderer& renderer, const TapGridCellBounds& bounds, const int font,
+                               const int rowCenterY, const uint8_t action, const bool left) {
+  if (action == SystemSetting::BTN_ACTION_NONE) return;
+  constexpr int arrowSize = 13;
+  const char* label = SystemSetting::readerButtonActionLabel(action);
+  const int labelWidth = renderer.text.getWidth(font, label);
+  const int labelX = bounds.x + (bounds.width - labelWidth) / 2;
+  const int labelLineHeight = renderer.text.getLineHeight(font);
+  // Keep a 20pt clear gap between the label and the arrowhead.
+  const int arrowY = rowCenterY + labelLineHeight / 2 + 20 + arrowSize;
+  const int arrowTipX = bounds.x + bounds.width / 2 + (left ? -22 : 22);
+  const int baseX = left ? arrowTipX + arrowSize : arrowTipX - arrowSize;
+  const int pointsX[] = {arrowTipX, baseX, baseX};
+  const int pointsY[] = {arrowY, arrowY - arrowSize, arrowY + arrowSize};
+  renderer.polygon.render(pointsX, pointsY, 3, true, true);
+  if (left) {
+    renderer.line.render(baseX, arrowY, bounds.x + bounds.width - 12, arrowY, true);
+  } else {
+    renderer.line.render(bounds.x + 12, arrowY, baseX, arrowY, true);
+  }
+
+  renderer.text.render(font, labelX, rowCenterY - labelLineHeight / 2, label, true,
+                       EpdFontFamily::REGULAR);
+}
+
+void renderSwipeGestureIndicator(const GfxRenderer& renderer, const TapGridCellBounds& bounds, const int font,
+                                 const uint8_t upAction, const uint8_t downAction, const uint8_t leftAction,
+                                 const uint8_t rightAction) {
+  const bool hasUp = upAction != SystemSetting::BTN_ACTION_NONE;
+  const bool hasDown = downAction != SystemSetting::BTN_ACTION_NONE;
+  const bool hasLeft = leftAction != SystemSetting::BTN_ACTION_NONE;
+  const bool hasRight = rightAction != SystemSetting::BTN_ACTION_NONE;
+  if (hasUp || hasDown) {
+    const int center = bounds.x + bounds.width / 2;
+    if (hasUp && hasDown) {
+      drawVerticalSwipeAction(renderer, bounds, font, center - 22, upAction, true);
+      drawVerticalSwipeAction(renderer, bounds, font, center + 22, downAction, false);
+    } else if (hasUp) {
+      drawVerticalSwipeAction(renderer, bounds, font, center, upAction, true);
+    } else {
+      drawVerticalSwipeAction(renderer, bounds, font, center, downAction, false);
+    }
+  }
+  if (hasLeft || hasRight) {
+    const int centerY = bounds.y + bounds.height / 2;
+    if (hasLeft && hasRight) {
+      drawHorizontalSwipeAction(renderer, bounds, font, centerY - 42, leftAction, true);
+      drawHorizontalSwipeAction(renderer, bounds, font, centerY + 42, rightAction, false);
+    } else if (hasLeft) {
+      drawHorizontalSwipeAction(renderer, bounds, font, centerY - 20, leftAction, true);
+    } else {
+      drawHorizontalSwipeAction(renderer, bounds, font, centerY - 20, rightAction, false);
+    }
+  }
 }
 
 bool isQuickActionListAction(const int action) {
@@ -103,6 +270,10 @@ void ButtonMappingActivity::onEnter() {
   ActivityWithSubactivity::onEnter();
   selectedRow_ = 0;
   selectorOpen_ = false;
+  tapGridOpen_ = false;
+  swipeGridOpen_ = false;
+  tapZoneCell_ = -1;
+  swipeZoneCell_ = -1;
   subFinished_ = false;
   render();
 }
@@ -165,21 +336,12 @@ const uint8_t* ButtonMappingActivity::actionSlot(const int row) const {
 
 void ButtonMappingActivity::openSelector(const int row) {
   const uint8_t* currentAction = actionSlot(row);
-  if (row == kPageTurnRow) {
-    selectorActions_ = {ReaderSetting::PAGE_TURN_SWIPE, ReaderSetting::PAGE_TURN_TAP};
-  } else if (row == kDoubleTapRow) {
-    selectorActions_ = doubleTapActions();
-  } else {
-    if (!currentAction) return;
-    selectorActions_ = mappingActions();
-  }
+  if (!currentAction) return;
+  selectorActions_ = mappingActions();
   selectorRow_ = row;
   selectorSelected_ = 0;
   for (int i = 0; i < static_cast<int>(selectorActions_.size()); ++i) {
-    const uint8_t current = row == kPageTurnRow
-                                ? READER_SETTINGS.pageTurnMode
-                                : (row == kDoubleTapRow ? READER_SETTINGS.doubleTapAction : *currentAction);
-    if (selectorActions_[static_cast<size_t>(i)] == current) {
+    if (selectorActions_[static_cast<size_t>(i)] == *currentAction) {
       selectorSelected_ = i;
       break;
     }
@@ -199,22 +361,107 @@ void ButtonMappingActivity::closeSelector() {
 }
 
 void ButtonMappingActivity::commitSelector() {
+  if (selectorRow_ == kTapZoneSelectorRow) {
+    if (tapZoneCell_ >= 0 && tapZoneCell_ < kTapZoneCount && selectorSelected_ >= 0 &&
+        selectorSelected_ < static_cast<int>(selectorActions_.size())) {
+      const uint8_t action = selectorActions_[static_cast<size_t>(selectorSelected_)];
+      if (tapGridDoubleTap_) {
+        READER_SETTINGS.doubleTapZoneActions[tapZoneCell_] = action;
+      } else {
+        READER_SETTINGS.tapZoneActions[tapZoneCell_] = action;
+      }
+      READER_SETTINGS.saveToFile();
+    }
+    closeSelector();
+    return;
+  }
+
+  if (selectorRow_ == kSwipeZoneSelectorRow) {
+    if (swipeZoneCell_ >= 0 && swipeZoneCell_ < ReaderSetting::SWIPE_ZONE_COUNT && selectorSelected_ >= 0 &&
+        selectorSelected_ < static_cast<int>(selectorActions_.size())) {
+      const uint8_t action = selectorActions_[static_cast<size_t>(selectorSelected_)];
+      switch (swipeGridDirection_) {
+        case SwipeDirection::Up:
+          READER_SETTINGS.swipeUpZoneActions[swipeZoneCell_] = action;
+          break;
+        case SwipeDirection::Down:
+          READER_SETTINGS.swipeDownZoneActions[swipeZoneCell_] = action;
+          break;
+        case SwipeDirection::Left:
+          READER_SETTINGS.swipeLeftZoneActions[swipeZoneCell_] = action;
+          break;
+        case SwipeDirection::Right:
+          READER_SETTINGS.swipeRightZoneActions[swipeZoneCell_] = action;
+          break;
+      }
+      READER_SETTINGS.saveToFile();
+    }
+    closeSelector();
+    return;
+  }
+
   if ((selectorRow_ < 0 || selectorRow_ >= kItemCount) || selectorSelected_ < 0 ||
       selectorSelected_ >= static_cast<int>(selectorActions_.size())) {
     closeSelector();
     return;
   }
-  if (selectorRow_ == kPageTurnRow) {
-    READER_SETTINGS.pageTurnMode = selectorActions_[static_cast<size_t>(selectorSelected_)];
-    READER_SETTINGS.saveToFile();
-  } else if (selectorRow_ == kDoubleTapRow) {
-    READER_SETTINGS.doubleTapAction = selectorActions_[static_cast<size_t>(selectorSelected_)];
-    READER_SETTINGS.saveToFile();
-  } else if (uint8_t* slot = actionSlot(selectorRow_)) {
+  if (uint8_t* slot = actionSlot(selectorRow_)) {
     *slot = selectorActions_[static_cast<size_t>(selectorSelected_)];
     READER_SETTINGS.saveToFile();
   }
   closeSelector();
+}
+
+void ButtonMappingActivity::openTapZoneSelector(const int cell) {
+  if (cell < 0 || cell >= kTapZoneCount) return;
+  selectorActions_ = doubleTapActions();
+  selectorRow_ = kTapZoneSelectorRow;
+  tapZoneCell_ = cell;
+  selectorSelected_ = 0;
+  for (int i = 0; i < static_cast<int>(selectorActions_.size()); ++i) {
+    const uint8_t currentAction = tapGridDoubleTap_ ? READER_SETTINGS.doubleTapZoneActions[cell]
+                                                    : READER_SETTINGS.tapZoneActions[cell];
+    if (selectorActions_[static_cast<size_t>(i)] == currentAction) {
+      selectorSelected_ = i;
+      break;
+    }
+  }
+  selectorScroll_ = std::max(0, selectorSelected_ - (PopUp::maxRows - 1));
+  selectorOpen_ = true;
+  render();
+}
+
+void ButtonMappingActivity::openSwipeZoneSelector(const int cell, const SwipeDirection direction) {
+  if (cell < 0 || cell >= ReaderSetting::SWIPE_ZONE_COUNT) return;
+  selectorActions_ = doubleTapActions();
+  selectorRow_ = kSwipeZoneSelectorRow;
+  swipeZoneCell_ = cell;
+  swipeGridDirection_ = direction;
+  selectorSelected_ = 0;
+  uint8_t currentAction = SystemSetting::BTN_ACTION_NONE;
+  switch (direction) {
+    case SwipeDirection::Up:
+      currentAction = READER_SETTINGS.swipeUpZoneActions[cell];
+      break;
+    case SwipeDirection::Down:
+      currentAction = READER_SETTINGS.swipeDownZoneActions[cell];
+      break;
+    case SwipeDirection::Left:
+      currentAction = READER_SETTINGS.swipeLeftZoneActions[cell];
+      break;
+    case SwipeDirection::Right:
+      currentAction = READER_SETTINGS.swipeRightZoneActions[cell];
+      break;
+  }
+  for (int i = 0; i < static_cast<int>(selectorActions_.size()); ++i) {
+    if (selectorActions_[static_cast<size_t>(i)] == currentAction) {
+      selectorSelected_ = i;
+      break;
+    }
+  }
+  selectorScroll_ = std::max(0, selectorSelected_ - (PopUp::maxRows - 1));
+  selectorOpen_ = true;
+  render();
 }
 
 void ButtonMappingActivity::handleSelectorInput() {
@@ -315,6 +562,99 @@ void ButtonMappingActivity::handleListInput() {
   }
 }
 
+void ButtonMappingActivity::handleTapGridInput() {
+  if (mappedInput.wasPressed(MappedInputManager::Button::Back) ||
+      (mappedInput.hasTouch() && mappedInput.wasTouchSwipeUpForRenderer(renderer))) {
+    tapGridOpen_ = false;
+    selectorOpen_ = false;
+    render();
+    return;
+  }
+
+  if (SubPage::closeInput(renderer, mappedInput, onDone_)) {
+    tapGridOpen_ = false;
+    return;
+  }
+
+  if (!mappedInput.hasTouch()) return;
+
+  float tapNx = 0.0f;
+  float tapNy = 0.0f;
+  if (!mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy)) return;
+
+  const int tapX = static_cast<int>(tapNx * renderer.getScreenWidth());
+  const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
+  for (int cell = 0; cell < kTapZoneCount; ++cell) {
+    const TapGridCellBounds bounds = tapGridCellBounds(renderer, cell);
+    if (tapX >= bounds.x && tapX < bounds.x + bounds.width && tapY >= bounds.y &&
+        tapY < bounds.y + bounds.height) {
+      // The mode is selected by the separate Tap or Double tap settings row.
+      // Do not switch configuration arrays based on how long the zone is held.
+      openTapZoneSelector(cell);
+      return;
+    }
+  }
+}
+
+void ButtonMappingActivity::handleSwipeGridInput() {
+  if (mappedInput.hasTouch()) {
+    float startNx = 0.0f;
+    float startNy = 0.0f;
+    SwipeDirection direction;
+    bool swipeDetected = false;
+    if (mappedInput.wasTouchSwipeUpInScreen(renderer, startNx, startNy)) {
+      direction = SwipeDirection::Up;
+      swipeDetected = true;
+    } else if (mappedInput.wasTouchSwipeDownInScreen(renderer, startNx, startNy)) {
+      direction = SwipeDirection::Down;
+      swipeDetected = true;
+    } else if (mappedInput.wasTouchSwipeLeftInScreen(renderer, startNx, startNy)) {
+      direction = SwipeDirection::Left;
+      swipeDetected = true;
+    } else if (mappedInput.wasTouchSwipeRightInScreen(renderer, startNx, startNy)) {
+      direction = SwipeDirection::Right;
+      swipeDetected = true;
+    }
+
+    if (swipeDetected) {
+      // Preserve the editor's bottom-edge swipe-up exit before processing a
+      // custom side-column Up action.
+      if (direction == SwipeDirection::Up && startNy >= 0.95f) {
+        swipeGridOpen_ = false;
+        selectorOpen_ = false;
+        render();
+        return;
+      }
+
+      const int startX = static_cast<int>(startNx * renderer.getScreenWidth());
+      const int startY = static_cast<int>(startNy * renderer.getScreenHeight());
+      for (int cell = 0; cell < ReaderSetting::SWIPE_ZONE_COLUMNS; ++cell) {
+        const TapGridCellBounds bounds = swipeGridCellBounds(renderer, cell);
+        if (startX >= bounds.x && startX < bounds.x + bounds.width && startY >= bounds.y &&
+            startY < bounds.y + bounds.height) {
+          const bool verticalZone = (cell % ReaderSetting::SWIPE_ZONE_COLUMNS) != 1;
+          const bool directionAllowed = verticalZone
+                                           ? (direction == SwipeDirection::Up || direction == SwipeDirection::Down)
+                                           : (direction == SwipeDirection::Left || direction == SwipeDirection::Right);
+          if (directionAllowed) openSwipeZoneSelector(cell, direction);
+          // Consume every swipe detected inside the editor. Invalid directions
+          // must not fall through to the page-close gesture.
+          return;
+        }
+      }
+      return;
+    }
+  }
+
+  if (SubPage::closeInput(renderer, mappedInput, [this]() {
+        swipeGridOpen_ = false;
+        selectorOpen_ = false;
+        render();
+      })) {
+    return;
+  }
+}
+
 void ButtonMappingActivity::handleMainInput() {
   if (SubPage::closeInput(renderer, mappedInput, onDone_)) return;
 
@@ -362,34 +702,125 @@ void ButtonMappingActivity::handleGestureInput(const int row) {
     READER_SETTINGS.disableLightControl = !READER_SETTINGS.disableLightControl;
     READER_SETTINGS.saveToFile();
     render();
-  } else if (section_ == Section::Gestures && (row == 1 || row == 2)) {
-    openSelector(mappedRow);
+  } else if (section_ == Section::Gestures && row == 1) {
+    tapGridDoubleTap_ = false;
+    tapGridOpen_ = true;
+    render();
+  } else if (section_ == Section::Gestures && row == 2) {
+    tapGridDoubleTap_ = true;
+    tapGridOpen_ = true;
+    render();
+  } else if (section_ == Section::Gestures && row == 3) {
+    swipeGridOpen_ = true;
+    render();
   } else if (row == kDisableLightRow) {
     READER_SETTINGS.disableLightControl = !READER_SETTINGS.disableLightControl;
     READER_SETTINGS.saveToFile();
     render();
-  } else if (row == kPageTurnRow || row == kDoubleTapRow) {
-    openSelector(row);
   }
 }
 
 void ButtonMappingActivity::renderSelector() {
-  std::vector<std::string> labels;
-  if (selectorRow_ == kPageTurnRow) {
-    labels = {"Swipe", "Tap"};
-  } else if (selectorRow_ == kDoubleTapRow) {
-    labels.reserve(selectorActions_.size());
-    for (const uint8_t action : selectorActions_) labels.emplace_back(doubleTapActionLabel(action));
-  } else {
-    labels = actionLabels(selectorActions_);
-  }
+  const std::vector<std::string> labels = actionLabels(selectorActions_);
   const PopUpBounds box = PopUp::bounds(renderer, static_cast<int>(labels.size()));
   PopUp::background(renderer, box);
-  PopUp::title(renderer, box, selectorRow_ == kPageTurnRow
-                             ? "Page turn"
-                             : (selectorRow_ == kDoubleTapRow ? "Double tap" : buttonLabel(selectorRow_ - kButtonStartRow)));
+  const char* swipeTitle = "Swipe area";
+  if (selectorRow_ == kSwipeZoneSelectorRow) {
+    switch (swipeGridDirection_) {
+      case SwipeDirection::Up:
+        swipeTitle = "Swipe up area";
+        break;
+      case SwipeDirection::Down:
+        swipeTitle = "Swipe down area";
+        break;
+      case SwipeDirection::Left:
+        swipeTitle = "Swipe left area";
+        break;
+      case SwipeDirection::Right:
+        swipeTitle = "Swipe right area";
+        break;
+    }
+  }
+  const char* title = selectorRow_ == kTapZoneSelectorRow
+                          ? (tapGridDoubleTap_ ? "Double tap area" : "Tap area")
+                          : (selectorRow_ == kSwipeZoneSelectorRow
+                                 ? swipeTitle
+                                 : buttonLabel(selectorRow_ - kButtonStartRow));
+  PopUp::title(renderer, box, title);
   PopUp::list(renderer, box, labels, -1, selectorScroll_);
   PopUp::border(renderer, box);
+}
+
+void ButtonMappingActivity::renderTapGrid() {
+  SubPage::header(renderer, tapGridDoubleTap_ ? "Double tap zones" : "Tap zones");
+  const int font = systemFontId();
+  for (int cell = 0; cell < kTapZoneCount; ++cell) {
+    const TapGridCellBounds bounds = tapGridCellBounds(renderer, cell);
+    if ((cell % ReaderSetting::TAP_ZONE_COLUMNS) != 1) {
+      drawTapZoneDither(renderer, bounds);
+    }
+    renderer.rectangle.render(bounds.x, bounds.y, bounds.width, bounds.height, true);
+
+    const uint8_t action = tapGridDoubleTap_ ? READER_SETTINGS.doubleTapZoneActions[cell]
+                                             : READER_SETTINGS.tapZoneActions[cell];
+    if (action != SystemSetting::BTN_ACTION_NONE) {
+      const char* label = SystemSetting::readerButtonActionLabel(action);
+      const int rotatedTextHeight = renderer.text.getLineHeight(font);
+      const int rotatedTextWidth = renderer.text.getWidth(font, label);
+      const int rotatedTopInset = renderer.text.getFontTopInset(font);
+      const int rotatedX = bounds.x + (bounds.width - rotatedTextHeight) / 2 - rotatedTopInset;
+      // rotated90CW advances upward from its y anchor, so the centered anchor
+      // is below the visual center by half of the text's source width.
+      const int rotatedY = bounds.y + (bounds.height + rotatedTextWidth) / 2;
+      renderer.text.rotated90CW(font, rotatedX, rotatedY, label, true,
+                                EpdFontFamily::REGULAR);
+    }
+  }
+}
+
+void ButtonMappingActivity::renderSwipeGrid() {
+  SubPage::header(renderer, "Swipe zones");
+  const int font = systemFontId();
+  for (int cell = 0; cell < ReaderSetting::SWIPE_ZONE_COLUMNS; ++cell) {
+    const TapGridCellBounds bounds = swipeGridCellBounds(renderer, cell);
+    if ((cell % ReaderSetting::SWIPE_ZONE_COLUMNS) != 1) drawTapZoneDither(renderer, bounds);
+    renderer.line.render(bounds.x, bounds.y, bounds.x, bounds.y + bounds.height - 1, true);
+    renderer.line.render(bounds.x + bounds.width - 1, bounds.y, bounds.x + bounds.width - 1,
+                         bounds.y + bounds.height - 1, true);
+    renderer.line.render(bounds.x, bounds.y, bounds.x + bounds.width - 1, bounds.y, true);
+    renderer.line.render(bounds.x, bounds.y + bounds.height - 1, bounds.x + bounds.width - 1,
+                         bounds.y + bounds.height - 1, true);
+    const bool verticalZone = (cell % ReaderSetting::SWIPE_ZONE_COLUMNS) != 1;
+    const int thirdHeight = bounds.height / 3;
+    const TapGridCellBounds top = {bounds.x, bounds.y, bounds.width, thirdHeight};
+    const TapGridCellBounds middle = {bounds.x, bounds.y + thirdHeight, bounds.width, thirdHeight};
+    const TapGridCellBounds bottom = {bounds.x, bounds.y + thirdHeight * 2,
+                                      bounds.width, bounds.height - thirdHeight * 2};
+    if (verticalZone) {
+      renderSwipeGestureIndicator(renderer, top, font, SystemSetting::BTN_ACTION_NONE,
+                                  READER_SETTINGS.swipeDownZoneActions[cell],
+                                  SystemSetting::BTN_ACTION_NONE, SystemSetting::BTN_ACTION_NONE);
+      renderSwipeGestureIndicator(renderer, bottom, font, READER_SETTINGS.swipeUpZoneActions[cell],
+                                  SystemSetting::BTN_ACTION_NONE,
+                                  SystemSetting::BTN_ACTION_NONE, SystemSetting::BTN_ACTION_NONE);
+    } else {
+      renderSwipeGestureIndicator(renderer, middle, font, SystemSetting::BTN_ACTION_NONE,
+                                  SystemSetting::BTN_ACTION_NONE,
+                                  READER_SETTINGS.swipeLeftZoneActions[cell],
+                                  READER_SETTINGS.swipeRightZoneActions[cell]);
+    }
+  }
+
+  // This divider is only a visual guide. Touch selection remains column-only;
+  // the upper and lower halves are not separate swipe zones.
+  const TapGridCellBounds left = swipeGridCellBounds(renderer, 0);
+  const TapGridCellBounds right = swipeGridCellBounds(renderer, ReaderSetting::SWIPE_ZONE_COLUMNS - 1);
+  const int firstDividerY = left.y + left.height / 3;
+  const int secondDividerY = left.y + (left.height * 2) / 3;
+  renderer.line.render(left.x, firstDividerY, right.x + right.width - 1, firstDividerY, true,
+                       LineRender::Style::Dotted);
+  renderer.line.render(left.x, secondDividerY, right.x + right.width - 1, secondDividerY, true,
+                       LineRender::Style::Dotted);
 }
 
 void ButtonMappingActivity::renderMain() {
@@ -431,18 +862,18 @@ void ButtonMappingActivity::renderSection() {
     const int y = bodyTop + row * kRowHeight;
     const int textY = y + (kRowHeight - renderer.text.getLineHeight(font)) / 2;
     const bool isDisableLight = mappedRow == kDisableLightRow;
-    const bool isPageTurn = mappedRow == kPageTurnRow;
-    const bool isDoubleTap = mappedRow == kDoubleTapRow;
+    const bool isTapZones = mappedRow == kTapZoneRow;
+    const bool isDoubleTapZones = mappedRow == kDoubleTapZoneRow;
+    const bool isSwipeZones = mappedRow == kSwipeZoneRow;
     const char* label = section_ == Section::Buttons
                             ? buttonLabel(row)
                             : (isDisableLight ? "Disable light control"
-                                               : (isPageTurn ? "Page turn" : "Double tap"));
+                                               : (isTapZones ? "Tap" : (isDoubleTapZones ? "Double tap" : "Swipe")));
     renderer.text.render(font, 20, textY, label, true, EpdFontFamily::REGULAR);
 
     const uint8_t* action = actionSlot(mappedRow);
     const char* value = nullptr;
-    if (isPageTurn) value = pageTurnLabel(READER_SETTINGS.pageTurnMode);
-    else if (isDoubleTap) value = doubleTapActionLabel(READER_SETTINGS.doubleTapAction);
+    if (isTapZones || isDoubleTapZones || isSwipeZones) value = "Configure";
     else if (!isDisableLight) value = action ? SystemSetting::readerButtonActionLabel(*action) : "None";
     if (isDisableLight) {
       ReaderFontSettingsDraw::drawToggleCheckbox(renderer, valueRight, y, kRowHeight, false,
@@ -465,6 +896,10 @@ void ButtonMappingActivity::render() {
   renderer.clearScreen();
   if (section_ == Section::Main) {
     renderMain();
+  } else if (tapGridOpen_) {
+    renderTapGrid();
+  } else if (swipeGridOpen_) {
+    renderSwipeGrid();
   } else {
     renderSection();
   }
@@ -484,6 +919,14 @@ void ButtonMappingActivity::loop() {
   }
   if (selectorOpen_) {
     handleSelectorInput();
+    return;
+  }
+  if (tapGridOpen_) {
+    handleTapGridInput();
+    return;
+  }
+  if (swipeGridOpen_) {
+    handleSwipeGridInput();
     return;
   }
   if (section_ == Section::Main) {
