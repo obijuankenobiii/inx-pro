@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "ThumbLayout.h"
 #include "util/LibraryIndex.h"
 
 class GfxRenderer;
@@ -25,6 +26,7 @@ class Thumb final {
 
   static void getThumbnailSize(GfxRenderer& renderer, int& width, int& height);
 
+  void setLayout(ThumbLayout value) { layout = value; }
   void setRoot(bool value);
   void load();
   bool loadNext();
@@ -49,6 +51,7 @@ class Thumb final {
     int imageHeight = 0;
     int bookCount = 0;
     int folderCount = 0;
+    int progressPercent = 0;
     bool loaded = false;
   };
 
@@ -59,9 +62,7 @@ class Thumb final {
     int height = 0;
   };
 
-  static constexpr int childItemsPerPage = 4;
-  static constexpr int childColumns = 2;
-  static constexpr int childRows = 2;
+  static constexpr int maxItemsPerPage = 6;
   static constexpr int margin = 20;
   static constexpr int sideMargin = 20;
   static constexpr int gap = 20;
@@ -73,16 +74,19 @@ class Thumb final {
   const std::vector<LibraryIndex::Book>& books;
   std::vector<Thumbnail> thumbnails;
   std::unordered_map<std::string, Thumbnail> resolvedCache_;
-  std::array<Rect, childItemsPerPage> cells;
+  std::array<Rect, maxItemsPerPage> cells;
   std::function<void(int, bool)> select;
   std::function<bool(const LibraryIndex::Book&)> isFavorite;
   std::function<void(int, int)> outsideTap;
   std::function<std::vector<std::string>(const LibraryIndex::Book&, int)> customFolderCovers;
   bool root = true;
+  ThumbLayout layout = standardThumbLayout();
   int page = 0;
   unsigned long loadAt = 0;
 
   int itemsPerPage() const;
+  int columnCount() const { return layout.columns; }
+  int rowCount() const { return layout.rows; }
   int pageCount() const;
   int top() const;
   void calculate();

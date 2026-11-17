@@ -48,7 +48,7 @@ std::string metadataImagePath(const std::string& bookPath) {
   const bool xtc = extension.size() >= 4 && extension.compare(extension.size() - 4, 4, ".xtc") == 0;
   const char* roots[] = {xtc ? "/.metadata/xtc" : "/.metadata/epub",
                          xtc ? "/.metadata/epub" : "/.metadata/xtc"};
-  const char* names[] = {"thumb.jpg", "thumb.png", "thumb.bmp"};
+  const char* names[] = {"thumb.jpg", "thumb.png", "thumb.bmp", "cover.jpg", "cover.png", "cover.bmp"};
   for (const char* root : roots) {
     const std::string directory = std::string(root) + "/" + std::to_string(std::hash<std::string>{}(bookPath));
     for (const char* name : names) {
@@ -61,7 +61,7 @@ std::string metadataImagePath(const std::string& bookPath) {
 
 std::string folderImagePath(const std::string& folder) {
   const std::string base = folder == "/" ? std::string() : folder;
-  const char* names[] = {"thumb.jpg", "thumb.png", "thumb.bmp"};
+  const char* names[] = {"thumb.jpg", "thumb.png", "thumb.bmp", "cover.jpg", "cover.png", "cover.bmp"};
   for (const char* name : names) {
     const std::string path = base + "/" + name;
     if (SdMan.exists(path.c_str())) return path;
@@ -140,6 +140,14 @@ bool ThumbnailList::handleInput() {
 }
 
 std::string ThumbnailList::titleFor(const LibraryIndex::Book& book) {
+  if (book.type == LibraryIndex::Book::Type::FOLDER) {
+    if (book.path == "/" || book.path.empty()) return "Library";
+    const size_t end = book.path.find_last_not_of('/');
+    if (end == std::string::npos) return "Library";
+    const size_t slash = book.path.find_last_of('/', end);
+    const size_t start = slash == std::string::npos ? 0 : slash + 1;
+    return book.path.substr(start, end - start + 1);
+  }
   if (!book.title.empty()) return book.title;
   const size_t slash = book.path.find_last_of('/');
   const size_t start = slash == std::string::npos ? 0 : slash + 1;

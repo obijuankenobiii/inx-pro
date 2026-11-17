@@ -39,6 +39,8 @@
 #include "state/RecentBooks.h"
 #include "state/Session.h"
 #include "state/SystemSetting.h"
+#include "views/Library/Thumb3x2Layout.h"
+#include "views/Library/ThumbLayout.h"
 #include "util/MetadataIndex.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
@@ -401,6 +403,9 @@ void Library::onEnter() {
     case SystemSetting::LIBRARY_LIST_THUMBNAIL:
       view = View::ListThumb;
       break;
+    case SystemSetting::LIBRARY_THUMBNAIL_3X2:
+      view = View::Thumb3x2;
+      break;
     default:
       view = View::Grid;
       SETTINGS.libraryMode = SystemSetting::LIBRARY_GRID;
@@ -430,7 +435,9 @@ void Library::onEnter() {
   allBooksMode = false;
   // Defer the expensive first root load only for thumbnail mode so its shell
   // can draw immediately. List/grid and folder pages should open synchronously.
-  loading = path == "/" && view == View::Thumb;
+  thumb.setLayout(view == View::Thumb3x2 ? views::library::thumb3x2Layout()
+                                        : views::library::standardThumbLayout());
+  loading = path == "/" && (view == View::Thumb || view == View::Thumb3x2);
   items.clear();
   books.clear();
   resetViews();
@@ -757,7 +764,7 @@ void Library::load() {
   resetViews();
   thumb.setRoot(path == "/" && !allBooksMode);
   restoreThumbPage();
-  if (view == View::Thumb) thumb.load();
+  if (view == View::Thumb || view == View::Thumb3x2) thumb.load();
 }
 
 void Library::open(const int index) {
@@ -888,6 +895,9 @@ void Library::loop() {
     case View::Thumb:
       handled = thumb.handleInput();
       break;
+    case View::Thumb3x2:
+      handled = thumb.handleInput();
+      break;
   }
   if (handled) {
     if (view == View::ListThumb) {
@@ -903,16 +913,16 @@ void Library::loop() {
     renderPage();
     return;
   }
-  if (view == View::Thumb && thumb.loadNext()) {
+  if ((view == View::Thumb || view == View::Thumb3x2) && thumb.loadNext()) {
     updateRequired = true;
-  } else if (view == View::Thumb) {
+  } else if (view == View::Thumb || view == View::Thumb3x2) {
     thumb.prefetchNextPage();
   }
   renderPage();
 }
 
 void Library::content() {
-  if (loading && view == View::Thumb) {
+  if (loading && (view == View::Thumb || view == View::Thumb3x2)) {
     renderer.text.centered(systemFontId(), renderer.getScreenHeight() / 2, "Loading library...");
     return;
   }
@@ -947,6 +957,9 @@ void Library::content() {
     case View::Thumb:
       thumb.render();
       break;
+    case View::Thumb3x2:
+      thumb.render();
+      break;
   }
 }
 
@@ -959,7 +972,7 @@ std::vector<std::string> Library::groupCovers(const LibraryIndex::Book& group, c
   if (stateFilter == StateFilter::Plugin) {
     const auto booksForGroup = pluginBooksByGroup_.find(group.path);
     if (booksForGroup == pluginBooksByGroup_.end()) return covers;
-    const char* names[] = {"cover.jpg", "thumb.jpg", "cover.bmp", "thumb.png", "thumb.bmp"};
+    const char* names[] = {"cover.jpg", "cover.png", "thumb.jpg", "thumb.png", "thumb.bmp", "cover.bmp"};
     for (const LibraryIndex::Book& book : booksForGroup->second) {
       const std::string directory = dataPath(book.path);
       for (const char* name : names) {
@@ -986,7 +999,7 @@ std::vector<std::string> Library::groupCovers(const LibraryIndex::Book& group, c
   std::vector<MetadataIndex::Entry> entries;
   if (!MetadataIndex::loadGroup(metadataKind_, groupIndex, entries, 64)) return covers;
 
-  const char* names[] = {"thumb.jpg", "thumb.png", "thumb.bmp"};
+  const char* names[] = {"thumb.jpg", "thumb.png", "thumb.bmp", "cover.jpg", "cover.png", "cover.bmp"};
   for (const MetadataIndex::Entry& entry : entries) {
     const std::string directory = dataPath(entry.path);
     for (const char* name : names) {
@@ -1228,7 +1241,7 @@ void Library::erase(const LibraryIndex::Book& book) {
               books.end());
   resetViews();
   restoreThumbPage();
-  if (view == View::Thumb) thumb.load();
+  if (view == View::Thumb || view == View::Thumb3x2) thumb.load();
   refreshing = true;
   LibraryIndexRefresh::start(renderer, this);
   updateRequired = true;
@@ -1280,7 +1293,7 @@ void Library::eraseFolder(const LibraryIndex::Book& folder) {
   folderDeleteConfirm = false;
   resetViews();
   restoreThumbPage();
-  if (view == View::Thumb) thumb.load();
+  if (view == View::Thumb || view == View::Thumb3x2) thumb.load();
   refreshing = true;
   LibraryIndexRefresh::start(renderer, this);
   updateRequired = true;
@@ -1352,6 +1365,10 @@ void Library::center() const {
         totalPages = listThumb.totalPages();
         break;
       case View::Thumb:
+        currentPage = thumb.currentPage();
+        totalPages = thumb.totalPages();
+        break;
+      case View::Thumb3x2:
         currentPage = thumb.currentPage();
         totalPages = thumb.totalPages();
         break;
@@ -1694,7 +1711,7 @@ bool Library::controlModalInput() {
         const int listY = modal.contentY;
         const int listX = modal.x;
         const int listWidth = modal.width;
-        if (tapX >= listX && tapX < listX + listWidth && tapY >= listY && tapY < listY + 4 * rowHeight) {
+        if (tapX >= listX && tapX < listX + listWidth && tapY >= listY && tapY < listY + 5 * rowHeight) {
           applyView((tapY - listY) / rowHeight);
         }
         return true;
@@ -1721,6 +1738,8 @@ const uint8_t* Library::viewIcon() const {
     case View::Grid:
       return LibraryViewGrid;
     case View::Thumb:
+      return LibraryViewThumb;
+      case View::Thumb3x2:
       return LibraryViewThumb;
     case View::ListThumb:
       return LibraryViewList;
@@ -1799,14 +1818,14 @@ void Library::viewDropdown() const {
   const int x = modal.x;
   const int y = modal.contentY;
   const int width = modal.width;
-  const char* labels[] = {"List", "Grid", "Thumbnails", "Thumbnail list"};
-  for (int index = 0; index < 4; ++index) {
+  const char* labels[] = {"List", "Grid", "Thumbnails", "Thumbnail list", "Thumbnails 3x2"};
+  for (int index = 0; index < 5; ++index) {
     const int rowY = y + index * rowHeight;
     const bool selected = static_cast<int>(view) == index;
     const int iconSize = 40;
     const uint8_t* icon = index == 0 ? LibraryViewList
                                      : (index == 1 ? LibraryViewGrid
-                                                   : (index == 2 ? LibraryViewThumb : LibraryViewList));
+                                     : (index == 2 || index == 4 ? LibraryViewThumb : LibraryViewList));
     renderer.bitmap.icon(icon,
                          x + 18, rowY + (rowHeight - iconSize) / 2, iconSize, iconSize);
     const int textY = rowY + (rowHeight - renderer.text.getLineHeight(font)) / 2;
@@ -1816,7 +1835,7 @@ void Library::viewDropdown() const {
     renderer.circle.render(radioX, radioY, 10, true);
     renderer.circle.render(radioX, radioY, 7, false);
     if (selected) renderer.circle.render(radioX, radioY, 4, true);
-    if (index < 3) {
+    if (index < 4) {
       renderer.line.render(x + 12, rowY + rowHeight, x + width - 12, rowY + rowHeight, true,
                            LineRender::Style::Dotted);
     }
@@ -1824,7 +1843,7 @@ void Library::viewDropdown() const {
 }
 
 void Library::applyView(const int index) {
-  if (index < 0 || index >= 4) return;
+  if (index < 0 || index >= 5) return;
   view = static_cast<View>(index);
   switch (view) {
     case View::List:
@@ -1839,7 +1858,12 @@ void Library::applyView(const int index) {
     case View::ListThumb:
       SETTINGS.libraryMode = SystemSetting::LIBRARY_LIST_THUMBNAIL;
       break;
+    case View::Thumb3x2:
+      SETTINGS.libraryMode = SystemSetting::LIBRARY_THUMBNAIL_3X2;
+      break;
   }
+  thumb.setLayout(view == View::Thumb3x2 ? views::library::thumb3x2Layout()
+                                        : views::library::standardThumbLayout());
   SETTINGS.saveToFile();
   discardOverlayFrame();
   load();

@@ -111,9 +111,11 @@ class Epub {
 
   std::string getCoverBmpPath(bool cropped = false) const;
   std::string getCoverJpegPath(bool cropped = false) const;
+  std::string getCoverPngPath(bool cropped = false) const;
   std::string getCoverItemHref() const;
   bool extractCoverItemToPath(const std::string& outPath) const;
   bool generateCoverBmp(bool cropped = false) const;
+  bool hasDetailedCoverBmp(bool cropped = false) const;
   std::string getThumbBmpPath() const;
   std::string getThumbJpegPath() const;
   std::string getThumbPngPath() const;

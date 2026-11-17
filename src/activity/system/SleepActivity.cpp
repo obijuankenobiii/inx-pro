@@ -320,11 +320,24 @@ std::string resolveLastReadCoverPathForSleep(const std::string& path) {
     if (book.load()) {
       const bool cropped = false;
       const std::string coverJpegPath = book.getCoverJpegPath(cropped);
+      const std::string coverPngPath = book.getCoverPngPath(cropped);
       const std::string coverBmpPath = book.getCoverBmpPath(cropped);
-      coverPath = SdMan.exists(coverJpegPath.c_str()) ? coverJpegPath : coverBmpPath;
+      const bool sourceIsPng = StringUtils::checkFileExtension(book.getCoverItemHref(), ".png");
+      coverPath = sourceIsPng && SdMan.exists(coverPngPath.c_str()) ? coverPngPath
+                 : SdMan.exists(coverJpegPath.c_str()) ? coverJpegPath
+                 : SdMan.exists(coverPngPath.c_str()) ? coverPngPath
+                                                      : coverBmpPath;
+      if (sourceIsPng && !SdMan.exists(coverPngPath.c_str())) {
+        SdMan.remove(coverBmpPath.c_str());
+        book.generateCoverBmp(cropped);
+        coverPath = coverPngPath;
+      }
       if (!SdMan.exists(coverPath.c_str())) {
         book.generateCoverBmp(cropped);
-        coverPath = SdMan.exists(coverJpegPath.c_str()) ? coverJpegPath : coverBmpPath;
+        coverPath = sourceIsPng && SdMan.exists(coverPngPath.c_str()) ? coverPngPath
+                   : SdMan.exists(coverJpegPath.c_str()) ? coverJpegPath
+                   : SdMan.exists(coverPngPath.c_str()) ? coverPngPath
+                                                        : coverBmpPath;
       }
       if (!SdMan.exists(coverPath.c_str())) {
         coverPath.clear();

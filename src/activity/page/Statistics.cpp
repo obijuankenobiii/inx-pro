@@ -273,7 +273,7 @@ std::string plainBookDescription(const std::string& raw) {
 }
 
 std::string thumbnailPathForBookCache(const std::string& cachePath) {
-  constexpr const char* thumbnailNames[] = {"thumb.jpg", "thumb.png", "thumb.bmp"};
+  constexpr const char* thumbnailNames[] = {"thumb.jpg", "thumb.png", "thumb.bmp", "cover.jpg", "cover.png", "cover.bmp"};
   for (const char* thumbnailName : thumbnailNames) {
     const std::string path = cachePath + "/" + thumbnailName;
     if (SdMan.exists(path.c_str())) {

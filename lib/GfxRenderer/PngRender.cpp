@@ -102,6 +102,7 @@ struct RenderContext {
   int y;
   int width;
   ImageRenderMode mode;
+  bool quality;
   FourToneImageDitherer* twoBitDitherer;
   Atkinson1BitDitherer* oneBitDitherer;
   JpegLevelCapture* capture;
@@ -540,7 +541,9 @@ bool drawGrayRow(RenderContext& ctx, const uint8_t* grayRow, const uint8_t* alph
       q = 255;
     } else {
       if (ctx.mode == ImageRenderMode::TwoBit) {
-        q = ctx.twoBitDitherer->process(gray, step).value;
+        q = (ctx.quality ? ctx.twoBitDitherer->processQuality(gray, step)
+                         : ctx.twoBitDitherer->process(gray, step))
+                .value;
       } else if (ctx.oneBitDitherer) {
         q = ctx.oneBitDitherer->processPixel(gray, step) ? 255 : 0;
       } else {
@@ -828,7 +831,7 @@ bool decodeAndRender(FsFile& pngFile, RenderContext& renderCtx, int outW, int ou
 
 bool PngRender::render(FsFile& pngFile, int x, int y, int targetWidth, int targetHeight, bool cropToFill,
                        const ImageRenderMode mode, const float cropAnchorX, JpegLevelCapture* capture,
-                       const bool preserveTransparency, const float cropAnchorY) const {
+                       const bool preserveTransparency, const float cropAnchorY, const bool quality) const {
   if (!pngFile || targetWidth <= 0 || targetHeight <= 0) return false;
 
   int sourceW = 0;
@@ -902,6 +905,7 @@ bool PngRender::render(FsFile& pngFile, int x, int y, int targetWidth, int targe
                        .y = drawY,
                        .width = outW,
                        .mode = mode,
+                       .quality = quality,
                        .twoBitDitherer = twoBitDitherer,
                        .oneBitDitherer = oneBitDitherer,
                        .capture = capture,
@@ -915,11 +919,11 @@ bool PngRender::render(FsFile& pngFile, int x, int y, int targetWidth, int targe
 
 bool PngRender::fromPath(const std::string& path, int x, int y, int targetWidth, int targetHeight, bool cropToFill,
                          const ImageRenderMode mode, const float cropAnchorX, JpegLevelCapture* capture,
-                         const bool preserveTransparency, const float cropAnchorY) const {
+                         const bool preserveTransparency, const float cropAnchorY, const bool quality) const {
   FsFile file;
   if (!SdMan.openFileForRead("PNG", path, file)) return false;
   const bool ok = render(file, x, y, targetWidth, targetHeight, cropToFill, mode, cropAnchorX, capture,
-                         preserveTransparency, cropAnchorY);
+                         preserveTransparency, cropAnchorY, quality);
   file.close();
   return ok;
 }

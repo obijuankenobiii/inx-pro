@@ -6,6 +6,7 @@
 #include "Epub.h"
 
 #include <Arduino.h>
+#include <Bitmap.h>
 #include <freertos/task.h>
 #include <freertos/semphr.h>
 #include <freertos/FreeRTOS.h>
@@ -72,6 +73,15 @@ constexpr uint8_t kThumbnailJpegQuality = 96;
 constexpr size_t kSlowPathCoverPsramMaxBytes = 1024 * 1024;
 constexpr size_t kImageMetadataProbeBytes = 64 * 1024;
 const std::string kEmptyString;
+
+bool hasGrayDetail(const std::string& path) {
+  FsFile file;
+  if (!SdMan.openFileForRead("EBP", path, file)) return false;
+  Bitmap bitmap(file);
+  const bool valid = bitmap.parseHeaders() == BmpReaderError::Ok && bitmap.getBpp() >= 2;
+  file.close();
+  return valid;
+}
 
 class PrefixSink final : public Print {
  public:
@@ -568,6 +578,7 @@ bool Epub::extractAndConvertImageFullScreen(const std::string& itemHref, const s
   FsFile tempFile;
 
   if (!SdMan.openFileForWrite("EBP", tempPath, tempFile)) {
+    INX_SERIAL.printf("[%lu] [THUMB-DEBUG] temp cover open for write failed: %s\n", millis(), tempPath.c_str());
     return false;
   }
 
@@ -576,17 +587,21 @@ bool Epub::extractAndConvertImageFullScreen(const std::string& itemHref, const s
   tempFile.close();
 
   if (!extracted) {
+    INX_SERIAL.printf("[%lu] [THUMB-DEBUG] cover extraction failed href=%s temp=%s\n", millis(), itemHref.c_str(),
+                      tempPath.c_str());
     SdMan.remove(tempPath.c_str());
     return false;
   }
 
   FsFile sourceFile, destFile;
   if (!SdMan.openFileForRead("EBP", tempPath, sourceFile)) {
+    INX_SERIAL.printf("[%lu] [THUMB-DEBUG] temp cover open for read failed: %s\n", millis(), tempPath.c_str());
     SdMan.remove(tempPath.c_str());
     return false;
   }
 
   if (!SdMan.openFileForWrite("EBP", outBmpPath, destFile)) {
+    INX_SERIAL.printf("[%lu] [THUMB-DEBUG] thumb open for write failed: %s\n", millis(), outBmpPath.c_str());
     sourceFile.close();
     SdMan.remove(tempPath.c_str());
     return false;
@@ -624,7 +639,7 @@ bool Epub::extractAndConvertImageFullScreen(const std::string& itemHref, const s
       success = true;
     }
   } else if (isPngFile(itemHref)) {
-    success = PngToBmpConverter::pngFileTo1BitBmpStreamCentered(sourceFile, destFile, targetW, targetH, cropToFill);
+    success = PngToBmpConverter::pngFileTo2BitBmpStreamWithSize(sourceFile, destFile, targetW, targetH, cropToFill);
   } else {
     success = JpegToBmpConverter::jpegFileTo1BitBmpStreamCentered(sourceFile, destFile, targetW, targetH, cropToFill);
   }
@@ -651,6 +666,15 @@ bool Epub::generateCoverBmp(bool cropped) const {
     return false;
   }
   const std::string& coverHref = bookMetadataCache->coreMetadata.coverItemHref;
+  if (isPngFile(coverHref)) {
+    const std::string coverPngPath = getCoverPngPath(cropped);
+    SdMan.remove(getCoverBmpPath(cropped).c_str());
+    SdMan.remove(getCoverJpegPath(cropped).c_str());
+    const bool success = extractItemToPath(coverHref, coverPngPath, 16 * 1024);
+    INX_SERIAL.printf("[%lu] [THUMB-TRACE] cover generation result=%d type=png href=%s output=%s exists=%d\n", millis(),
+                  success, coverHref.c_str(), coverPngPath.c_str(), SdMan.exists(coverPngPath.c_str()));
+    return success;
+  }
   if (isJpegFile(coverHref)) {
     SdMan.remove(getCoverBmpPath(cropped).c_str());
     const bool success = cropped ? extractItemToPath(coverHref, getCoverJpegPath(cropped), 16 * 1024)
@@ -668,6 +692,8 @@ bool Epub::generateCoverBmp(bool cropped) const {
                 SdMan.exists(getCoverBmpPath(cropped).c_str()));
   return success;
 }
+
+bool Epub::hasDetailedCoverBmp(const bool cropped) const { return hasGrayDetail(getCoverBmpPath(cropped)); }
 
 /**
  * @brief Builds cache thumbnails: prefers a packaged `META-INF/thumbnail.jpg` from the EPUB, else generates a
@@ -689,6 +715,13 @@ void pngThumbTask(void* arg) {
 }
 
 bool runWithDecodeStack(const std::function<bool()>& work) {
+#ifdef SIMULATOR
+  // The native simulator's FreeRTOS semaphore shim is mutex-backed and does
+  // not model an initially-empty binary semaphore. Run this small diagnostic
+  // conversion synchronously so the caller cannot return while the detached
+  // shim task still references the stack-owned job.
+  return work();
+#else
   PngThumbJob job;
   job.work = work;
   job.done = xSemaphoreCreateBinary();
@@ -702,6 +735,7 @@ bool runWithDecodeStack(const std::function<bool()>& work) {
   xSemaphoreTake(job.done, portMAX_DELAY);
   vSemaphoreDelete(job.done);
   return job.result;
+#endif
 }
 
 }
@@ -730,18 +764,43 @@ bool Epub::generateThumbBmp(const bool skipCoverFallback) const {
   }
 
   const std::string& coverHref = bookMetadataCache->coreMetadata.coverItemHref;
-  const bool bitmapThumbnail = isPngFile(coverHref) || isBmpFile(coverHref);
+  if (isPngFile(coverHref)) {
+    if (SdMan.exists(thumbPngPath.c_str())) {
+      INX_SERIAL.printf("[%lu] [THUMB-DEBUG] EPUB PNG thumb already exists: %s\n", millis(), thumbPngPath.c_str());
+      return true;
+    }
+    const bool success = extractItemToPath(coverHref, thumbPngPath, 16 * 1024);
+    if (success) {
+      SdMan.remove(thumbJpegPath.c_str());
+      SdMan.remove(thumbBmpPath.c_str());
+      INX_SERIAL.printf("[%lu] [THUMB-DEBUG] EPUB PNG thumb extracted source=%s output=%s bytes=%lu\n", millis(),
+                    coverHref.c_str(), thumbPngPath.c_str(),
+                    static_cast<unsigned long>(cachedFileSize(thumbPngPath)));
+      return true;
+    }
+    SdMan.remove(thumbPngPath.c_str());
+    INX_SERIAL.printf("[%lu] [THUMB-DEBUG] EPUB PNG thumb extraction failed source=%s output=%s\n", millis(),
+                  coverHref.c_str(), thumbPngPath.c_str());
+    return false;
+  }
+
+  const bool bitmapThumbnail = isBmpFile(coverHref);
   INX_SERIAL.printf("[%lu] [THUMB-DEBUG] EPUB thumb begin cover=%s type=%s skipFallback=%d cache=%s\n", millis(),
                 coverHref.c_str(), bitmapThumbnail ? (isPngFile(coverHref) ? "png" : "bmp") : "jpeg",
                 skipCoverFallback, cachePath.c_str());
   if (bitmapThumbnail) {
     if (SdMan.exists(thumbBmpPath.c_str())) {
-      INX_SERIAL.printf("[%lu] [THUMB-DEBUG] EPUB bitmap thumb already exists: %s\n", millis(), thumbBmpPath.c_str());
-      return true;
+      if (hasGrayDetail(thumbBmpPath)) {
+        INX_SERIAL.printf("[%lu] [THUMB-DEBUG] EPUB bitmap thumb already exists: %s\n", millis(), thumbBmpPath.c_str());
+        return true;
+      }
+      INX_SERIAL.printf("[%lu] [THUMB-GEN] replacing low-detail 1-bit bitmap thumb: %s\n", millis(),
+                    thumbBmpPath.c_str());
+      SdMan.remove(thumbBmpPath.c_str());
     }
     bool success = false;
     const std::string cachedCoverBmpPath = getCoverBmpPath(false);
-    if (isPngFile(coverHref)) {
+    if (isPngFile(coverHref) || isBmpFile(coverHref)) {
       success = runWithDecodeStack([&] {
         return extractAndConvertImageFullScreen(coverHref, thumbBmpPath, kThumbnailMaxWidth,
                                                 kThumbnailMaxHeight, false);
@@ -1195,6 +1254,10 @@ std::string Epub::getCoverBmpPath(bool cropped) const {
 
 std::string Epub::getCoverJpegPath(bool cropped) const {
   return cachePath + (cropped ? "/cover_crop.jpg" : "/cover.jpg");
+}
+
+std::string Epub::getCoverPngPath(bool cropped) const {
+  return cachePath + (cropped ? "/cover_crop.png" : "/cover.png");
 }
 
 std::string Epub::getCoverItemHref() const {

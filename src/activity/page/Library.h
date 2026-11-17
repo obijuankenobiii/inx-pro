@@ -43,7 +43,7 @@ class Library final : public UiPage {
 
  private:
   enum class Sort { TitleAZ, TitleZA, FolderAZ, FolderZA, AuthorAZ, AuthorZA };
-  enum class View { List, Grid, Thumb, ListThumb };
+  enum class View { List, Grid, Thumb, ListThumb, Thumb3x2 };
   enum class ControlTab { View, Sort, Filter };
   enum class FilterCategory : uint8_t { Categories, Title, Type, Author, Series, Tags, Options };
   enum class StateFilter { None, Favorites, Reading, Finished, Metadata, Plugin };

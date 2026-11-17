@@ -55,6 +55,7 @@
 #include "system/MappedInputManager.h"
 #include "system/ScreenComponents.h"
 #include "system/PluginManager.h"
+#include "util/StringUtils.h"
 
 extern "C" {
 #include "lua.h"
@@ -499,11 +500,49 @@ void EpubActivity::ensureThumbnailExists(const bool coverAvailable) {
  */
 bool EpubActivity::displayCoverOrTitle() {
   const std::string coverJpegPath = epub->getCoverJpegPath(false);
+  const std::string coverPngPath = epub->getCoverPngPath(false);
   std::string coverPath = epub->getCoverBmpPath(false);
-  if (!SdMan.exists(coverPath.c_str()) && !SdMan.exists(coverJpegPath.c_str())) {
+  const bool sourceIsPng = StringUtils::checkFileExtension(epub->getCoverItemHref(), ".png");
+  const bool staleBitmapCover = SdMan.exists(coverPath.c_str()) && !epub->hasDetailedCoverBmp(false);
+  if ((sourceIsPng && !SdMan.exists(coverPngPath.c_str())) ||
+      (!sourceIsPng && !SdMan.exists(coverPath.c_str()) && !SdMan.exists(coverJpegPath.c_str()) &&
+       !SdMan.exists(coverPngPath.c_str())) ||
+      staleBitmapCover) {
+    if (staleBitmapCover || sourceIsPng) {
+      INX_SERIAL.printf("[%lu] [THUMB-GEN] replacing low-detail cover cache: %s\n", millis(), coverPath.c_str());
+      SdMan.remove(coverPath.c_str());
+    }
     epub->generateCoverBmp(false);
   }
 
+  if (!sourceIsPng && SdMan.exists(coverJpegPath.c_str())) {
+    const int pageWidth = renderer.getScreenWidth();
+    const int pageHeight = renderer.getScreenHeight();
+    renderer.clearScreen();
+    ImageRender::Options options;
+    options.cropToFill = true;
+    options.asyncDisplayCache = true;
+    if (ImageRender::create(renderer, coverJpegPath).render(0, 0, pageWidth, pageHeight, options)) {
+      renderer.displayBuffer();
+      return true;
+    }
+  }
+
+  if (SdMan.exists(coverPngPath.c_str())) {
+    const int pageWidth = renderer.getScreenWidth();
+    const int pageHeight = renderer.getScreenHeight();
+    renderer.clearScreen();
+    ImageRender::Options options;
+    options.cropToFill = true;
+    options.asyncDisplayCache = true;
+    if (ImageRender::create(renderer, coverPngPath).render(0, 0, pageWidth, pageHeight, options)) {
+      renderer.displayBuffer();
+      return true;
+    }
+  }
+
+  // Keep a stale JPEG as a last-resort fallback, but prefer the source PNG
+  // whenever the EPUB cover is actually PNG-backed.
   if (SdMan.exists(coverJpegPath.c_str())) {
     const int pageWidth = renderer.getScreenWidth();
     const int pageHeight = renderer.getScreenHeight();

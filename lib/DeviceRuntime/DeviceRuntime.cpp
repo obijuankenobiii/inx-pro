@@ -33,9 +33,11 @@ void initialize(HalGPIO& gpio) {
   gpio.restoreTouchBusSettings();
 #endif
 
+#if !defined(SIMULATOR)
   // Configure the charger after peripherals have finished their bus setup.
   // The SDK gates board-specific writes; other boards return immediately.
   if (BatteryMonitor::configureCharger()) INX_SERIAL.println("[PWR] Charger configured");
+#endif
 }
 
 void beforeActivitySwitch(HalDisplay& display, GfxRenderer& renderer, MappedInputManager& input) {

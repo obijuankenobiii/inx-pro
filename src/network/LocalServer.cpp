@@ -1329,7 +1329,7 @@ void LocalServer::handleLibraryIndexData() const {
     document["author"] = entry.author;
 
     const std::string cachePath = epubCachePathForBookPath(entry.path.c_str());
-    const char* coverNames[] = {"cover.jpg", "thumb.jpg", "cover.bmp", "thumb.png", "thumb.bmp"};
+    const char* coverNames[] = {"cover.jpg", "cover.png", "thumb.jpg", "thumb.png", "thumb.bmp", "cover.bmp"};
     for (const char* coverName : coverNames) {
       const std::string coverPath = cachePath + "/" + coverName;
       if (!SdMan.exists(coverPath.c_str())) continue;

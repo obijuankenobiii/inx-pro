@@ -64,14 +64,21 @@ void hydrateUiMetadata(RecentBook& book, const bool forceRefresh) {
 
   if (book.cachePath.empty()) book.cachePath = cachePathFor(book);
 
-  if (book.thumbnailPath.empty() && !book.cachePath.empty()) {
+  if (!book.cachePath.empty()) {
     SdIoMutex::Lock ioLock;
+    if (!book.thumbnailPath.empty() && SdMan.exists(book.thumbnailPath.c_str())) {
+      // Keep the already-selected thumbnail path and its cached dimensions.
+    } else {
+      book.thumbnailPath.clear();
+    }
     char path[192] = {};
-    for (const char* extension : {"thumb.jpg", "thumb.png", "thumb.bmp"}) {
-      std::snprintf(path, sizeof(path), "%s/%s", book.cachePath.c_str(), extension);
-      if (SdMan.exists(path)) {
-        book.thumbnailPath = path;
-        break;
+    if (book.thumbnailPath.empty()) {
+      for (const char* extension : {"thumb.jpg", "thumb.png", "thumb.bmp", "cover.jpg", "cover.png", "cover.bmp"}) {
+        std::snprintf(path, sizeof(path), "%s/%s", book.cachePath.c_str(), extension);
+        if (SdMan.exists(path)) {
+          book.thumbnailPath = path;
+          break;
+        }
       }
     }
   }
