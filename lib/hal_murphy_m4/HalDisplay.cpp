@@ -123,6 +123,15 @@ void HalDisplay::begin() {
   }
 }
 
+void HalDisplay::serviceIdle() {
+  // The upstream facade already owns the correct turn-off-screen sequence:
+  // displayFinish() waits for the waveform, then powers down the SSD1677
+  // analog/clock rails. Only invoke it after BUSY is clear, so this hook never
+  // blocks touch or button polling.
+  if (!display.isRefreshPending() || millis() - asyncRefreshStartedAt < 30 || display.refreshBusy()) return;
+  finishPendingRefresh();
+}
+
 void HalDisplay::clearScreen(const uint8_t color) const { display.clearScreen(color); }
 
 void HalDisplay::clearBothBuffers(const uint8_t color) const {
@@ -142,13 +151,13 @@ void HalDisplay::drawImage(const uint8_t* imageData, const uint16_t x, const uin
 
 void HalDisplay::displayBuffer(const HalDisplay::RefreshMode mode) {
   primeMurphyUpdateControl1(display, mode);
-  display.displayBuffer(convertRefreshMode(mode));
+  display.displayBuffer(convertRefreshMode(mode), true);
 }
 
 void HalDisplay::displayWindow(const uint16_t x, const uint16_t y, const uint16_t w, const uint16_t h,
                                const HalDisplay::RefreshMode mode) {
   primeMurphyUpdateControl1(display, mode);
-  display.displayWindow(x, y, w, h);
+  display.displayWindow(x, y, w, h, true);
 #ifndef EINK_DISPLAY_SINGLE_BUFFER_MODE
   if (display.frameBuffer != nullptr && display.frameBufferActive != nullptr)
     memcpy(display.frameBufferActive, display.frameBuffer, display.getBufferSize());
@@ -157,7 +166,8 @@ void HalDisplay::displayWindow(const uint16_t x, const uint16_t y, const uint16_
 
 void HalDisplay::displayBufferAsync(const HalDisplay::RefreshMode mode) {
   primeMurphyUpdateControl1(display, mode);
-  display.displayBufferAsync(convertRefreshMode(mode));
+  display.triggerDisplayAsync(convertRefreshMode(mode), true);
+  asyncRefreshStartedAt = millis();
 }
 
 void HalDisplay::displayGrayscaleBase(const HalDisplay::RefreshMode mode, const bool turnOffScreen) {
@@ -174,7 +184,7 @@ bool HalDisplay::refreshBusy() { return display.refreshBusy(); }
 
 void HalDisplay::refreshDisplay(const HalDisplay::RefreshMode mode, const bool turnOffScreen) {
   primeMurphyUpdateControl1(display, mode);
-  display.refreshDisplay(convertRefreshMode(mode), turnOffScreen);
+  display.refreshDisplay(convertRefreshMode(mode), true);
 }
 
 void HalDisplay::deepSleep() {
@@ -218,15 +228,15 @@ void HalDisplay::displayGrayBuffer(const bool quality, const bool trackForRevert
     // Quality images use the absolute four-level waveform. The SDK's default
     // differential grayscale path is intended for text AA and produces broken
     // image tones when fed the two absolute image planes.
-    display.displayGrayBuffer(false, freeink::lut_factory_quality, true);
+    display.displayGrayBuffer(true, freeink::lut_factory_quality, true);
     return;
   }
-  display.displayGrayBuffer(false, nullptr, false);
+  display.displayGrayBuffer(true, nullptr, false);
 }
 
 void HalDisplay::displayGrayBufferFastQuality() {
   primeMurphyUpdateControl1(display, FAST_REFRESH);
-  display.displayGrayBuffer(false, kMurphyQualityFastLut, true);
+  display.displayGrayBuffer(true, kMurphyQualityFastLut, true);
 }
 
 void HalDisplay::displayGrayBufferWindow(const uint16_t x, const uint16_t y, const uint16_t w, const uint16_t h,
@@ -239,7 +249,7 @@ void HalDisplay::displayGrayBufferWindow(const uint16_t x, const uint16_t y, con
                         h);
     return;
   }
-  display.displayGrayBuffer(false, nullptr, false);
+  display.displayGrayBuffer(true, nullptr, false);
 }
 
 bool HalDisplay::supportsWindowedQuality() const { return windowedGray.supports(); }

@@ -528,6 +528,10 @@ void loop() {
   // switch can take precedence over the saved light state.
   DeviceRuntime::poll(gpio, enterDeepSleep);
 
+#if FREEINK_DEVICE_MURPHY_M4
+  display.serviceIdle();
+#endif
+
   if (deferredActivitySwitch) {
     auto action = std::move(deferredActivitySwitch);
     deferredActivitySwitch = nullptr;
