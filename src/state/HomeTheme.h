@@ -19,6 +19,12 @@ enum class Layout : uint8_t {
   HalfTopMiddle40 = 11,
   HalfTopBottom40 = 12,
   HalfMiddleBottom40 = 13,
+  HalfTop50Middle30 = 14,
+  HalfTop50Bottom30 = 15,
+  HalfMiddle50Top30 = 16,
+  HalfMiddle50Bottom30 = 17,
+  HalfBottom50Top30 = 18,
+  HalfBottom50Middle30 = 19,
 };
 
 enum class Widget : uint8_t {

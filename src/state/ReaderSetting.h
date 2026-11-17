@@ -116,6 +116,9 @@ class ReaderSetting {
   /** When set, edge swipes in the reader do not adjust the frontlight. */
   uint8_t disableLightControl = 0;
 
+  /** When set, word-selection and annotation/highlight gestures are unavailable in EPUB reader. */
+  uint8_t disableHighlight = 0;
+
   /** Reader double-tap action. BTN_ACTION_NONE disables the gesture. */
   uint8_t doubleTapAction = SystemSetting::BTN_ACTION_NONE;
 

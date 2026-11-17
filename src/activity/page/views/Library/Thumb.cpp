@@ -524,7 +524,7 @@ int Thumb::pageCount() const {
   return std::max(1, (static_cast<int>(items.size()) + perPage - 1) / perPage);
 }
 
-int Thumb::top() const { return navigation::Menu::height + 10; }
+int Thumb::top() const { return navigation::Menu::height; }
 
 void Thumb::calculate() {
   // Keep the label gap and cover area inside the tile while using the outer

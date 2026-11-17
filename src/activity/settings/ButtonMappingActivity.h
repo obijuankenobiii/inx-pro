@@ -26,17 +26,19 @@ class ButtonMappingActivity final : public ActivityWithSubactivity {
 
  private:
   static constexpr int kButtonCount = 5;
-  static constexpr int kGestureCount = 4;
+  static constexpr int kGestureCount = 3;
+  static constexpr int kMainRowCount = 5;
   static constexpr int kQuickActionRow = 0;
   static constexpr int kButtonStartRow = kQuickActionRow + 1;
   static constexpr int kGestureStartRow = kButtonStartRow + kButtonCount;
   static constexpr int kItemCount = kGestureStartRow + kGestureCount;
   static constexpr int kSectionHeaderHeight = 24;
   static constexpr int kRowHeight = SettingsListLayout::kRowHeight;
-  static constexpr int kDisableLightRow = kGestureStartRow;
-  static constexpr int kTapZoneRow = kGestureStartRow + 1;
-  static constexpr int kDoubleTapZoneRow = kGestureStartRow + 2;
-  static constexpr int kSwipeZoneRow = kGestureStartRow + 3;
+  static constexpr int kTapZoneRow = kGestureStartRow;
+  static constexpr int kDoubleTapZoneRow = kGestureStartRow + 1;
+  static constexpr int kSwipeZoneRow = kGestureStartRow + 2;
+  static constexpr int kMainDisableLightRow = 3;
+  static constexpr int kMainDisableHighlightRow = 4;
   static constexpr int kTapZoneSelectorRow = -2;
   static constexpr int kSwipeZoneSelectorRow = -3;
   enum class SwipeDirection : uint8_t { Up, Down, Left, Right };

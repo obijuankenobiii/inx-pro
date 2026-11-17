@@ -43,6 +43,7 @@
 #include "state/BookState.h"
 #include "state/RecentBooks.h"
 #include "state/ReaderPreset.h"
+#include "state/ReaderSetting.h"
 #include "state/Session.h"
 #include "state/Statistics.h"
 #include "state/SystemSetting.h"
@@ -652,17 +653,16 @@ bool EpubActivity::slowPath() {
   const unsigned long epubLoadMs = millis() - epubLoadStart;
 
   const unsigned long coverStart = millis();
-  const bool coverAvailable = displayCoverOrTitle();
+  displayCoverOrTitle();
   const unsigned long coverMs = millis() - coverStart;
   loadingProgress = 30;
   drawLoadingScreen();
   vTaskDelay(pdMS_TO_TICKS(50));
 
-  INX_SERIAL.printf("[%lu] [THUMB-GEN] slowPath calling thumbnail coverAvailable=%d\n", millis(),
-                 coverAvailable ? 1 : 0);
-  const unsigned long thumbStart = millis();
-  ensureThumbnailExists(coverAvailable);
-  const unsigned long thumbMs = millis() - thumbStart;
+  // Do not block first-open on a library thumbnail. The reader already has
+  // the cover path for the opening screen; thumbnail generation is kept for
+  // explicit regeneration and library-side cache work.
+  constexpr unsigned long thumbMs = 0;
   const int initialSpine = epub->getSpineIndexForInitialOpen();
   // A number of EPUBs declare a cover/title XHTML item first, but that item
   // has no renderable pages. Starting there makes the first-open path build a
@@ -1027,7 +1027,7 @@ void EpubActivity::drawWordSelectionActionBar(const PageWordHit& word) {
 }
 
 bool EpubActivity::openWordSelection(const int x, const int y) {
-  if (!section || !epub) {
+  if (READER_SETTINGS.disableHighlight || !section || !epub) {
     return false;
   }
 
@@ -1643,11 +1643,17 @@ void EpubActivity::loop() {
   if (isToggleClosed) {
     isToggleClosed = false;
     const bool inheritedSettingsChanged = syncSettingsFromGlobalIfNeeded();
-    const bool layoutNeedsRebuild = inheritedSettingsChanged || statusBarLayout_.changedSinceApplied(bookSettings) ||
+    const bool drawerDisplayChanged = hasSettingsDrawerSnapshot_ &&
+                                      settingsDrawerSnapshot_.darkMode != bookSettings.darkMode;
+    const bool layoutNeedsRebuild = inheritedSettingsChanged || drawerDisplayChanged ||
+                                    statusBarLayout_.changedSinceApplied(bookSettings) ||
                                     (settingsDrawer && settingsDrawer->shouldUpdate()) ||
                                     (bookSettings.orientation != bookLayoutAppliedOrientation_);
     if (layoutNeedsRebuild) {
-      if (settingsDrawer) settingsDrawer->hide();
+      if (settingsDrawer) {
+        settingsDrawer->hide();
+        settingsDrawer->discardStoredFrame();
+      }
       settingsDrawerVisible = false;
       renderScreen(true);
       applyBookSettings();
@@ -1657,6 +1663,11 @@ void EpubActivity::loop() {
     } else {
       setupOrientation();
       bookLayoutAppliedOrientation_ = bookSettings.orientation;
+      if (settingsDrawer && settingsDrawer->restoreStoredFrame()) {
+        // The reader page is already in the framebuffer; avoid the extra full
+        // render that used to happen after closing an unchanged drawer.
+        updateRequired = false;
+      }
     }
     startPageTimer();
     return;
@@ -1672,6 +1683,22 @@ void EpubActivity::loop() {
   if (section && epub && !settingsDrawerVisible) {
     annUi_.tryChordEnter(*this);
     dictUi_.tryChordEnter(*this);
+  }
+
+  if (READER_SETTINGS.disableHighlight) {
+    bool highlightUiClosed = false;
+    if (annUi_.isActive()) {
+      annUi_.exit(*this);
+      highlightUiClosed = true;
+    }
+    if (wordSelectionOpen_) {
+      closeWordSelection();
+      highlightUiClosed = true;
+    }
+    if (highlightUiClosed) {
+      renderScreen(true);
+      return;
+    }
   }
 
   if (annUi_.isActive() || dictUi_.isActive()) {

@@ -1571,6 +1571,9 @@ navigation::Menu::Action Library::centerTap(const int tapX, const int tapY) cons
 bool Library::menuAction(const navigation::Menu::Action action) {
   if (action == navigation::Menu::Action::View || action == navigation::Menu::Action::Sort ||
       action == navigation::Menu::Action::Filter) {
+    // Keep the expensive library page, especially decoded thumbnail views, out
+    // of the redraw path while the control modal is open.
+    storeOverlayFrame();
     controlModalOpen = true;
     controlTab = action == navigation::Menu::Action::View
                      ? ControlTab::View
@@ -1582,6 +1585,13 @@ bool Library::menuAction(const navigation::Menu::Action action) {
     return true;
   }
   return false;
+}
+
+void Library::closeControlModal() {
+  if (!controlModalOpen) return;
+  controlModalOpen = false;
+  restoreOverlayFrameOnClose();
+  updateRequired = true;
 }
 
 void Library::menu() {
@@ -1622,7 +1632,7 @@ bool Library::controlModalInput() {
     if (controlTab == ControlTab::Filter && filterCategory_ != FilterCategory::Categories) {
       openFilterCategory(FilterCategory::Categories);
     } else {
-      controlModalOpen = false;
+      closeControlModal();
     }
     updateRequired = true;
     return true;
@@ -1653,10 +1663,10 @@ bool Library::controlModalInput() {
             openFilterCategory(FilterCategory::Categories);
           }
         } else if (swipeDown) {
-          controlModalOpen = false;
+          closeControlModal();
         }
       } else if (swipeDown) {
-        controlModalOpen = false;
+        closeControlModal();
       }
       updateRequired = true;
       return true;
@@ -1668,8 +1678,7 @@ bool Library::controlModalInput() {
       const int tapX = static_cast<int>(tapNx * renderer.getScreenWidth());
       const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
       if (tapX < modal.x || tapX >= modal.x + modal.width || tapY < modal.y || tapY >= modal.y + modal.height) {
-        controlModalOpen = false;
-        updateRequired = true;
+        closeControlModal();
         return true;
       }
       if (tapY >= modal.tabY && tapY < modal.tabY + modal.tabHeight) {
@@ -1780,8 +1789,7 @@ void Library::handleSortTap(const int tapX, const int tapY) {
     applySort((tapY - y) / rowHeight);
     return;
   }
-  controlModalOpen = false;
-  updateRequired = true;
+  closeControlModal();
 }
 
 void Library::viewDropdown() const {
@@ -1833,6 +1841,7 @@ void Library::applyView(const int index) {
       break;
   }
   SETTINGS.saveToFile();
+  discardOverlayFrame();
   load();
   updateRequired = true;
 }
@@ -1843,6 +1852,7 @@ void Library::applySort(const int index) {
   SETTINGS.librarySortMode = static_cast<uint8_t>(index);
   SETTINGS.saveToFile();
   sortOpen = false;
+  discardOverlayFrame();
   load();
   updateRequired = true;
 }
@@ -1850,6 +1860,7 @@ void Library::applySort(const int index) {
 void Library::applyFilter(const int index) {
   if (index < 0 || index >= 26) return;
   titleFilters_.flip(index);
+  discardOverlayFrame();
   load();
   updateRequired = true;
 }
@@ -1900,6 +1911,7 @@ const char* Library::filterCategoryLabel(const FilterCategory category) {
 void Library::applyTypeFilter(const int index) {
   if (index < 0 || index >= 4) return;
   typeFilters_.flip(index);
+  discardOverlayFrame();
   load();
   updateRequired = true;
 }
@@ -2000,6 +2012,7 @@ void Library::applyMetadataFilter(const int index) {
     }
   }
 
+  discardOverlayFrame();
   load();
   updateRequired = true;
 }
@@ -2011,6 +2024,7 @@ void Library::clearFilters() {
   }
   if (!hasSelection) return;
   resetFilterSelections();
+  discardOverlayFrame();
   load();
   updateRequired = true;
 }
@@ -2135,8 +2149,7 @@ void Library::handleFilterTap(const int tapX, const int tapY) {
   const FilterDrawerLayout drawer = filterDrawerLayout(renderer, rowCount);
 
   if (tapY < drawer.y || tapY >= drawer.y + drawer.height || tapX < drawer.x || tapX >= drawer.x + drawer.width) {
-    controlModalOpen = false;
-    updateRequired = true;
+    closeControlModal();
     return;
   }
 
@@ -2150,8 +2163,7 @@ void Library::handleFilterTap(const int tapX, const int tapY) {
     } else if (tapX >= footer.clear.x && tapX < footer.clear.x + footer.clear.width) {
       clearFilters();
     } else if (tapX >= footer.done.x && tapX < footer.done.x + footer.done.width) {
-      controlModalOpen = false;
-      updateRequired = true;
+      closeControlModal();
     }
     return;
   }
@@ -2171,6 +2183,7 @@ void Library::handleFilterTap(const int tapX, const int tapY) {
     } else if (rowIndex == kFilterCategoryCount) {
       SETTINGS.hideFinishedBooks = SETTINGS.hideFinishedBooks == 0 ? 1 : 0;
       SETTINGS.saveToFile();
+      discardOverlayFrame();
       load();
       updateRequired = true;
     }
@@ -2187,6 +2200,7 @@ void Library::handleFilterTap(const int tapX, const int tapY) {
   } else if (filterCategory_ == FilterCategory::Options && contentIndex == 0) {
     SETTINGS.hideFinishedBooks = SETTINGS.hideFinishedBooks == 0 ? 1 : 0;
     SETTINGS.saveToFile();
+    discardOverlayFrame();
     load();
     updateRequired = true;
   }

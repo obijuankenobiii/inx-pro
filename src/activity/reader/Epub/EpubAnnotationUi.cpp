@@ -11,6 +11,7 @@
 #include "EpubAnnotationStorage.h"
 #include "activity/page/components/global/Button.h"
 #include "images/Close.h"
+#include "state/ReaderSetting.h"
 #include "system/FontManager.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
@@ -70,7 +71,7 @@ void EpubAnnotationUi::resetTouchGestureState() {
 }
 
 void EpubAnnotationUi::tryChordEnter(EpubActivity& act) {
-  if (!act.epub || !act.section || mode_) {
+  if (READER_SETTINGS.disableHighlight || !act.epub || !act.section || mode_) {
     return;
   }
   const bool down = act.mappedInput.rawHalIsPressed(HalGPIO::BTN_DOWN);
@@ -147,7 +148,7 @@ void EpubAnnotationUi::normalizeSpans(std::vector<std::pair<size_t, size_t>>& sp
 }
 
 void EpubAnnotationUi::enter(EpubActivity& act) {
-  if (!act.section || !act.epub) {
+  if (READER_SETTINGS.disableHighlight || !act.section || !act.epub) {
     return;
   }
   act.btnBindings_.reset();
@@ -178,6 +179,9 @@ bool EpubAnnotationUi::focusAt(const int x, const int y) {
 }
 
 bool EpubAnnotationUi::startAt(EpubActivity& act, const int x, const int y) {
+  if (READER_SETTINGS.disableHighlight) {
+    return false;
+  }
   enter(act);
   if (!mode_ || !focusAt(x, y)) {
     if (mode_) {
@@ -192,7 +196,7 @@ bool EpubAnnotationUi::startAt(EpubActivity& act, const int x, const int y) {
 }
 
 bool EpubAnnotationUi::handlePreEntryTouchGesture(EpubActivity& act) {
-  if (mode_ || !act.epub || !act.section || !act.mappedInput.hasTouch()) {
+  if (READER_SETTINGS.disableHighlight || mode_ || !act.epub || !act.section || !act.mappedInput.hasTouch()) {
     return false;
   }
 

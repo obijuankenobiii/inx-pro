@@ -303,7 +303,10 @@ SettingsDrawer::SettingsDrawer(GfxRenderer& renderer, BookSettings& settings, st
 /**
  * @brief Destructor
  */
-SettingsDrawer::~SettingsDrawer() { clearSelectorFrame(); }
+SettingsDrawer::~SettingsDrawer() {
+  clearSelectorFrame();
+  discardStoredFrame();
+}
 
 void SettingsDrawer::setEmbeddedRegion(int x, int y, int w, int h) {
   embedded_ = true;
@@ -706,6 +709,14 @@ void SettingsDrawer::show() {
   closeMarginEditor();
   selectedIndex = -1;
   scrollOffset = 0;
+  if (!embedded_) {
+    // Keep the reader page available for a fast close when no layout-affecting
+    // setting was changed. Embedded preset editing owns the surrounding frame.
+    discardStoredFrame();
+    renderer.syncWriteBufferFromActive();
+    renderer.freeBwBufferChunks();
+    storedFrame_ = renderer.storeBwBuffer();
+  }
   renderWithRefresh(HalDisplay::FAST_REFRESH);
 }
 
@@ -717,6 +728,23 @@ void SettingsDrawer::hide() {
   dismissed = true;
   closeSelector();
   closeMarginEditor();
+}
+
+bool SettingsDrawer::restoreStoredFrame() {
+  if (!storedFrame_) return false;
+  if (!renderer.copyStoredBwToFramebuffer()) {
+    discardStoredFrame();
+    return false;
+  }
+  renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+  discardStoredFrame();
+  return true;
+}
+
+void SettingsDrawer::discardStoredFrame() {
+  if (!storedFrame_) return;
+  renderer.freeBwBufferChunks();
+  storedFrame_ = false;
 }
 
 void SettingsDrawer::relayoutForRendererChange() {

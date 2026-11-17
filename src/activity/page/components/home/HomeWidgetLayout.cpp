@@ -11,7 +11,10 @@ int gridRows(const HomeTheme::Layout layout) {
                  layout == HomeTheme::Layout::HalfMiddle || layout == HomeTheme::Layout::HalfBottom ||
                  layout == HomeTheme::Layout::HalfTop50 || layout == HomeTheme::Layout::HalfMiddle50 ||
                  layout == HomeTheme::Layout::HalfBottom50 || layout == HomeTheme::Layout::HalfTopMiddle40 ||
-                 layout == HomeTheme::Layout::HalfTopBottom40 || layout == HomeTheme::Layout::HalfMiddleBottom40
+                 layout == HomeTheme::Layout::HalfTopBottom40 || layout == HomeTheme::Layout::HalfMiddleBottom40 ||
+                 layout == HomeTheme::Layout::HalfTop50Middle30 || layout == HomeTheme::Layout::HalfTop50Bottom30 ||
+                 layout == HomeTheme::Layout::HalfMiddle50Top30 || layout == HomeTheme::Layout::HalfMiddle50Bottom30 ||
+                 layout == HomeTheme::Layout::HalfBottom50Top30 || layout == HomeTheme::Layout::HalfBottom50Middle30
              ? 3
              : 2;
 }
@@ -21,13 +24,22 @@ bool isHalfStackLayout(const HomeTheme::Layout layout) {
          layout == HomeTheme::Layout::HalfBottom || layout == HomeTheme::Layout::HalfTop50 ||
          layout == HomeTheme::Layout::HalfMiddle50 || layout == HomeTheme::Layout::HalfBottom50 ||
          layout == HomeTheme::Layout::HalfTopMiddle40 || layout == HomeTheme::Layout::HalfTopBottom40 ||
-         layout == HomeTheme::Layout::HalfMiddleBottom40;
+         layout == HomeTheme::Layout::HalfMiddleBottom40 ||
+         layout == HomeTheme::Layout::HalfTop50Middle30 || layout == HomeTheme::Layout::HalfTop50Bottom30 ||
+         layout == HomeTheme::Layout::HalfMiddle50Top30 || layout == HomeTheme::Layout::HalfMiddle50Bottom30 ||
+         layout == HomeTheme::Layout::HalfBottom50Top30 || layout == HomeTheme::Layout::HalfBottom50Middle30;
 }
 
 int halfStackRowPercent(const HomeTheme::Layout layout, const int row) {
   if (layout == HomeTheme::Layout::HalfTop50) return row == 0 ? 50 : 25;
   if (layout == HomeTheme::Layout::HalfMiddle50) return row == 1 ? 50 : 25;
   if (layout == HomeTheme::Layout::HalfBottom50) return row == 2 ? 50 : 25;
+  if (layout == HomeTheme::Layout::HalfTop50Middle30) return row == 0 ? 50 : row == 1 ? 30 : 20;
+  if (layout == HomeTheme::Layout::HalfTop50Bottom30) return row == 0 ? 50 : row == 1 ? 20 : 30;
+  if (layout == HomeTheme::Layout::HalfMiddle50Top30) return row == 0 ? 30 : row == 1 ? 50 : 20;
+  if (layout == HomeTheme::Layout::HalfMiddle50Bottom30) return row == 0 ? 20 : row == 1 ? 50 : 30;
+  if (layout == HomeTheme::Layout::HalfBottom50Top30) return row == 0 ? 30 : row == 1 ? 20 : 50;
+  if (layout == HomeTheme::Layout::HalfBottom50Middle30) return row == 0 ? 20 : row == 1 ? 30 : 50;
   if (layout == HomeTheme::Layout::HalfTopMiddle40) return row < 2 ? 40 : 20;
   if (layout == HomeTheme::Layout::HalfTopBottom40) return row == 1 ? 20 : 40;
   if (layout == HomeTheme::Layout::HalfMiddleBottom40) return row == 0 ? 20 : 40;
@@ -87,8 +99,34 @@ int halfStackRowY(const HomeTheme::Layout layout, const int areaY, const int are
   return y;
 }
 
-bool isTwentyPercentRow(const HomeTheme::Layout layout, const int slot) {
-  return isHalfStackLayout(layout) && halfStackRowPercent(layout, slot) == 20;
+bool isMostCompactRow(const HomeTheme::Layout layout, const int slot) {
+  return isHalfStackLayout(layout) && halfStackRowPercent(layout, slot) <= 25;
+}
+
+bool isHalfStack50Row(const HomeTheme::Layout layout, const int slot) {
+  return isHalfStackLayout(layout) && halfStackRowPercent(layout, slot) == 50;
+}
+
+// The 50% row in a 1x3 half-stack has enough room for the established 1x2
+// widget treatment.  Keep the special carousel presentation independent, but
+// let every other widget opt out of the 1x3 compact styling in that row.
+bool useOneByTwoWidgetLayout(const HomeTheme::Layout layout, const int slot) {
+  return isCompactLayout(layout) && !isHalfStack50Row(layout, slot);
+}
+
+bool useLargeCenterCarousel(const HomeTheme::Theme& theme, const int slot,
+                            const HomeTheme::CarouselStyle style) {
+  if (style != HomeTheme::CarouselStyle::Centered) return false;
+  return (isHalfStackLayout(theme.layout) && halfStackRowPercent(theme.layout, slot) == 50) ||
+         (theme.layout == HomeTheme::Layout::OneByTwo && SETTINGS.hiddenMenu != 0);
+}
+
+// Compact layouts normally use the multi-card carousel treatment. The large
+// center treatment remains reserved for the dedicated 50% carousel and the
+// menu-free 1x2 layout.
+bool useFourBookCarousel(const HomeTheme::Theme& theme, const int slot) {
+  return isCompactLayout(theme.layout) &&
+         !useLargeCenterCarousel(theme, slot, theme.carouselStyles[slot]);
 }
 
 }  // namespace
@@ -132,6 +170,12 @@ void HomeWidgetLayout::render(const HomeTheme::Theme& theme, const int carouselI
     case HomeTheme::Layout::HalfTopMiddle40:
     case HomeTheme::Layout::HalfTopBottom40:
     case HomeTheme::Layout::HalfMiddleBottom40:
+    case HomeTheme::Layout::HalfTop50Middle30:
+    case HomeTheme::Layout::HalfTop50Bottom30:
+    case HomeTheme::Layout::HalfMiddle50Top30:
+    case HomeTheme::Layout::HalfMiddle50Bottom30:
+    case HomeTheme::Layout::HalfBottom50Top30:
+    case HomeTheme::Layout::HalfBottom50Middle30:
       renderGrid(theme, carouselIndex, favoriteIndex);
       return;
     case HomeTheme::Layout::OneByOne:
@@ -154,8 +198,9 @@ void HomeWidgetLayout::preloadCarousel(const HomeTheme::Theme& theme, const int 
     const Bounds bounds = slotBounds(layout, slot);
     carousel_.preload(carouselIndex, bounds.x, bounds.y, bounds.width, bounds.height, theme.carouselStyles[slot],
                       theme.carouselLabels[slot] != 0, theme.carouselLabelColors[slot], hideFirst,
-                      theme.carouselFullHeight[slot] != 0, isCompactLayout(theme.layout),
-                      theme.layout == HomeTheme::Layout::OneByTwo && SETTINGS.hiddenMenu != 0);
+                      theme.carouselFullHeight[slot] != 0, useFourBookCarousel(theme, slot),
+                      theme.layout == HomeTheme::Layout::OneByTwo && SETTINGS.hiddenMenu != 0,
+                      useLargeCenterCarousel(theme, slot, theme.carouselStyles[slot]));
   }
 }
 
@@ -341,23 +386,24 @@ int HomeWidgetLayout::recentGridPageCount(const HomeTheme::Theme& theme, const i
 void HomeWidgetLayout::renderSlot(const HomeTheme::Theme& theme, const int slot, const Bounds& bounds,
                                   const int carouselIndex, const int favoriteIndex, const int descriptionRecentIndex,
                                   const bool hideFirst, const int recentGridPageIndex, const int flowIndex) const {
+  const bool compactWidgetLayout = useOneByTwoWidgetLayout(theme.layout, slot);
+  const bool mostCompactRow = isMostCompactRow(theme.layout, slot);
   switch (theme.widgets[slot]) {
     case HomeTheme::Widget::Carousel:
       carousel_.render(carouselIndex, bounds.x, bounds.y, bounds.width, bounds.height, theme.backgrounds[slot] != 0,
                        theme.carouselStyles[slot], theme.carouselLabels[slot] != 0, theme.carouselLabelColors[slot],
                        theme.carouselShadowStyles[slot], theme.carouselProgress[slot] != 0, hideFirst,
-                       theme.carouselFullHeight[slot] != 0, isCompactLayout(theme.layout),
-                       theme.layout == HomeTheme::Layout::OneByTwo && SETTINGS.hiddenMenu != 0);
+                       theme.carouselFullHeight[slot] != 0, useFourBookCarousel(theme, slot),
+                       theme.layout == HomeTheme::Layout::OneByTwo && SETTINGS.hiddenMenu != 0,
+                       useLargeCenterCarousel(theme, slot, theme.carouselStyles[slot]));
       break;
     case HomeTheme::Widget::Shortcuts: shortcut_.render(bounds.x, bounds.y, bounds.width, bounds.height); break;
     case HomeTheme::Widget::ListShortcuts: shortcutList_.render(bounds.x, bounds.y, bounds.width, bounds.height); break;
     case HomeTheme::Widget::Clock:
-      clock_.render(bounds.x, bounds.y, bounds.width, bounds.height, isCompactLayout(theme.layout),
-                    isTwentyPercentRow(theme.layout, slot));
+      clock_.render(bounds.x, bounds.y, bounds.width, bounds.height, compactWidgetLayout, mostCompactRow);
       break;
     case HomeTheme::Widget::Calendar:
-      calendar_.render(bounds.x, bounds.y, bounds.width, bounds.height,
-                       isCompactLayout(theme.layout));
+      calendar_.render(bounds.x, bounds.y, bounds.width, bounds.height, compactWidgetLayout);
       break;
     case HomeTheme::Widget::Recent:
       recent_.render(bounds.x, bounds.y, bounds.width, bounds.height, theme.backgrounds[slot] != 0,
@@ -381,42 +427,52 @@ void HomeWidgetLayout::renderSlot(const HomeTheme::Theme& theme, const int slot,
     case HomeTheme::Widget::Humidity: humidity_.render(bounds.x, bounds.y, bounds.width, bounds.height); break;
 #endif
     case HomeTheme::Widget::TodaysReading:
-      todaysReading_.render(bounds.x, bounds.y, bounds.width, bounds.height,
-                            isCompactLayout(theme.layout), isTwentyPercentRow(theme.layout, slot));
+      todaysReading_.render(bounds.x, bounds.y, bounds.width, bounds.height, compactWidgetLayout, mostCompactRow);
       break;
     case HomeTheme::Widget::Statistics:
-      weeklyStatistics_.render(bounds.x, bounds.y, bounds.width, bounds.height,
-                               isCompactLayout(theme.layout),
+      weeklyStatistics_.render(bounds.x, bounds.y, bounds.width, bounds.height, compactWidgetLayout,
                                theme.carouselStyles[slot] == HomeTheme::CarouselStyle::Left,
                                theme.statisticsSummary[slot] != 0);
       break;
     case HomeTheme::Widget::Streaks:
       {
-        const bool compact = isCompactLayout(theme.layout) || theme.streakCompact[slot] != 0;
+        const bool compact = isHalfStack50Row(theme.layout, slot)
+                                 ? false
+                                 : compactWidgetLayout || theme.streakCompact[slot] != 0;
+        const bool monthly = !compact &&
+                             (theme.layout == HomeTheme::Layout::OneByTwo ||
+                              isHalfStack50Row(theme.layout, slot));
         streaks_.render(bounds.x, bounds.y, bounds.width, bounds.height,
-                        theme.layout == HomeTheme::Layout::OneByTwo && !compact, compact,
-                        isTwentyPercentRow(theme.layout, slot));
+                        monthly, compact,
+                        mostCompactRow);
       }
       break;
     case HomeTheme::Widget::Favorites:
       favorites_.render(favoriteIndex, bounds.x, bounds.y, bounds.width, bounds.height, theme.backgrounds[slot] != 0,
                         theme.carouselStyles[slot], theme.carouselLabels[slot] != 0, theme.carouselLabelColors[slot],
                         theme.carouselShadowStyles[slot], theme.carouselFullHeight[slot] != 0,
-                        isCompactLayout(theme.layout));
+                        compactWidgetLayout);
       break;
     case HomeTheme::Widget::Heatmap:
+      {
+        // Heatmap's historical compact branch is its 1x2 treatment (the
+        // other widgets use compact for 1x3), so keep that mapping explicit
+        // for a 50% half-stack row.
+        const bool heatmapOneByTwo = theme.layout == HomeTheme::Layout::OneByTwo ||
+                                     isHalfStack50Row(theme.layout, slot);
+        const bool heatmapCompact = compactWidgetLayout || heatmapOneByTwo;
       heatmap_.render(bounds.x, bounds.y, bounds.width, bounds.height, HomeTheme::HeatmapView::Monthly, false,
-                      theme.carouselLabelColors[slot], isCompactLayout(theme.layout),
-                      isCompactLayout(theme.layout) && !isTwentyPercentRow(theme.layout, slot),
-                      isTwentyPercentRow(theme.layout, slot),
+                      theme.carouselLabelColors[slot], heatmapCompact,
+                      compactWidgetLayout && !mostCompactRow, mostCompactRow,
                       theme.layout == HomeTheme::Layout::OneByThree && navigation::Menu::bottomInset() > 0,
                       theme.layout == HomeTheme::Layout::OneByThree ||
                           (isHalfStackLayout(theme.layout) && halfStackRowPercent(theme.layout, slot) < 40));
+      }
       break;
     case HomeTheme::Widget::Library:
       library_.render(bounds.x, bounds.y, bounds.width, bounds.height, theme.libraryFolders[slot],
                       theme.backgrounds[slot] != 0, theme.carouselLabels[slot] != 0,
-                      isCompactLayout(theme.layout));
+                      compactWidgetLayout);
       break;
     case HomeTheme::Widget::Description:
       description_.render(descriptionRecentIndex, bounds.x, bounds.y, bounds.width, bounds.height,
@@ -424,7 +480,7 @@ void HomeWidgetLayout::renderSlot(const HomeTheme::Theme& theme, const int slot,
                           theme.carouselLabelColors[slot], theme.carouselShadowStyles[slot],
                           theme.descriptionTitles[slot] != 0, theme.descriptionAuthors[slot] != 0,
                           theme.descriptionProgress[slot] != 0, theme.descriptionRatings[slot] != 0,
-                          isCompactLayout(theme.layout));
+                          compactWidgetLayout);
       break;
     case HomeTheme::Widget::Empty:
     default: break;
@@ -560,8 +616,9 @@ int HomeWidgetLayout::carouselAt(const HomeTheme::Theme& theme, const int carous
   return carousel_.hitTest(carouselIndex, count, x, y, bounds.x, bounds.y, bounds.width, bounds.height,
                            theme.carouselStyles[slot], theme.carouselLabels[slot] != 0, theme.carouselLabelColors[slot],
                            hideFirst, theme.carouselFullHeight[slot] != 0,
-                           isCompactLayout(theme.layout),
-                           theme.layout == HomeTheme::Layout::OneByTwo && SETTINGS.hiddenMenu != 0);
+                           useFourBookCarousel(theme, slot),
+                           theme.layout == HomeTheme::Layout::OneByTwo && SETTINGS.hiddenMenu != 0,
+                           useLargeCenterCarousel(theme, slot, theme.carouselStyles[slot]));
 }
 
 bool HomeWidgetLayout::hideFirstCarouselBook(const HomeTheme::Theme& theme) const {
@@ -710,7 +767,7 @@ int HomeWidgetLayout::favoritesAt(const HomeTheme::Theme& theme, const int carou
     const int hit = favorites_.hitTest(carouselIndex, x, y, bounds.x, bounds.y, bounds.width, bounds.height,
                                        theme.carouselStyles[slot], theme.carouselLabels[slot] != 0,
                                        theme.carouselLabelColors[slot], theme.carouselFullHeight[slot] != 0,
-                                       isCompactLayout(theme.layout));
+                                       useOneByTwoWidgetLayout(theme.layout, slot));
     if (hit >= 0) return hit;
   }
   return -1;
@@ -723,7 +780,7 @@ int HomeWidgetLayout::todaysReadingAt(const HomeTheme::Theme& theme, const int x
     if (theme.widgets[slot] != HomeTheme::Widget::TodaysReading) continue;
     const Bounds bounds = slotBounds(layout, slot);
     if (todaysReading_.buttonHitTest(x, y, bounds.x, bounds.y, bounds.width, bounds.height,
-                                     isCompactLayout(theme.layout), isTwentyPercentRow(theme.layout, slot)))
+                                     useOneByTwoWidgetLayout(theme.layout, slot), isMostCompactRow(theme.layout, slot)))
       return slot;
   }
   return -1;

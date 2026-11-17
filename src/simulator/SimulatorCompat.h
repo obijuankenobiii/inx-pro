@@ -46,6 +46,9 @@ typedef unsigned int UBaseType_t;
 #ifndef FREEINK_DEVICE_STICKY
 #define FREEINK_DEVICE_STICKY 0
 #endif
+#ifndef FREEINK_DEVICE_PICCO
+#define FREEINK_DEVICE_PICCO 0
+#endif
 
 #ifndef MALLOC_CAP_8BIT
 #define MALLOC_CAP_8BIT 0
@@ -55,6 +58,22 @@ typedef unsigned int UBaseType_t;
 #endif
 #ifndef MALLOC_CAP_INTERNAL
 #define MALLOC_CAP_INTERNAL 0
+#endif
+
+#ifndef ESP_OK
+#define ESP_OK 0
+#endif
+#ifndef ESP_MAC_WIFI_STA
+#define ESP_MAC_WIFI_STA 0
+#endif
+
+#ifdef __cplusplus
+inline int esp_read_mac(uint8_t* mac, int) {
+  if (mac) {
+    for (int i = 0; i < 6; ++i) mac[i] = 0;
+  }
+  return ESP_OK;
+}
 #endif
 
 #ifndef ps_malloc
@@ -101,6 +120,10 @@ inline uint32_t esp_random() {
   static uint32_t state = 0x9e3779b9U;
   state = state * 1664525U + 1013904223U + xTaskGetTickCount();
   return state;
+}
+
+inline void vTaskDelay(const TickType_t ticks) {
+  (void)ticks;
 }
 #endif
 

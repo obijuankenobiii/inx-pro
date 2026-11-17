@@ -139,6 +139,7 @@ class Library final : public UiPage {
   void filterPopup() const;
   void controlModal() const;
   bool controlModalInput();
+  void closeControlModal();
   void viewDropdown() const;
   void handleSortTap(int tapX, int tapY);
   void handleFilterTap(int tapX, int tapY);

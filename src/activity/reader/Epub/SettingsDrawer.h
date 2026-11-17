@@ -50,6 +50,12 @@ class SettingsDrawer {
    */
   void hide();
 
+  /** Restore the reader frame captured when the standalone drawer was opened. */
+  bool restoreStoredFrame();
+
+  /** Discard the captured reader frame before a full page rebuild. */
+  void discardStoredFrame();
+
   /**
    * @brief Renders the settings drawer
    */
@@ -196,6 +202,7 @@ class SettingsDrawer {
   std::function<void()> onEmbeddedInvalidate_;  ///< Host push callback used instead of displayBuffer when embedded
   bool visible = false;    ///< Drawer visibility state
   bool dismissed = false;  ///< Drawer dismissed state
+  bool storedFrame_ = false;  ///< Standalone reader frame saved before opening the drawer
   int selectedIndex = 0;   ///< Currently selected menu index
   int drawerHeight;        ///< Height of the drawer
   int drawerY;             ///< Y-coordinate of drawer top

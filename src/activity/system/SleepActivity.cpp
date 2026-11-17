@@ -7,6 +7,7 @@
 
 #include <Arduino.h>
 #include <Bitmap.h>
+#include <BoardConfig.h>
 #include <Epub.h>
 #include <Epub/Page.h>
 #include <Epub/Section.h>
@@ -365,8 +366,9 @@ std::string resolveLastReadCoverPathForSleep(const std::string& path) {
 void SleepActivity::onEnter() {
   Activity::onEnter();
 
-  const bool renderSleepImage = SETTINGS.sleepScreen == SystemSetting::SLEEP_SCREEN_MODE::CUSTOM ||
-                                SETTINGS.sleepScreen == SystemSetting::SLEEP_SCREEN_MODE::COVER;
+  const bool renderSleepImage = BoardConfig::ACTIVE.displayController == BoardConfig::DisplayController::UC8179 &&
+                                (SETTINGS.sleepScreen == SystemSetting::SLEEP_SCREEN_MODE::CUSTOM ||
+                                 SETTINGS.sleepScreen == SystemSetting::SLEEP_SCREEN_MODE::COVER);
   if (renderSleepImage) {
     prepareSleepImageBuffer(renderer);
     renderer.displayBuffer(HalDisplay::FULL_REFRESH);

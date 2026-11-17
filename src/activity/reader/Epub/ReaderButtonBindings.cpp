@@ -55,17 +55,21 @@ bool ReaderButtonBindings::handleTouchSwipe(EpubActivity& act) {
     return false;
   }
 
-  // Swipe zones are three full-height columns. Y never selects a separate
-  // zone; the side columns are vertical and the middle column is horizontal.
+  // Swipe zones are three full-height columns. The outer columns expose
+  // inward-facing horizontal actions in their middle areas; the center
+  // column remains a continuous horizontal zone.
   const uint8_t zone = swipeZoneIndex(startNx);
-  const bool verticalZone = (zone % ReaderSetting::SWIPE_ZONE_COLUMNS) != 1;
-  const bool directionAllowed = verticalZone
-                                   ? (direction == SwipeDirection::Up || direction == SwipeDirection::Down)
-                                   : (direction == SwipeDirection::Left || direction == SwipeDirection::Right);
-  // The side columns are vertical-only and the center column is horizontal-only.
-  // Do not claim a direction that does not belong to this custom zone. Returning
-  // false lets the reader's built-in gestures (including swipe-up to leave the
-  // book) process it normally.
+  const bool verticalDirection = direction == SwipeDirection::Up || direction == SwipeDirection::Down;
+  const bool horizontalDirection = direction == SwipeDirection::Left || direction == SwipeDirection::Right;
+  const bool directionAllowed = zone == 0
+                                    ? (verticalDirection || direction == SwipeDirection::Right)
+                                    : zone == ReaderSetting::SWIPE_ZONE_COLUMNS - 1
+                                        ? (verticalDirection || direction == SwipeDirection::Left)
+                                        : horizontalDirection;
+  // Do not claim a direction that does not belong to this custom zone. The
+  // bottom-edge exit remains a built-in reader gesture even if the right
+  // column has a configured upward action.
+  if (direction == SwipeDirection::Up && startNy >= 0.95f) return false;
   if (!directionAllowed) return false;
 
   uint8_t action = SystemSetting::BTN_ACTION_NONE;

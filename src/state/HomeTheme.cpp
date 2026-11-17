@@ -164,7 +164,7 @@ void ensureLoaded() {
   if (!loaded) load();
 }
 
-bool validLayout(const uint8_t value) { return value <= static_cast<uint8_t>(Layout::HalfMiddleBottom40); }
+bool validLayout(const uint8_t value) { return value <= static_cast<uint8_t>(Layout::HalfBottom50Middle30); }
 
 bool validWidget(const uint8_t value) {
   return value <= static_cast<uint8_t>(Widget::Streaks);
@@ -1100,6 +1100,18 @@ const char* layoutLabel(const Layout layout) {
       return "40 | 20 | 40";
     case Layout::HalfMiddleBottom40:
       return "20 | 40 | 40";
+    case Layout::HalfTop50Middle30:
+      return "50 | 30 | 20";
+    case Layout::HalfTop50Bottom30:
+      return "50 | 20 | 30";
+    case Layout::HalfMiddle50Top30:
+      return "30 | 50 | 20";
+    case Layout::HalfMiddle50Bottom30:
+      return "20 | 50 | 30";
+    case Layout::HalfBottom50Top30:
+      return "30 | 20 | 50";
+    case Layout::HalfBottom50Middle30:
+      return "20 | 30 | 50";
     default:
       return "Unknown";
   }
@@ -1208,7 +1220,10 @@ int slotCount(const Layout layout) {
                  layout == Layout::HalfBottom || layout == Layout::HalfTop50 ||
                  layout == Layout::HalfMiddle50 || layout == Layout::HalfBottom50 ||
                  layout == Layout::HalfTopMiddle40 || layout == Layout::HalfTopBottom40 ||
-                 layout == Layout::HalfMiddleBottom40 ? 3
+                 layout == Layout::HalfMiddleBottom40 || layout == Layout::HalfTop50Middle30 ||
+                 layout == Layout::HalfTop50Bottom30 || layout == Layout::HalfMiddle50Top30 ||
+                 layout == Layout::HalfMiddle50Bottom30 || layout == Layout::HalfBottom50Top30 ||
+                 layout == Layout::HalfBottom50Middle30 ? 3
        : layout == Layout::OneByTwo                            ? 2
                                                                : 0;
 }

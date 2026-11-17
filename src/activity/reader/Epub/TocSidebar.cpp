@@ -65,27 +65,46 @@ ButtonBounds TocSidebar::syncButtonBounds() const {
 }
 
 int TocSidebar::maxScroll() const {
-  return std::max(0, static_cast<int>(visibleItems.size()) - visibleRows());
+  const int total = rowScanIndex >= tocCount ? static_cast<int>(visibleItems.size()) : tocCount;
+  return std::max(0, total - visibleRows());
 }
 
-bool TocSidebar::hasChildren(const int tocIndex) const {
-  return tocIndex >= 0 && tocIndex + 1 < static_cast<int>(levels.size()) && levels[tocIndex + 1] > levels[tocIndex];
+uint8_t TocSidebar::levelAt(const int tocIndex) {
+  static constexpr uint8_t kUnknownLevel = 0xFF;
+  if (!epub || tocIndex < 0 || tocIndex >= tocCount) return 0;
+  if (levels[static_cast<size_t>(tocIndex)] == kUnknownLevel) {
+    levels[static_cast<size_t>(tocIndex)] = epub->getTocItem(tocIndex).level;
+  }
+  return levels[static_cast<size_t>(tocIndex)];
+}
+
+bool TocSidebar::hasChildren(const int tocIndex) {
+  return tocIndex >= 0 && tocIndex + 1 < tocCount && levelAt(tocIndex + 1) > levelAt(tocIndex);
+}
+
+void TocSidebar::ensureRows(const int count) {
+  const int requested = std::max(0, count);
+  while (static_cast<int>(visibleItems.size()) < requested && rowScanIndex < tocCount) {
+    const int tocIndex = rowScanIndex++;
+    const int level = levelAt(tocIndex);
+    if (hiddenLevel >= 0 && level > hiddenLevel) continue;
+
+    hiddenLevel = -1;
+    visibleItems.push_back(tocIndex);
+    if (collapsed[static_cast<size_t>(tocIndex)] && hasChildren(tocIndex)) {
+      hiddenLevel = level;
+    }
+  }
 }
 
 void TocSidebar::rows() {
   visibleItems.clear();
-
-  int hiddenLevel = -1;
-  for (int tocIndex = 0; tocIndex < static_cast<int>(levels.size()); ++tocIndex) {
-    const int level = levels[tocIndex];
-    if (hiddenLevel >= 0 && level > hiddenLevel) continue;
-    hiddenLevel = -1;
-
-    visibleItems.push_back(tocIndex);
-    if (collapsed[tocIndex] && hasChildren(tocIndex)) hiddenLevel = level;
+  rowScanIndex = 0;
+  hiddenLevel = -1;
+  ensureRows(scroll + visibleRows());
+  if (rowScanIndex >= tocCount) {
+    scroll = std::min(scroll, std::max(0, static_cast<int>(visibleItems.size()) - visibleRows()));
   }
-
-  scroll = std::min(scroll, maxScroll());
 }
 
 void TocSidebar::show(Epub* book, const int spineIndex) {
@@ -94,32 +113,16 @@ void TocSidebar::show(Epub* book, const int spineIndex) {
   collapsed.clear();
   visibleItems.clear();
 
-  const int count = epub ? epub->getTocItemsCount() : 0;
-  levels.reserve(count);
-  collapsed.assign(count, 0);
-  for (int tocIndex = 0; tocIndex < count; ++tocIndex) {
-    levels.push_back(epub->getTocItem(tocIndex).level);
-  }
-  for (int tocIndex = 0; tocIndex < count; ++tocIndex) {
-    collapsed[tocIndex] = hasChildren(tocIndex);
-  }
+  tocCount = epub ? epub->getTocItemsCount() : 0;
+  static constexpr uint8_t kUnknownLevel = 0xFF;
+  levels.assign(static_cast<size_t>(tocCount), kUnknownLevel);
+  // Parents start collapsed, but their levels and titles are fetched only as
+  // the corresponding rows enter the visible window.
+  collapsed.assign(static_cast<size_t>(tocCount), 1);
 
   currentTocIndex = epub ? epub->getTocIndexForSpineIndex(spineIndex) : -1;
-  if (currentTocIndex >= 0 && currentTocIndex < count) {
-    int childLevel = levels[static_cast<size_t>(currentTocIndex)];
-    for (int tocIndex = currentTocIndex - 1; tocIndex >= 0 && childLevel > 0; --tocIndex) {
-      const int level = levels[static_cast<size_t>(tocIndex)];
-      if (level < childLevel) {
-        collapsed[static_cast<size_t>(tocIndex)] = 0;
-        childLevel = level;
-      }
-    }
-  }
+  scroll = 0;
   rows();
-
-  const auto currentRow = std::find(visibleItems.begin(), visibleItems.end(), currentTocIndex);
-  scroll = currentRow == visibleItems.end() ? 0 : std::max(0, static_cast<int>(currentRow - visibleItems.begin()) - visibleRows() / 2);
-  scroll = std::min(scroll, maxScroll());
   visible = true;
 
   renderer.syncWriteBufferFromActive();
@@ -149,7 +152,11 @@ void TocSidebar::releaseStoredFrame() {
 }
 
 void TocSidebar::scrollBy(const int rows) {
-  const int next = std::max(0, std::min(maxScroll(), scroll + rows));
+  const int requested = std::max(0, std::min(maxScroll(), scroll + rows));
+  ensureRows(requested + visibleRows());
+  const int next = rowScanIndex >= tocCount
+                       ? std::max(0, std::min(requested, static_cast<int>(visibleItems.size()) - visibleRows()))
+                       : requested;
   if (next == scroll) return;
   scroll = next;
   render();
@@ -172,6 +179,11 @@ void TocSidebar::select(const int tocIndex) {
 
 void TocSidebar::render() {
   if (!visible) return;
+
+  ensureRows(scroll + visibleRows());
+  if (rowScanIndex >= tocCount) {
+    scroll = std::min(scroll, std::max(0, static_cast<int>(visibleItems.size()) - visibleRows()));
+  }
 
   if (!frameStored || !renderer.copyStoredBwToFramebuffer()) renderer.syncWriteBufferFromActive();
   ScreenComponents::drawWhiteOverlay(renderer);
@@ -224,8 +236,8 @@ void TocSidebar::render() {
     }
   }
 
-  drawScrollBar(renderer, panelWidth - 8, headerHeight(), rows * rowHeight(),
-                static_cast<int>(visibleItems.size()), rows, scroll);
+  const int scrollTotal = rowScanIndex >= tocCount ? static_cast<int>(visibleItems.size()) : tocCount;
+  drawScrollBar(renderer, panelWidth - 8, headerHeight(), rows * rowHeight(), scrollTotal, rows, scroll);
 
   const ButtonBounds syncButton = syncButtonBounds();
   const int syncIconY = syncButton.y + (syncButton.height - syncIconSize) / 2;
