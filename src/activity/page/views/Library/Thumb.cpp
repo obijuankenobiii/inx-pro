@@ -354,9 +354,16 @@ Thumb::Thumb(GfxRenderer& renderer, MappedInputManager& mappedInput,
 
 std::string Thumb::thumbnailPathForBook(const std::string& bookPath) {
   const auto cached = thumbnailPathCache_.find(bookPath);
-  if (cached != thumbnailPathCache_.end()) return cached->second;
+  if (cached != thumbnailPathCache_.end() && !cached->second.empty() &&
+      SdMan.exists(cached->second.c_str())) {
+    return cached->second;
+  }
+
+  // An empty result is not permanent. Thumbnail generation can finish after
+  // the library page has been built, so probe again instead of retaining the
+  // old miss forever.
   const std::string path = imagePathForBook(bookPath);
-  thumbnailPathCache_.emplace(bookPath, path);
+  thumbnailPathCache_[bookPath] = path;
   return path;
 }
 
@@ -431,11 +438,19 @@ void Thumb::load() {
           thumbnail.singleBookTitle = bookTitle(*book);
         }
       }
-    } else if (layout.titleLines > 1) {
-      thumbnail.progressPercent = progressPercentForBook(item.path);
+    } else {
+      // Resolve an existing cover during the initial page setup. Waiting for
+      // loadNext() made an already-generated cache appear as a white tile for
+      // at least one frame, and an input event could postpone that pass.
+      thumbnail.image = thumbnailPathForBook(item.path);
+      if (layout.titleLines > 1) thumbnail.progressPercent = progressPercentForBook(item.path);
     }
     const auto cached = resolvedCache_.find(item.path);
-    if (cached != resolvedCache_.end()) {
+    const bool cachedImageStillExists =
+        cached != resolvedCache_.end() &&
+        ((!cached->second.image.empty() && SdMan.exists(cached->second.image.c_str())) ||
+         (!cached->second.first.empty() && SdMan.exists(cached->second.first.c_str())));
+    if (cachedImageStillExists) {
       const int bookCount = thumbnail.bookCount;
       const int folderCount = thumbnail.folderCount;
       const int progressPercent = thumbnail.progressPercent;
@@ -578,6 +593,10 @@ bool Thumb::prefetchNextPage() {
 void Thumb::reset() {
   page = 0;
   thumbnailPathCache_.clear();
+  // A previous page can have resolved a missing cache as an empty thumbnail.
+  // Drop those resolutions so newly generated covers are discovered on the
+  // next load. Valid image files are cheap to resolve again from the index.
+  resolvedCache_.clear();
 }
 
 int Thumb::pageCount() const {
@@ -674,7 +693,12 @@ void Thumb::drawItem(const LibraryIndex::Book& item, const int x, const int y, c
     const int titleHeight = hideTitle ? 0 : lineHeight * layout.titleLines + kFolderLabelGap;
     const int imageY = y + padding;
     const int imageHeight = std::max(8, height - titleHeight - padding * 2);
-    if (thumbnail && thumbnail->loaded && !thumbnail->first.empty()) {
+    const std::string liveFolderImage =
+        thumbnail && !thumbnail->image.empty() && SdMan.exists(thumbnail->image.c_str())
+            ? thumbnail->image
+            : folderImagePath(item.path);
+    if (thumbnail && thumbnail->loaded && !thumbnail->first.empty() &&
+        SdMan.exists(thumbnail->first.c_str())) {
       const int imageWidth = std::max(12, width - padding * 2);
       cover(renderer, thumbnail->first, x + padding, imageY, imageWidth, imageHeight, rounded, true, true);
       if (!hideTitle) {
@@ -691,9 +715,9 @@ void Thumb::drawItem(const LibraryIndex::Book& item, const int x, const int y, c
     }
 
     const bool singleBook = thumbnail && thumbnail->bookCount == 1;
-    if (thumbnail && thumbnail->loaded && !thumbnail->image.empty()) {
+    if (!liveFolderImage.empty()) {
       const int imageWidth = std::max(12, width - padding * 2);
-      cover(renderer, thumbnail->image, x + padding, imageY, imageWidth, imageHeight, rounded, true, true);
+      cover(renderer, liveFolderImage, x + padding, imageY, imageWidth, imageHeight, rounded, true, true);
       if (!hideTitle) {
         const std::string title = folderTitle(item);
         if (inlineCount) {
@@ -716,7 +740,11 @@ void Thumb::drawItem(const LibraryIndex::Book& item, const int x, const int y, c
     return;
   }
 
-  if (thumbnail && thumbnail->loaded) {
+  const std::string liveBookImage =
+      thumbnail && !thumbnail->image.empty() && SdMan.exists(thumbnail->image.c_str())
+          ? thumbnail->image
+          : imagePathForBook(item.path);
+  if (!liveBookImage.empty()) {
     constexpr int padding = 3;
     const bool hideTitle = SETTINGS.hideThumbnailTitles != 0;
     const int lineHeight = hideTitle ? 0 : renderer.text.getLineHeight(systemFontId());
@@ -729,7 +757,7 @@ void Thumb::drawItem(const LibraryIndex::Book& item, const int x, const int y, c
     const int imageWidth = imageAreaWidth;
     const int imageHeight = imageAreaHeight;
     renderer.rectangle.fill(x + padding, imageAreaY, imageAreaWidth, imageAreaHeight, false, rounded);
-    if (cover(renderer, thumbnail->image, imageX, imageY, imageWidth, imageHeight, rounded, true, true)) {
+    if (cover(renderer, liveBookImage, imageX, imageY, imageWidth, imageHeight, rounded, true, true)) {
       if (!hideTitle) {
         if (layout.titleLines > 1) {
           bookLabelWithProgress(renderer, bookTitle(item), x + padding, imageAreaWidth, imageAreaY, imageAreaHeight,

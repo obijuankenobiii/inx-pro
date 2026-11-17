@@ -437,7 +437,11 @@ void Library::onEnter() {
   // can draw immediately. List/grid and folder pages should open synchronously.
   thumb.setLayout(view == View::Thumb3x2 ? views::library::thumb3x2Layout()
                                         : views::library::standardThumbLayout());
-  loading = path == "/" && (view == View::Thumb || view == View::Thumb3x2);
+  // An indexed library is already available synchronously. Do not show the
+  // thumbnail-mode loading screen for it: that screen used to remain visible
+  // while the first render was waiting for the deferred load pass.
+  loading = path == "/" && (view == View::Thumb || view == View::Thumb3x2) &&
+            !LibraryIndex::hasIndex();
   items.clear();
   books.clear();
   resetViews();
