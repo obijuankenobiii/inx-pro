@@ -370,6 +370,12 @@ void MappedInputManager::injectButtonEdge(const Button button) const {
   injectedReleasedButton_ = static_cast<int8_t>(button);
 }
 
+bool MappedInputManager::consumeInjectedPressed(const Button button) const {
+  if (injectedPressedButton_ != static_cast<int8_t>(button)) return false;
+  injectedPressedButton_ = -1;
+  return true;
+}
+
 MappedInputManager::MotionGesture MappedInputManager::readMotionGesture(const uint8_t orientation, const uint8_t mode,
                                                                         const uint8_t sensitivity) const {
 #ifdef SIMULATOR

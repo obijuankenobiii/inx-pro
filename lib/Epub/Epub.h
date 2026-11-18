@@ -61,6 +61,9 @@ class Epub {
   void clearCoverJpegPsram() const;
 
  public:
+  static void* operator new(std::size_t size) { return epubPsramObjectAllocate(size); }
+  static void operator delete(void* pointer) noexcept { epubPsramObjectFree(pointer); }
+
   /**
    * Cooperative stream for one EPUB entry. Keep it alive across reader-loop
    * slices; each pump emits only the requested amount of inflated data and

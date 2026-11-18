@@ -34,6 +34,9 @@ class BookMetadataCache {
       EpubPsramAllocator<std::pair<const EpubPsramString, int16_t>>>;
 
  public:
+  static void* operator new(std::size_t size) { return epubPsramObjectAllocate(size); }
+  static void operator delete(void* pointer) noexcept { epubPsramObjectFree(pointer); }
+
   struct MetadataAttribute {
     std::string name;
     std::string value;

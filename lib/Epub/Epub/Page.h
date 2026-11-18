@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "blocks/TextBlock.h"
+#include "PsramAllocator.h"
 
 class GfxRenderer;
 class Epub;
@@ -408,7 +409,8 @@ class PageCssBorderBox final : public PageElement {
  */
 class Page {
  public:
-  std::vector<std::unique_ptr<PageElement>> elements;
+  std::vector<std::unique_ptr<PageElement>,
+             EpubPsramAllocator<std::unique_ptr<PageElement>>> elements;
 
   static void* operator new(std::size_t size);
   static void operator delete(void* pointer) noexcept;

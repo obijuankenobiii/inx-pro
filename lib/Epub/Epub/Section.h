@@ -25,6 +25,9 @@ class ChapterHtmlSlimParser;
  */
 class Section {
  public:
+  static void* operator new(std::size_t size) { return epubPsramObjectAllocate(size); }
+  static void operator delete(void* pointer) noexcept { epubPsramObjectFree(pointer); }
+
  private:
   std::shared_ptr<Epub> epub;
   const int spineIndex;

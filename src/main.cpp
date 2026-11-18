@@ -4,6 +4,9 @@
  */
 
 #include <Arduino.h>
+#if FREEINK_CAP_BLE_HID_HOST
+#include <BleKeyboardHost.h>
+#endif
 #include <GfxRenderer.h>
 #include <ImageDisplayCache.h>
 #include <HalDisplay.h>
@@ -49,6 +52,10 @@
 #include "system/ScreenComponents.h"
 #include "system/GlobalGestureHandler.h"
 #include "system/MappedInputManager.h"
+#if FREEINK_CAP_BLE_HID_HOST
+#include "system/BleMapping.h"
+#include "system/Bluetooth.h"
+#endif
 #include "system/PluginManager.h"
 #include "util/LibraryIndexRefresh.h"
 #include "util/StringUtils.h"
@@ -132,6 +139,153 @@ void logButtonEdges() {
     }
   }
 }
+
+#if FREEINK_CAP_BLE_HID_HOST
+bool pollBluetoothInput() {
+  if (!bluetoothEnabled()) return false;
+  BleHid.poll();
+
+  // Some remotes leave a report gap while one button press is still settling.
+  // The HID host may then expose that gap as a release followed by another
+  // press. A page-turn button is a one-shot action, so suppress the duplicate
+  // at this application boundary without changing the shared HID SDK.
+  constexpr unsigned long kPageTurnDebounceMs = 250;
+  static uint8_t lastRoutedAction = 0;
+  static unsigned long lastRoutedAtMs = 0;
+  const auto routePageTurn = [&](const ble_mapping::Action action, const uint32_t code, const char* source) {
+    const unsigned long now = millis();
+    const uint8_t actionValue = static_cast<uint8_t>(action);
+    if (lastRoutedAction == actionValue && now - lastRoutedAtMs < kPageTurnDebounceMs) {
+      INX_SERIAL.printf("[BLE] suppress duplicate action=%s code=%06lX source=%s age=%lu ms\n",
+                        action == ble_mapping::Action::NextPage ? "NEXT" : "PREVIOUS",
+                        static_cast<unsigned long>(code), source, now - lastRoutedAtMs);
+      return false;
+    }
+    lastRoutedAction = actionValue;
+    lastRoutedAtMs = now;
+    input.injectButtonEdge(action == ble_mapping::Action::NextPage ? MappedInputManager::Button::PageForward
+                                                                    : MappedInputManager::Button::PageBack);
+    return true;
+  };
+
+  static int lastBleState = -1;
+  const int bleState = (BleHid.isRunning() ? 1 : 0) | (BleHid.isConnecting() ? 2 : 0) |
+                       (BleHid.isConnected() ? 4 : 0) | (BleHid.isScanning() ? 8 : 0);
+  if (bleState != lastBleState) {
+    lastBleState = bleState;
+    INX_SERIAL.printf("[BLE] state running=%d connecting=%d connected=%d scanning=%d addr=%s name=%s\n",
+                      BleHid.isRunning() ? 1 : 0, BleHid.isConnecting() ? 1 : 0, BleHid.isConnected() ? 1 : 0,
+                      BleHid.isScanning() ? 1 : 0, BleHid.connectedAddr(), BleHid.connectedName());
+  }
+
+  if (!isBookReaderActivity(currentActivity)) {
+    static const char* lastIgnoredActivity = nullptr;
+    const char* activityName = currentActivity ? currentActivity->getName() : "(none)";
+    if (activityName != lastIgnoredActivity) {
+      lastIgnoredActivity = activityName;
+      INX_SERIAL.printf("[BLE] input target activity=%s (page turns disabled here)\n", activityName);
+    }
+    if (!ble_mapping::learningActive()) {
+      freeink::RawButtonEvent raw;
+      while (BleHid.popRawButton(raw)) {
+        INX_SERIAL.printf("[BLE] nonreader raw pressed=%d rest=%d code=%06lX report=%u byte=%u value=%02X key=%02X mods=%02X\n",
+                          raw.pressed ? 1 : 0, raw.wasRest ? 1 : 0, static_cast<unsigned long>(raw.code()),
+                          raw.reportId, raw.byteIndex, raw.value, raw.keycode, raw.mods);
+      }
+      freeink::KeyEvent key;
+      while (BleHid.popKey(key)) {
+        INX_SERIAL.printf("[BLE] nonreader key pressed=%d key=%02X mods=%02X special=%u ch=%02X\n",
+                          key.pressed ? 1 : 0, key.keycode, key.mods, static_cast<unsigned>(key.special),
+                          static_cast<unsigned char>(key.ch));
+      }
+    }
+    return false;
+  }
+
+  bool pageTurn = false;
+  bool sawRawPress = false;
+  freeink::RawButtonEvent event;
+  while (BleHid.popRawButton(event)) {
+    if (!event.pressed || event.wasRest) continue;
+    sawRawPress = true;
+    INX_SERIAL.printf("[BLE] raw press code=%06lX report=%u byte=%u value=%02X key=%02X mods=%02X\n",
+                      static_cast<unsigned long>(event.code()), event.reportId, event.byteIndex, event.value,
+                      event.keycode, event.mods);
+
+    ble_mapping::Action action = ble_mapping::lookup(BleHid.connectedAddr(), event.code());
+    if (action == ble_mapping::Action::None && event.mods == 0) {
+      // HID keyboard fallback for remotes that use ordinary arrow/page keys.
+      switch (event.keycode) {
+        case 0x4F:  // Right
+        case 0x51:  // Down
+        case 0x4E:  // Page Down
+        case 0x28:  // Enter
+        case 0x2C:  // Space
+          action = ble_mapping::Action::NextPage;
+          break;
+        case 0x50:  // Left
+        case 0x52:  // Up
+        case 0x4B:  // Page Up
+        case 0x2A:  // Backspace
+          action = ble_mapping::Action::PreviousPage;
+          break;
+        default:
+          break;
+      }
+    }
+
+    if (action == ble_mapping::Action::NextPage) {
+      INX_SERIAL.printf("[BLE] route code=%06lX action=NEXT inject=PageForward activity=%s\n",
+                        static_cast<unsigned long>(event.code()), currentActivity ? currentActivity->getName() : "(none)");
+      pageTurn = routePageTurn(action, event.code(), "raw") || pageTurn;
+    } else if (action == ble_mapping::Action::PreviousPage) {
+      INX_SERIAL.printf("[BLE] route code=%06lX action=PREVIOUS inject=PageBack activity=%s\n",
+                        static_cast<unsigned long>(event.code()), currentActivity ? currentActivity->getName() : "(none)");
+      pageTurn = routePageTurn(action, event.code(), "raw") || pageTurn;
+    } else {
+      INX_SERIAL.printf("[BLE] route code=%06lX action=NONE activity=%s\n",
+                        static_cast<unsigned long>(event.code()), currentActivity ? currentActivity->getName() : "(none)");
+    }
+  }
+
+  // Raw edges are authoritative so a mapped key is not delivered twice through
+  // the decoded-key queue. If a peripheral only produces decoded key events,
+  // use those as the fallback path.
+  freeink::KeyEvent key;
+  while (BleHid.popKey(key)) {
+    INX_SERIAL.printf("[BLE] key pressed=%d key=%02X mods=%02X special=%u ch=%02X\n", key.pressed ? 1 : 0,
+                      key.keycode, key.mods, static_cast<unsigned>(key.special),
+                      static_cast<unsigned char>(key.ch));
+    if (sawRawPress || !key.pressed || key.mods != 0) continue;
+    if (key.special == freeink::SpecialKey::Right || key.special == freeink::SpecialKey::Down ||
+        key.special == freeink::SpecialKey::PageDown || key.special == freeink::SpecialKey::Enter || key.ch == ' ') {
+      const uint32_t code = 0x80000000UL | static_cast<uint32_t>(key.keycode) |
+                            (static_cast<uint32_t>(key.mods) << 8) |
+                            (static_cast<uint32_t>(key.special) << 16);
+      pageTurn = routePageTurn(ble_mapping::Action::NextPage, code, "decoded") || pageTurn;
+    } else if (key.special == freeink::SpecialKey::Left || key.special == freeink::SpecialKey::Up ||
+               key.special == freeink::SpecialKey::PageUp || key.special == freeink::SpecialKey::Backspace) {
+      const uint32_t code = 0x80000000UL | static_cast<uint32_t>(key.keycode) |
+                            (static_cast<uint32_t>(key.mods) << 8) |
+                            (static_cast<uint32_t>(key.special) << 16);
+      pageTurn = routePageTurn(ble_mapping::Action::PreviousPage, code, "decoded") || pageTurn;
+    }
+  }
+  return pageTurn;
+}
+
+void startBluetoothAfterFirstFrame(Activity* activityBeforeLoop) {
+  static bool startupAttempted = false;
+  if (startupAttempted || activityBeforeLoop == nullptr) return;
+  if (!isHomeActivity(activityBeforeLoop) && !isBookReaderActivity(activityBeforeLoop)) return;
+
+  // Crosspoint starts the S3 controller only after the first Home/Reader frame
+  // is up. Starting it from setup() makes btdm_intr_alloc() run while the
+  // early boot path is still using the tiny prebuilt ipc0 stack.
+  startupAttempted = true;
+  startBluetooth();
+}
+#endif
 
 }
 
@@ -370,6 +524,9 @@ void waitForPowerRelease() {
 }
 
 void enterDeepSleep() {
+#if FREEINK_CAP_BLE_HID_HOST
+  stopBluetooth();
+#endif
   switchTo<SleepActivity>(render, input);
   display.deepSleep();
   SdMan.shutdown();
@@ -434,6 +591,11 @@ void setup() {
 void loop() {
   gpio.update();
   logButtonEdges();
+#if FREEINK_CAP_BLE_HID_HOST
+  const bool bleActivity = pollBluetoothInput();
+#else
+  constexpr bool bleActivity = false;
+#endif
 #if FREEINK_DEVICE_X4PRO
   if (SETTINGS.x4proHomeButton == SystemSetting::X4PRO_HOME_BUTTON_HOME &&
       gpio.touchSwipe() == HalGPIO::TouchSwipe::None && gpio.wasHomeKeyTapped()) {
@@ -473,7 +635,7 @@ void loop() {
   LibraryIndexRefresh::finish(renderer, currentActivity);
   static unsigned long lastActivityTime = millis();
 
-  const bool inputActivity = gpio.wasAnyPressed() || gpio.wasAnyReleased() || gpio.wasTouchActivity();
+  const bool inputActivity = bleActivity || gpio.wasAnyPressed() || gpio.wasAnyReleased() || gpio.wasTouchActivity();
   if (inputActivity || (currentActivity && currentActivity->preventAutoSleep())) {
     lastActivityTime = millis();
   }
@@ -516,12 +678,16 @@ void loop() {
   }
 
   if (currentActivity) {
+    Activity* activityBeforeLoop = currentActivity;
     if (ScreenComponents::pageHeaderBackButtonVisible()) {
       input.consumeHeaderBackTap(renderer);
     }
     activityLoopRunning = true;
     currentActivity->loop();
     activityLoopRunning = false;
+#if FREEINK_CAP_BLE_HID_HOST
+    startBluetoothAfterFirstFrame(activityBeforeLoop);
+#endif
   }
 
   // Run after BootActivity has loaded the saved brightness, so a physical

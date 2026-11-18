@@ -35,7 +35,8 @@ inline void cssParserCooperativeYield() {
 
 constexpr size_t kMaxCssRules = 4096;
 constexpr uint32_t kCssParserCacheMagic = 0x43535042;
-constexpr uint16_t kCssParserCacheVersion = 7;
+// Rebuild caches made by the old internal-heap-limited CSS loader.
+constexpr uint16_t kCssParserCacheVersion = 8;
 constexpr uint8_t kCssPropertyInvalid = 0xFF;
 
 uint8_t cssPropertyId(const std::string& name) {
@@ -1640,7 +1641,7 @@ void CssParser::rebuildSelectorIndex() const {
   idRuleIndex_.clear();
   fallbackRuleIndexes_.clear();
 
-  auto add = [](std::vector<SelectorIndexEntry>& index, const std::string& key, const uint16_t ruleIndex) {
+  auto add = [](auto& index, const std::string& key, const uint16_t ruleIndex) {
     if (key.empty()) return;
     auto it = std::lower_bound(index.begin(), index.end(), key,
                                [](const SelectorIndexEntry& entry, const std::string& value) {
@@ -1680,7 +1681,7 @@ void CssParser::collectCandidateRuleIndexes(const std::string& elementTagLower,
   }
   out.clear();
   out.insert(out.end(), fallbackRuleIndexes_.begin(), fallbackRuleIndexes_.end());
-  auto append = [&out](const std::vector<SelectorIndexEntry>& index, const std::string& key) {
+  auto append = [&out](const auto& index, const std::string& key) {
     if (key.empty()) return;
     const auto it = std::lower_bound(index.begin(), index.end(), key,
                                      [](const SelectorIndexEntry& entry, const std::string& value) {
@@ -1697,9 +1698,8 @@ void CssParser::collectCandidateRuleIndexes(const std::string& elementTagLower,
   out.erase(std::unique(out.begin(), out.end()), out.end());
 }
 
-const std::vector<CssParser::MatchedRule>& CssParser::matchedRulesFor(const std::string& elementTagLower,
-                                                                      const std::string& className,
-                                                                      const std::string& id) const {
+const CssParser::PsramVector<CssParser::MatchedRule>& CssParser::matchedRulesFor(
+    const std::string& elementTagLower, const std::string& className, const std::string& id) const {
   if (mcValid_ && mcTag_ == elementTagLower && mcClass_ == className && mcId_ == id) {
     return mcMatched_;
   }

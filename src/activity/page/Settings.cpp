@@ -116,6 +116,9 @@ std::vector<SettingInfo> buildSystemSettings() {
                                        GroupType::DEVICE_ADVANCED));
 #endif
   settings.push_back(SettingInfo::Action("Language", GroupType::DEVICE_ADVANCED));
+#if FREEINK_CAP_BLE_HID_HOST
+  settings.push_back(SettingInfo::Action("Bluetooth", GroupType::DEVICE_ADVANCED));
+#endif
 #if FREEINK_DEVICE_STICKY || FREEINK_DEVICE_PICCO
   settings.push_back(SettingInfo::Enum("Flick page turn", &SystemSetting::shakePageTurn,
                                        {"Off", "Normal", "Inverted"}, GroupType::DEVICE_ADVANCED));

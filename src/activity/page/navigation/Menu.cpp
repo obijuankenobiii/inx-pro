@@ -21,9 +21,11 @@
 #include "images/Setting.h"
 #include "images/StatisticsIcon.h"
 #include "images/Sync.h"
+#include "images/DeviceManagementCustomIcons.h"
 #include "activity/page/components/global/Sidebar.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
+#include "system/Bluetooth.h"
 #include "system/ScreenComponents.h"
 
 namespace {
@@ -216,19 +218,32 @@ void Menu::drawHeaderStatus(const int rightMargin) const {
   // the visible battery and clock group 20px from the top edge.
   constexpr int top = 22;
   const int right = menuRenderer.getScreenWidth() - rightMargin;
-  if (!SETTINGS.showMenuClock || SETTINGS.hideMenuClock) {
-    ScreenComponents::drawBatteryRightAligned(menuRenderer, right, top, showPercentage);
-    return;
+  constexpr int bluetoothIconSize = 24;
+  constexpr int bluetoothBatteryGap = 10;
+#if FREEINK_CAP_BLE_HID_HOST
+  const bool showBluetooth = bluetoothEnabled() && bluetoothRunning();
+#else
+  constexpr bool showBluetooth = false;
+#endif
+  const int batteryLeft = right - batteryWidth;
+  const int bluetoothLeft = batteryLeft - bluetoothBatteryGap - bluetoothIconSize;
+  if (showBluetooth) {
+    menuRenderer.bitmap.iconScaled(DeviceManagementBluetooth, bluetoothLeft, top + 3, 40, 40,
+                                   bluetoothIconSize, bluetoothIconSize);
   }
-
-  int clockLeft = 0;
-  if (!ScreenComponents::drawMenuClockRightAligned(menuRenderer, right, top, &clockLeft)) {
-    ScreenComponents::drawBatteryRightAligned(menuRenderer, right, top, showPercentage);
+  if (!SETTINGS.showMenuClock || SETTINGS.hideMenuClock) {
+    ScreenComponents::drawBattery(menuRenderer, batteryLeft, top, showPercentage);
     return;
   }
 
   constexpr int clockBatteryGap = 10;
-  ScreenComponents::drawBattery(menuRenderer, clockLeft - clockBatteryGap - batteryWidth, top, showPercentage);
+  const int clockRight = (showBluetooth ? bluetoothLeft : batteryLeft) - clockBatteryGap;
+  if (!ScreenComponents::drawMenuClockRightAligned(menuRenderer, clockRight, top)) {
+    ScreenComponents::drawBattery(menuRenderer, batteryLeft, top, showPercentage);
+    return;
+  }
+
+  ScreenComponents::drawBattery(menuRenderer, batteryLeft, top, showPercentage);
 }
 
 void Menu::handleTabNavigation(const bool leftPressed, const bool rightPressed) {

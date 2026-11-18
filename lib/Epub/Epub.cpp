@@ -1561,7 +1561,10 @@ const CssParser* Epub::getParsedCssParser(const CssParser::UsageFilter* usageFil
     return parsedCssParser_.get();
   }
 
-  constexpr uint32_t kMinFreeHeapForCss = 48 * 1024;
+  // The CSS dictionary and its indexes live in PSRAM. Keep only a modest
+  // internal-heap floor for transient ZIP/string work so BLE does not make
+  // otherwise valid stylesheet rules disappear.
+  constexpr uint32_t kMinFreeHeapForCss = 16 * 1024;
   if (ESP.getFreeHeap() < kMinFreeHeapForCss) {
     INX_SERIAL.printf("[EBP] Low heap (%u bytes), skipping EPUB stylesheet CSS\n",
                   static_cast<unsigned>(ESP.getFreeHeap()));
@@ -1582,8 +1585,8 @@ const CssParser* Epub::getParsedCssParser(const CssParser::UsageFilter* usageFil
   INX_SERIAL.printf("[EBP] Building shared CSS dictionary from %d CSS files\n", cssCount);
 
   constexpr size_t kMaxTotalCssSize = 192 * 1024;
-  constexpr uint32_t kCssReserveHeapBytes = 96 * 1024;
-  constexpr uint32_t kCssEntryReadHeadroom = 56 * 1024;
+  constexpr uint32_t kCssReserveHeapBytes = 16 * 1024;
+  constexpr uint32_t kCssEntryReadHeadroom = 16 * 1024;
   size_t totalCssSize = 0;
 
   for (int i = 0; i < cssCount && totalCssSize < kMaxTotalCssSize; ++i) {

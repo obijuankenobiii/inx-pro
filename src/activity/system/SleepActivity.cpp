@@ -14,6 +14,7 @@
 #include <GfxRenderer.h>
 #include <HalDisplay.h>
 #include <ImageRender.h>
+#include <ImageDisplayCache.h>
 #include <PngRender.h>
 #include <SDCardManager.h>
 #include <Txt.h>
@@ -80,10 +81,31 @@ ImageRender::Options sleepImageOptions(const bool allowQuality = true) {
   return options;
 }
 
+bool hasSleepImageDisplayCache(GfxRenderer& renderer, const std::string& imagePath,
+                               const ImageRender::Options& options) {
+  const int width = renderer.getScreenWidth();
+  const int height = renderer.getScreenHeight();
+  const ImageRender image = ImageRender::create(renderer, imagePath);
+
+  // The two-bit sleep path finishes by displaying the combined cache. Probe
+  // that entry so the loading popup covers the full first-time conversion.
+  if (options.mode == ImageRenderMode::TwoBit) {
+    return image.hasCachedGrayscale(0, 0, width, height, options, options.quality);
+  }
+
+  // Low-quality and inverted covers use the regular one-plane cache created by
+  // ImageRender::render(). Match its cache key, including the current plane.
+  ImageDisplayCacheOptions cacheOptions;
+  cacheOptions.cropToFill = options.cropToFill;
+  cacheOptions.mode = options.mode;
+  cacheOptions.renderPlane = static_cast<uint8_t>(renderer.getRenderMode());
+  cacheOptions.roundedOutside = options.roundedOutside;
+  cacheOptions.quality = options.quality;
+  return options.useDisplayCache &&
+         ImageDisplayCache::hasCached(renderer, imagePath, 0, 0, width, height, cacheOptions);
+}
+
 void prepareSleepImageBuffer(GfxRenderer& renderer) {
-  // The display driver uses separate active and write buffers. Seed the write
-  // buffer from what is actually visible before clearing it, otherwise a
-  // sleep image/cache refresh can diff against the previous page's buffer.
   renderer.syncWriteBufferFromActive();
   renderer.clearScreen(0xFF);
 }
@@ -384,7 +406,7 @@ void SleepActivity::onEnter() {
                                  SETTINGS.sleepScreen == SystemSetting::SLEEP_SCREEN_MODE::COVER);
   if (renderSleepImage) {
     prepareSleepImageBuffer(renderer);
-    renderer.displayBuffer(HalDisplay::FULL_REFRESH);
+    renderer.displayBuffer();
   }
 
   switch (SETTINGS.sleepScreen) {
@@ -518,8 +540,11 @@ void SleepActivity::renderCoverSleepScreen() const {
   if (!coverPath.empty() && isSleepImagePathRaster(coverPath)) {
     prepareSleepImageBuffer(renderer);
     ImageRender::Options options = sleepImageOptions();
-    if (ImageRender::create(renderer, coverPath)
-            .render(0, 0, renderer.getScreenWidth(), renderer.getScreenHeight(), options)) {
+    const ImageRender image = ImageRender::create(renderer, coverPath);
+    if (!hasSleepImageDisplayCache(renderer, coverPath, options)) {
+      ScreenComponents::drawLoadingPopup(renderer);
+    }
+    if (image.render(0, 0, renderer.getScreenWidth(), renderer.getScreenHeight(), options)) {
       if (SETTINGS.sleepScreenCoverFilter == SystemSetting::SLEEP_SCREEN_COVER_FILTER::INVERTED_BLACK_AND_WHITE) {
         renderer.invertScreen();
       }

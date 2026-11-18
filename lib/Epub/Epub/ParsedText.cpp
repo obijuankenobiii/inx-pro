@@ -27,8 +27,8 @@ namespace {
 
 constexpr uint8_t kScriptScalePct = 70;
 
-template <typename T>
-std::vector<T> moveListPrefixToVector(std::deque<T>& values, const size_t count) {
+template <typename T, typename Allocator>
+std::vector<T> moveListPrefixToVector(std::deque<T, Allocator>& values, const size_t count) {
   const size_t take = std::min(count, values.size());
   std::vector<T> out;
   out.reserve(take);
@@ -39,8 +39,9 @@ std::vector<T> moveListPrefixToVector(std::deque<T>& values, const size_t count)
   return out;
 }
 
-std::vector<EpdFontFamily::Style> moveStylePrefixToVector(std::deque<EpdFontFamily::Style>& values,
-                                                          const size_t count) {
+template <typename Allocator>
+std::vector<EpdFontFamily::Style> moveStylePrefixToVector(
+    std::deque<EpdFontFamily::Style, Allocator>& values, const size_t count) {
   const size_t take = std::min(count, values.size());
   if (std::all_of(values.begin(), values.begin() + static_cast<std::ptrdiff_t>(take),
                   [](EpdFontFamily::Style style) { return style == EpdFontFamily::REGULAR; })) {
@@ -56,8 +57,9 @@ std::vector<EpdFontFamily::Style> moveStylePrefixToVector(std::deque<EpdFontFami
   return out;
 }
 
-uint8_t moveBytePrefixToCompactVector(std::deque<uint8_t>& values, const size_t count, const uint8_t emptyDefault,
-                                      std::vector<uint8_t>& out) {
+template <typename Allocator>
+uint8_t moveBytePrefixToCompactVector(std::deque<uint8_t, Allocator>& values, const size_t count,
+                                      const uint8_t emptyDefault, std::vector<uint8_t>& out) {
   const size_t take = std::min(count, values.size());
   if (take == 0) {
     return emptyDefault;

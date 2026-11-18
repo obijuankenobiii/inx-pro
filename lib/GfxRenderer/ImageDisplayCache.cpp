@@ -26,7 +26,7 @@
 
 namespace {
 constexpr uint32_t kMagic = 0x43445249;
-constexpr uint16_t kVersion = 48;
+constexpr uint16_t kVersion = 1;
 constexpr uint32_t kCombinedMagic = 0x32435249;
 constexpr const char* kCacheDir = "/.system/cache";
 constexpr size_t kIoBufferSize = 16384;

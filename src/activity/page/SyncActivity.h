@@ -18,16 +18,19 @@ class SyncActivity final : public UiPage {
                const std::function<void(NetworkMode)>& onModeSelected)
       : UiPage("Device", renderer, mappedInput), onModeSelected(onModeSelected) {}
 
-  const char* name() const override { return "Device"; }
+  const char* name() const override { return showFileTransfer_ ? "File Transfer" : "Device"; }
 
   void onEnter() override;
   void onExit() override;
   void loop() override;
+  bool back() override;
 
  private:
   std::unique_ptr<Activity> subActivity;
 
   const std::function<void(NetworkMode)> onModeSelected;
+  bool showFileTransfer_ = false;
+  int selectedIndex_ = 0;
 
   void content() override;
   void activateItem(int index);

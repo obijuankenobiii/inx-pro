@@ -2014,6 +2014,22 @@ void EpubActivity::loop() {
     return;
   }
 
+  // BLE page-turn remotes inject dedicated page edges. EPUB's configurable
+  // physical-button layer watches Up/Down instead, so consume the dedicated
+  // edges here before the remaining reader shortcuts.
+  if (mappedInput.consumeInjectedPressed(MappedInputManager::Button::PageBack)) {
+    endPageTimer();
+    pageTurn(false);
+    lastAutoPageTurnTime = millis();
+    return;
+  }
+  if (mappedInput.consumeInjectedPressed(MappedInputManager::Button::PageForward)) {
+    endPageTimer();
+    pageTurn(true);
+    lastAutoPageTurnTime = millis();
+    return;
+  }
+
   if (mappedInput.wasReleased(MappedInputManager::Button::Power)) {
     btnBindings_.dispatch(*this, READER_SETTINGS.btnPowerShortAction);
     return;
