@@ -47,6 +47,9 @@ std::string bookTitle(const LibraryIndex::Book& book) {
 }
 
 std::string folderTitle(const LibraryIndex::Book& folder) {
+  // Author/series/tag groups use a synthetic hashed path for navigation, but
+  // their user-facing label is stored separately in the indexed title.
+  if (folder.hasMetadata && !folder.title.empty()) return folder.title;
   if (folder.path == "/" || folder.path.empty()) return "Library";
   const size_t end = folder.path.find_last_not_of('/');
   if (end == std::string::npos) return "Library";
@@ -429,6 +432,10 @@ void Thumb::load() {
     if (item.type == LibraryIndex::Book::Type::FOLDER) {
       SdIoMutex::Lock lock;
       folderImage = folderImagePath(item.path);
+      if (folderImage.empty()) {
+        const std::vector<std::string> covers = coversForFolder(item, 1);
+        if (!covers.empty()) thumbnail.first = covers[0];
+      }
     }
     if (item.type == LibraryIndex::Book::Type::FOLDER) {
       thumbnail.bookCount = folderBookCount(item, books);
@@ -443,6 +450,7 @@ void Thumb::load() {
       // loadNext() made an already-generated cache appear as a white tile for
       // at least one frame, and an input event could postpone that pass.
       thumbnail.image = thumbnailPathForBook(item.path);
+      thumbnail.loaded = !thumbnail.image.empty();
       if (layout.titleLines > 1) thumbnail.progressPercent = progressPercentForBook(item.path);
     }
     const auto cached = resolvedCache_.find(item.path);
@@ -466,6 +474,12 @@ void Thumb::load() {
     if (!folderImage.empty()) {
       thumbnail.first.clear();
       thumbnail.image = folderImage;
+      thumbnail.loaded = true;
+      resolvedCache_[thumbnail.item] = thumbnail;
+    } else if (!thumbnail.first.empty()) {
+      // A folder without its own cover uses the first book cover. Resolve it
+      // during the initial page setup as well, so a durable display cache can
+      // be drawn on the first frame instead of after loadNext().
       thumbnail.loaded = true;
       resolvedCache_[thumbnail.item] = thumbnail;
     }
@@ -819,10 +833,8 @@ int Thumb::itemAt(const int x, const int y) const {
 
 bool Thumb::handleInput() {
   if (mappedInput.wasTouchSwipeUp()) {
-    if (page + 1 < pageCount()) {
-      ++page;
-      load();
-    }
+    page = page + 1 < pageCount() ? page + 1 : 0;
+    load();
     return true;
   }
   if (mappedInput.wasTouchSwipeDown()) {

@@ -135,6 +135,7 @@ class HalGPIO {
   // Keep a rejected post-swipe tap rejected if more than one activity queries
   // the same release event in the current input frame.
   mutable bool postSwipeTapBlockedThisFrame = false;
+  mutable unsigned long postSwipeDuplicateBlockedUntilMs = 0;
   unsigned long swipeDetectedAtMs = 0;
 };
 

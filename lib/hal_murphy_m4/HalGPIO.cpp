@@ -180,20 +180,36 @@ bool HalGPIO::wasTouchTap(float& nx, float& ny) const {
   if (suppressTouchUntilRelease || touchDriver.isPressed() || postSwipeTapBlockedThisFrame) return false;
   const bool tapped = touchDriver.wasTap(nx, ny);
   if (tapped && suppressPostSwipeTap) {
-    // Murphy can remain in the panel BUSY interval after a swipe. A duplicate
-    // short contact may arrive after that interval and must not become a tap.
+    // Murphy can remain in the panel BUSY interval after a swipe. Match the
+    // X4 Pro guard: only suppress a short contact that returns to the swipe's
+    // original point. A real follow-up tap, such as a sidebar item, may be
+    // anywhere else and must remain responsive.
     constexpr unsigned long kPostSwipeTapWindowMs = 3000;
     constexpr unsigned long kPostSwipeTapMaxHoldMs = 300;
-    const unsigned long elapsed = millis() - swipeDetectedAtMs;
+    constexpr unsigned long kPostSwipeDuplicateWindowMs = 500;
+    constexpr float kPostSwipeSamePointTolerance = 0.05f;
+    const unsigned long now = millis();
+    const unsigned long elapsed = now - swipeDetectedAtMs;
+    const bool sameSwipeStart = std::fabs(nx - touchSwipeStartNx) <= kPostSwipeSamePointTolerance &&
+                                std::fabs(ny - touchSwipeStartNy) <= kPostSwipeSamePointTolerance;
     const unsigned long heldMs = touchDriver.lastHeldMs();
     const bool shortTap = heldMs <= kPostSwipeTapMaxHoldMs;
-    suppressPostSwipeTap = false;
-    if (elapsed <= kPostSwipeTapWindowMs && shortTap) {
-      postSwipeTapBlockedThisFrame = true;
-      INX_SERIAL.printf("[MURPHY_M4] suppressed post-swipe tap nx=%.3f ny=%.3f held=%lums elapsed=%lums\n", nx, ny,
-                        heldMs, elapsed);
-      return false;
+    if (shortTap) {
+      if (elapsed <= kPostSwipeTapWindowMs && sameSwipeStart) {
+        suppressPostSwipeTap = false;
+        postSwipeDuplicateBlockedUntilMs = now + kPostSwipeDuplicateWindowMs;
+        postSwipeTapBlockedThisFrame = true;
+        INX_SERIAL.printf("[MURPHY_M4] suppressed post-swipe tap nx=%.3f ny=%.3f held=%lums elapsed=%lums\n", nx,
+                          ny, heldMs, elapsed);
+        return false;
+      }
+      if (now < postSwipeDuplicateBlockedUntilMs) {
+        postSwipeTapBlockedThisFrame = true;
+        INX_SERIAL.printf("[MURPHY_M4] suppressed duplicate tap nx=%.3f ny=%.3f held=%lums\n", nx, ny, heldMs);
+        return false;
+      }
     }
+    suppressPostSwipeTap = false;
   }
   if (tapped) {
     INX_SERIAL.printf("[MURPHY_M4] wasTouchTap() -> nx=%.3f ny=%.3f\n", nx, ny);

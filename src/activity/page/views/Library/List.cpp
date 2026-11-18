@@ -85,7 +85,7 @@ int List::itemAt(const int x, const int y) const {
 
 bool List::handleInput() {
   if (mappedInput.wasTouchSwipeUp()) {
-    if (page + 1 < pageCount()) ++page;
+    page = page + 1 < pageCount() ? page + 1 : 0;
     return true;
   }
   if (mappedInput.wasTouchSwipeDown()) {
