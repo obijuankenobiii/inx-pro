@@ -30,7 +30,7 @@ void readAndValidate(FsFile& file, uint8_t& member, uint8_t maxValue);
 ReaderSetting ReaderSetting::instance;
 
 namespace {
-constexpr uint8_t READER_SETTINGS_FILE_VERSION = 8;
+constexpr uint8_t READER_SETTINGS_FILE_VERSION = 9;
 constexpr uint8_t READER_SETTINGS_LEGACY_VERSION = 1;
 constexpr uint8_t READER_SETTINGS_VERSION_2 = 2;
 constexpr uint8_t READER_SETTINGS_VERSION_2_COUNT = 38;
@@ -44,7 +44,9 @@ constexpr uint8_t READER_SETTINGS_VERSION_6 = 6;
 constexpr uint8_t READER_SETTINGS_VERSION_6_COUNT = 98;
 constexpr uint8_t READER_SETTINGS_VERSION_7 = 7;
 constexpr uint8_t READER_SETTINGS_VERSION_7_COUNT = 74;
-constexpr uint8_t READER_SETTINGS_COUNT = 75;
+constexpr uint8_t READER_SETTINGS_VERSION_8 = 8;
+constexpr uint8_t READER_SETTINGS_VERSION_8_COUNT = 75;
+constexpr uint8_t READER_SETTINGS_COUNT = 76;
 constexpr uint8_t READER_SETTINGS_LEGACY_COUNT = 35;
 constexpr char READER_SETTINGS_FILE[] = "/.system/reader_settings.bin";
 constexpr char READER_FONT_FAMILY_FILE[] = "/.system/reader_font_family.txt";
@@ -176,6 +178,7 @@ uint32_t readerSettingsHash(const ReaderSetting& settings, const uint8_t fontFam
   for (int i = 0; i < ReaderSetting::SWIPE_ZONE_COUNT; ++i) hashPod(hash, settings.swipeLeftZoneActions[i]);
   for (int i = 0; i < ReaderSetting::SWIPE_ZONE_COUNT; ++i) hashPod(hash, settings.swipeRightZoneActions[i]);
   hashPod(hash, settings.disableHighlight);
+  hashPod(hash, settings.seamlessChapters);
   return hash;
 }
 }
@@ -273,6 +276,7 @@ bool ReaderSetting::saveToFile() const {
     serialization::writePod(outputFile, swipeRightZoneActions[i]);
   }
   serialization::writePod(outputFile, disableHighlight);
+  serialization::writePod(outputFile, seamlessChapters);
 
   outputFile.close();
 
@@ -319,7 +323,9 @@ bool ReaderSetting::loadFromFile() {
                                                                                                                  ? READER_SETTINGS_VERSION_6_COUNT
                                                                                                                  : (version == READER_SETTINGS_VERSION_7
                                                                                                                         ? READER_SETTINGS_VERSION_7_COUNT
-                                                                                                                        : READER_SETTINGS_COUNT))))));
+                                                                                                                        : (version == READER_SETTINGS_VERSION_8
+                                                                                                                               ? READER_SETTINGS_VERSION_8_COUNT
+                                                                                                                               : READER_SETTINGS_COUNT)))))));
   if (fileSettingsCount != expectedSettingsCount) {
     INX_SERIAL.printf("[%lu] [CPR] Deserialization failed: Expected %u settings, found %u\n", millis(),
                       expectedSettingsCount, fileSettingsCount);
@@ -329,8 +335,9 @@ bool ReaderSetting::loadFromFile() {
     return false;
   }
   uint8_t settingsRead = 0;
-  // This field was appended in version 8 so older version-7 files remain readable.
+  // These fields were appended in versions 8 and 9 so older settings files remain readable.
   disableHighlight = 0;
+  seamlessChapters = 0;
 
   do {
     readAndValidate(inputFile, statusBar, SystemSetting::STATUS_BAR_MODE_COUNT);
@@ -588,6 +595,11 @@ bool ReaderSetting::loadFromFile() {
       if (disableHighlight > 1) disableHighlight = 0;
       ++settingsRead;
     }
+    if (settingsRead < fileSettingsCount) {
+      serialization::readPod(inputFile, seamlessChapters);
+      if (seamlessChapters > 1) seamlessChapters = 0;
+      ++settingsRead;
+    }
 
   } while (false);
 
@@ -625,6 +637,7 @@ bool ReaderSetting::loadFromFile() {
   if (pageTurnMode > PAGE_TURN_TAP) pageTurnMode = PAGE_TURN_TAP;
   if (disableLightControl > 1) disableLightControl = 0;
   if (disableHighlight > 1) disableHighlight = 0;
+  if (seamlessChapters > 1) seamlessChapters = 0;
   if (doubleTapAction >= SystemSetting::READER_BUTTON_ACTION_COUNT) {
     doubleTapAction = SystemSetting::BTN_ACTION_NONE;
   }

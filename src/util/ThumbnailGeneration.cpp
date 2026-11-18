@@ -11,6 +11,7 @@
 #include <string>
 
 #include "activity/page/views/Library/Thumb.h"
+#include "util/SdIoMutex.h"
 #include "util/StringUtils.h"
 
 namespace {
@@ -206,6 +207,7 @@ struct Generator {
 bool ThumbnailGeneration::generate(GfxRenderer& renderer, SemaphoreHandle_t rendererMutex, Result& result,
                                    const std::function<void(int, const char*)>& progress,
                                    const std::function<bool()>& shouldCancel) {
+  SdIoMutex::Lock ioLock;
   result = {};
   Generator generator{renderer, rendererMutex, result, progress, shouldCancel};
   return generator.scan("/");

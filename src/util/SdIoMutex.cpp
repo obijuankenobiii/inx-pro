@@ -26,6 +26,11 @@ void lock() {
   if (gMutex != nullptr) xSemaphoreTakeRecursive(gMutex, portMAX_DELAY);
 }
 
+bool tryLock() {
+  ensureMutex();
+  return gMutex != nullptr && xSemaphoreTakeRecursive(gMutex, 0) == pdTRUE;
+}
+
 void unlock() {
   if (gMutex != nullptr) xSemaphoreGiveRecursive(gMutex);
 }
@@ -35,6 +40,7 @@ void unlock() {
 
 namespace SdIoMutex {
 void lock() {}
+bool tryLock() { return true; }
 void unlock() {}
 }
 

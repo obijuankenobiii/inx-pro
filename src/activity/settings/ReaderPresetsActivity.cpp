@@ -177,7 +177,7 @@ void ReaderPresetsActivity::onEnter() {
 
 void ReaderPresetsActivity::onExit() { exitActivity(); }
 
-constexpr int kSystemFixedRowCount = 4;
+constexpr int kSystemFixedRowCount = 5;
 
 bool ReaderPresetsActivity::isSystemSettingRow(const int row) const {
   if (presetsOnly_) return false;
@@ -195,6 +195,8 @@ void ReaderPresetsActivity::changeSystemSetting(const int row, const int delta) 
   const int systemLocalRow = systemSettingLocalRow(row - systemHeaderRow());
   if (systemLocalRow == 1) {
     READER_SETTINGS.textAntiAliasing = !READER_SETTINGS.textAntiAliasing;
+  } else if (systemLocalRow == 5) {
+    READER_SETTINGS.seamlessChapters = !READER_SETTINGS.seamlessChapters;
   }
   READER_SETTINGS.saveToFile();
 }
@@ -275,6 +277,9 @@ void ReaderPresetsActivity::render() {
         label = "Daily Reading Goal";
         value = dailyReadingGoalLabel();
         isToggle = false;
+      } else if (systemLocalRow == 5) {
+        label = "Seamless chapters";
+        toggleChecked = READER_SETTINGS.seamlessChapters != 0;
       }
       renderer.text.render(systemFontId(), 20, textY, label, isSelected ? 0 : 1);
       if (isToggle) {
@@ -399,7 +404,7 @@ void ReaderPresetsActivity::openGenericSelector(std::string title, std::vector<s
 
 void ReaderPresetsActivity::openSelectorForRow(const int row) {
   const int systemLocalRow = isSystemSettingRow(row) ? systemSettingLocalRow(row) : -1;
-  if (systemLocalRow == 1) return;
+  if (systemLocalRow == 1 || systemLocalRow == 5) return;
   if (systemLocalRow == 2) {
     std::vector<std::string> options = {"1 page", "5 pages", "10 pages", "15 pages", "30 pages", "Off"};
     const int idx = READER_SETTINGS.refreshFrequency < options.size() ? READER_SETTINGS.refreshFrequency : 5;
@@ -570,7 +575,7 @@ void ReaderPresetsActivity::activateSelectedRow() {
   }
   if (isSystemSettingRow(selectedRow_)) {
     const int systemLocalRow = systemSettingLocalRow(selectedRow_);
-    if (systemLocalRow == 1) {
+    if (systemLocalRow == 1 || systemLocalRow == 5) {
       changeSystemSetting(selectedRow_, 0);
       selectedRow_ = -1;
       render();

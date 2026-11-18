@@ -3320,11 +3320,16 @@ bool ChapterHtmlSlimParser::feedParse(const uint8_t* data, const size_t size) {
 
 bool ChapterHtmlSlimParser::finishParse() {
   if (!parseActive_ || parseFailed_ || !xmlParser_) {
+    INX_SERIAL.printf("[%lu] [SCT] finishParse unavailable active=%d failed=%d parser=%d chapter=%s\n", millis(),
+                      parseActive_ ? 1 : 0, parseFailed_ ? 1 : 0, xmlParser_ ? 1 : 0, internalPath.c_str());
     return false;
   }
   const XML_Status finalStatus = XML_Parse(xmlParser_, nullptr, 0, XML_TRUE);
   if (finalStatus != XML_STATUS_OK) {
     recordParseXmlError();
+    INX_SERIAL.printf("[%lu] [SCT] finishParse XML error=%d line=%lu col=%lu byte=%ld chapter=%s\n", millis(),
+                      static_cast<int>(parseXmlError_), static_cast<unsigned long>(parseXmlLine_),
+                      static_cast<unsigned long>(parseXmlColumn_), static_cast<long>(parseXmlByte_), internalPath.c_str());
     cancelParse();
     return false;
   }

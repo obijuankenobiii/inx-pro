@@ -1071,6 +1071,11 @@ bool Epub::parseTocNavFile() const {
  * @return true if the book was successfully loaded, false otherwise
  */
 bool Epub::load(const bool buildIfMissing) {
+  // Metadata parsing writes several per-book temporary files before publishing
+  // book.bin. Keep the whole transaction serialized with incremental chapter
+  // prefetch and other library workers so their SD/FAT operations cannot
+  // interleave and corrupt another book's cache.
+  EpubImagePrefetch::IoLock ioLock;
   setupCacheDir();
 
   zipFile_.reset();

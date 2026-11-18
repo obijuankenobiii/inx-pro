@@ -323,7 +323,7 @@ void EpubDictionaryUi::performLookup(EpubActivity& act) {
   } else if (READER_SETTINGS.dictionaryFolder[0] == '\0') {
     currentDefinition_ = "No dictionary selected. Pick one in Settings > Reader > Choose dictionary.";
   } else {
-    act.readerPopup("Looking up...");
+    act.readerLoadingPopup();
     ensureDictionaryOpen();
     if (!dict_.isOpen()) {
       currentDefinition_ = "Could not open the selected dictionary.";

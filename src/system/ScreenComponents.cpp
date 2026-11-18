@@ -196,6 +196,47 @@ ScreenComponents::PopupLayout ScreenComponents::drawPopup(const GfxRenderer& ren
   return {x, y, w, h};
 }
 
+ScreenComponents::PopupLayout ScreenComponents::drawLoadingPopup(const GfxRenderer& renderer) {
+  constexpr int panelWidth = 128;
+  constexpr int panelHeight = 76;
+  constexpr int borderWidth = 2;
+  constexpr int dotRadius = 10;
+  constexpr int dotGap = 10;
+
+  renderer.syncWriteBufferFromActive();
+
+  const int x = (renderer.getScreenWidth() - panelWidth) / 2;
+  const int y = std::max(0, (renderer.getScreenHeight() - panelHeight) / 2);
+
+  // Paint a paper-white panel first, then inset it to leave an exact two-pixel
+  // ink border. This keeps the component independent from the text popup
+  // geometry.
+  renderer.rectangle.fill(x, y, panelWidth, panelHeight, true);
+  renderer.rectangle.fill(x + borderWidth, y + borderWidth, panelWidth - borderWidth * 2,
+                          panelHeight - borderWidth * 2, false);
+
+  const int centerX = x + panelWidth / 2;
+  const int centerY = y + panelHeight / 2;
+  const int centerOffset = dotRadius * 2 + dotGap;
+  const int dotXs[] = {centerX - centerOffset, centerX, centerX + centerOffset};
+
+  // The middle dot uses a light checkerboard for gray, while the outer dots
+  // stay solid paper and ink. There are no outline passes around the dots.
+  renderer.circle.render(dotXs[0], centerY, dotRadius, true);
+  renderer.circle.render(dotXs[0], centerY, dotRadius - 2, false);
+  for (int dy = -dotRadius; dy <= dotRadius; ++dy) {
+    for (int dx = -dotRadius; dx <= dotRadius; ++dx) {
+      if (dx * dx + dy * dy <= dotRadius * dotRadius) {
+        renderer.drawPixel(dotXs[1] + dx, centerY + dy, ((dx + dy) & 1) == 0);
+      }
+    }
+  }
+  renderer.circle.render(dotXs[2], centerY, dotRadius, true);
+
+  renderer.displayBuffer();
+  return {x, y, panelWidth, panelHeight};
+}
+
 void ScreenComponents::fillPopupProgress(const GfxRenderer& renderer, const PopupLayout& layout, const int progress) {
   constexpr int barHeight = 4;
   const int barWidth = layout.width - 30;

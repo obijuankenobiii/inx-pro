@@ -123,6 +123,31 @@ void TocSidebar::show(Epub* book, const int spineIndex) {
   currentTocIndex = epub ? epub->getTocIndexForSpineIndex(spineIndex) : -1;
   scroll = 0;
   rows();
+
+  // Start the TOC at the chapter the reader is currently showing. Parents
+  // are collapsed by default, so reveal the ancestor chain before locating
+  // the current entry in the flattened visible-row list.
+  if (currentTocIndex >= 0 && currentTocIndex < tocCount) {
+    int childLevel = levelAt(currentTocIndex);
+    for (int index = currentTocIndex - 1; index >= 0; --index) {
+      const int parentLevel = levelAt(index);
+      if (parentLevel < childLevel) {
+        collapsed[static_cast<size_t>(index)] = 0;
+        childLevel = parentLevel;
+        if (childLevel == 0) break;
+      }
+    }
+
+    rows();
+    ensureRows(currentTocIndex + 1);
+    const auto currentVisible =
+        std::find(visibleItems.begin(), visibleItems.end(), currentTocIndex);
+    if (currentVisible != visibleItems.end()) {
+      const int currentRow = static_cast<int>(currentVisible - visibleItems.begin());
+      scroll = std::max(0, currentRow - visibleRows() / 2);
+      rows();
+    }
+  }
   visible = true;
 
   renderer.syncWriteBufferFromActive();

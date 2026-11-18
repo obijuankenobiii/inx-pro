@@ -13,6 +13,7 @@
 #include <HalDisplay.h>
 #include <ImageRender.h>
 #include <SDCardManager.h>
+#include <esp_heap_caps.h>
 #include <esp_task_wdt.h>
 #include <time.h>
 
@@ -120,6 +121,23 @@ uint32_t floatBits(const float value) {
   memcpy(&bits, &value, sizeof(bits));
   return bits;
 }
+
+class SemaphoreGuard final {
+ public:
+  SemaphoreGuard(SemaphoreHandle_t handle, const TickType_t timeout) : handle_(handle) {
+    locked_ = handle_ != nullptr && xSemaphoreTake(handle_, timeout) == pdTRUE;
+  }
+
+  ~SemaphoreGuard() {
+    if (locked_) xSemaphoreGive(handle_);
+  }
+
+  bool locked() const { return locked_; }
+
+ private:
+  SemaphoreHandle_t handle_ = nullptr;
+  bool locked_ = false;
+};
 }
 
 /**
@@ -231,6 +249,14 @@ void EpubActivity::readerPopup(const char* message, const uint32_t autoDismissMs
   ScreenComponents::drawPopup(renderer, message);
 }
 
+void EpubActivity::readerLoadingPopup() {
+  invalidatePreparedPage();
+  pauseReadingStats();
+  readerPopupExpiresAt_ = 0;
+  renderer.syncWriteBufferFromActive();
+  ScreenComponents::drawLoadingPopup(renderer);
+}
+
 void EpubActivity::handleChapterLoadFailure() {
   readerPopup("Error loading chapter");
 
@@ -289,12 +315,9 @@ bool EpubActivity::buildSection(int spineIndex, const ViewportInfo& info, bool s
   std::shared_ptr<Epub> sharedEpub = std::shared_ptr<Epub>(epub.get(), [](Epub*) {});
   auto tempSection = std::unique_ptr<Section>(new Section(sharedEpub, spineIndex, renderer));
 
-  ScreenComponents::PopupLayout chapterLoadPopup{};
-  const bool useChapterLoadBar = showProgress;
-  if (useChapterLoadBar) {
-    renderer.syncWriteBufferFromActive();
-    chapterLoadPopup = ScreenComponents::drawPopup(renderer, "Loading chapter...");
-    ScreenComponents::fillPopupProgress(renderer, chapterLoadPopup, 12);
+  const bool useChapterLoadingPopup = showProgress;
+  if (useChapterLoadingPopup) {
+    ScreenComponents::drawLoadingPopup(renderer);
   }
 
   bool success = tempSection->createSectionFile(
@@ -320,8 +343,7 @@ bool EpubActivity::buildSection(int spineIndex, const ViewportInfo& info, bool s
     annUi_.clearWordIndexCache();
   }
 
-  if (useChapterLoadBar) {
-    ScreenComponents::fillPopupProgress(renderer, chapterLoadPopup, 100);
+  if (useChapterLoadingPopup) {
     renderer.clearScreen();
     renderer.displayBuffer();
   }
@@ -342,6 +364,14 @@ std::unique_ptr<Section> EpubActivity::loadSection(int spineIndex, const Viewpor
   if (spineIndex < 0 || spineIndex >= totalSpines) {
     INX_SERIAL.printf("[%lu] [EPA] loadSection: invalid spine=%d total=%d\n", millis(), spineIndex, totalSpines);
     return nullptr;
+  }
+
+  // If the reader reaches a chapter before its background build finishes,
+  // abandon only that partial prefetch and let the normal chapter-open path
+  // handle it. A completed prefetch is left on disk and will be loaded below.
+  if (nextChapterPrefetch_ && nextChapterPrefetchSpine_ == spineIndex) {
+    stopNextChapterPrefetch();
+    nextChapterPrefetchRetryAt_ = 0;
   }
 
   std::shared_ptr<Epub> sharedEpub = std::shared_ptr<Epub>(epub.get(), [](Epub*) {});
@@ -383,6 +413,147 @@ std::unique_ptr<Section> EpubActivity::loadSection(int spineIndex, const Viewpor
   }
 
   return loadedSection;
+}
+
+void EpubActivity::nextChapterPrefetchTaskTrampoline(void* param) {
+  static_cast<EpubActivity*>(param)->nextChapterPrefetchTaskLoop();
+}
+
+void EpubActivity::nextChapterPrefetchTaskLoop() {
+  while (!nextChapterPrefetchStopRequested_) {
+    if (!nextChapterPrefetchMutex_) break;
+    xSemaphoreTake(nextChapterPrefetchMutex_, portMAX_DELAY);
+    const bool shouldRun = !nextChapterPrefetchStopRequested_ && nextChapterPrefetch_ &&
+                           nextChapterPrefetch_->progressiveActive();
+    // Chapter layout touches the shared renderer/font manager. Never enter it
+    // while the foreground reader is rendering a page; this task is allowed to
+    // yield and retry, but it must not stall a page turn.
+    const bool layoutAvailable = shouldRun && readerLayoutMutex_ != nullptr &&
+                                 xSemaphoreTake(readerLayoutMutex_, 0) == pdTRUE;
+    if (layoutAvailable) {
+      nextChapterPrefetch_->pumpProgressive(1);
+      xSemaphoreGive(readerLayoutMutex_);
+    }
+    const bool finished = nextChapterPrefetch_ && !nextChapterPrefetch_->progressiveActive();
+    xSemaphoreGive(nextChapterPrefetchMutex_);
+    if (!shouldRun || finished) break;
+    vTaskDelay(pdMS_TO_TICKS(1));
+  }
+  nextChapterPrefetchFinished_ = true;
+  vTaskDeleteWithCaps(nullptr);
+}
+
+void EpubActivity::stopNextChapterPrefetch() {
+  nextChapterPrefetchStopRequested_ = true;
+  while (nextChapterPrefetchTask_ && !nextChapterPrefetchFinished_) {
+    vTaskDelay(pdMS_TO_TICKS(1));
+  }
+  nextChapterPrefetchTask_ = nullptr;
+  if (nextChapterPrefetchMutex_) {
+    xSemaphoreTake(nextChapterPrefetchMutex_, portMAX_DELAY);
+    nextChapterPrefetch_.reset();
+    xSemaphoreGive(nextChapterPrefetchMutex_);
+  } else {
+    nextChapterPrefetch_.reset();
+  }
+  nextChapterPrefetchSpine_ = -1;
+  nextChapterPrefetchStopRequested_ = false;
+  nextChapterPrefetchFinished_ = false;
+}
+
+void EpubActivity::serviceNextChapterPrefetch() {
+  if (!epub || !section || bookFinished_ || subActivity || settingsDrawerVisible) return;
+  if (!READER_SETTINGS.seamlessChapters) {
+    if (nextChapterPrefetchTask_ || nextChapterPrefetch_) {
+      stopNextChapterPrefetch();
+      nextChapterPrefetchRetryAt_ = 0;
+    }
+    return;
+  }
+
+  if (nextChapterPrefetchTask_ && nextChapterPrefetchFinished_) {
+    nextChapterPrefetchTask_ = nullptr;
+    if (nextChapterPrefetchMutex_) {
+      xSemaphoreTake(nextChapterPrefetchMutex_, portMAX_DELAY);
+      const int finishedSpine = nextChapterPrefetchSpine_;
+      const uint16_t finishedPages = nextChapterPrefetch_ ? nextChapterPrefetch_->pageCount : 0;
+      if (finishedPages > 0) {
+        INX_SERIAL.printf("[%lu] [OPEN-TIME] next chapter prefetched spine=%d pages=%u\n", millis(), finishedSpine,
+                          static_cast<unsigned>(finishedPages));
+        nextChapterPrefetch_.reset();
+        nextChapterPrefetchSpine_ = -1;
+      } else {
+        nextChapterPrefetch_.reset();
+        nextChapterPrefetchSpine_ = -1;
+        nextChapterPrefetchRetryAt_ = millis() + 30000;
+      }
+      xSemaphoreGive(nextChapterPrefetchMutex_);
+    }
+  }
+
+  const int nextSpine = currentSpineIndex + 1;
+  if (nextSpine < 0 || nextSpine >= epub->getSpineItemsCount()) return;
+  if (nextChapterPrefetchTask_ || nextChapterPrefetch_) return;
+  if (nextChapterPrefetchRetryAt_ != 0 &&
+      static_cast<int32_t>(millis() - nextChapterPrefetchRetryAt_) < 0) {
+    return;
+  }
+
+  const std::string cachePath = epub->getCachePath() + "/sections/" + std::to_string(nextSpine) + ".bin";
+  ViewportInfo info = calculateViewport();
+  std::shared_ptr<Epub> sharedEpub = std::shared_ptr<Epub>(epub.get(), [](Epub*) {});
+
+  // Do not let a partial file left by a reset/crash suppress the prefetch
+  // forever. A real cache must have a valid header, page count, and LUT.
+  if (SdMan.exists(cachePath.c_str())) {
+    auto existing = std::unique_ptr<Section>(new Section(sharedEpub, nextSpine, renderer));
+    const bool cacheReady = existing->loadSectionFile(
+        info.fontId, info.lineCompression, info.wordSpacing, bookSettings.extraParagraphSpacing,
+        bookSettings.paragraphAlignment, info.width, info.height, bookSettings.hyphenationEnabled,
+        bookSettings.paragraphCssIndentEnabled != 0, bookSettings.bionicReadingEnabled != 0);
+    if (cacheReady) {
+      return;
+    }
+    INX_SERIAL.printf("[%lu] [OPEN-TIME] discarded incomplete next chapter cache spine=%d\n", millis(), nextSpine);
+  }
+
+  auto candidate = std::unique_ptr<Section>(new Section(sharedEpub, nextSpine, renderer));
+  if (!candidate->beginProgressiveSectionFile(
+          info.fontId, FontManager::getNextFont(info.fontId), FontManager::getMaxFontId(info.fontId),
+          info.lineCompression, info.wordSpacing, bookSettings.extraParagraphSpacing, bookSettings.paragraphAlignment,
+          info.width, info.height, bookSettings.hyphenationEnabled, bookSettings.paragraphCssIndentEnabled != 0,
+          bookSettings.bionicReadingEnabled != 0, false)) {
+    INX_SERIAL.printf("[%lu] [OPEN-TIME] next chapter prefetch storage start failed spine=%d\n", millis(), nextSpine);
+    nextChapterPrefetchRetryAt_ = millis() + 30000;
+    return;
+  }
+
+  if (!nextChapterPrefetchMutex_) nextChapterPrefetchMutex_ = xSemaphoreCreateMutex();
+  if (!nextChapterPrefetchMutex_) {
+    candidate.reset();
+    nextChapterPrefetchRetryAt_ = millis() + 30000;
+    return;
+  }
+  xSemaphoreTake(nextChapterPrefetchMutex_, portMAX_DELAY);
+  nextChapterPrefetchSpine_ = nextSpine;
+  nextChapterPrefetch_ = std::move(candidate);
+  nextChapterPrefetchStopRequested_ = false;
+  nextChapterPrefetchFinished_ = false;
+  xSemaphoreGive(nextChapterPrefetchMutex_);
+
+  const BaseType_t workerCore = ARDUINO_RUNNING_CORE == 0 ? 1 : 0;
+  const BaseType_t taskResult = xTaskCreatePinnedToCoreWithCaps(
+      &EpubActivity::nextChapterPrefetchTaskTrampoline, "EpubNextChapter", 8192, this, 1,
+      &nextChapterPrefetchTask_, workerCore, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (taskResult != pdPASS) {
+    INX_SERIAL.printf("[%lu] [OPEN-TIME] next chapter prefetch task create failed spine=%d core=%d\n", millis(),
+                      nextSpine, static_cast<int>(workerCore));
+    stopNextChapterPrefetch();
+    nextChapterPrefetchRetryAt_ = millis() + 30000;
+    return;
+  }
+  INX_SERIAL.printf("[%lu] [OPEN-TIME] next chapter prefetch started spine=%d core=%d\n", millis(), nextSpine,
+                    static_cast<int>(workerCore));
 }
 
 /**
@@ -750,6 +921,7 @@ void EpubActivity::onEnter() {
   readerSuggestionLabel_.clear();
   btnBindings_.reset();
   epub->setupCacheDir();
+  if (!readerLayoutMutex_) readerLayoutMutex_ = xSemaphoreCreateMutex();
 
   syncSettingsFromGlobalIfNeeded();
   setupOrientation();
@@ -1535,6 +1707,15 @@ void EpubActivity::onExit() {
     APP_STATE.lastRead = epub->getPath();
   }
   APP_STATE.saveToFile();
+  stopNextChapterPrefetch();
+  if (nextChapterPrefetchMutex_) {
+    vSemaphoreDelete(nextChapterPrefetchMutex_);
+    nextChapterPrefetchMutex_ = nullptr;
+  }
+  if (readerLayoutMutex_) {
+    vSemaphoreDelete(readerLayoutMutex_);
+    readerLayoutMutex_ = nullptr;
+  }
   section.reset();
   bookProgress.reset();
   statusBar.reset();
@@ -1566,6 +1747,11 @@ void EpubActivity::loop() {
     consumePageNoteVoiceCompletion();
     return;
   }
+
+  // Build only the next chapter, one millisecond-sized slice at a time. This
+  // keeps parsing off the page-turn path without introducing a second task
+  // that could race the shared renderer or SD bus.
+  serviceNextChapterPrefetch();
 
   if (bookFinished_) {
     if (handleFinishedBookInput()) return;
@@ -1984,6 +2170,9 @@ void EpubActivity::scheduleIdlePreparedPage() {
 }
 
 bool EpubActivity::composePreparedForwardPage() {
+  SemaphoreGuard layoutGuard(readerLayoutMutex_, portMAX_DELAY);
+  if (!layoutGuard.locked()) return false;
+
   if (!canPrepareForwardPage() || preparedPageSpineIndex_ != currentSpineIndex ||
       preparedPageIndex_ != section->currentPage + 1) {
     return false;
@@ -2371,6 +2560,9 @@ bool EpubActivity::pageTurn(bool forward) {
  * @brief Renders the current screen content
  */
 void EpubActivity::renderScreen(const bool clearFramebuffer) {
+  SemaphoreGuard layoutGuard(readerLayoutMutex_, portMAX_DELAY);
+  if (!layoutGuard.locked()) return;
+
   invalidatePreparedPage();
   if (!epub) return;
 

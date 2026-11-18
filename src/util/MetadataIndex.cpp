@@ -22,6 +22,7 @@
 
 #include "Epub/PsramAllocator.h"
 #include "util/LibraryIndex.h"
+#include "util/SdIoMutex.h"
 
 namespace {
 constexpr char kDirectory[] = "/.metadata/library";
@@ -865,6 +866,7 @@ bool MetadataIndex::loadGroup(const Kind kind, const Group& group, std::vector<E
 bool MetadataIndex::generate(const Options& options,
                              const std::function<void(int, int, const char*, const char*)>& progress,
                              const std::function<bool()>& shouldCancel) {
+  SdIoMutex::Lock ioLock;
   if (!options.authors && !options.series && !options.tags && !options.publishers && !options.languages &&
       !options.ratings && !options.publicationDates && !options.identifiers && !options.titleSorts &&
       !options.authorSorts && !options.completeRecords) {

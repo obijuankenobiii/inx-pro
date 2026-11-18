@@ -30,9 +30,16 @@ class Section {
   const int spineIndex;
   GfxRenderer& renderer;
   std::string filePath;
+  std::string progressiveFilePath_;
   FsFile file;
   uint32_t lutOffset = 0;
   std::vector<uint32_t> pageOffsets;
+  std::unique_ptr<ChapterHtmlSlimParser> progressiveParser_;
+  std::unique_ptr<Epub::ItemStream> progressiveInput_;
+  std::vector<uint32_t> progressivePageOffsets_;
+  uint32_t progressiveBytesRead_ = 0;
+  bool progressiveActive_ = false;
+  bool progressiveWriteFailed_ = false;
 
   struct CachedPage {
     int pageIndex = -1;
@@ -134,6 +141,15 @@ class Section {
                          bool warmImageDisplayCache = false,
                          ImageRenderMode warmImageRenderMode = ImageRenderMode::OneBit, bool warmImageQuality = false,
                          int warmImageYOffset = 0);
+
+  /** Starts a cooperative background build without blocking the active reader page. */
+  bool beginProgressiveSectionFile(int fontId, int headerFontId, int maxFontId, float lineCompression,
+                                   float wordSpacing, bool extraParagraphSpacing, uint8_t paragraphAlignment,
+                                   uint16_t viewportWidth, uint16_t viewportHeight, bool hyphenationEnabled,
+                                   bool respectCssParagraphIndent, bool bionicReadingEnabled, bool skipImages = false);
+  /** Advances the background build for at most budgetMs. */
+  bool pumpProgressive(uint32_t budgetMs = 1);
+  bool progressiveActive() const { return progressiveActive_; }
 
   /**
    * Loads a specific page from the section file.
