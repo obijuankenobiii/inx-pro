@@ -120,7 +120,7 @@ class ReaderSetting {
   uint8_t disableHighlight = 0;
 
   /** When set, build the next chapter incrementally in the background while reading. */
-  uint8_t seamlessChapters = 0;
+  uint8_t seamlessChapters = 1;
 
   /** Reader double-tap action. BTN_ACTION_NONE disables the gesture. */
   uint8_t doubleTapAction = SystemSetting::BTN_ACTION_NONE;

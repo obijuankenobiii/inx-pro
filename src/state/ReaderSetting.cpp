@@ -337,7 +337,7 @@ bool ReaderSetting::loadFromFile() {
   uint8_t settingsRead = 0;
   // These fields were appended in versions 8 and 9 so older settings files remain readable.
   disableHighlight = 0;
-  seamlessChapters = 0;
+  seamlessChapters = 1;
 
   do {
     readAndValidate(inputFile, statusBar, SystemSetting::STATUS_BAR_MODE_COUNT);
@@ -597,7 +597,7 @@ bool ReaderSetting::loadFromFile() {
     }
     if (settingsRead < fileSettingsCount) {
       serialization::readPod(inputFile, seamlessChapters);
-      if (seamlessChapters > 1) seamlessChapters = 0;
+      if (seamlessChapters > 1) seamlessChapters = 1;
       ++settingsRead;
     }
 
@@ -637,7 +637,7 @@ bool ReaderSetting::loadFromFile() {
   if (pageTurnMode > PAGE_TURN_TAP) pageTurnMode = PAGE_TURN_TAP;
   if (disableLightControl > 1) disableLightControl = 0;
   if (disableHighlight > 1) disableHighlight = 0;
-  if (seamlessChapters > 1) seamlessChapters = 0;
+  if (seamlessChapters > 1) seamlessChapters = 1;
   if (doubleTapAction >= SystemSetting::READER_BUTTON_ACTION_COUNT) {
     doubleTapAction = SystemSetting::BTN_ACTION_NONE;
   }

@@ -95,8 +95,7 @@ void ScreenComponents::drawBattery(const GfxRenderer& renderer, const int left, 
   if (charging) {
     constexpr int chargingIconW = 40;
     constexpr int chargingIconH = 40;
-    constexpr int chargingIconGap = 30;
-    renderer.bitmap.icon(Charging, left - chargingIconGap,
+    renderer.bitmap.icon(Charging, left + (BATTERY_ICON_WIDTH - chargingIconW) / 2,
                          top + BATTERY_ICON_TOP_OFFSET + (BATTERY_ICON_HEIGHT - chargingIconH) / 2,
                          chargingIconW, chargingIconH, BitmapRender::Orientation::None);
   }

@@ -225,24 +225,17 @@ void Menu::drawHeaderStatus(const int rightMargin) const {
 #else
   constexpr bool showBluetooth = false;
 #endif
-  const int batteryLeft = right - batteryWidth;
+  constexpr int clockBatteryGap = 10;
+  int clockLeft = right;
+  const bool showClock = SETTINGS.showMenuClock && !SETTINGS.hideMenuClock &&
+                         ScreenComponents::drawMenuClockRightAligned(menuRenderer, right, top, &clockLeft);
+  const int batteryRight = showClock ? clockLeft - clockBatteryGap : right;
+  const int batteryLeft = batteryRight - batteryWidth;
   const int bluetoothLeft = batteryLeft - bluetoothBatteryGap - bluetoothIconSize;
   if (showBluetooth) {
     menuRenderer.bitmap.iconScaled(DeviceManagementBluetooth, bluetoothLeft, top + 3, 40, 40,
                                    bluetoothIconSize, bluetoothIconSize);
   }
-  if (!SETTINGS.showMenuClock || SETTINGS.hideMenuClock) {
-    ScreenComponents::drawBattery(menuRenderer, batteryLeft, top, showPercentage);
-    return;
-  }
-
-  constexpr int clockBatteryGap = 10;
-  const int clockRight = (showBluetooth ? bluetoothLeft : batteryLeft) - clockBatteryGap;
-  if (!ScreenComponents::drawMenuClockRightAligned(menuRenderer, clockRight, top)) {
-    ScreenComponents::drawBattery(menuRenderer, batteryLeft, top, showPercentage);
-    return;
-  }
-
   ScreenComponents::drawBattery(menuRenderer, batteryLeft, top, showPercentage);
 }
 
