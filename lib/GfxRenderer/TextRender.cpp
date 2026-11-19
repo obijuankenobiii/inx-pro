@@ -1128,6 +1128,14 @@ void TextRender::renderScaledChar(const EpdFontFamily& fontFamily, const uint32_
   const uint8_t width = glyph->width;
   const uint8_t height = glyph->height;
   const int scaledAdvanceX = scaleMetricRound(glyphAdvanceX(*glyph), scalePct);
+  // Demand-loaded fonts legitimately expose whitespace/empty glyphs with no
+  // bitmap dimensions. Keep their advance, but do not enter the scaled bitmap
+  // sampler: a zero-width glyph would leave sampleCount at zero and divide by
+  // zero while averaging the 2-bit pixels.
+  if (width == 0 || height == 0 || scalePct == 0) {
+    *x += scaledAdvanceX;
+    return;
+  }
   const int scaledLeft = (glyph->left * static_cast<int>(scalePct) + kScaleRoundBias) / 100;
   const int scaledTop = std::max(1, (glyph->top * static_cast<int>(scalePct) + kScaleRoundBias) / 100);
   const int scaledW = std::max(1, (static_cast<int>(width) * static_cast<int>(scalePct) + kScaleRoundBias) / 100);
