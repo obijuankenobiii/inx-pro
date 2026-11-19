@@ -258,8 +258,6 @@ void EpubActivity::readerLoadingPopup() {
 }
 
 void EpubActivity::handleChapterLoadFailure() {
-  readerPopup("Error loading chapter");
-
   if (!chapterRecoveryAttempted_) {
     chapterRecoveryAttempted_ = true;
     currentSpineIndex = lastGoodSpineIndex_;
@@ -267,16 +265,11 @@ void EpubActivity::handleChapterLoadFailure() {
     section.reset();
     updateRequired = true;
     return;
+  }else {
+      readerPopup("Error loading chapter");
   }
 
   chapterRecoveryAttempted_ = false;
-  section.reset();
-  if (epub) {
-    epub->clearCache();
-  }
-  if (bookProgress) {
-    bookProgress->remove();
-  }
   onGoBack();
 }
 

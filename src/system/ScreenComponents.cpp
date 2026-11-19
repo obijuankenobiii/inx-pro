@@ -82,7 +82,9 @@ void ScreenComponents::drawBattery(const GfxRenderer& renderer, const int left, 
                     (BATTERY_ICON_HEIGHT - renderer.text.getLineHeight(font)) / 2;
   renderer.text.render(font, left + BATTERY_ICON_WIDTH + BATTERY_TEXT_GAP, textY, percentageText.c_str());
 
-  renderer.bitmap.icon(BatteryIcon, left, top + BATTERY_ICON_TOP_OFFSET, BATTERY_ICON_WIDTH, BATTERY_ICON_HEIGHT);
+  if (!charging) {
+    renderer.bitmap.icon(BatteryIcon, left, top + BATTERY_ICON_TOP_OFFSET, BATTERY_ICON_WIDTH, BATTERY_ICON_HEIGHT);
+  }
 
   const int bars = percentage >= 75 ? 4 : percentage >= 50 ? 3 : percentage >= 25 ? 2 : 1;
   constexpr int barHeight = 6;
