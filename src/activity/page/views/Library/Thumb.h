@@ -39,7 +39,7 @@ class Thumb final {
   /** Restores a remembered page. Clamped in load(), which knows the item count. */
   void setPage(int value) { page = value < 0 ? 0 : value; }
   bool handleInput();
-  void render() const;
+  bool render() const;
 
  private:
   struct Thumbnail {
@@ -53,6 +53,7 @@ class Thumb final {
     int folderCount = 0;
     int progressPercent = 0;
     bool loaded = false;
+    bool pathResolved = false;
   };
 
   struct Rect {
@@ -91,7 +92,7 @@ class Thumb final {
   int top() const;
   void calculate();
   const Thumbnail* find(const std::string& item) const;
-  void drawItem(const LibraryIndex::Book& item, int x, int y, int width, int height, bool favorite) const;
+  bool drawItem(const LibraryIndex::Book& item, int x, int y, int width, int height, bool favorite) const;
   void itemBounds(int index, int& x, int& y, int& width, int& height) const;
   int itemAt(int x, int y) const;
   std::string thumbnailPathForBook(const std::string& bookPath);

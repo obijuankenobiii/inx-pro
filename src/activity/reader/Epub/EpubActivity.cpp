@@ -686,6 +686,7 @@ bool EpubActivity::displayCoverOrTitle() {
     ImageRender::Options options;
     options.cropToFill = true;
     options.asyncDisplayCache = true;
+    options.cacheNamespace = ImageDisplayCacheNamespace::Book;
     if (ImageRender::create(renderer, coverJpegPath).render(0, 0, pageWidth, pageHeight, options)) {
       renderer.displayBuffer();
       return true;
@@ -699,6 +700,7 @@ bool EpubActivity::displayCoverOrTitle() {
     ImageRender::Options options;
     options.cropToFill = true;
     options.asyncDisplayCache = true;
+    options.cacheNamespace = ImageDisplayCacheNamespace::Book;
     if (ImageRender::create(renderer, coverPngPath).render(0, 0, pageWidth, pageHeight, options)) {
       renderer.displayBuffer();
       return true;
@@ -714,6 +716,7 @@ bool EpubActivity::displayCoverOrTitle() {
     ImageRender::Options options;
     options.cropToFill = true;
     options.asyncDisplayCache = true;
+    options.cacheNamespace = ImageDisplayCacheNamespace::Book;
     if (ImageRender::create(renderer, coverJpegPath).render(0, 0, pageWidth, pageHeight, options)) {
       renderer.displayBuffer();
       return true;
@@ -726,6 +729,7 @@ bool EpubActivity::displayCoverOrTitle() {
     ImageRender::Options options;
     options.cropToFill = true;
     options.asyncDisplayCache = true;
+    options.cacheNamespace = ImageDisplayCacheNamespace::Book;
     renderer.clearScreen();
     if (ImageRender::create(renderer, coverPath).render(0, 0, pageWidth, pageHeight, options)) {
       renderer.displayBuffer();

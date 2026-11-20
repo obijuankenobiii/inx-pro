@@ -70,6 +70,7 @@ void drawThumbnail(GfxRenderer& renderer, const RecentBook& book, const int x, c
     options.cropAnchorY = cropFromTop ? 0.0f : 0.5f;
     options.useDisplayCache = true;
     options.asyncDisplayCache = true;
+    options.cacheNamespace = ImageDisplayCacheNamespace::Widgets;
     if (forceSquare || SETTINGS.bitmapRoundedCorners == 0) {
       options.roundedOutside = BitmapRender::RoundedOutside::None;
     } else if (SETTINGS.bitmapRoundedCorners == 2) {

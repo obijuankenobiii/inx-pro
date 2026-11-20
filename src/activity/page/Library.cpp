@@ -424,6 +424,8 @@ void Library::onEnter() {
   controlTab = ControlTab::View;
   listThumbDeferImageDecode_ = view == View::ListThumb;
   listThumbWarmupPending_ = false;
+  thumbDeferImageDecode_ = view == View::Thumb || view == View::Thumb3x2;
+  thumbWarmupPending_ = false;
   popupBook = -1;
   folderDeleteConfirm = false;
   sidebarOpen = false;
@@ -768,7 +770,13 @@ void Library::load() {
   resetViews();
   thumb.setRoot(path == "/" && !allBooksMode);
   restoreThumbPage();
-  if (view == View::Thumb || view == View::Thumb3x2) thumb.load();
+  if (view == View::Thumb || view == View::Thumb3x2) {
+    const unsigned long startedAt = micros();
+    thumb.load();
+    INX_SERIAL.printf("[%lu] [LIBRARY][THUMB-TIMING] mode=%s phase=load page=%d/%d items=%d elapsed=%luus\n",
+                      millis(), view == View::Thumb3x2 ? "3x2" : "2x2", thumb.currentPage() + 1,
+                      thumb.totalPages(), static_cast<int>(items.size()), micros() - startedAt);
+  }
 }
 
 void Library::open(const int index) {
@@ -877,10 +885,11 @@ void Library::loop() {
     return;
   }
 
-  // The first thumbnail-list frame intentionally uses placeholders. Let it
+  // The first thumbnail frame intentionally uses placeholders. Let it
   // reach the panel before decoding covers, just like Home's widget layout.
-  if (listThumbWarmupPending_ && !mappedInput.wasTouchActivity()) {
+  if ((listThumbWarmupPending_ || thumbWarmupPending_) && !mappedInput.wasTouchActivity()) {
     listThumbWarmupPending_ = false;
+    thumbWarmupPending_ = false;
     updateRequired = true;
     renderPage();
   }
@@ -910,6 +919,15 @@ void Library::loop() {
       listThumbDeferImageDecode_ = true;
       listThumbWarmupPending_ = false;
     }
+    if (view == View::Thumb || view == View::Thumb3x2) {
+      // Large cover decodes are much more expensive than the list thumbnail.
+      // Put the page shell on screen first, then decode covers on the next
+      // idle render just like ThumbnailList does.
+      thumbDeferImageDecode_ = true;
+      thumbWarmupPending_ = false;
+      thumbTimingPassesRemaining_ = 2;
+      thumbPrefetchNotBeforeMs_ = millis() + 800;
+    }
     updateRequired = true;
     return;
   }
@@ -917,10 +935,18 @@ void Library::loop() {
     renderPage();
     return;
   }
-  if ((view == View::Thumb || view == View::Thumb3x2) && thumb.loadNext()) {
-    updateRequired = true;
-  } else if (view == View::Thumb || view == View::Thumb3x2) {
-    thumb.prefetchNextPage();
+  if (view == View::Thumb || view == View::Thumb3x2) {
+    const char* mode = view == View::Thumb3x2 ? "3x2" : "2x2";
+    const unsigned long startedAt = micros();
+    if (thumb.loadNext()) {
+      updateRequired = true;
+      INX_SERIAL.printf("[%lu] [LIBRARY][THUMB-TIMING] mode=%s phase=load-next elapsed=%luus\n", millis(), mode,
+                        micros() - startedAt);
+    } else if (static_cast<long>(millis() - thumbPrefetchNotBeforeMs_) >= 0 && thumb.prefetchNextPage()) {
+      INX_SERIAL.printf("[%lu] [LIBRARY][THUMB-TIMING] mode=%s phase=prefetch elapsed=%luus\n", millis(), mode,
+                        micros() - startedAt);
+      thumbPrefetchNotBeforeMs_ = millis() + 100;
+    }
   }
   renderPage();
 }
@@ -942,6 +968,25 @@ void Library::content() {
     renderer.text.centered(systemFontId(), renderer.getScreenHeight() / 2, message);
     return;
   }
+  const auto renderThumb = [this](const char* mode) {
+    const bool shouldLogTiming = thumbTimingPassesRemaining_ > 0;
+    const bool deferred = thumbDeferImageDecode_;
+    const unsigned long startedAt = shouldLogTiming ? micros() : 0;
+    renderer.setDeferImageDecode(deferred);
+    const bool needsDecode = thumb.render();
+    renderer.setDeferImageDecode(false);
+    if (thumbDeferImageDecode_) {
+      thumbDeferImageDecode_ = false;
+      thumbWarmupPending_ = needsDecode;
+      if (!needsDecode) thumbTimingPassesRemaining_ = 0;
+    }
+    if (shouldLogTiming) {
+      if (thumbTimingPassesRemaining_ > 0) --thumbTimingPassesRemaining_;
+      INX_SERIAL.printf("[%lu] [LIBRARY][THUMB-TIMING] mode=%s phase=render page=%d/%d deferred=%d elapsed=%luus\n",
+                        millis(), mode, thumb.currentPage() + 1, thumb.totalPages(), deferred ? 1 : 0,
+                        micros() - startedAt);
+    }
+  };
   switch (view) {
     case View::List:
       list.render();
@@ -959,10 +1004,10 @@ void Library::content() {
       }
       break;
     case View::Thumb:
-      thumb.render();
+      renderThumb("2x2");
       break;
     case View::Thumb3x2:
-      thumb.render();
+      renderThumb("3x2");
       break;
   }
 }
@@ -1765,6 +1810,12 @@ void Library::resetViews() {
   if (view == View::ListThumb) {
     listThumbDeferImageDecode_ = true;
     listThumbWarmupPending_ = false;
+  }
+  if (view == View::Thumb || view == View::Thumb3x2) {
+    thumbDeferImageDecode_ = true;
+    thumbWarmupPending_ = false;
+    thumbTimingPassesRemaining_ = 2;
+    thumbPrefetchNotBeforeMs_ = millis() + 500;
   }
 }
 

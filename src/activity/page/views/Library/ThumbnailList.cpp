@@ -186,6 +186,7 @@ void ThumbnailList::renderThumbnail(const LibraryIndex::Book& book, const int x,
   options.cropToFill = true;
   options.asyncDisplayCache = true;
   options.useDisplayCache = true;
+  options.cacheNamespace = ImageDisplayCacheNamespace::Library;
   options.roundedOutside = SETTINGS.bitmapRoundedCorners != 0 ? BitmapRender::RoundedOutside::PaperOutside
                                                                : BitmapRender::RoundedOutside::None;
   if (!path.empty() && ImageRender::create(renderer, path).render(x + 2, y + 2, thumbnailWidth - 4,

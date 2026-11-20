@@ -91,6 +91,7 @@ void drawCover(GfxRenderer& renderer, const RecentBook& book, const int x, const
     options.cropAnchorY = 0.0f;
     options.useDisplayCache = true;
     options.asyncDisplayCache = true;
+    options.cacheNamespace = ImageDisplayCacheNamespace::Widgets;
     options.roundedOutside = BitmapRender::RoundedOutside::None;
     if (ImageRender::create(renderer, path).render(x, y, width, height, options)) {
       if (rounded) maskThumbnailTopCorners(renderer, x, y, width, height, SETTINGS.bitmapRoundedCorners == 2);

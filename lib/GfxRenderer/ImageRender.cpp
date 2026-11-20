@@ -122,6 +122,7 @@ bool ImageRender::renderDisplayCacheOnly(int x, int y, int width, int height, co
   cacheOptions.renderPlane = static_cast<uint8_t>(renderer_.getRenderMode());
   cacheOptions.roundedOutside = effectiveOptions.roundedOutside;
   cacheOptions.quality = effectiveOptions.quality;
+  cacheOptions.cacheNamespace = effectiveOptions.cacheNamespace;
   const bool canUseDisplayCache =
       effectiveOptions.useDisplayCache &&
       ((effectiveOptions.mode == ImageRenderMode::OneBit && renderer_.getRenderMode() == GfxRenderer::BW) ||
@@ -147,6 +148,7 @@ bool ImageRender::preloadDisplayCache(int x, int y, int width, int height, const
   cacheOptions.renderPlane = static_cast<uint8_t>(renderer_.getRenderMode());
   cacheOptions.roundedOutside = effectiveOptions.roundedOutside;
   cacheOptions.quality = effectiveOptions.quality;
+  cacheOptions.cacheNamespace = effectiveOptions.cacheNamespace;
   const bool canUseDisplayCache =
       effectiveOptions.useDisplayCache &&
       ((effectiveOptions.mode == ImageRenderMode::OneBit && renderer_.getRenderMode() == GfxRenderer::BW) ||
@@ -186,6 +188,7 @@ bool ImageRender::render(int x, int y, int width, int height, const Options& opt
   cacheOptions.renderPlane = static_cast<uint8_t>(renderer_.getRenderMode());
   cacheOptions.roundedOutside = effectiveOptions.roundedOutside;
   cacheOptions.quality = effectiveOptions.quality;
+  cacheOptions.cacheNamespace = effectiveOptions.cacheNamespace;
   const bool canUseDisplayCache =
       effectiveOptions.useDisplayCache &&
       ((effectiveOptions.mode == ImageRenderMode::OneBit && renderer_.getRenderMode() == GfxRenderer::BW) ||
@@ -283,6 +286,7 @@ bool ImageRender::displayCachedTwoBit(int x, int y, int width, int height, const
   cacheOptions.mode = ImageRenderMode::TwoBit;
   cacheOptions.roundedOutside = options.roundedOutside;
   cacheOptions.quality = effectiveQuality;
+  cacheOptions.cacheNamespace = options.cacheNamespace;
   const bool hit = ImageDisplayCache::displayTwoBitIfAvailable(renderer_, path_, x, y, width, height, cacheOptions,
                                                                effectiveQuality, options.fastQuality);
   return hit;
@@ -301,6 +305,7 @@ bool ImageRender::hasCachedTwoBit(int x, int y, int width, int height, const Opt
   cacheOptions.mode = ImageRenderMode::TwoBit;
   cacheOptions.roundedOutside = options.roundedOutside;
   cacheOptions.quality = effectiveQuality;
+  cacheOptions.cacheNamespace = options.cacheNamespace;
   return ImageDisplayCache::hasCachedTwoBit(renderer_, path_, x, y, width, height, cacheOptions, effectiveQuality);
 }
 
@@ -316,6 +321,7 @@ bool ImageRender::hasCachedGrayscale(int x, int y, int width, int height, const 
   cacheOptions.cropAnchorY = cacheCropAnchor(options.cropAnchorY);
   cacheOptions.roundedOutside = options.roundedOutside;
   cacheOptions.quality = effectiveQuality;
+  cacheOptions.cacheNamespace = options.cacheNamespace;
   return ImageDisplayCache::hasCombinedTwoBit(renderer_, path_, x, y, width, height, cacheOptions);
 }
 
@@ -354,6 +360,7 @@ bool ImageRender::displayGrayscale(int x, int y, int width, int height, const Op
   combinedCacheOptions.cropAnchorY = cacheCropAnchor(opt.cropAnchorY);
   combinedCacheOptions.roundedOutside = opt.roundedOutside;
   combinedCacheOptions.quality = effectiveQuality;
+  combinedCacheOptions.cacheNamespace = opt.cacheNamespace;
 
   if (options.useDisplayCache &&
       ImageDisplayCache::renderCombinedTwoBit(renderer_, path_, x, y, width, height, combinedCacheOptions,

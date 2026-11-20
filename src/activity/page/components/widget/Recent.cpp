@@ -75,6 +75,7 @@ void renderThumbnail(GfxRenderer& renderer, const RecentBook& book, const int x,
     options.cropToFill = true;
     options.useDisplayCache = true;
     options.asyncDisplayCache = true;
+    options.cacheNamespace = ImageDisplayCacheNamespace::Widgets;
     if (SETTINGS.bitmapRoundedCorners == 0) {
       options.roundedOutside = BitmapRender::RoundedOutside::None;
     } else if (SETTINGS.bitmapRoundedCorners == 2) {

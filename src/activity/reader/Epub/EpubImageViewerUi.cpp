@@ -190,6 +190,7 @@ void EpubImageViewerUi::render(EpubActivity& activity) {
   options.fastQuality = true;
   options.useDisplayCache = true;
   options.asyncDisplayCache = true;
+  options.cacheNamespace = ImageDisplayCacheNamespace::Book;
 
   if (options.mode == ImageRenderMode::OneBit && rasterCache && fitWidth > 0 && fitHeight > 0 &&
       renderCachedZoom(activity, x, y, width, height)) {

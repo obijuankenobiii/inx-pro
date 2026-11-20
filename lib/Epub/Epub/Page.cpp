@@ -567,6 +567,7 @@ void PageImage::renderImage(GfxRenderer& renderer, const int fontId, const int x
   options.quality = quality;
   options.fastQuality = quality;
   options.asyncDisplayCache = true;
+  options.cacheNamespace = ImageDisplayCacheNamespace::Book;
   const ImageRender image = ImageRender::create(renderer, cachePath);
 
   if (quality) {

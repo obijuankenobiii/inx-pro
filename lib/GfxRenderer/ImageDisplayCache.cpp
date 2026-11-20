@@ -633,10 +633,78 @@ bool loadSdCacheIntoRam(const std::string& cachePath, const VisibleRect& visible
   return hasRamCache(cachePath);
 }
 
+bool renderSdCacheDirect(GfxRenderer& renderer, const std::string& cachePath, const VisibleRect& visible) {
+  if (!SdMan.exists(cachePath.c_str())) {
+    return false;
+  }
+
+  FsFile file;
+  if (!SdMan.openFileForRead("IDC", cachePath, file)) {
+    return false;
+  }
+
+  CacheHeader header;
+  const bool headerOk = file.read(&header, sizeof(header)) == sizeof(header) && header.magic == kMagic &&
+                        header.version == kVersion && header.headerSize == sizeof(CacheHeader) &&
+                        header.width == visible.width && header.height == visible.height &&
+                        header.rowBytes == static_cast<uint16_t>((visible.width + 7) / 8);
+  const uint64_t expectedFileSize = sizeof(CacheHeader) +
+                                    static_cast<uint64_t>(visible.height) * header.rowBytes;
+  if (!headerOk || static_cast<uint64_t>(file.size()) != expectedFileSize) {
+    file.close();
+    return false;
+  }
+
+  std::unique_ptr<uint8_t[]> row(new (std::nothrow) uint8_t[header.rowBytes]);
+  if (!row) {
+    file.close();
+    return false;
+  }
+
+  bool allInk = true;
+  for (int y = 0; y < visible.height; ++y) {
+    if (file.read(row.get(), header.rowBytes) != header.rowBytes) {
+      file.close();
+      return false;
+    }
+    for (int x = 0; x < visible.width; ++x) {
+      if ((row[x / 8] & (0x80 >> (x % 8))) == 0) {
+        allInk = false;
+        break;
+      }
+    }
+    renderer.drawPackedRow1bpp(visible.x, visible.y + y, visible.width, row.get());
+  }
+  file.close();
+  return !allInk;
+}
+
 }
 
 std::string ImageDisplayCache::pathFor(GfxRenderer& renderer, const std::string& sourcePath, const int x, const int y,
                                        const int width, const int height, const ImageDisplayCacheOptions& options) {
+  VisibleRect visible;
+  if (!visibleBounds(renderer, x, y, width, height, visible)) {
+    return "";
+  }
+  const uint32_t hash = cacheHash(sourcePath, width, height, visible, options);
+  char name[48];
+  const char* group = options.cacheNamespace == ImageDisplayCacheNamespace::Library
+                          ? "library"
+                          : options.cacheNamespace == ImageDisplayCacheNamespace::Widgets ? "widgets" : "book";
+  if (options.cacheNamespace == ImageDisplayCacheNamespace::Default) {
+    snprintf(name, sizeof(name), "/%02lx/%08lx.irdc", static_cast<unsigned long>((hash >> 24) & 0xFF),
+             static_cast<unsigned long>(hash));
+    return std::string(kCacheDir) + name;
+  }
+  snprintf(name, sizeof(name), "/%s/%02lx/%08lx.irdc", group, static_cast<unsigned long>((hash >> 24) & 0xFF),
+           static_cast<unsigned long>(hash));
+  return std::string(kCacheDir) + name;
+}
+
+std::string ImageDisplayCache::legacyPathFor(GfxRenderer& renderer, const std::string& sourcePath, const int x,
+                                             const int y, const int width, const int height,
+                                             const ImageDisplayCacheOptions& options) {
   VisibleRect visible;
   if (!visibleBounds(renderer, x, y, width, height, visible)) {
     return "";
@@ -651,6 +719,28 @@ std::string ImageDisplayCache::pathFor(GfxRenderer& renderer, const std::string&
 std::string ImageDisplayCache::pathForCombined(GfxRenderer& renderer, const std::string& sourcePath, const int x,
                                                const int y, const int width, const int height,
                                                const ImageDisplayCacheOptions& options) {
+  VisibleRect visible;
+  if (!visibleBounds(renderer, x, y, width, height, visible)) {
+    return "";
+  }
+  const uint32_t hash = cacheHashCombined(sourcePath, width, height, visible, options);
+  char name[48];
+  const char* group = options.cacheNamespace == ImageDisplayCacheNamespace::Library
+                          ? "library"
+                          : options.cacheNamespace == ImageDisplayCacheNamespace::Widgets ? "widgets" : "book";
+  if (options.cacheNamespace == ImageDisplayCacheNamespace::Default) {
+    snprintf(name, sizeof(name), "/%02lx/%08lx.irdc2", static_cast<unsigned long>((hash >> 24) & 0xFF),
+             static_cast<unsigned long>(hash));
+    return std::string(kCacheDir) + name;
+  }
+  snprintf(name, sizeof(name), "/%s/%02lx/%08lx.irdc2", group, static_cast<unsigned long>((hash >> 24) & 0xFF),
+           static_cast<unsigned long>(hash));
+  return std::string(kCacheDir) + name;
+}
+
+std::string ImageDisplayCache::legacyPathForCombined(GfxRenderer& renderer, const std::string& sourcePath, const int x,
+                                                     const int y, const int width, const int height,
+                                                     const ImageDisplayCacheOptions& options) {
   VisibleRect visible;
   if (!visibleBounds(renderer, x, y, width, height, visible)) {
     return "";
@@ -676,10 +766,19 @@ bool ImageDisplayCache::renderIfAvailable(GfxRenderer& renderer, const std::stri
     return false;
   }
 
-  if (!drawRamCache(renderer, requestedPath, visible) && !loadSdCacheIntoRam(requestedPath, visible, options)) {
-    return false;
+  if (drawRamCache(renderer, requestedPath, visible)) {
+    return true;
   }
-  return drawRamCache(renderer, requestedPath, visible);
+  if (renderSdCacheDirect(renderer, requestedPath, visible)) return true;
+
+  const std::string legacyPath = legacyPathFor(renderer, sourcePath, x, y, width, height, options);
+  if (legacyPath != requestedPath) {
+    if (drawRamCache(renderer, legacyPath, visible)) {
+      return true;
+    }
+    if (renderSdCacheDirect(renderer, legacyPath, visible)) return true;
+  }
+  return false;
 }
 
 bool ImageDisplayCache::preloadIfAvailable(GfxRenderer& renderer, const std::string& sourcePath, const int x,
@@ -694,7 +793,14 @@ bool ImageDisplayCache::preloadIfAvailable(GfxRenderer& renderer, const std::str
   if (cachePath.empty() || hasRamCache(cachePath)) {
     return !cachePath.empty();
   }
-  return loadSdCacheIntoRam(cachePath, visible, options);
+  if (loadSdCacheIntoRam(cachePath, visible, options)) {
+    return true;
+  }
+  const std::string legacyPath = legacyPathFor(renderer, sourcePath, x, y, width, height, options);
+  if (legacyPath == cachePath || hasRamCache(legacyPath)) {
+    return legacyPath != cachePath;
+  }
+  return loadSdCacheIntoRam(legacyPath, visible, options);
 }
 
 bool ImageDisplayCache::displayTwoBitIfAvailable(GfxRenderer& renderer, const std::string& sourcePath, const int x,
@@ -1270,5 +1376,7 @@ bool ImageDisplayCache::hasCached(GfxRenderer& renderer, const std::string& sour
                                   const int width, const int height, const ImageDisplayCacheOptions& options) {
   SdIoMutex::Lock ioLock;
   const std::string cachePath = pathFor(renderer, sourcePath, x, y, width, height, options);
-  return !cachePath.empty() && cachePathAvailable(cachePath);
+  if (!cachePath.empty() && cachePathAvailable(cachePath)) return true;
+  const std::string legacyPath = legacyPathFor(renderer, sourcePath, x, y, width, height, options);
+  return !legacyPath.empty() && legacyPath != cachePath && cachePathAvailable(legacyPath);
 }

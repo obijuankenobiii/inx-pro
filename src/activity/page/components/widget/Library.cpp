@@ -68,6 +68,7 @@ bool renderCover(GfxRenderer& renderer, const std::string& path, const int x, co
   options.cropAnchorX = 0.5f;
   options.useDisplayCache = true;
   options.asyncDisplayCache = true;
+  options.cacheNamespace = ImageDisplayCacheNamespace::Widgets;
   options.roundedOutside = rounded ? BitmapRender::RoundedOutside::PaperOutside
                                    : BitmapRender::RoundedOutside::None;
   if (!ImageRender::create(renderer, path).render(x, y, width, height, options)) return false;
@@ -85,6 +86,7 @@ bool renderCoverSlice(GfxRenderer& renderer, const std::string& path, const int 
   options.cropAnchorX = 0.0f;
   options.useDisplayCache = true;
   options.asyncDisplayCache = true;
+  options.cacheNamespace = ImageDisplayCacheNamespace::Widgets;
   options.roundedOutside = rounded ? BitmapRender::RoundedOutside::PaperOutside
                                    : BitmapRender::RoundedOutside::None;
   if (!ImageRender::create(renderer, path).render(x, y, width, height, options)) return false;
