@@ -99,6 +99,8 @@ void UiPage::renderPage() {
   updateRequired = false;
 }
 
+void UiPage::renderPageToBackBuffer() { render(false); }
+
 bool UiPage::storeOverlayFrame() {
   renderer.syncWriteBufferFromActive();
   renderer.freeBwBufferChunks();
@@ -185,7 +187,7 @@ bool UiPage::menuAction(const navigation::Menu::Action action) {
   return false;
 }
 
-void UiPage::render() {
+void UiPage::render(const bool present) {
   renderer.setRenderMode(GfxRenderer::BW);
   bool restored = false;
   if (overlayFrameStored_ && (overlayFrameActive_ || overlayFrameRestorePending_)) {
@@ -205,7 +207,7 @@ void UiPage::render() {
   }
 
   menu();
-  renderer.displayBufferAsync();
+  if (present) renderer.displayBufferAsync();
 }
 
 int UiPage::contentBottomY(const GfxRenderer& renderer) {

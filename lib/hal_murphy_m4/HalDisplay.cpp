@@ -16,6 +16,8 @@
 #include <HalGPIO.h>
 #include <esp_idf_version.h>
 
+#include "../../freeink-sdk/libs/display/FreeInkDisplay/src/driver/Ssd1677Driver.h"
+
 #include "../../freeink-sdk/libs/display/FreeInkDisplay/src/lut/Ssd1677Luts.h"
 
 namespace {
@@ -101,6 +103,22 @@ EInkDisplay::RefreshMode convertRefreshMode(const HalDisplay::RefreshMode mode) 
 }
 }  // namespace
 
+namespace freeink {
+
+// Murphy uses the same SSD1677 glass family as the X4. The stock absolute
+// 0xFC sequence is safe but takes about 500 ms; use the driver's incremental
+// 0x1C DU path for normal page turns, matching the X4 fast-DU option.
+const Ssd1677Config& murphySsd1677Config() {
+  static Ssd1677Config config = [] {
+    Ssd1677Config value = ssd1677DefaultConfig();
+    value.fastSeqOverride = 0;
+    return value;
+  }();
+  return config;
+}
+
+}  // namespace freeink
+
 HalDisplay::HalDisplay()
     : display(panelPins().sclk, panelPins().mosi, panelPins().cs, panelPins().dc, panelPins().rst,
               panelPins().busy),
@@ -109,6 +127,9 @@ HalDisplay::HalDisplay()
 HalDisplay::~HalDisplay() = default;
 
 void HalDisplay::begin() {
+  // The Murphy panel is rated for 40 MHz SPI. The previous 20 MHz setting
+  // added ~43 ms to every full-frame page submission.
+  BoardConfig::ACTIVE.displaySpiHz = 40000000;
   display.setBusyWaitSliceHook(murphyBusyWaitSlice);
   display.begin();
   primeMurphyUpdateControl1(display, FAST_REFRESH);
@@ -124,12 +145,16 @@ void HalDisplay::begin() {
 }
 
 void HalDisplay::serviceIdle() {
-  // The upstream facade already owns the correct turn-off-screen sequence:
-  // displayFinish() waits for the waveform, then powers down the SSD1677
-  // analog/clock rails. Only invoke it after BUSY is clear, so this hook never
-  // blocks touch or button polling.
+  // Keep the panel powered between normal page turns. The upstream facade
+  // still owns completion and the post-waveform framebuffer handoff; this hook
+  // only retires the deferred refresh once BUSY is clear.
   if (!display.isRefreshPending() || millis() - asyncRefreshStartedAt < 30 || display.refreshBusy()) return;
+  const unsigned long refreshAge = millis() - asyncRefreshStartedAt;
+  const unsigned long finishStart = millis();
   finishPendingRefresh();
+  INX_SERIAL.printf("[%lu] [MURPHY_M4][DISPLAY-TIMING] async-complete age=%lu ms finish=%lu ms total=%lu ms\n", millis(),
+                    refreshAge, static_cast<unsigned long>(millis() - finishStart),
+                    static_cast<unsigned long>(millis() - asyncRefreshStartedAt));
 }
 
 void HalDisplay::clearScreen(const uint8_t color) const { display.clearScreen(color); }
@@ -166,8 +191,10 @@ void HalDisplay::displayWindow(const uint16_t x, const uint16_t y, const uint16_
 
 void HalDisplay::displayBufferAsync(const HalDisplay::RefreshMode mode) {
   primeMurphyUpdateControl1(display, mode);
-  display.triggerDisplayAsync(convertRefreshMode(mode), true);
+  display.displayBufferAsync(convertRefreshMode(mode));
   asyncRefreshStartedAt = millis();
+  INX_SERIAL.printf("[%lu] [MURPHY_M4][DISPLAY-TIMING] async-submit mode=%d\n", asyncRefreshStartedAt,
+                    static_cast<int>(mode));
 }
 
 void HalDisplay::displayGrayscaleBase(const HalDisplay::RefreshMode mode, const bool turnOffScreen) {
@@ -231,7 +258,10 @@ void HalDisplay::displayGrayBuffer(const bool quality, const bool trackForRevert
     display.displayGrayBuffer(true, freeink::lut_factory_quality, true);
     return;
   }
-  display.displayGrayBuffer(true, nullptr, false);
+  // Text AA is an overlay on the already-visible B/W page. Keep the SSD1677
+  // rails and clock alive after this pass so the next page turn can use the
+  // incremental DU path without paying another power-up/power-down cycle.
+  display.displayGrayBuffer(false, nullptr, false);
 }
 
 void HalDisplay::displayGrayBufferFastQuality() {
@@ -249,7 +279,8 @@ void HalDisplay::displayGrayBufferWindow(const uint16_t x, const uint16_t y, con
                         h);
     return;
   }
-  display.displayGrayBuffer(true, nullptr, false);
+  // Same powered overlay path for the non-quality grayscale window fallback.
+  display.displayGrayBuffer(false, nullptr, false);
 }
 
 bool HalDisplay::supportsWindowedQuality() const { return windowedGray.supports(); }

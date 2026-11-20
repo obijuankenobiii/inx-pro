@@ -9,6 +9,7 @@
 #include <ArduinoJson.h>
 #include <Epub/Page.h>
 #include <Epub/PageWordIndex.h>
+#include <Epub/ImagePrefetch.h>
 #include <GfxRenderer.h>
 #include <HalDisplay.h>
 #include <ImageRender.h>
@@ -362,7 +363,18 @@ std::unique_ptr<Section> EpubActivity::loadSection(int spineIndex, const Viewpor
   // If the reader reaches a chapter before its background build finishes,
   // abandon only that partial prefetch and let the normal chapter-open path
   // handle it. A completed prefetch is left on disk and will be loaded below.
-  if (nextChapterPrefetch_ && nextChapterPrefetchSpine_ == spineIndex) {
+  bool prefetchesRequestedSpine = false;
+  if (nextChapterPrefetchMutex_) {
+    if (xSemaphoreTake(nextChapterPrefetchMutex_, 0) != pdTRUE) {
+      // The worker is in a parser slice. Do not wait in the foreground path;
+      // the normal chapter load will retry after the next reader loop.
+      prefetchesRequestedSpine = false;
+    } else {
+      prefetchesRequestedSpine = nextChapterPrefetch_ && nextChapterPrefetchSpine_ == spineIndex;
+      xSemaphoreGive(nextChapterPrefetchMutex_);
+    }
+  }
+  if (prefetchesRequestedSpine) {
     stopNextChapterPrefetch();
     nextChapterPrefetchRetryAt_ = 0;
   }
@@ -413,45 +425,86 @@ void EpubActivity::nextChapterPrefetchTaskTrampoline(void* param) {
 }
 
 void EpubActivity::nextChapterPrefetchTaskLoop() {
-  while (!nextChapterPrefetchStopRequested_) {
+  for (;;) {
     if (!nextChapterPrefetchMutex_) break;
     xSemaphoreTake(nextChapterPrefetchMutex_, portMAX_DELAY);
     const bool shouldRun = !nextChapterPrefetchStopRequested_ && nextChapterPrefetch_ &&
                            nextChapterPrefetch_->progressiveActive();
-    // Chapter layout touches the shared renderer/font manager. Never enter it
-    // while the foreground reader is rendering a page; this task is allowed to
-    // yield and retry, but it must not stall a page turn.
-    const bool layoutAvailable = shouldRun && readerLayoutMutex_ != nullptr &&
-                                 xSemaphoreTake(readerLayoutMutex_, 0) == pdTRUE;
-    if (layoutAvailable) {
+    // Loading the complete XHTML buffer does not touch the renderer. Keep that
+    // one-time SD read outside the layout lock, then serialize only Expat/page
+    // layout with the foreground reader.
+    const bool sourceReady = shouldRun && nextChapterPrefetch_->progressiveSourceReady();
+    bool layoutLocked = false;
+    if (shouldRun && (!sourceReady || (readerLayoutMutex_ != nullptr &&
+                                      xSemaphoreTake(readerLayoutMutex_, 0) == pdTRUE))) {
+      layoutLocked = sourceReady;
       nextChapterPrefetch_->pumpProgressive(1);
-      xSemaphoreGive(readerLayoutMutex_);
+      if (layoutLocked) xSemaphoreGive(readerLayoutMutex_);
     }
     const bool finished = nextChapterPrefetch_ && !nextChapterPrefetch_->progressiveActive();
     xSemaphoreGive(nextChapterPrefetchMutex_);
     if (!shouldRun || finished) break;
-    vTaskDelay(pdMS_TO_TICKS(1));
+    // Always yield between parser slices. This task is background work and
+    // must never starve Arduino loop, Wi-Fi/BLE, or the task watchdog.
+    vTaskDelay(pdMS_TO_TICKS(10));
   }
-  nextChapterPrefetchFinished_ = true;
+  if (nextChapterPrefetchMutex_) {
+    xSemaphoreTake(nextChapterPrefetchMutex_, portMAX_DELAY);
+    nextChapterPrefetchFinished_ = true;
+    xSemaphoreGive(nextChapterPrefetchMutex_);
+  } else {
+    nextChapterPrefetchFinished_ = true;
+  }
   vTaskDeleteWithCaps(nullptr);
+  // vTaskDeleteWithCaps(nullptr) is self-deleting on ESP32. Keep a yielding
+  // guard for simulator/stub builds and for any port where the delete call
+  // unexpectedly returns; this task function must never fall through.
+  for (;;) vTaskDelay(pdMS_TO_TICKS(1000));
+}
+
+void EpubActivity::pauseNextChapterPrefetchForPageTurn() {
+  // Give the active page an uncontended renderer/SD window. This is a
+  // nonblocking request; the worker observes it after its current 4 KB slice.
+  nextChapterPrefetchRetryAt_ = millis() + 1000;
+  if (!nextChapterPrefetchMutex_) return;
+  if (xSemaphoreTake(nextChapterPrefetchMutex_, 0) == pdTRUE) {
+    nextChapterPrefetchStopRequested_ = true;
+    xSemaphoreGive(nextChapterPrefetchMutex_);
+  }
 }
 
 void EpubActivity::stopNextChapterPrefetch() {
-  nextChapterPrefetchStopRequested_ = true;
-  while (nextChapterPrefetchTask_ && !nextChapterPrefetchFinished_) {
-    vTaskDelay(pdMS_TO_TICKS(1));
+  if (nextChapterPrefetchMutex_) {
+    xSemaphoreTake(nextChapterPrefetchMutex_, portMAX_DELAY);
+    nextChapterPrefetchStopRequested_ = true;
+    xSemaphoreGive(nextChapterPrefetchMutex_);
+  } else {
+    nextChapterPrefetchStopRequested_ = true;
+  }
+  while (nextChapterPrefetchTask_) {
+    bool finished = nextChapterPrefetchFinished_;
+    if (nextChapterPrefetchMutex_) {
+      xSemaphoreTake(nextChapterPrefetchMutex_, portMAX_DELAY);
+      finished = nextChapterPrefetchFinished_;
+      xSemaphoreGive(nextChapterPrefetchMutex_);
+    }
+    if (finished) break;
+    vTaskDelay(pdMS_TO_TICKS(10));
   }
   nextChapterPrefetchTask_ = nullptr;
   if (nextChapterPrefetchMutex_) {
     xSemaphoreTake(nextChapterPrefetchMutex_, portMAX_DELAY);
     nextChapterPrefetch_.reset();
+    nextChapterPrefetchSpine_ = -1;
+    nextChapterPrefetchStopRequested_ = false;
+    nextChapterPrefetchFinished_ = false;
     xSemaphoreGive(nextChapterPrefetchMutex_);
   } else {
     nextChapterPrefetch_.reset();
+    nextChapterPrefetchSpine_ = -1;
+    nextChapterPrefetchStopRequested_ = false;
+    nextChapterPrefetchFinished_ = false;
   }
-  nextChapterPrefetchSpine_ = -1;
-  nextChapterPrefetchStopRequested_ = false;
-  nextChapterPrefetchFinished_ = false;
 }
 
 void EpubActivity::serviceNextChapterPrefetch() {
@@ -464,10 +517,16 @@ void EpubActivity::serviceNextChapterPrefetch() {
     return;
   }
 
-  if (nextChapterPrefetchTask_ && nextChapterPrefetchFinished_) {
+  bool prefetchFinished = false;
+  if (nextChapterPrefetchTask_ && nextChapterPrefetchMutex_) {
+    if (xSemaphoreTake(nextChapterPrefetchMutex_, 0) != pdTRUE) return;
+    prefetchFinished = nextChapterPrefetchFinished_;
+    xSemaphoreGive(nextChapterPrefetchMutex_);
+  }
+  if (nextChapterPrefetchTask_ && prefetchFinished) {
     nextChapterPrefetchTask_ = nullptr;
     if (nextChapterPrefetchMutex_) {
-      xSemaphoreTake(nextChapterPrefetchMutex_, portMAX_DELAY);
+      if (xSemaphoreTake(nextChapterPrefetchMutex_, 0) != pdTRUE) return;
       const int finishedSpine = nextChapterPrefetchSpine_;
       const uint16_t finishedPages = nextChapterPrefetch_ ? nextChapterPrefetch_->pageCount : 0;
       if (finishedPages > 0) {
@@ -498,7 +557,12 @@ void EpubActivity::serviceNextChapterPrefetch() {
 
   // Do not let a partial file left by a reset/crash suppress the prefetch
   // forever. A real cache must have a valid header, page count, and LUT.
-  if (SdMan.exists(cachePath.c_str())) {
+  bool cacheExists = false;
+  {
+    EpubImagePrefetch::IoLock ioLock;
+    cacheExists = SdMan.exists(cachePath.c_str());
+  }
+  if (cacheExists) {
     auto existing = std::unique_ptr<Section>(new Section(sharedEpub, nextSpine, renderer));
     const bool cacheReady = existing->loadSectionFile(
         info.fontId, info.lineCompression, info.wordSpacing, bookSettings.extraParagraphSpacing,
@@ -515,7 +579,11 @@ void EpubActivity::serviceNextChapterPrefetch() {
           info.fontId, FontManager::getNextFont(info.fontId), FontManager::getMaxFontId(info.fontId),
           info.lineCompression, info.wordSpacing, bookSettings.extraParagraphSpacing, bookSettings.paragraphAlignment,
           info.width, info.height, bookSettings.hyphenationEnabled, bookSettings.paragraphCssIndentEnabled != 0,
-          bookSettings.bionicReadingEnabled != 0, false)) {
+          bookSettings.bionicReadingEnabled != 0,
+          // Prefetch text/layout only. PageImage keeps the source path and
+          // dimensions, then extracts the image on the visible render path;
+          // decoding JPEGs here can hold the shared layout/SD path for seconds.
+          true)) {
     INX_SERIAL.printf("[%lu] [OPEN-TIME] next chapter prefetch storage start failed spine=%d\n", millis(), nextSpine);
     nextChapterPrefetchRetryAt_ = millis() + 30000;
     return;
@@ -527,7 +595,13 @@ void EpubActivity::serviceNextChapterPrefetch() {
     nextChapterPrefetchRetryAt_ = millis() + 30000;
     return;
   }
-  xSemaphoreTake(nextChapterPrefetchMutex_, portMAX_DELAY);
+  // The service function runs before input dispatch. Never wait here if the
+  // worker has already started a parser slice; retry on the next reader loop.
+  if (xSemaphoreTake(nextChapterPrefetchMutex_, 0) != pdTRUE) {
+    candidate.reset();
+    nextChapterPrefetchRetryAt_ = millis() + 25;
+    return;
+  }
   nextChapterPrefetchSpine_ = nextSpine;
   nextChapterPrefetch_ = std::move(candidate);
   nextChapterPrefetchStopRequested_ = false;
@@ -1667,6 +1741,12 @@ bool EpubActivity::handleWordSelection() {
 void EpubActivity::onExit() {
   invalidatePreparedPage();
   const bool clearImagePageOnExit = lastPageHadImages && lastPageHadHighQualityImage;
+
+  // Stop the background chapter writer before any exit-time state is written.
+  // Otherwise saveBookStats/saveProgress/APP_STATE can contend for the SD bus
+  // while the prefetch task is parsing and flushing its .part file.
+  stopNextChapterPrefetch();
+
   closeWordSelection();
   resetPageNoteState();
 
@@ -1704,7 +1784,6 @@ void EpubActivity::onExit() {
     APP_STATE.lastRead = epub->getPath();
   }
   APP_STATE.saveToFile();
-  stopNextChapterPrefetch();
   if (nextChapterPrefetchMutex_) {
     vSemaphoreDelete(nextChapterPrefetchMutex_);
     nextChapterPrefetchMutex_ = nullptr;
@@ -1958,7 +2037,6 @@ void EpubActivity::loop() {
 
   if (mappedInput.wasTouchSwipeUpForRenderer(renderer)) {
     pauseReadingStats();
-    vTaskDelay(pdMS_TO_TICKS(100));
     onGoBack();
     return;
   }
@@ -2183,7 +2261,9 @@ void EpubActivity::scheduleIdlePreparedPage() {
 }
 
 bool EpubActivity::composePreparedForwardPage() {
-  SemaphoreGuard layoutGuard(readerLayoutMutex_, portMAX_DELAY);
+  // Prefetch can be laying out a chunk on the other core. Never wait here:
+  // this is idle work and a button/page turn must remain responsive.
+  SemaphoreGuard layoutGuard(readerLayoutMutex_, 0);
   if (!layoutGuard.locked()) return false;
 
   if (!canPrepareForwardPage() || preparedPageSpineIndex_ != currentSpineIndex ||
@@ -2406,6 +2486,12 @@ bool EpubActivity::finishPreparedPageGrayscale(const PreparedPage& prepared) {
 }
 
 bool EpubActivity::presentPreparedForwardPage() {
+  // Presenting a prepared page uses the shared renderer and section state.
+  // If the background prefetch currently owns the layout lock, fall back to
+  // the normal page-turn path instead of blocking input behind it.
+  SemaphoreGuard layoutGuard(readerLayoutMutex_, 0);
+  if (!layoutGuard.locked()) return false;
+
   if (!preparedPage_.ready || !canPrepareForwardPage() || !section || preparedPage_.spineIndex != currentSpineIndex ||
       preparedPage_.pageIndex != section->currentPage + 1 ||
       preparedPage_.renderSignature != preparedPageRenderSignature()) {
@@ -2413,6 +2499,9 @@ bool EpubActivity::presentPreparedForwardPage() {
   }
 
   const PreparedPage presented = preparedPage_;
+  const bool tracePageTurn = pageTurnTracePending_;
+  const uint32_t traceId = pageTurnTraceId_;
+  const unsigned long traceStart = pageTurnTraceStartedAt_;
   section->currentPage = presented.pageIndex;
   const HalDisplay::RefreshMode turnRefresh =
       lastPageHadHighQualityImage
@@ -2422,12 +2511,27 @@ bool EpubActivity::presentPreparedForwardPage() {
   // Commit the prepared B/W page before any HQ image pass. The grayscale
   // window updates only the image region; embedded text must already be the
   // current page on the panel and in frameBufferActive.
+  const unsigned long displaySubmitStart = millis();
   renderer.displayBufferAsync(turnRefresh);
+  if (tracePageTurn) {
+    INX_SERIAL.printf("[%lu] [PAGE-TIMING] id=%lu prepared-display-submit=%lu ms total=%lu ms mode=%d\n", millis(),
+                      static_cast<unsigned long>(traceId),
+                      static_cast<unsigned long>(millis() - displaySubmitStart),
+                      static_cast<unsigned long>(millis() - traceStart), static_cast<int>(turnRefresh));
+  }
 
+  const unsigned long grayscaleStart = millis();
   if (!finishPreparedPageGrayscale(presented)) {
     invalidatePreparedPage();
-    renderScreen();
+    // The layout lock is still held here; retry the normal render on the next
+    // reader-loop iteration after this guard releases it.
+    updateRequired = true;
     return true;
+  }
+  if (tracePageTurn) {
+    INX_SERIAL.printf("[%lu] [PAGE-TIMING] id=%lu prepared-render-done total=%lu ms grayscale=%lu ms\n", millis(),
+                      static_cast<unsigned long>(traceId), static_cast<unsigned long>(millis() - traceStart),
+                      static_cast<unsigned long>(millis() - grayscaleStart));
   }
 
   pagesUntilFullRefresh = presented.pagesUntilFullRefresh;
@@ -2522,7 +2626,20 @@ bool EpubActivity::pageTurn(bool forward) {
     section->currentPage = 0;
   }
 
+  pageTurnTraceId_++;
+  pageTurnTraceStartedAt_ = millis();
+  pageTurnTracePending_ = true;
+  INX_SERIAL.printf("[%lu] [PAGE-TIMING] id=%lu request direction=%s spine=%d page=%d/%d\n", millis(),
+                    static_cast<unsigned long>(pageTurnTraceId_), forward ? "next" : "previous", currentSpineIndex,
+                    section->currentPage + 1, section->pageCount);
+
+  pauseNextChapterPrefetchForPageTurn();
+
   if (forward && presentPreparedForwardPage()) {
+    INX_SERIAL.printf("[%lu] [PAGE-TIMING] id=%lu prepared-present total=%lu ms\n", millis(),
+                      static_cast<unsigned long>(pageTurnTraceId_),
+                      static_cast<unsigned long>(millis() - pageTurnTraceStartedAt_));
+    pageTurnTracePending_ = false;
     startPageTimer();
     return true;
   }
@@ -2566,6 +2683,10 @@ bool EpubActivity::pageTurn(bool forward) {
 
   startPageTimer();
   updateRequired = true;
+  INX_SERIAL.printf("[%lu] [PAGE-TIMING] id=%lu queued total=%lu ms next_spine=%d next_page=%d\n", millis(),
+                    static_cast<unsigned long>(pageTurnTraceId_),
+                    static_cast<unsigned long>(millis() - pageTurnTraceStartedAt_), currentSpineIndex,
+                    section ? section->currentPage + 1 : 0);
   return false;
 }
 
@@ -2573,8 +2694,23 @@ bool EpubActivity::pageTurn(bool forward) {
  * @brief Renders the current screen content
  */
 void EpubActivity::renderScreen(const bool clearFramebuffer) {
-  SemaphoreGuard layoutGuard(readerLayoutMutex_, portMAX_DELAY);
-  if (!layoutGuard.locked()) return;
+  const bool tracePageTurn = pageTurnTracePending_;
+  const uint32_t traceId = pageTurnTraceId_;
+  const unsigned long traceStart = pageTurnTraceStartedAt_;
+  if (tracePageTurn) {
+    INX_SERIAL.printf("[%lu] [PAGE-TIMING] id=%lu render-start queued_to_render=%lu ms\n", millis(),
+                      static_cast<unsigned long>(traceId), static_cast<unsigned long>(millis() - traceStart));
+  }
+
+  // Rendering is foreground work. A prefetch slice may hold the layout lock
+  // while parsing a page, but the reader loop must never wait behind it. Keep
+  // updateRequired set so the next loop retries after the worker yields.
+  SemaphoreGuard layoutGuard(readerLayoutMutex_, 0);
+  if (!layoutGuard.locked()) {
+    invalidatePreparedPage();
+    updateRequired = true;
+    return;
+  }
 
   invalidatePreparedPage();
   if (!epub) return;
@@ -2661,9 +2797,9 @@ void EpubActivity::renderScreen(const bool clearFramebuffer) {
     section->currentPage = 0;
   }
 
-  const unsigned long pageLoadStart = sectionWasMissing ? millis() : 0;
+  const unsigned long pageLoadStart = millis();
   auto page = section->loadPageFromSectionFile();
-  const unsigned long pageLoadMs = sectionWasMissing ? millis() - pageLoadStart : 0;
+  const unsigned long pageLoadMs = millis() - pageLoadStart;
   if (!page) {
     INX_SERIAL.printf("[%lu] [EPA] renderScreen: page deserialize failed spine=%d page=%d count=%u\n", millis(),
                   currentSpineIndex, section->currentPage, static_cast<unsigned>(section->pageCount));
@@ -2673,9 +2809,9 @@ void EpubActivity::renderScreen(const bool clearFramebuffer) {
     return;
   }
 
-  const unsigned long renderStart = sectionWasMissing ? millis() : 0;
+  const unsigned long renderStart = millis();
   renderContents(page, info.totalMarginTop, info.totalMarginRight, info.totalMarginBottom, info.totalMarginLeft);
-  const unsigned long renderMs = sectionWasMissing ? millis() - renderStart : 0;
+  const unsigned long renderMs = millis() - renderStart;
 
   if (settingsDrawerVisible && settingsDrawer) settingsDrawer->render();
   if (navigation_) navigation_->render();
@@ -2684,6 +2820,12 @@ void EpubActivity::renderScreen(const bool clearFramebuffer) {
   if (sectionWasMissing) {
     INX_SERIAL.printf("[%lu] [OPEN-TIME] first page section=%lu page=%lu render=%lu total=%lu ms\n", millis(),
                       sectionLoadMs, pageLoadMs, renderMs, millis() - firstPageStart);
+  }
+  if (tracePageTurn) {
+    INX_SERIAL.printf("[%lu] [PAGE-TIMING] id=%lu render-done total=%lu ms section=%lu ms page-load=%lu ms contents=%lu ms\n",
+                      millis(), static_cast<unsigned long>(traceId),
+                      static_cast<unsigned long>(millis() - traceStart), sectionLoadMs, pageLoadMs, renderMs);
+    pageTurnTracePending_ = false;
   }
   lastGoodSpineIndex_ = currentSpineIndex;
   lastGoodPageNumber_ = section->currentPage;
@@ -2802,8 +2944,15 @@ void EpubActivity::renderContents(Page* page, const int orientedMarginTop,
   if (skipImagesInPageRender) {
     renderer.clearScreen(0xFF);
   }
+  const unsigned long baseRenderStart = millis();
   page->render(renderer, fontId, headerFontId, orientedMarginLeft, orientedMarginTop, skipImagesInPageRender, imageMode,
                /*skipOnlyGrayscaleImages=*/highQuality);
+  if (pageTurnTracePending_) {
+    INX_SERIAL.printf("[%lu] [PAGE-TIMING] id=%lu base-render=%lu ms images=%d high_quality=%d text_aa=%d\n", millis(),
+                      static_cast<unsigned long>(pageTurnTraceId_),
+                      static_cast<unsigned long>(millis() - baseRenderStart), pageHasImages ? 1 : 0,
+                      highQuality ? 1 : 0, textAa ? 1 : 0);
+  }
 
   ReadingGuideLines::render(renderer, *page, bookSettings.readingGuideLinesEnabled, orientedMarginTop,
                             orientedMarginRight, orientedMarginBottom, orientedMarginLeft, fontId);
@@ -2837,20 +2986,34 @@ void EpubActivity::renderContents(Page* page, const int orientedMarginTop,
   const bool skipPiccoBasePageRefresh = false;
 #endif
   const bool smartRefreshThisPageAfterLargeImage = smartImageRefreshEnabled && smartRefreshAfterLargeImage;
+  const bool tracePageTurn = pageTurnTracePending_;
+  const uint32_t traceId = pageTurnTraceId_;
+  const unsigned long traceStart = pageTurnTraceStartedAt_;
   auto displayPageBuffer = [this, smartRefreshThisPageAfterLargeImage, smartRefreshAfterQualityImage,
-                            smartImageRefreshEnabled, periodicRefreshEnabled, periodicRefreshPages]() {
+                            smartImageRefreshEnabled, periodicRefreshEnabled, periodicRefreshPages, tracePageTurn,
+                            traceId, traceStart]() {
+    const unsigned long displaySubmitStart = millis();
+    int refreshMode = static_cast<int>(HalDisplay::FAST_REFRESH);
     if (smartRefreshThisPageAfterLargeImage || smartRefreshAfterQualityImage ||
         (periodicRefreshEnabled && pagesUntilFullRefresh <= 1)) {
       const bool afterQualityImage = smartRefreshAfterQualityImage;
-      renderer.displayBufferAsync(((FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4) && afterQualityImage)
-                                      ? HalDisplay::FULL_REFRESH
-                                      : HalDisplay::HALF_REFRESH);
+      const HalDisplay::RefreshMode mode = ((FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4) && afterQualityImage)
+                                               ? HalDisplay::FULL_REFRESH
+                                               : HalDisplay::HALF_REFRESH;
+      refreshMode = static_cast<int>(mode);
+      renderer.displayBufferAsync(mode);
       pagesUntilFullRefresh = periodicRefreshPages;
     } else {
       renderer.displayBufferAsync();
       if (periodicRefreshEnabled) {
         pagesUntilFullRefresh--;
       }
+    }
+    if (tracePageTurn) {
+      INX_SERIAL.printf("[%lu] [PAGE-TIMING] id=%lu display-submit=%lu ms total=%lu ms mode=%d\n", millis(),
+                        static_cast<unsigned long>(traceId),
+                        static_cast<unsigned long>(millis() - displaySubmitStart),
+                        static_cast<unsigned long>(millis() - traceStart), refreshMode);
     }
   };
 

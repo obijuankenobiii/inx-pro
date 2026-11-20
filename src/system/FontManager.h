@@ -67,6 +67,8 @@ class FontManager {
   static bool ensureFontReady(int fontId, GfxRenderer& renderer);
   /** Ensure a system-font SD slot is loaded using the renderer registered at initialize(). */
   static bool ensureSystemFontReady(int fontId);
+  /** Warm common reader glyph bitmap reads for the body and heading fonts. */
+  static void prewarmReaderGlyphs(int bodyFontId, GfxRenderer& renderer);
   /** Find an installed language font that really contains this codepoint. */
   static int findLanguageFontForCodepoint(uint32_t codepoint, int preferredPt, EpdFontFamily::Style style,
                                           GfxRenderer& renderer, const char* preferredLanguageCode = nullptr);
@@ -111,6 +113,7 @@ class FontManager {
     bool isLanguage;
     bool isLoaded;
     bool cacheGlyphBitmaps = true;
+    bool readerGlyphsPrewarmed = false;
     uint8_t stylesAttempted = 0;
     uint32_t lastUsed;
   };

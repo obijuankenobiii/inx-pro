@@ -11,6 +11,7 @@
 #include <Serialization.h>
 
 #include <algorithm>
+#include <cstring>
 #include <exception>
 #include <new>
 
@@ -58,6 +59,27 @@ class ProgressiveParseSink final : public Print {
   bool ok_ = true;
   size_t bytes_ = 0;
 };
+
+class ProgressiveXmlSink final : public Print {
+ public:
+  ProgressiveXmlSink(std::vector<uint8_t, EpubPsramAllocator<uint8_t>>& buffer, const size_t expected)
+      : buffer_(buffer), expected_(expected) {}
+
+  size_t write(const uint8_t* data, const size_t size) override {
+    if (!data || size == 0 || size > expected_ - written_) return 0;
+    std::memcpy(buffer_.data() + written_, data, size);
+    written_ += size;
+    return size;
+  }
+
+  size_t write(const uint8_t value) override { return write(&value, 1); }
+  size_t written() const { return written_; }
+
+ private:
+  std::vector<uint8_t, EpubPsramAllocator<uint8_t>>& buffer_;
+  size_t expected_ = 0;
+  size_t written_ = 0;
+};
 }
 
 Section::Section(const std::shared_ptr<Epub>& epubIn, const int spineIndexIn, GfxRenderer& rendererIn)
@@ -75,17 +97,19 @@ Section::Section(const std::string& cachePath, const int spineIndexIn, GfxRender
 Section::~Section() {
   if (progressiveParser_) progressiveParser_->cancelParse();
   progressiveParser_.reset();
-  progressiveInput_.reset();
+  progressiveXml_.reset();
+  progressiveSourcePath_.clear();
+  progressiveXmlOffset_ = 0;
   const bool removeIncompleteProgressive = progressiveActive_;
   const std::string incompleteProgressivePath = progressiveFilePath_;
   progressiveActive_ = false;
   progressiveFilePath_.clear();
   clearPageCache();
+  EpubImagePrefetch::IoLock ioLock;
   if (file) {
     file.close();
   }
   if (removeIncompleteProgressive && !incompleteProgressivePath.empty()) {
-    EpubImagePrefetch::IoLock ioLock;
     SdMan.remove(incompleteProgressivePath.c_str());
   }
 }
@@ -185,6 +209,18 @@ bool Section::loadSectionFile(const int fontId, const float lineCompression, con
                               const uint16_t viewportWidth, const uint16_t viewportHeight,
                               const bool hyphenationEnabled, const bool respectCssParagraphIndent,
                               const bool bionicReadingEnabled) {
+  EpubImagePrefetch::IoLock ioLock;
+  const std::string backupPath = filePath + ".bak";
+
+  // A power loss can happen after the old cache has been moved aside but
+  // before the replacement is renamed into place. Recover that old cache
+  // before treating the chapter as uncached.
+  if (!SdMan.exists(filePath.c_str()) && SdMan.exists(backupPath.c_str())) {
+    if (!SdMan.rename(backupPath.c_str(), filePath.c_str())) {
+      INX_SERIAL.printf("[%lu] [SCT] failed to recover section cache: %s\n", millis(), backupPath.c_str());
+    }
+  }
+
   if (file) {
     file.close();
   }
@@ -254,7 +290,10 @@ bool Section::loadSectionFile(const int fontId, const float lineCompression, con
   pageCount = storedPageCount;
   lutOffset = storedLutOffset;
 
-  if (pageCount == 0 || lutOffset == 0) {
+  const uint64_t lutEnd = static_cast<uint64_t>(lutOffset) +
+                          static_cast<uint64_t>(pageCount) * sizeof(uint32_t);
+  if (pageCount == 0 || pageCount > MAX_CACHED_PAGE_OFFSETS || lutOffset < HEADER_SIZE ||
+      lutEnd > file.size()) {
     INX_SERIAL.printf("[%lu] [SCT] loadSectionFile: invalid empty section cache spine=%d pages=%u lut=%lu file=%s\n",
                   millis(), spineIndex, static_cast<unsigned>(pageCount), static_cast<unsigned long>(lutOffset),
                   filePath.c_str());
@@ -263,22 +302,36 @@ bool Section::loadSectionFile(const int fontId, const float lineCompression, con
     return false;
   }
 
-  if (pageCount > 0 && pageCount <= MAX_CACHED_PAGE_OFFSETS && lutOffset > 0) {
-    try {
-      pageOffsets.resize(pageCount);
-      file.seek(lutOffset);
-      for (uint16_t i = 0; i < pageCount; ++i) {
-        serialization::readPod(file, pageOffsets[i]);
+  try {
+    pageOffsets.resize(pageCount);
+    file.seek(lutOffset);
+    for (uint16_t i = 0; i < pageCount; ++i) {
+      serialization::readPod(file, pageOffsets[i]);
+      if (pageOffsets[i] < HEADER_SIZE || pageOffsets[i] >= lutOffset) {
+        pageOffsets.clear();
+        break;
       }
-    } catch (...) {
-      pageOffsets.clear();
     }
+  } catch (...) {
+    pageOffsets.clear();
   }
+  if (pageOffsets.size() != pageCount) {
+    INX_SERIAL.printf("[%lu] [SCT] loadSectionFile: invalid page LUT spine=%d file=%s\n", millis(), spineIndex,
+                      filePath.c_str());
+    file.close();
+    clearCache();
+    return false;
+  }
+
+  // The backup is only needed during publication. Once the new cache has
+  // been read and validated, it is safe to remove the stale copy.
+  if (SdMan.exists(backupPath.c_str())) SdMan.remove(backupPath.c_str());
 
   return true;
 }
 
 bool Section::loadSectionFileForPreview(int* outFontId) {
+  EpubImagePrefetch::IoLock ioLock;
   if (file) {
     file.close();
   }
@@ -334,6 +387,7 @@ bool Section::loadSectionFileForPreview(int* outFontId) {
 
 std::unique_ptr<Page> Section::loadCachedPage(const std::string& cachePath, const int spineIndex,
                                               const int pageNumber) {
+  EpubImagePrefetch::IoLock ioLock;
   if (spineIndex < 0 || pageNumber < 0) {
     return nullptr;
   }
@@ -581,35 +635,39 @@ bool Section::beginProgressiveSectionFile(const int fontId, const int headerFont
     return false;
   }
 
-  progressiveInput_ = epub->openItemStream(localPath);
-  if (!progressiveInput_) {
-    progressiveParser_->cancelParse();
-    progressiveParser_.reset();
-    file.close();
-    SdMan.remove(progressiveFilePath_.c_str());
-    progressiveFilePath_.clear();
-    return false;
-  }
-
+  // Keep the chapter source in PSRAM and feed it to Expat cooperatively. The
+  // old resumable ZIP inflater could report Done before the central-directory
+  // length had been emitted, producing truncated XHTML and parser errors.
+  progressiveSourcePath_ = localPath;
+  progressiveXml_.reset();
+  progressiveXmlOffset_ = 0;
   progressiveActive_ = true;
   return true;
 }
 
 bool Section::pumpProgressive(const uint32_t budgetMs) {
-  if (!progressiveActive_ || !progressiveParser_ || !progressiveInput_) return false;
-  // Match the normal EPUB parser's proven 16 KB Expat feed size. The smaller
-  // 512-byte slices can leave some XHTML chapters in an invalid final parser
-  // state even though the synchronous parser accepts the same content.
-  constexpr size_t kChunkBytes = 16 * 1024;
+  if (!progressiveActive_ || !progressiveParser_ || progressiveSourcePath_.empty()) return false;
+  // Keep parser/layout slices bounded. The complete XHTML is loaded once into
+  // PSRAM, then Expat receives only a small piece per worker iteration.
+  constexpr size_t kChunkBytes = 4 * 1024;
 
-  const auto fail = [this]() {
+  const std::string backupPath = filePath + ".bak";
+  const auto fail = [this, &backupPath]() {
     if (progressiveParser_) progressiveParser_->cancelParse();
     progressiveParser_.reset();
-    progressiveInput_.reset();
+    progressiveXml_.reset();
+    progressiveSourcePath_.clear();
+    progressiveXmlOffset_ = 0;
     progressiveActive_ = false;
     EpubImagePrefetch::IoLock ioLock;
     if (file) file.close();
     if (!progressiveFilePath_.empty()) SdMan.remove(progressiveFilePath_.c_str());
+    // If publication moved the previous good cache to .bak, keep the reader
+    // usable even when the replacement rename failed. The next load also has
+    // the same recovery path for a power loss between these two renames.
+    if (!SdMan.exists(filePath.c_str()) && SdMan.exists(backupPath.c_str())) {
+      SdMan.rename(backupPath.c_str(), filePath.c_str());
+    }
     progressiveFilePath_.clear();
     progressivePageOffsets_.clear();
     pageCount = 0;
@@ -621,30 +679,49 @@ bool Section::pumpProgressive(const uint32_t budgetMs) {
   // wait for page 0 here: a long first page must never delay a button/touch
   // event on the active chapter.
   if (budgetMs == 0) return pageCount > 0;
-  // A foreground page read owns the SD/SPI lock. The background task must
-  // yield instead of waiting behind it, otherwise prefetch can add latency to
-  // touch/button handling.
-  if (!EpubImagePrefetch::tryLockIo()) return pageCount > 0;
-  ProgressiveParseSink sink(*progressiveParser_);
-  const Epub::ItemStream::Result result = progressiveInput_->pump(sink, kChunkBytes);
-  EpubImagePrefetch::unlockIo();
-  progressiveBytesRead_ += sink.bytes();
-  if (!sink.ok() || progressiveWriteFailed_) {
+
+  if (!progressiveXml_) {
+    size_t expectedBytes = 0;
+    if (!epub->getItemSize(progressiveSourcePath_, &expectedBytes) || expectedBytes == 0) {
+      INX_SERIAL.printf("[%lu] [SCT] next chapter XML size lookup failed spine=%d\n", millis(), spineIndex);
+      return fail();
+    }
+
+    auto xml = std::unique_ptr<ProgressiveXmlBuffer>(new (std::nothrow) ProgressiveXmlBuffer());
+    if (!xml) return fail();
+    try {
+      xml->resize(expectedBytes);
+    } catch (const std::bad_alloc&) {
+      INX_SERIAL.printf("[%lu] [SCT] next chapter XML PSRAM allocation failed spine=%d bytes=%lu\n", millis(),
+                        spineIndex, static_cast<unsigned long>(expectedBytes));
+      return fail();
+    }
+
+    ProgressiveXmlSink sink(*xml, expectedBytes);
+    const bool readOk = epub->readItemContentsToStream(progressiveSourcePath_, sink, 16 * 1024, expectedBytes);
+    if (!readOk || sink.written() != expectedBytes) {
+      INX_SERIAL.printf("[%lu] [SCT] next chapter XML short read spine=%d bytes=%lu expected=%lu\n", millis(),
+                        spineIndex, static_cast<unsigned long>(sink.written()),
+                        static_cast<unsigned long>(expectedBytes));
+      return fail();
+    }
+    progressiveXml_ = std::move(xml);
+    // Keep the full SD/ZIP read out of the renderer critical section. The
+    // worker will parse the first bounded chunk on its next iteration.
+    return pageCount > 0;
+  }
+
+  const size_t remaining = progressiveXml_->size() - progressiveXmlOffset_;
+  const size_t chunk = std::min(kChunkBytes, remaining);
+  if (chunk > 0 && !progressiveParser_->feedParse(progressiveXml_->data() + progressiveXmlOffset_, chunk)) {
     INX_SERIAL.printf("[%lu] [SCT] next chapter prefetch parser failed spine=%d pages=%u\n", millis(), spineIndex,
                       static_cast<unsigned>(pageCount));
     return fail();
   }
-  if (result == Epub::ItemStream::Result::More) return pageCount > 0;
-  if (result != Epub::ItemStream::Result::Done || !progressiveParser_->finishParse() || pageCount == 0) {
-    size_t expectedBytes = 0;
-    const std::string href = epub ? epub->getSpineItem(spineIndex).href : std::string();
-    if (epub && !href.empty()) epub->getItemSize(href, &expectedBytes);
-    INX_SERIAL.printf("[%lu] [SCT] next chapter prefetch stopped spine=%d result=%u pages=%u\n", millis(), spineIndex,
-                      static_cast<unsigned>(result), static_cast<unsigned>(pageCount));
-    INX_SERIAL.printf("[%lu] [SCT] next chapter stream bytes=%lu expected=%lu\n", millis(),
-                      static_cast<unsigned long>(progressiveBytesRead_), static_cast<unsigned long>(expectedBytes));
-    return fail();
-  }
+  progressiveXmlOffset_ += chunk;
+  progressiveBytesRead_ += chunk;
+  if (progressiveXmlOffset_ < progressiveXml_->size()) return pageCount > 0;
+  if (!progressiveParser_->finishParse() || pageCount == 0) return fail();
 
   EpubImagePrefetch::IoLock ioLock;
   lutOffset = file.position();
@@ -671,20 +748,37 @@ bool Section::pumpProgressive(const uint32_t budgetMs) {
   }
   finalized.sync();
   finalized.close();
-  // Both the device SD manager and the simulator expose remove/rename. The
-  // old final file has already been validated or discarded by the caller, so
-  // this two-step publish is safe here and keeps the code portable.
-  const bool removedOld = !SdMan.exists(filePath.c_str()) || SdMan.remove(filePath.c_str());
-  if (!removedOld || !SdMan.rename(progressiveFilePath_.c_str(), filePath.c_str())) {
+  // Publish transactionally. Never delete the only known-good cache before
+  // the completed .part file has a final name: a reset or an SD rename error
+  // in that window used to leave the chapter cache missing or truncated.
+  // Keeping the old file as .bak also gives the next reader loop a recovery
+  // path if power is lost between the two renames.
+  if (SdMan.exists(backupPath.c_str()) && !SdMan.remove(backupPath.c_str())) {
+    INX_SERIAL.printf("[%lu] [SCT] next chapter prefetch stale backup cleanup failed spine=%d\n", millis(), spineIndex);
+    return fail();
+  }
+  const bool hadOld = SdMan.exists(filePath.c_str());
+  if (hadOld && !SdMan.rename(filePath.c_str(), backupPath.c_str())) {
+    INX_SERIAL.printf("[%lu] [SCT] next chapter prefetch backup rename failed spine=%d\n", millis(), spineIndex);
+    return fail();
+  }
+  if (!SdMan.rename(progressiveFilePath_.c_str(), filePath.c_str())) {
     INX_SERIAL.printf("[%lu] [SCT] next chapter prefetch publish failed spine=%d pages=%u\n", millis(), spineIndex,
                       static_cast<unsigned>(pageCount));
     return fail();
+  }
+  if (hadOld && SdMan.exists(backupPath.c_str()) && !SdMan.remove(backupPath.c_str())) {
+    // The new final cache is already complete. Leaving a backup is harmless;
+    // loadSectionFile removes it after validating the final cache.
+    INX_SERIAL.printf("[%lu] [SCT] next chapter prefetch backup cleanup deferred spine=%d\n", millis(), spineIndex);
   }
   // Progressive prefetch only builds section pages. Do not flush the shared
   // EPUB image metadata from the background worker; metadata generation may
   // be processing another book at the same time.
   progressiveParser_.reset();
-  progressiveInput_.reset();
+  progressiveXml_.reset();
+  progressiveSourcePath_.clear();
+  progressiveXmlOffset_ = 0;
   progressiveFilePath_.clear();
   progressiveActive_ = false;
   return true;
@@ -769,6 +863,7 @@ bool Section::preloadPage(const int pageIndex) { return loadPage(pageIndex) != n
  * @return true if file was successfully removed or didn't exist, false on error
  */
 bool Section::clearCache() const {
+  EpubImagePrefetch::IoLock ioLock;
   if (SdMan.exists(filePath.c_str())) {
     return SdMan.remove(filePath.c_str());
   }

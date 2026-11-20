@@ -14,7 +14,7 @@ int threeByTwoCellHeight(const int cellWidth, const int fullHeight) {
 }
 }  // namespace
 
-ThumbLayout thumb3x2Layout() { return {3, 2, threeByTwoCellHeight, 10, true, true, 2, 5, 12, 20}; }
+ThumbLayout thumb3x2Layout() { return {3, 2, threeByTwoCellHeight, 20, true, true, 2, 5, 12, 20}; }
 
 }  // namespace library
 }  // namespace views

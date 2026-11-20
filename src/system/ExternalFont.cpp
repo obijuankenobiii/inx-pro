@@ -904,3 +904,20 @@ bool ExternalFont::getGlyphBitmap(uint32_t absoluteOffset, uint32_t length, uint
   bitmapCacheStore(absoluteOffset, length, buffer);
   return true;
 }
+
+size_t ExternalFont::prewarmAsciiGlyphs(const char* sample) {
+  if (!sample) return 0;
+  size_t warmed = 0;
+  std::vector<uint8_t> bitmap;
+  for (const unsigned char* p = reinterpret_cast<const unsigned char*>(sample); *p != '\0'; ++p) {
+    EpdGlyph glyph{};
+    if (!getGlyphMetadata(static_cast<uint32_t>(*p), glyph) || glyph.dataLength == 0) continue;
+    try {
+      bitmap.resize(glyph.dataLength);
+    } catch (const std::bad_alloc&) {
+      break;
+    }
+    if (getGlyphBitmap(glyph.dataOffset, glyph.dataLength, bitmap.data())) ++warmed;
+  }
+  return warmed;
+}

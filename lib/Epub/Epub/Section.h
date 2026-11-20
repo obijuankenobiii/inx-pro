@@ -38,7 +38,10 @@ class Section {
   uint32_t lutOffset = 0;
   std::vector<uint32_t> pageOffsets;
   std::unique_ptr<ChapterHtmlSlimParser> progressiveParser_;
-  std::unique_ptr<Epub::ItemStream> progressiveInput_;
+  using ProgressiveXmlBuffer = std::vector<uint8_t, EpubPsramAllocator<uint8_t>>;
+  std::unique_ptr<ProgressiveXmlBuffer> progressiveXml_;
+  std::string progressiveSourcePath_;
+  size_t progressiveXmlOffset_ = 0;
   std::vector<uint32_t> progressivePageOffsets_;
   uint32_t progressiveBytesRead_ = 0;
   bool progressiveActive_ = false;
@@ -153,6 +156,7 @@ class Section {
   /** Advances the background build for at most budgetMs. */
   bool pumpProgressive(uint32_t budgetMs = 1);
   bool progressiveActive() const { return progressiveActive_; }
+  bool progressiveSourceReady() const { return progressiveXml_ != nullptr; }
 
   /**
    * Loads a specific page from the section file.

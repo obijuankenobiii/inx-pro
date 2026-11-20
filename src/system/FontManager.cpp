@@ -455,6 +455,7 @@ void FontManager::cleanupFontData(SDFontEntry* entry) {
   entry->fontFamily = nullptr;
   entry->isLoaded = false;
   entry->stylesAttempted = 0;
+  entry->readerGlyphsPrewarmed = false;
 }
 
 /**
@@ -627,7 +628,7 @@ bool FontManager::ensureReaderLayoutFonts(int bodyFontId, GfxRenderer& renderer)
   for (int i = 0; i < requiredCount; ++i) {
     const int fontId = requiredIds[i];
     if (fontId >= SD_FONT_START_ID) {
-      const bool cacheGlyphBitmaps = fontId == bodyFontId;
+      const bool cacheGlyphBitmaps = true;
       if (!loadFontFromSD(fontId, renderer, cacheGlyphBitmaps)) {
         return false;
       }
@@ -635,7 +636,38 @@ bool FontManager::ensureReaderLayoutFonts(int bodyFontId, GfxRenderer& renderer)
       return false;
     }
   }
+  prewarmReaderGlyphs(bodyFontId, renderer);
   return true;
+}
+
+void FontManager::prewarmReaderGlyphs(const int bodyFontId, GfxRenderer& renderer) {
+  static constexpr char kReaderGlyphSample[] =
+      " AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz"
+      "0123456789.,;:!?()[]{}<>+-=*/_'\"%&@#$\\";
+  const int ids[] = {bodyFontId, getNextFont(bodyFontId)};
+  for (const int fontId : ids) {
+    if (fontId < SD_FONT_START_ID) continue;
+    SDFontEntry* entry = nullptr;
+    for (auto& candidate : g_sdFonts) {
+      if (candidate.id == fontId) {
+        entry = &candidate;
+        break;
+      }
+    }
+    if (!entry || !entry->isLoaded || entry->readerGlyphsPrewarmed) continue;
+    const unsigned long start = millis();
+    size_t warmed = 0;
+    const EpdFontFamily::Style styles[] = {EpdFontFamily::REGULAR, EpdFontFamily::BOLD};
+    for (const EpdFontFamily::Style style : styles) {
+      const EpdFontData* data = entry->fontFamily ? entry->fontFamily->getData(style) : nullptr;
+      ExternalFont* stream = data ? renderer.findStreamingFont(data) : nullptr;
+      if (stream) warmed += stream->prewarmAsciiGlyphs(kReaderGlyphSample);
+    }
+    if (warmed == 0) continue;
+    entry->readerGlyphsPrewarmed = true;
+    INX_SERIAL.printf("[FontManager] Prewarmed reader glyphs id=%d count=%u elapsed=%lu ms\n", fontId,
+                      static_cast<unsigned>(warmed), millis() - start);
+  }
 }
 
 /**

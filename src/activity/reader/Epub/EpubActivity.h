@@ -119,6 +119,9 @@ class EpubActivity final : public ActivityWithSubactivity {
   int cachedChapterTotalPageCount = 0;
   bool updateRequired = false;
   int loadingProgress = 0;
+  uint32_t pageTurnTraceId_ = 0;
+  uint32_t pageTurnTraceStartedAt_ = 0;
+  bool pageTurnTracePending_ = false;
   unsigned long lastAutoPageTurnTime = 0;
   const std::function<void()> onGoBack;
   const std::function<void()> onGoToHome;
@@ -178,6 +181,7 @@ class EpubActivity final : public ActivityWithSubactivity {
   static void nextChapterPrefetchTaskTrampoline(void* param);
   void nextChapterPrefetchTaskLoop();
   void stopNextChapterPrefetch();
+  void pauseNextChapterPrefetchForPageTurn();
 
   bool handleTopRightTap();
   bool handleImageTouch();

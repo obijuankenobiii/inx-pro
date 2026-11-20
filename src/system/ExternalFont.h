@@ -28,6 +28,8 @@ class ExternalFont {
   bool getGlyphMetadata(uint32_t codePoint, EpdGlyph& outGlyph);
   /** Read length bytes of glyph bitmap data at offset into outputBuffer, using the bitmap cache when possible. */
   bool getGlyphBitmap(uint32_t offset, uint32_t length, uint8_t* outputBuffer);
+  /** Populate the shared bitmap cache with common reader glyphs before first page render. */
+  size_t prewarmAsciiGlyphs(const char* sample);
   /** Return whether the loaded font contains anti-aliased (grayscale) glyph data. */
   bool hasAntiAliasData() const { return m_hasAntiAliasData; }
   /** Return the underlying EpdFontData for the loaded font. */
