@@ -40,7 +40,7 @@ int systemPointSize() {
   }
 }
 
-}  // namespace
+}
 
 int systemFontIdForPointSize(const int pointSize) {
   const int fallback = montserratFontIdForPointSize(pointSize);

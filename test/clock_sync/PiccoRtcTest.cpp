@@ -38,7 +38,7 @@ int main() {
   Rtc rtc;
   assert(rtc.begin());
 
-  constexpr time_t utc = 1704067200;  // 2024-01-01 00:00 UTC
+  constexpr time_t utc = 1704067200;
   Rtc::DateTime local{};
   assert(clock_time::toRtcDateTime(utc, 345, local));
   local.weekday = local.weekday == 7 ? 0 : local.weekday;
@@ -51,7 +51,7 @@ int main() {
   assert(clock_time::verifyRtcDateTime(stored, utc, 345, 0));
   assert(!clock_time::verifyRtcDateTime(stored, utc, 0, 0));
 
-  // The PCF8563 voltage-low flag makes its time untrustworthy until set again.
+
   registers[0x02] |= 0x80;
   assert(!rtc.now(stored));
   assert(rtc.set(local) && rtc.now(stored));

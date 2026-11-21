@@ -308,7 +308,7 @@ void renderWeekdaysTime(GfxRenderer& renderer, const ClockRender::DateTimeView& 
   const int contentHeight = weekdayLine + weekdayGap + visibleTimeHeight;
   const int contentTop = y + std::max(0, (h - contentHeight) / 2);
 
-  // Keep the complete Monday through Sunday row with compact spacing.
+
   constexpr int firstWeekday = 1;
   constexpr int weekdayLabelGap = 5;
   uint8_t weekdays[weekdayCount];

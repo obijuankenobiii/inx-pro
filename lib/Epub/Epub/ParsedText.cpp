@@ -267,8 +267,8 @@ void ParsedText::layoutAndExtractLines(const GfxRenderer& renderer, const int fo
       break;
     }
   }
-  // EPUBs commonly omit text-align for RTL paragraphs. In that case the
-  // logical "left/start" edge is the right edge of the page.
+
+
   if (rtlParagraph_ && style == TextBlock::LEFT_ALIGN) {
     style = TextBlock::RIGHT_ALIGN;
   }
@@ -777,14 +777,14 @@ void ParsedText::extractLine(const size_t breakIndex, const int pageWidth, const
     }
   }
 
-  // Keep the cursor signed so alignment calculations cannot wrap when a line
-  // is wider than the available column.
+
+
   int xpos = currentIndent;
   const bool rtlRightEdge = rtlParagraph_ &&
                             (style == TextBlock::RIGHT_ALIGN ||
                              (style == TextBlock::JUSTIFIED && isLastLine));
-  // A word wider than the column cannot satisfy both margins. Keep that
-  // word visible from the left edge instead of placing it at a negative x.
+
+
   if (rtlRightEdge && spareSpace >= 0) {
     xpos = pageWidth - lineWordWidthSum - gapCount * spaceWidth;
   } else if (style == TextBlock::RIGHT_ALIGN && spareSpace >= 0) {
@@ -797,11 +797,11 @@ void ParsedText::extractLine(const size_t breakIndex, const int pageWidth, const
   lineXPos.reserve(lineWordCount);
   int naturalGapIndex = 0;
   for (size_t slotIndex = 0; slotIndex < lineWordCount; ++slotIndex) {
-    // x positions are visual left-to-right slots.  The word data remains in
-    // logical order and TextBlock maps the RTL word at the right end into the
-    // rightmost slot, so the width used for each slot must be reversed here as
-    // well.  Using the logical width sequence made adjacent Arabic words
-    // overlap whenever neighbouring words had different lengths.
+
+
+
+
+
     const size_t logicalIndex = rtlParagraph_ ? lineBreak - 1 - slotIndex : lastBreakAt + slotIndex;
     const uint16_t currentWordWidth = wordWidths[logicalIndex];
     int xOffset = 0;

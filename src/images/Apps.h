@@ -1,7 +1,7 @@
 #pragma once
 #include <cstdint>
 
-// Four rounded squares matching the Apps/grid shortcut artwork.
+
 static const uint8_t Apps[] = {
 0xff,0xff,0xff,0xff,0xff
 ,0xff,0xff,0xff,0xff,0xff

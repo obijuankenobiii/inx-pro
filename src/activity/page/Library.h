@@ -101,9 +101,9 @@ class Library final : public UiPage {
   bool filterOpen = false;
   bool controlModalOpen = false;
   ControlTab controlTab = ControlTab::View;
-  // Match Home's widget thumbnail behavior: draw the library shell first,
-  // then allow cover decoding on an idle follow-up render for both thumbnail
-  // layouts.
+
+
+
   bool listThumbDeferImageDecode_ = false;
   bool listThumbWarmupPending_ = false;
   bool thumbDeferImageDecode_ = false;

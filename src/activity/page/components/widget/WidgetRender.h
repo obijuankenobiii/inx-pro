@@ -19,5 +19,5 @@ void drawThumbnail(GfxRenderer& renderer, const RecentBook& book, int x, int y, 
 void drawDitherRect(const GfxRenderer& renderer, int x, int y, int width, int height);
 void drawMockProgress(const GfxRenderer& renderer, int x, int y, int width, float progress);
 
-}  // namespace widget::support
+}
 

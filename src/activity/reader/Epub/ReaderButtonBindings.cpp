@@ -55,9 +55,9 @@ bool ReaderButtonBindings::handleTouchSwipe(EpubActivity& act) {
     return false;
   }
 
-  // Swipe zones are three full-height columns. The outer columns expose
-  // inward-facing horizontal actions in their middle areas; the center
-  // column remains a continuous horizontal zone.
+
+
+
   const uint8_t zone = swipeZoneIndex(startNx);
   const bool verticalDirection = direction == SwipeDirection::Up || direction == SwipeDirection::Down;
   const bool horizontalDirection = direction == SwipeDirection::Left || direction == SwipeDirection::Right;
@@ -66,9 +66,9 @@ bool ReaderButtonBindings::handleTouchSwipe(EpubActivity& act) {
                                     : zone == ReaderSetting::SWIPE_ZONE_COLUMNS - 1
                                         ? (verticalDirection || direction == SwipeDirection::Left)
                                         : horizontalDirection;
-  // Do not claim a direction that does not belong to this custom zone. The
-  // bottom-edge exit remains a built-in reader gesture even if the right
-  // column has a configured upward action.
+
+
+
   if (direction == SwipeDirection::Up && startNy >= 0.95f) return false;
   if (!directionAllowed) return false;
 

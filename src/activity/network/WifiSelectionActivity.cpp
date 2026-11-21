@@ -57,9 +57,9 @@ constexpr int TRANSFER_QR_VERSION = 3;
 constexpr int TRANSFER_QR_PIXEL_SIZE = 6;
 constexpr int TRANSFER_QR_SIZE = TRANSFER_QR_PIXEL_SIZE * (17 + 4 * TRANSFER_QR_VERSION);
 constexpr uint32_t scanMaxMs = 120;
-// Wi-Fi renders translated labels and may resolve the first non-ASCII glyph by
-// loading a streamed language font. TextRender also uses a bounded glyph buffer
-// on the task stack, so the old 4 KB stack was not sufficient for CJK packages.
+
+
+
 constexpr uint32_t WIFI_DISPLAY_TASK_STACK = 8192;
 
 #if FREEINK_DEVICE_X4PRO
@@ -151,21 +151,21 @@ void WifiSelectionActivity::onEnter() {
   networks.clear();
   networks.reserve(WIFI_STORE.getCredentials().size());
   for (const auto& credential : WIFI_STORE.getCredentials()) {
-    // Saved credentials are intentionally shown without probing the radio. The
-    // real signal/encryption details are populated if the user explicitly scans.
+
+
     networks.push_back({credential.ssid, -100, true, true});
   }
   selectedNetworkIndex = 0;
   networkPage = 0;
   selectedNetworkVisible = !networks.empty();
 
-  // The saved-network landing page is reserved for file-transfer services.
-  // Other Wi-Fi consumers keep the original behavior and scan immediately.
+
+
   if (!usesFileTransferLayout()) {
     startWifiScan();
   } else {
-    // USB paints its first screen synchronously from onEnter(). Do the same
-    // for the saved-network landing state before the display task starts.
+
+
     render();
     updateRequired = false;
   }
@@ -694,9 +694,9 @@ void WifiSelectionActivity::loop() {
   }
 
   if (state == WifiSelectionState::CONNECTED) {
-    // The success callback is sent once from checkConnectionStatus(). Keep the
-    // connected card visible so File Transfer can start its server underneath
-    // this activity without replacing the page.
+
+
+
     return;
   }
 
@@ -844,8 +844,8 @@ void WifiSelectionActivity::renderSavedNetworks(const int screenWidth, const int
   const ButtonBounds refresh = landingRefreshBounds(renderer, !networks.empty());
   const int panelBottom = landingPanelBottom(renderer, !networks.empty());
   const int panelHeight = std::max(1, panelBottom - cardY);
-  // Match the statistics bottom section: a tall sparse dithered panel, not a
-  // solid gray fill. The network rows and actions sit inside it as white cards.
+
+
   for (int py = cardY; py < panelBottom; py += 2) {
     const int offset = ((py - cardY) & 2) != 0 ? 0 : 1;
     for (int px = offset; px < screenWidth; px += 2) {
@@ -926,12 +926,12 @@ void WifiSelectionActivity::renderConnectionCard(const int screenWidth, const in
   const int panelY = imageY + LANDING_IMAGE_HEIGHT + CONNECTION_PANEL_GAP;
   const int panelWidth = screenWidth;
   const ButtonBounds disconnect = connectedDisconnectBounds(renderer);
-  // Match the initial Wi-Fi screen: keep a visible dithered container and a
-  // finite white card above the bottom action area.
+
+
   const int panelBottom = std::max(panelY + 1, disconnect.y - LANDING_PANEL_BUTTON_GAP);
   const int panelHeight = std::max(1, panelBottom - panelY);
 
-  // Keep the same light dither used by the Statistics bottom section.
+
   for (int py = panelY; py < panelBottom; py += 2) {
     const int offset = ((py - panelY) & 2) != 0 ? 0 : 1;
     for (int px = panelX + offset; px < panelX + panelWidth; px += 2) {

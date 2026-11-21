@@ -26,16 +26,16 @@ namespace {
 
 inline void cssParserCooperativeYield() {
 #ifdef ARDUINO
-  // Keep long selector scans cooperative without sleeping for a full
-  // millisecond on every batch. Large chapters can hit this thousands of
-  // times, and delay(1) turns CSS matching into the dominant parse cost.
+
+
+
   yield();
 #endif
 }
 
 constexpr size_t kMaxCssRules = 4096;
 constexpr uint32_t kCssParserCacheMagic = 0x43535042;
-// Rebuild caches made by the old internal-heap-limited CSS loader.
+
 constexpr uint16_t kCssParserCacheVersion = 8;
 constexpr uint8_t kCssPropertyInvalid = 0xFF;
 
@@ -1321,9 +1321,9 @@ int CssParser::getBorderEdgePx(const std::string& edgePropName, const std::strin
       if (tok == "medium") return 2;
       if (tok == "thick") return 3;
 
-      // Border shorthands may put a color before the width, e.g.
-      // `rgb(227, 227, 227) solid 1px`. Do not let parseCssLength() read
-      // the color's first numeric component as a 227px border.
+
+
+
       if (tok.find_first_of("(),") != std::string::npos || tok[0] == '#' || tok == "none" || tok == "hidden" ||
           tok == "solid" || tok == "dotted" || tok == "dashed" || tok == "double" || tok == "groove" ||
           tok == "ridge" || tok == "inset" || tok == "outset" ||
@@ -1778,7 +1778,7 @@ const CssParser::CssRule* CssParser::winningRuleForProperty(const std::string& p
   if (!winningRuleCache_) {
     winningRuleCache_.reset(new (std::nothrow) WinningRuleCacheTable[2]);
     if (!winningRuleCache_) {
-      // Preserve correctness if the optimization cache cannot be allocated.
+
       const CssRule* best = nullptr;
       int bestPriority = -1;
       for (const auto& matched : matches) {
@@ -1800,9 +1800,9 @@ const CssParser::CssRule* CssParser::winningRuleForProperty(const std::string& p
     table.priorities.fill(-1);
     table.present.fill(false);
 
-    // One selector pass resolves every tracked property. The old path did
-    // this scan independently for each margin, border, font, and display
-    // query made while opening the same element.
+
+
+
     for (const auto& matched : matches) {
       if (ignoreContextual && matched.contextual) {
         continue;
@@ -1920,9 +1920,9 @@ uint8_t CssParser::computeParagraphAlignment(const std::string& className, const
     }
   }
 
-  // A number of EPUB producers emit this legacy class without including its
-  // corresponding stylesheet rule. Treat it as the conventional centered
-  // paragraph class while still allowing inline and real CSS rules to win.
+
+
+
   if (classAttributeContainsToken(className, "center-text")) {
     return 2;
   }
@@ -1983,8 +1983,8 @@ bool CssParser::isDisplayInlineBlock(const std::string& elementTagLower, const s
   raw = trimCssWs(raw);
   std::transform(raw.begin(), raw.end(), raw.begin(),
                  [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-  // Table-like bordered blocks are shrink-to-content boxes too. This is
-  // intentionally based only on the CSS display value, not EPUB class names.
+
+
   return raw == "inline-block" || raw == "inline-table" || raw == "table";
 }
 
@@ -2088,11 +2088,11 @@ bool CssParser::resolveFontItalic(const std::string& elementTagLower, const std:
   if (inlineIt != inlineMap.end()) {
     return mapStyle(inlineIt->second, inheritedItalic);
   }
-  // Contextual selectors (for example `blockquote p` or
-  // `section.some-type blockquote p`) are only indexed by their final
-  // element.  The lightweight parser cannot verify the ancestor chain here,
-  // so accepting one would incorrectly make unrelated paragraphs italic.
-  // Semantic <i>/<em> handling and direct element/class/id rules still apply.
+
+
+
+
+
   const CssRule* winner = winningRuleForProperty("font-style", className, id, elementTagLower, true);
   const std::string* sheetValue = winner != nullptr ? rulePropertyValue(*winner, "font-style") : nullptr;
   const std::string sheet = sheetValue != nullptr ? *sheetValue : std::string();
@@ -2233,8 +2233,8 @@ float CssParser::getFirstLetterFontSizeEm(const std::string& elementTagLower, co
     return num;
   };
 
-  // An inline font-size on the element is still the closest style available to
-  // the first letter when no pseudo-element rule overrides it.
+
+
   std::map<std::string, std::string> inlineMap;
   parseInlineStyle(styleAttr, inlineMap);
   const auto inlineIt = inlineMap.find("font-size");

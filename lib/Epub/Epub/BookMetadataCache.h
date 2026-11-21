@@ -131,7 +131,7 @@ class BookMetadataCache {
   FsFile tocFile;
   FsFile cssFile;
 
-  // Build-time lookup so TOC entries do not rescan the complete spine file.
+
   SpineIndexMap spineIndexByHref;
 
   static constexpr uint32_t MAX_CSS_SIZE = 1024 * 1024;

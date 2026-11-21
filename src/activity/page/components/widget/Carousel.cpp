@@ -231,30 +231,30 @@ struct LargeCenterCarouselBounds {
   int rightX, rightY, rightVisibleX, rightVisibleWidth;
 };
 
-// The 50% half-stack carousel is intentionally different from the regular
-// centered layout: the active cover is drawn over two neighboring covers that
-// are anchored to the section's left and right edges, leaving the previews at
-// the display edges rather than beside the active cover.
+
+
+
+
 LargeCenterCarouselBounds largeCenterBounds(const int areaX, const int areaY, const int areaW, const int areaH,
                                             const bool fullHeight) {
   const int verticalPadding = fullHeight ? 2 : 20;
   const int maxHeight = std::max(40, areaH - verticalPadding * 2);
-  // This is the dedicated 50% carousel treatment.  Let the active cover use
-  // the full row height so it reads as the large center card from the
-  // reference, instead of falling back to the smaller regular-carousel cap.
+
+
+
   const auto center = carouselCoverSize(std::max(60, areaW * 3 / 5), maxHeight);
-  // The neighboring covers occupy the two edge slots. Keep only a small gap
-  // around the active card and align every thumbnail to the same bottom edge.
+
+
   const int baseGap = std::max(4, std::min(8, areaW / 80));
-  // Double the currently visible separation again without changing either
-  // thumbnail frame's dimensions.
+
+
   const int gap = baseGap * 4;
-  // Preserve the existing thumbnail dimensions.  The extra separation is
-  // created by moving the edge previews outward and letting the display clip
-  // their outer edges, rather than shrinking either preview.
+
+
+
   const int sideWidth = std::max(24, (areaW - center.width - baseGap * 2) / 2);
-  // Keep the center dominant while matching the reference's slightly shorter
-  // side previews.  Their bottoms share the active card's baseline below.
+
+
   const int sideHeight = std::max(24, center.height * 4 / 5);
   const int centerX = areaX + (areaW - center.width) / 2;
   const int centerY = areaY + (areaH - center.height) / 2;
@@ -282,8 +282,8 @@ void renderLargeCenter(GfxRenderer& renderer, const std::vector<RecentBook>& boo
   const int sideFont = systemFontIdForPointSize(10);
   const int centerFont = systemFontIdForPointSize(14);
 
-  // Draw the side previews first so the large active card masks their inner
-  // portions, matching the reference carousel treatment.
+
+
   renderCover(renderer, books[previous], layout.leftX, layout.leftY, layout.sideWidth, layout.sideHeight, sideFont,
               1.0f, true, shadowStyle, true);
   renderCover(renderer, books[next], layout.rightX, layout.rightY, layout.sideWidth, layout.sideHeight, sideFont,
@@ -323,7 +323,7 @@ void preloadFrame(GfxRenderer& renderer, const std::vector<RecentBook>& books, c
                0.5f, true);
 }
 
-}  // namespace
+}
 
 void Carousel::render(const int index, const int x, const int y, const int width, const int height,
                       const bool background, const HomeTheme::CarouselStyle style, const bool showLabel,
@@ -690,7 +690,7 @@ int Carousel::hitTest(const int index, const int count, const int x, const int y
       y < layout.sideY + layout.sideHeight) {
     return static_cast<int>(visibleBookIndex(books, index + 1, hideFirst));
   }
-  // Keep unused space inside the carousel widget tappable for the current book.
+
   return static_cast<int>(visibleBookIndex(books, index, hideFirst));
 }
 
@@ -714,6 +714,6 @@ int Carousel::hitTestLeft(const int index, const int count, const int x, const i
     }
     cardX += card.width + kLeftCardGap;
   }
-  // The cards do not always fill the whole 1x2/1x3 carousel slot.
+
   return static_cast<int>(visibleBookIndex(books, current, hideFirst));
 }

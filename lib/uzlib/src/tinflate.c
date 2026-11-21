@@ -371,7 +371,7 @@ static int tinf_inflate_block_data(TINF_DATA* d, TINF_TREE* lt, TINF_TREE* dt) {
     unsigned int offs;
     int dist;
     int sym = tinf_decode_symbol(d, lt);
-    // printf("huff sym: %02x\n", sym);
+
 
     if (d->eof) {
       return TINF_DATA_ERROR;
@@ -617,7 +617,7 @@ int uzlib_uncompress_chksum(TINF_DATA* d) {
         if (~d->checksum != val) {
           return TINF_CHKSUM_ERROR;
         }
-        // Uncompressed size. TODO: Check
+
         val = tinf_get_le_uint32(d);
         break;
     }

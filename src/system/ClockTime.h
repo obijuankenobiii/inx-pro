@@ -20,8 +20,8 @@ inline bool parseUtcOffset(const char* value, int& quarterOffset) {
   return true;
 }
 
-// The external RTC stores local calendar fields. Apply the configured offset
-// exactly once without depending on the C library's process-wide TZ setting.
+
+
 template <typename DateTime>
 bool toRtcDateTime(time_t utcNow, int offsetMinutes, DateTime& out) {
   if (utcNow < 1704067200 || offsetMinutes < -720 || offsetMinutes > 840) return false;
@@ -44,7 +44,7 @@ bool sameDateTime(const DateTime& a, const DateTime& b) {
          a.second == b.second;
 }
 
-// Permit the clock to tick during the write/read, including midnight rollover.
+
 template <typename DateTime>
 bool verifyRtcDateTime(const DateTime& stored, time_t writtenUtc, int offsetMinutes, uint32_t elapsedMs) {
   const uint32_t elapsedSeconds = elapsedMs / 1000;
@@ -55,4 +55,4 @@ bool verifyRtcDateTime(const DateTime& stored, time_t writtenUtc, int offsetMinu
   return false;
 }
 
-}  // namespace clock_time
+}

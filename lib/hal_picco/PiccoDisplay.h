@@ -50,8 +50,8 @@ class PiccoDisplay final {
  private:
   EInkDisplay display;
   PiccoSsd2677WindowedGray windowedGray;
-  // A prepared page is rendered directly into Picco's writable dual buffer
-  // while the previous page remains active. Do not replace that page with the
-  // active buffer when a later grayscale pass asks for a baseline sync.
+
+
+
   mutable bool writeBufferDirty_ = false;
 };

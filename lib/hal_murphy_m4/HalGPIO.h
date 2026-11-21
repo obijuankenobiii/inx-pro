@@ -115,8 +115,8 @@ class HalGPIO {
   float touchSwipeStartNx = 0.0f;
   float touchSwipeStartNy = 0.0f;
 
-  // ADC-backed percentage: retain the last valid result so a transient read
-  // cannot make the battery icon jump to 0%.
+
+
   mutable int batteryCachedPercent = -1;
   mutable unsigned long batteryLastPollMs = 0;
   static constexpr unsigned long BATTERY_POLL_MS = 1500;
@@ -132,8 +132,8 @@ class HalGPIO {
   bool suppressTouchUntilRelease = false;
   bool touchSwipeLatchedDuringDisplay = false;
   mutable bool suppressPostSwipeTap = false;
-  // Keep a rejected post-swipe tap rejected if more than one activity queries
-  // the same release event in the current input frame.
+
+
   mutable bool postSwipeTapBlockedThisFrame = false;
   mutable unsigned long postSwipeDuplicateBlockedUntilMs = 0;
   unsigned long swipeDetectedAtMs = 0;

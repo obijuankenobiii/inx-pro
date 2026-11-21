@@ -285,8 +285,8 @@ void XMLCALL ContentOpfParser::startElement(void* userData, const XML_Char* name
       self->coverItemHref = href;
     }
 
-    // EPUB 3 can identify the cover directly on the manifest item instead of
-    // using the legacy <meta name="cover" content="..."> declaration.
+
+
     if (self->coverItemHref.empty() && hasManifestProperty(properties, "cover-image")) {
       self->coverItemHref = href;
     }

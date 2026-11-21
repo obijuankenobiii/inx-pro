@@ -358,8 +358,8 @@ void mergeFinishedBookStatuses(GlobalReadingStats& global, const std::vector<Boo
       continue;
     }
 
-    // A finished flag can outlive a missing statistics record. Keep the
-    // global started/finished totals internally consistent in that case.
+
+
     global.totalBooksStarted++;
     global.totalBooksFinished++;
   }
@@ -713,8 +713,8 @@ int drawFourColumnStats2x2(const GfxRenderer& renderer, int innerLeft, int y, in
                            const char* v3, const char* l3, int cellH, int row0LiftPx) {
   const char* vals[] = {v0, v1, v2, v3};
   const char* labs[] = {l0, l1, l2, l3};
-  // Preserve the original left-aligned 2x2 layout while giving the two rows
-  // the requested 20 px vertical separation.
+
+
   constexpr int kVerticalGap = 20;
   return drawFourColumnStatsNx2(renderer, innerLeft, y, innerW, vals, labs, 2, cellH, row0LiftPx, kVerticalGap);
 }
@@ -734,9 +734,9 @@ void Statistics::loadStats(const bool showProgress) {
   allBooksStats = getAllBooksStats();
   allBooksStats.erase(
       std::remove_if(allBooksStats.begin(), allBooksStats.end(), [](const BookReadingStats& book) {
-        // A zero-progress cache is normally created when a book is opened
-        // before the first page is read. It is not a useful statistics entry
-        // and should not pollute the Books list or aggregate totals.
+
+
+
         return !(book.progressPercent > 0.0f);
       }),
       allBooksStats.end());
@@ -933,9 +933,9 @@ void Statistics::hydrateFromStorage() {
       }),
       bookListMetadata_.end());
 
-  // Restore the recent book snapshot without scanning the cache directories.
-  // This keeps the main page's progress populated while the full statistics
-  // rebuild remains an explicit refresh action.
+
+
+
   RECENT_BOOKS.loadFromFile();
   for (const RecentBook& recent : RECENT_BOOKS.getBooks()) {
     std::string cachePath = recent.cachePath;
@@ -968,8 +968,8 @@ void Statistics::loadIndexedBooks() {
   std::vector<LibraryIndex::Book> startedBooks;
   startedBooks.reserve(indexedBooks_.size());
 
-  // Attach progress once while hydrating the index. The Books list must not
-  // reopen one statistics file per row during every render.
+
+
   for (LibraryIndex::Book& book : indexedBooks_) {
     if (book.type != LibraryIndex::Book::Type::BOOK) continue;
 
@@ -984,8 +984,8 @@ void Statistics::loadIndexedBooks() {
       book.progressPercent = metadata->progressPercent;
     }
 
-    // Recent books carry the newest in-memory progress snapshot. Prefer it
-    // when available, but do not perform any disk read here.
+
+
     const auto recentStats = std::find_if(allBooksStats.begin(), allBooksStats.end(), [&cachePath](const BookReadingStats& stats) {
       return stats.path == cachePath;
     });
@@ -1235,8 +1235,8 @@ void Statistics::onExit() {
 
 void Statistics::refresh() {
   if (LibraryIndexRefresh::isRunning()) return;
-  // Rebuild the persisted per-book snapshot only on an explicit refresh.
-  // Opening Statistics uses the already saved snapshot and library index.
+
+
   loadStats(false);
   indexRefreshPending_ = true;
   LibraryIndexRefresh::start(renderer, this, "Updating...");
@@ -1568,8 +1568,8 @@ int Statistics::renderCalendar(const int y, const int innerLeft, const int inner
     }
   }
 
-  // Leave enough room for the weekday and two-digit date without truncating
-  // labels such as "Wed 24" before the thumbnails begin.
+
+
   constexpr int kDayLabelWidth = 90;
   constexpr int kDailyTotalWidth = 78;
   const int totalFont = fontSerifSm();
@@ -1775,7 +1775,7 @@ void Statistics::renderSingleBookTopSection(const int bookIdx) const {
 
   const int coverH = std::max(1, layout.topH - kPanelPaddingTop - kPanelPaddingBottom + 10);
   const int coverW = std::max(150, std::min(190, panelW * 30 / 100 + 10));
-  // Contain the cover in the taller frame so the full artwork remains visible.
+
   renderCover(book.path, kPanelPaddingX, layout.areaY + kPanelPaddingTop, coverW, coverH, book.title, book.author, false);
 
   constexpr int kTimeListGap = 0;
@@ -1822,8 +1822,8 @@ void Statistics::renderSingleBookTopSection(const int bookIdx) const {
   const int radialRight = panelW - kPanelPaddingX;
   const int radialWidth = std::max(1, radialRight - radialLeft);
   const int radialTop = layout.areaY + kPanelPaddingTop;
-  // Let the radial use the full top-section height; this changes only the
-  // radial bounds and leaves the cover/time-of-day layout untouched.
+
+
   const int radialBottom = layout.areaY + layout.topH;
   const int radialHeight = std::max(1, radialBottom - radialTop);
   constexpr int kRadialRadiusIncrease = 30;
@@ -1879,10 +1879,10 @@ void Statistics::renderSingleBookMiddleChart(const int bookIdx) const {
     }
   }
 
-  // The history file is normally chronological, but older files and merged
-  // records are not guaranteed to be. Keep only dates with actual reading
-  // time and sort those dates before laying them out on the chart. This avoids
-  // creating a long zero-filled tail after a book has been completed.
+
+
+
+
   points.erase(std::remove_if(points.begin(), points.end(), [](const Point& point) {
                 return point.dateKey == 0 || point.readingTimeMs == 0;
               }),
@@ -1891,8 +1891,8 @@ void Statistics::renderSingleBookMiddleChart(const int bookIdx) const {
     return readingDateToDay(left.dateKey) < readingDateToDay(right.dateKey);
   });
 
-  // Keep the most recent dates readable on the compact 1x3 chart while retaining
-  // only the active dates in the history.
+
+
   constexpr size_t kMaxChartPoints = 14;
   if (points.size() > kMaxChartPoints) {
     points.erase(points.begin(), points.begin() + static_cast<int>(points.size() - kMaxChartPoints));
@@ -2000,7 +2000,7 @@ void Statistics::renderSingleBookBottomGrid(const int bookIdx) const {
   const int panelH = panelBottom - panelY;
   if (panelW <= 0 || panelH <= 0) return;
 
-  // Separate the bottom statistics section from the chart above it.
+
   renderer.line.render(panelX, panelY, panelX + panelW - 1, panelY, true);
   renderer.line.render(panelX, panelY + 1, panelX + panelW - 1, panelY + 1, true);
 
@@ -2063,8 +2063,8 @@ void Statistics::renderSingleBookBottomGrid(const int bookIdx) const {
       continue;
     }
 
-    // The first card is a compact Sunday-to-Saturday bar chart. Use only
-    // first-letter weekday markers to keep the card readable at this size.
+
+
     constexpr int kColumns = 7;
     constexpr int kGap = 4;
     constexpr const char* kWeekdayLabels[kColumns] = {"S", "M", "T", "W", "T", "F", "S"};
@@ -2470,9 +2470,9 @@ void Statistics::content() {
   const int contentTopSingle = kStatsContentTop;
 
   if (statsTab_ == 0) {
-    // The statistics implementation remains available for the Calendar view
-    // and future actions, but the main Statistics page is currently a simple
-    // list menu. Keep the old drawing path below without executing it.
+
+
+
     const int sectionTop = kWeeklyChartTop;
     const int sectionBottom = renderer.getScreenHeight();
     const int sectionHeight = std::max(0, sectionBottom - sectionTop);
@@ -2486,7 +2486,7 @@ void Statistics::content() {
     const int grayLeft = 0;
     const int grayWidth = renderer.getScreenWidth();
     if (radialHeight > 0 && grayWidth > 0) {
-      // Match the carousel background: a sparse gray dither rather than a full-tone fill.
+
       for (int py = (split + 1) & ~1; py < sectionBottom; py += 2) {
         for (int px = (grayLeft + 1) & ~1; px < grayLeft + grayWidth; px += 2) {
           renderer.drawPixel(px, py, true);
@@ -2507,7 +2507,7 @@ void Statistics::content() {
     const int labelWidth = renderer.text.getWidth(labelFont, "Reading");
     const int pagesValueWidth = renderer.text.getWidth(valueFont, pagesValue);
     const int pagesLabelWidth = renderer.text.getWidth(labelFont, "Pages");
-    // The gray panel begins at the split line; keep both the radial row and card centered in that full panel.
+
     const int radialRegionTop = split;
     const int radialRegionHeight = std::max(0, sectionBottom - radialRegionTop);
     constexpr int kSquareGap = 12;
@@ -2665,9 +2665,9 @@ void Statistics::renderBooksView(const int contentTop, const int contentBottom) 
     indexedMetadata.thumbnailPath = thumbnailPathForBookCache(epubCachePathForBookPath(indexedBook.path));
     indexedMetadata.progressPercent = indexedBook.progressPercent;
 
-    // Do not reopen statistics.bin while drawing the list. The saved list
-    // metadata is the fast snapshot used for progress here; full per-book
-    // statistics are loaded only after the user opens a row.
+
+
+
     const BookListMetadata* book = &indexedMetadata;
     const int thumbY = rowY + (rowHeight - thumbnailHeight) / 2;
     renderBookListThumbnail(*book, sideMargin, thumbY, thumbnailWidth, thumbnailHeight);
@@ -2736,8 +2736,8 @@ void Statistics::loop() {
     if (SubPage::closeInput(renderer, mappedInput, closeStatsTab, statsTab_ != 2)) {
       return;
     }
-    // Books uses an ordinary upward swipe for paging. Reserve the bottom edge
-    // for closing so both actions remain available on the same page.
+
+
     if (statsTab_ == 2 && mappedInput.hasTouch()) {
       float swipeStartNx = 0.0f;
       float swipeStartNy = 0.0f;

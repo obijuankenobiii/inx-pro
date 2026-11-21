@@ -64,21 +64,21 @@ EInkDisplay::RefreshMode convertRefreshMode(const HalDisplay::RefreshMode mode) 
   switch (mode) {
     case HalDisplay::FULL_REFRESH:
 #if FREEINK_DEVICE_MURPHY_M4
-      // Murphy M4 uses the same SSD1677 adapter as X4 Pro, but its panel is
-      // much more sensitive to the stock FULL waveform (0xF7).  The M4's
-      // single-pass HALF waveform (0xD7) is still an absolute clean update
-      // that rewrites both planes, without the aggressive multi-flash drive.
+
+
+
+
       return EInkDisplay::HALF_REFRESH;
 #else
       return EInkDisplay::FULL_REFRESH;
 #endif
     case HalDisplay::HALF_REFRESH:
     case HalDisplay::MANUAL_REFRESH:
-      // UC8279 stays on FAST deliberately. Its driver's Half branch is a charge scrub
-      // that drives every pixel through its complement, which is visible as a full
-      // inversion flash - unacceptable for the routine refreshes that come through here.
-      // The differential FAST path plus requestRedriveScrub()'s _redriveAfterGray gives
-      // the same ghost purge without the flash.
+
+
+
+
+
       if (BoardConfig::ACTIVE.displayController == BoardConfig::DisplayController::UC8179) {
         return EInkDisplay::HALF_REFRESH;
       }
@@ -155,9 +155,9 @@ void HalDisplay::displayGrayscaleBase(const HalDisplay::RefreshMode mode, const 
 }
 
 void HalDisplay::syncWriteBufferFromActive() const {
-  // An async page turn swaps the host buffers before the panel waveform has
-  // finished. Drain that handoff before copying the active page; otherwise an
-  // overlay can capture the pre-turn buffer on the first frame after paging.
+
+
+
   const_cast<EInkDisplay&>(display).waitRefreshComplete();
   display.syncWriteBufferFromActive();
 }
@@ -177,20 +177,20 @@ void HalDisplay::copyGrayscaleBuffers(const uint8_t* lsbBuffer, const uint8_t* m
   display.copyGrayscaleBuffers(lsbBuffer, msbBuffer);
 }
 
-// QUALITY ONLY takes the pre-update (freeink-sdk 1e8ee54) plane path, where the driver wrote
-// our planes through verbatim (streamPlane, invert=false). 2400379 replaced that with an
-// absolute-plane fold - LSB OR-ed into a _grayBase snapshot and streamed INVERTED, MSB
-// XOR-ed against it - which re-encodes planes our renderer already finished.
-//
-// MEDIUM / text AA must NOT take this bypass. Its planes are delta-encoded, and pushing
-// them raw sends white through the black-drive waveform bucket, washing the rest of the
-// screen gray (the regression ffeaaa2 fixed). Hence the g_qualityPass gate.
+
+
+
+
+
+
+
+
 void HalDisplay::copyGrayscaleLsbBuffers(const uint8_t* lsbBuffer) {
-  // Drain any in-flight B/W refresh BEFORE the planes go in. displayFinish() ends with
-  // streamPlane(CMD_DTM1, fb) to re-seed the differential baseline, so if it runs later -
-  // and runUc8279Gray()'s syncPendingAsync() is exactly that, after both planes are
-  // loaded - it overwrites plane 0 with the B/W frame. Sleep never sees it because
-  // nothing is pending there; a book page turn always has an async refresh outstanding.
+
+
+
+
+
   display.syncPendingAsync();
   if (g_qualityPass && uc8279QualityController() && display._driver != nullptr && lsbBuffer != nullptr) {
     auto* d = static_cast<freeink::Uc8279X4Driver*>(display._driver);
@@ -235,7 +235,7 @@ void setUc8279Ptl(EInkDisplay& display, const uint16_t x, const uint16_t y, cons
   const uint16_t gateStart = static_cast<uint16_t>(driver->_cfg.gateOffset + y);
   const uint16_t gateEnd = static_cast<uint16_t>(gateStart + h - 1);
   freeink::EpdBus& bus = display._bus;
-  bus.cmd(0x90);  // PTL
+  bus.cmd(0x90);
   bus.data(static_cast<uint8_t>(x >> 8));
   bus.data(static_cast<uint8_t>(x & 0xFF));
   bus.data(static_cast<uint8_t>((x + w - 1) >> 8));
@@ -253,9 +253,9 @@ bool openUc8279GrayWindow(EInkDisplay& display, const uint16_t x, const uint16_t
   auto* driver = static_cast<freeink::Uc8279X4Driver*>(display._driver);
   if (x + w > driver->_w || y + h > driver->_h) return false;
 
-  // The X4 quality path uploads both full-panel DTM planes before entering
-  // PTIN. Keep that RAM stream outside the partial window; PTIN/PTL is opened
-  // only after the planes are complete, immediately before the LUT waveform.
+
+
+
   display.syncPendingAsync();
   g_qualityWindowOpen = true;
   return true;
@@ -305,10 +305,10 @@ void runUc8279GrayWindow(EInkDisplay& display, const uint8_t tables[5][49], cons
   freeink::EpdBus& bus = display._bus;
   if (!g_qualityWindowOpen && !openUc8279GrayWindow(display, x, y, w, h)) return;
 
-  // The full-panel grayscale planes have already been copied. Now enter the
-  // partial mode and set the requested PTL before loading the quality LUT and
-  // firing DRF. This matches the X4 driver's normal PTIN -> PTL -> DRF order.
-  bus.cmd(0x91);  // PTIN
+
+
+
+  bus.cmd(0x91);
   setUc8279Ptl(display, x, y, w, h);
 
   bus.cmd(0x00);
@@ -328,7 +328,7 @@ void runUc8279GrayWindow(EInkDisplay& display, const uint8_t tables[5][49], cons
   bus.data(UC8279_PSR1);
   bus.cmd(0x12);
   bus.waitBusy(tag);
-  bus.cmd(0x92);  // PTOUT: leave the controller in normal B/W mode
+  bus.cmd(0x92);
   g_qualityWindowOpen = false;
 
   display._shadowValid = false;
@@ -469,13 +469,13 @@ void seedUc8179QualityBase(EInkDisplay& display, bool invertBase) {
 void HalDisplay::displayGrayBuffer(const bool quality, const bool trackForRevert) {
   g_qualityWindowOpen = false;
   if (!quality) {
-    // Text AA keeps FreeInk's stock table; only images get the custom four-tone banks.
-    //
-    // Stock kXtfAa02/kXtfAa68 define registers 0x22 and 0x23 byte-identically - three
-    // tones, no light grey - and that is not an oversight: it is an ANTI-ALIASING table,
-    // where one mid grey per glyph edge is the whole job. Forcing a second grey into it
-    // is what left curve edges on o/e/c/s washed out. Images are the case that genuinely
-    // needs four separated tones, and they come through here with trackForRevert set.
+
+
+
+
+
+
+
 #ifndef X4PRO_TEXT_AA_STOCK
 #define X4PRO_TEXT_AA_STOCK 1
 #endif
@@ -536,9 +536,9 @@ void HalDisplay::displayGrayBufferWindow(const uint16_t x, const uint16_t y, con
     return;
   }
   if (!controllerHonoursCustomLut()) return;
-  // SSD1677 quality remains on the established full-frame path here. The
-  // project-owned Sticky/Murphy adapter owns their SSD1677 window path; the
-  // UC8279 branch above owns the X4 Pro PTL window path.
+
+
+
   (void)x;
   (void)y;
   (void)w;

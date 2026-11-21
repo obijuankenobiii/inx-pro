@@ -90,9 +90,9 @@ class GfxRenderer {
   explicit GfxRenderer(HalDisplay& halDisplay);
   ~GfxRenderer();
 
-  // Panel safe area in portrait pixels, before the user's screen margin. The defaults suit the
-  // Sticky and X4 Pro; an env can override them with -DINX_VIEWABLE_MARGIN_* (the T5 S3's case
-  // covers more of its panel edge).
+
+
+
   static constexpr int VIEWABLE_MARGIN_TOP = INX_VIEWABLE_MARGIN_TOP;
   static constexpr int VIEWABLE_MARGIN_RIGHT = INX_VIEWABLE_MARGIN_RIGHT;
   static constexpr int VIEWABLE_MARGIN_BOTTOM = INX_VIEWABLE_MARGIN_BOTTOM;

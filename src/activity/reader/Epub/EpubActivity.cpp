@@ -69,9 +69,9 @@ namespace {
 constexpr unsigned long goHomeMs = 1000;
 constexpr unsigned long bookmarkHoldMs = 1000;
 constexpr unsigned long wordSelectionHoldMs = 300;
-// Compose the next forward page shortly after the current page becomes idle.
-// The prepared-page path makes a normal page turn feel instantaneous, but a
-// long debounce leaves most readers paying the full render cost on every tap.
+
+
+
 constexpr unsigned long kPreparedPageIdleDelayMs = 120;
 constexpr bool kReaderHighQualityFastLut = true;
 constexpr int kWordSelectionHandleRadius = 11;
@@ -185,13 +185,13 @@ EpubActivity::EpubActivity(GfxRenderer& renderer, MappedInputManager& mappedInpu
 ViewportInfo EpubActivity::calculateViewport() {
   ViewportInfo info;
 
-  // These are user-controlled content margins. Do not add the renderer's
-  // viewable-edge inset: all four values at zero must produce edge-to-edge
-  // book content. Only space occupied by an enabled status bar is reserved.
+
+
+
   info.totalMarginTop = bookSettings.marginTop;
-  // Keep zero-margin pages flush to the bottom edge when no status bar is
-  // enabled, but reserve both the normal and full-width status bars when they
-  // are present so book content cannot render underneath them.
+
+
+
   info.totalMarginBottom = bookSettings.marginBottom + StatusBar::reservedBottomMargin(renderer, bookSettings);
   info.totalMarginLeft = bookSettings.marginLeft;
   info.totalMarginRight = bookSettings.marginRight;
@@ -360,14 +360,14 @@ std::unique_ptr<Section> EpubActivity::loadSection(int spineIndex, const Viewpor
     return nullptr;
   }
 
-  // If the reader reaches a chapter before its background build finishes,
-  // abandon only that partial prefetch and let the normal chapter-open path
-  // handle it. A completed prefetch is left on disk and will be loaded below.
+
+
+
   bool prefetchesRequestedSpine = false;
   if (nextChapterPrefetchMutex_) {
     if (xSemaphoreTake(nextChapterPrefetchMutex_, 0) != pdTRUE) {
-      // The worker is in a parser slice. Do not wait in the foreground path;
-      // the normal chapter load will retry after the next reader loop.
+
+
       prefetchesRequestedSpine = false;
     } else {
       prefetchesRequestedSpine = nextChapterPrefetch_ && nextChapterPrefetchSpine_ == spineIndex;
@@ -430,9 +430,9 @@ void EpubActivity::nextChapterPrefetchTaskLoop() {
     xSemaphoreTake(nextChapterPrefetchMutex_, portMAX_DELAY);
     const bool shouldRun = !nextChapterPrefetchStopRequested_ && nextChapterPrefetch_ &&
                            nextChapterPrefetch_->progressiveActive();
-    // Loading the complete XHTML buffer does not touch the renderer. Keep that
-    // one-time SD read outside the layout lock, then serialize only Expat/page
-    // layout with the foreground reader.
+
+
+
     const bool sourceReady = shouldRun && nextChapterPrefetch_->progressiveSourceReady();
     bool layoutLocked = false;
     if (shouldRun && (!sourceReady || (readerLayoutMutex_ != nullptr &&
@@ -444,8 +444,8 @@ void EpubActivity::nextChapterPrefetchTaskLoop() {
     const bool finished = nextChapterPrefetch_ && !nextChapterPrefetch_->progressiveActive();
     xSemaphoreGive(nextChapterPrefetchMutex_);
     if (!shouldRun || finished) break;
-    // Always yield between parser slices. This task is background work and
-    // must never starve Arduino loop, Wi-Fi/BLE, or the task watchdog.
+
+
     vTaskDelay(pdMS_TO_TICKS(10));
   }
   if (nextChapterPrefetchMutex_) {
@@ -456,15 +456,15 @@ void EpubActivity::nextChapterPrefetchTaskLoop() {
     nextChapterPrefetchFinished_ = true;
   }
   vTaskDeleteWithCaps(nullptr);
-  // vTaskDeleteWithCaps(nullptr) is self-deleting on ESP32. Keep a yielding
-  // guard for simulator/stub builds and for any port where the delete call
-  // unexpectedly returns; this task function must never fall through.
+
+
+
   for (;;) vTaskDelay(pdMS_TO_TICKS(1000));
 }
 
 void EpubActivity::pauseNextChapterPrefetchForPageTurn() {
-  // Give the active page an uncontended renderer/SD window. This is a
-  // nonblocking request; the worker observes it after its current 4 KB slice.
+
+
   nextChapterPrefetchRetryAt_ = millis() + 1000;
   if (!nextChapterPrefetchMutex_) return;
   if (xSemaphoreTake(nextChapterPrefetchMutex_, 0) == pdTRUE) {
@@ -555,8 +555,8 @@ void EpubActivity::serviceNextChapterPrefetch() {
   ViewportInfo info = calculateViewport();
   std::shared_ptr<Epub> sharedEpub = std::shared_ptr<Epub>(epub.get(), [](Epub*) {});
 
-  // Do not let a partial file left by a reset/crash suppress the prefetch
-  // forever. A real cache must have a valid header, page count, and LUT.
+
+
   bool cacheExists = false;
   {
     EpubImagePrefetch::IoLock ioLock;
@@ -580,9 +580,9 @@ void EpubActivity::serviceNextChapterPrefetch() {
           info.lineCompression, info.wordSpacing, bookSettings.extraParagraphSpacing, bookSettings.paragraphAlignment,
           info.width, info.height, bookSettings.hyphenationEnabled, bookSettings.paragraphCssIndentEnabled != 0,
           bookSettings.bionicReadingEnabled != 0,
-          // Prefetch text/layout only. PageImage keeps the source path and
-          // dimensions, then extracts the image on the visible render path;
-          // decoding JPEGs here can hold the shared layout/SD path for seconds.
+
+
+
           true)) {
     INX_SERIAL.printf("[%lu] [OPEN-TIME] next chapter prefetch storage start failed spine=%d\n", millis(), nextSpine);
     nextChapterPrefetchRetryAt_ = millis() + 30000;
@@ -595,8 +595,8 @@ void EpubActivity::serviceNextChapterPrefetch() {
     nextChapterPrefetchRetryAt_ = millis() + 30000;
     return;
   }
-  // The service function runs before input dispatch. Never wait here if the
-  // worker has already started a parser slice; retry on the next reader loop.
+
+
   if (xSemaphoreTake(nextChapterPrefetchMutex_, 0) != pdTRUE) {
     candidate.reset();
     nextChapterPrefetchRetryAt_ = millis() + 25;
@@ -781,8 +781,8 @@ bool EpubActivity::displayCoverOrTitle() {
     }
   }
 
-  // Keep a stale JPEG as a last-resort fallback, but prefer the source PNG
-  // whenever the EPUB cover is actually PNG-backed.
+
+
   if (SdMan.exists(coverJpegPath.c_str())) {
     const int pageWidth = renderer.getScreenWidth();
     const int pageHeight = renderer.getScreenHeight();
@@ -940,16 +940,16 @@ bool EpubActivity::slowPath() {
   drawLoadingScreen();
   vTaskDelay(pdMS_TO_TICKS(50));
 
-  // Do not block first-open on a library thumbnail. The reader already has
-  // the cover path for the opening screen; thumbnail generation is kept for
-  // explicit regeneration and library-side cache work.
+
+
+
   constexpr unsigned long thumbMs = 0;
   const int initialSpine = epub->getSpineIndexForInitialOpen();
-  // A number of EPUBs declare a cover/title XHTML item first, but that item
-  // has no renderable pages. Starting there makes the first-open path build a
-  // zero-page section and can send the reader back to Library. Preserve the
-  // original behavior for that common layout and start at the first real
-  // spine item; an explicit resume target below still takes precedence.
+
+
+
+
+
   currentSpineIndex = (initialSpine == 0 && epub->getSpineItemsCount() > 1) ? 1 : initialSpine;
   nextPageNumber = 0;
   if (initialSpineIndex_ >= 0 && initialSpineIndex_ < epub->getSpineItemsCount() && initialPageNumber_ >= 0) {
@@ -1585,20 +1585,20 @@ bool EpubActivity::handleWordSelection() {
     const int currentLo = std::min(wordSelectionAnchor_, wordSelectionFocus_);
     const int currentHi = std::max(wordSelectionAnchor_, wordSelectionFocus_);
     if (tappedWord < currentLo) {
-      // Expand toward the beginning while preserving the current end.
+
       wordSelectionAnchor_ = tappedWord;
       wordSelectionFocus_ = currentHi;
     } else if (tappedWord > currentHi) {
-      // Expand toward the end while preserving the current beginning.
+
       wordSelectionAnchor_ = currentLo;
       wordSelectionFocus_ = tappedWord;
     } else {
-      // Move the active endpoint when tapping inside the current range.
+
       wordSelectionFocus_ = tappedWord;
     }
     selectedWord_ = tappedWord;
-    // For a range, currentWordActions() removes only Look up and keeps the
-    // Highlight/Add note menu visible.
+
+
     wordActionsOpen_ = true;
   };
 
@@ -1742,9 +1742,9 @@ void EpubActivity::onExit() {
   invalidatePreparedPage();
   const bool clearImagePageOnExit = lastPageHadImages && lastPageHadHighQualityImage;
 
-  // Stop the background chapter writer before any exit-time state is written.
-  // Otherwise saveBookStats/saveProgress/APP_STATE can contend for the SD bus
-  // while the prefetch task is parsing and flushing its .part file.
+
+
+
   stopNextChapterPrefetch();
 
   closeWordSelection();
@@ -1798,8 +1798,8 @@ void EpubActivity::onExit() {
   epub.reset();
 
   renderer.resetTransientReaderState();
-  // High-quality image waveforms can leave residual charge/ghosting behind.
-  // Keep the cleanup only for those pages; ordinary EPUB exits stay fast.
+
+
   if (clearImagePageOnExit) {
     renderer.clearScreen(0xFF);
     renderer.displayBuffer(FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
@@ -1824,9 +1824,9 @@ void EpubActivity::loop() {
     return;
   }
 
-  // Build only the next chapter, one millisecond-sized slice at a time. This
-  // keeps parsing off the page-turn path without introducing a second task
-  // that could race the shared renderer or SD bus.
+
+
+
   serviceNextChapterPrefetch();
 
   if (bookFinished_) {
@@ -1845,9 +1845,9 @@ void EpubActivity::loop() {
     return;
   }
 
-  // The drawer owns all input while it is visible. Keep annotation and word
-  // selection handlers below this guard so touches cannot select text through
-  // the drawer, including when a selection UI was already active.
+
+
+
   if (settingsDrawerVisible && settingsDrawer) {
     settingsDrawer->handleInput(mappedInput);
     if (settingsDrawer->isDismissed()) {
@@ -1965,8 +1965,8 @@ void EpubActivity::loop() {
       setupOrientation();
       bookLayoutAppliedOrientation_ = bookSettings.orientation;
       if (settingsDrawer && settingsDrawer->restoreStoredFrame()) {
-        // The reader page is already in the framebuffer; avoid the extra full
-        // render that used to happen after closing an unchanged drawer.
+
+
         updateRequired = false;
       }
     }
@@ -2008,14 +2008,14 @@ void EpubActivity::loop() {
 
   const bool readerTouchEnabled = readerTouchEnabled_;
 
-  // Configured swipe zones take priority over the reader's built-in vertical
-  // gestures. An unconfigured zone falls through to the normal behavior below.
+
+
   if (readerTouchEnabled && btnBindings_.handleTouchSwipe(*this)) {
     return;
   }
 
-  // Opening the in-book settings drawer remains available even when reader
-  // touch actions are disabled. The drawer itself owns input while visible.
+
+
   float settingsSwipeStartNx = 0.0f;
   float settingsSwipeStartNy = 0.0f;
   if (mappedInput.wasTouchSwipeDownInScreen(renderer, settingsSwipeStartNx, settingsSwipeStartNy) &&
@@ -2027,8 +2027,8 @@ void EpubActivity::loop() {
   }
 
 #if INX_HAS_FRONTLIGHT || FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4 || FREEINK_DEVICE_PICCO
-  // An upward swipe from the reader's edge bands controls the frontlight. Check
-  // this before the generic upward swipe, which otherwise exits the reader.
+
+
   if (readerTouchEnabled && !READER_SETTINGS.disableLightControl &&
       frontlight_ui::handleEdgeSwipe(mappedInput, renderer)) {
     return;
@@ -2089,9 +2089,9 @@ void EpubActivity::loop() {
     return;
   }
 
-  // BLE page-turn remotes inject dedicated page edges. EPUB's configurable
-  // physical-button layer watches Up/Down instead, so consume the dedicated
-  // edges here before the remaining reader shortcuts.
+
+
+
   if (mappedInput.consumeInjectedPressed(MappedInputManager::Button::PageBack)) {
     endPageTimer();
     pageTurn(false);
@@ -2261,8 +2261,8 @@ void EpubActivity::scheduleIdlePreparedPage() {
 }
 
 bool EpubActivity::composePreparedForwardPage() {
-  // Prefetch can be laying out a chunk on the other core. Never wait here:
-  // this is idle work and a button/page turn must remain responsive.
+
+
   SemaphoreGuard layoutGuard(readerLayoutMutex_, 0);
   if (!layoutGuard.locked()) return false;
 
@@ -2298,9 +2298,9 @@ bool EpubActivity::composePreparedForwardPage() {
       (highImageMode && !highQuality && textAa);
   const bool needsImageGrayscale = mediumImageGrayscale || highQuality;
   const ImageRenderMode imageMode = readerImageTwoBit ? ImageRenderMode::TwoBit : ImageRenderMode::OneBit;
-  // Decode grayscale images into the prepared B/W frame as well. This keeps
-  // the first refresh useful instead of showing a placeholder while the HQ
-  // pass is being prepared.
+
+
+
   constexpr bool skipImagesInBase = false;
 
   renderer.setRenderMode(GfxRenderer::BW);
@@ -2486,9 +2486,9 @@ bool EpubActivity::finishPreparedPageGrayscale(const PreparedPage& prepared) {
 }
 
 bool EpubActivity::presentPreparedForwardPage() {
-  // Presenting a prepared page uses the shared renderer and section state.
-  // If the background prefetch currently owns the layout lock, fall back to
-  // the normal page-turn path instead of blocking input behind it.
+
+
+
   SemaphoreGuard layoutGuard(readerLayoutMutex_, 0);
   if (!layoutGuard.locked()) return false;
 
@@ -2508,9 +2508,9 @@ bool EpubActivity::presentPreparedForwardPage() {
           ? ((FREEINK_DEVICE_X4PRO || FREEINK_DEVICE_MURPHY_M4) ? HalDisplay::FULL_REFRESH
                                                                   : HalDisplay::HALF_REFRESH)
           : static_cast<HalDisplay::RefreshMode>(presented.refreshMode);
-  // Commit the prepared B/W page before any HQ image pass. The grayscale
-  // window updates only the image region; embedded text must already be the
-  // current page on the panel and in frameBufferActive.
+
+
+
   const unsigned long displaySubmitStart = millis();
   renderer.displayBufferAsync(turnRefresh);
   if (tracePageTurn) {
@@ -2523,8 +2523,8 @@ bool EpubActivity::presentPreparedForwardPage() {
   const unsigned long grayscaleStart = millis();
   if (!finishPreparedPageGrayscale(presented)) {
     invalidatePreparedPage();
-    // The layout lock is still held here; retry the normal render on the next
-    // reader-loop iteration after this guard releases it.
+
+
     updateRequired = true;
     return true;
   }
@@ -2702,9 +2702,9 @@ void EpubActivity::renderScreen(const bool clearFramebuffer) {
                       static_cast<unsigned long>(traceId), static_cast<unsigned long>(millis() - traceStart));
   }
 
-  // Rendering is foreground work. A prefetch slice may hold the layout lock
-  // while parsing a page, but the reader loop must never wait behind it. Keep
-  // updateRequired set so the next loop retries after the worker yields.
+
+
+
   SemaphoreGuard layoutGuard(readerLayoutMutex_, 0);
   if (!layoutGuard.locked()) {
     invalidatePreparedPage();
@@ -2937,9 +2937,9 @@ void EpubActivity::renderContents(Page* page, const int orientedMarginTop,
   const int periodicRefreshPages = READER_SETTINGS.getRefreshFrequency();
   const bool periodicRefreshEnabled = periodicRefreshPages > 0;
 
-  // Render a decoded B/W image in the initial page frame. The later HQ pass
-  // upgrades it in place, so the reader never needs to show an image
-  // placeholder first.
+
+
+
   constexpr bool skipImagesInPageRender = false;
   if (skipImagesInPageRender) {
     renderer.clearScreen(0xFF);
@@ -2972,15 +2972,15 @@ void EpubActivity::renderContents(Page* page, const int orientedMarginTop,
   const bool useWindowedQuality = displayWithQualityPass && renderer.supportsWindowedQuality() &&
                                   pageGrayscaleImageRegion(*page, renderer, orientedMarginLeft, orientedMarginTop,
                                                            imageRegion);
-  // Murphy's windowed quality pass updates only the image rectangle. The
-  // current page must first be committed as the active dual-buffer frame;
-  // otherwise a later manual/page refresh copies the previous page back into
-  // the write buffer and refreshes that stale screen.
+
+
+
+
   const bool skipBasePageRefresh = FREEINK_DEVICE_STICKY && useWindowedQuality;
 #if FREEINK_DEVICE_PICCO
-  // A real Picco PTLW update only drives the image rectangle. The freshly
-  // rendered B/W page must therefore be shown first; skipping it would leave
-  // the previous page visible outside the image window.
+
+
+
   const bool skipPiccoBasePageRefresh = displayWithQualityPass && !useWindowedQuality;
 #else
   const bool skipPiccoBasePageRefresh = false;
@@ -3018,9 +3018,9 @@ void EpubActivity::renderContents(Page* page, const int orientedMarginTop,
   };
 
   if (skipBasePageRefresh || skipPiccoBasePageRefresh) {
-    // Windowed Sticky/Murphy and absolute Picco HQ image passes must not be
-    // preceded by a redundant full-panel refresh. X4Pro deliberately keeps
-    // its existing base-page refresh.
+
+
+
     INX_SERIAL.printf("[%lu] [HQ-WINDOW] skipping Sticky/Murphy full page refresh\n", millis());
   } else {
     displayPageBuffer();
@@ -3249,17 +3249,17 @@ void EpubActivity::loadBookSettings() {
     loadReaderTouchSetting();
     if (!loaded) {
       READER_PRESETS.applyToBook(READER_PRESETS.defaultPresetIndex(), bookSettings);
-      // A newly opened book inherits the current system appearance even when
-      // the selected default reader preset was saved while light mode was on.
-      // Once the book has its own settings.bin, its dark-mode value remains
-      // independent and is restored below from that file.
+
+
+
+
       bookSettings.darkMode = SETTINGS.darkMode ? 1 : 0;
     } else if (bookSettings.readerPresetIndex == 0) {
       READER_PRESETS.applyToBook(0, bookSettings);
     } else {
       syncSettingsFromGlobalIfNeeded();
     }
-    // Book language selection is global; use the language enabled in Language Manager.
+
     LanguageManager::setBookLanguage("");
     renderer.setDarkMode(bookSettings.darkMode != 0);
     pagesUntilFullRefresh = READER_SETTINGS.getRefreshFrequency();
@@ -3356,7 +3356,7 @@ void EpubActivity::applyBookSettings() {
   setupOrientation();
 
   bookSettings.normalize();
-  // Book language selection is global; use the language enabled in Language Manager.
+
   LanguageManager::setBookLanguage("");
   const int targetFontId = bookSettings.getReaderFontId();
   if (!FontManager::ensureReaderLayoutFonts(targetFontId, renderer)) {

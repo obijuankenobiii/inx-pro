@@ -1,5 +1,5 @@
-// ESP32-S3 targets have octal PSRAM. Allocate NimBLE host pools externally;
-// the controller and task stacks stay in internal RAM.
+
+
 #pragma once
 
 #ifdef BOARD_HAS_PSRAM

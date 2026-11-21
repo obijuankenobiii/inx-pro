@@ -1,9 +1,9 @@
-// ESP-IDF IPC replacement for the BLE HID host.
-//
-// The Arduino S3 archive ships ipc0/ipc1 with a 1024-byte stack. BLE controller
-// interrupt allocation calls esp_ipc_call_blocking() and exceeds that stack.
-// Keep the SDK and framework packages untouched; link this exact ESP-IDF IPC
-// implementation from the application with a BLE-safe task stack.
+
+
+
+
+
+
 
 #if FREEINK_CAP_BLE_HID_HOST
 
@@ -12,8 +12,8 @@
 #undef CONFIG_ESP_IPC_TASK_STACK_SIZE
 #define CONFIG_ESP_IPC_TASK_STACK_SIZE 2048
 
-// s3_common defines this as `=0` for application preprocessing. ESP-IDF tests
-// this symbol with defined(), so the IPC implementation must see it undefined.
+
+
 #undef CONFIG_FREERTOS_UNICORE
 
 #include <stddef.h>
@@ -180,5 +180,5 @@ extern "C" esp_err_t esp_ipc_call_nonblocking(uint32_t cpu_id, esp_ipc_func_t fu
   return ESP_FAIL;
 }
 
-#endif  // CONFIG_ESP_IPC_ENABLE
-#endif  // FREEINK_CAP_BLE_HID_HOST
+#endif
+#endif

@@ -34,7 +34,7 @@ bool readRegister(const uint8_t reg, uint8_t& value) {
   return murphy_m4_i2c::read(rtcDevice(), reg, &value, 1);
 }
 
-}  // namespace
+}
 
 bool MurphyRtc::begin() {
   uint8_t flags = 0;

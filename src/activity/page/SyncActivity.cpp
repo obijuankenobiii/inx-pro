@@ -163,8 +163,8 @@ void SyncActivity::activateItem(const int index) {
 }
 
 void SyncActivity::loop() {
-  // Let the shared page shell handle the hidden menu first. The hidden menu
-  // opens from the left edge on a right swipe.
+
+
   if (!subActivity && menuInput()) return;
 
   if (!subActivity && mappedInput.hasTouch() && mappedInput.wasTouchSwipeUpForRenderer(renderer)) {

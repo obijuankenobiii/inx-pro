@@ -22,8 +22,8 @@ class HalDisplay {
   enum RefreshMode { FULL_REFRESH, HALF_REFRESH, FAST_REFRESH, STRONG_FAST_REFRESH, MANUAL_REFRESH };
 
   void begin();
-  // Retire a completed async refresh so the SDK can finish its own
-  // turn-off-screen sequence without blocking input polling.
+
+
   void serviceIdle();
 
   static constexpr uint16_t DISPLAY_WIDTH = EInkDisplay::DISPLAY_WIDTH;
@@ -72,9 +72,9 @@ class HalDisplay {
  private:
   EInkDisplay display;
   Ssd1677WindowedGray windowedGray;
-  // The Murphy panel is parked after each normal refresh. The first update
-  // after boot/wake must therefore rewrite both controller RAM planes before
-  // differential refreshes are allowed again.
+
+
+
   bool needsWakeCleanRefresh = true;
   unsigned long asyncRefreshStartedAt = 0;
 };

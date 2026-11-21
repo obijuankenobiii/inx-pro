@@ -235,9 +235,9 @@ std::string formatSeriesPosition(std::string value) {
   return value;
 }
 
-// Compare labels the way readers expect: "Volume 2" comes before
-// "Volume 10".  Numeric runs are compared by value while the surrounding
-// text remains case-insensitive.
+
+
+
 int naturalCompare(const std::string& left, const std::string& right) {
   size_t leftPos = 0;
   size_t rightPos = 0;
@@ -269,7 +269,7 @@ int naturalCompare(const std::string& left, const std::string& right) {
                                                 right, rightSignificant, rightDigits);
       if (digitsComparison != 0) return digitsComparison < 0 ? -1 : 1;
 
-      // Equal numeric values: prefer the spelling with fewer leading zeroes.
+
       const size_t leftRunLength = leftPos - leftRunStart;
       const size_t rightRunLength = rightPos - rightRunStart;
       if (leftRunLength != rightRunLength) return leftRunLength < rightRunLength ? -1 : 1;
@@ -435,13 +435,13 @@ void Library::onEnter() {
   metadataIndexAvailable_ = false;
   sidebarScrollOffset_ = 0;
   allBooksMode = false;
-  // Defer the expensive first root load only for thumbnail mode so its shell
-  // can draw immediately. List/grid and folder pages should open synchronously.
+
+
   thumb.setLayout(view == View::Thumb3x2 ? views::library::thumb3x2Layout()
                                         : views::library::standardThumbLayout());
-  // An indexed library is already available synchronously. Do not show the
-  // thumbnail-mode loading screen for it: that screen used to remain visible
-  // while the first render was waiting for the deferred load pass.
+
+
+
   loading = path == "/" && (view == View::Thumb || view == View::Thumb3x2) &&
             !LibraryIndex::hasIndex();
   items.clear();
@@ -653,8 +653,8 @@ void Library::load() {
                 items.end());
     books.clear();
   } else if (hasMetadataFilter) {
-    // Metadata filters are global library filters, not scoped to the folder
-    // currently open. Their indexes contain book paths from the whole library.
+
+
     if (!LibraryIndex::search("", items, LibraryIndex::all)) return;
     items.erase(std::remove_if(items.begin(), items.end(), [](const LibraryIndex::Book& item) {
                   return item.type != LibraryIndex::Book::Type::BOOK;
@@ -810,9 +810,9 @@ void Library::open(const int index) {
 }
 
 void Library::loop() {
-  // Shared navigation must see the edge swipe before library navigation treats
-  // it as a folder/back gesture. This keeps the hidden menu available on the
-  // Library main page and inside library folders.
+
+
+
   if (controlModalOpen) {
     if (controlModalInput()) return;
     renderPage();
@@ -885,8 +885,8 @@ void Library::loop() {
     return;
   }
 
-  // The first thumbnail frame intentionally uses placeholders. Let it
-  // reach the panel before decoding covers, just like Home's widget layout.
+
+
   if ((listThumbWarmupPending_ || thumbWarmupPending_) && !mappedInput.wasTouchActivity()) {
     listThumbWarmupPending_ = false;
     thumbWarmupPending_ = false;
@@ -914,15 +914,15 @@ void Library::loop() {
   }
   if (handled) {
     if (view == View::ListThumb) {
-      // A page change should get the same deferred first render as the
-      // initial list. This also keeps a newly loaded page responsive.
+
+
       listThumbDeferImageDecode_ = true;
       listThumbWarmupPending_ = false;
     }
     if (view == View::Thumb || view == View::Thumb3x2) {
-      // Large cover decodes are much more expensive than the list thumbnail.
-      // Put the page shell on screen first, then decode covers on the next
-      // idle render just like ThumbnailList does.
+
+
+
       thumbDeferImageDecode_ = true;
       thumbWarmupPending_ = false;
       thumbTimingPassesRemaining_ = 2;
@@ -1382,8 +1382,8 @@ void Library::center() const {
   const int containerWidth = std::min(screenWidth - x, bottomBar ? buttonSize * bottomBarButtonCount : buttonSize);
   const int containerHeight = bottomBar ? bottomBarHeight : buttonSize * 2 + buttonGap;
   renderer.rectangle.fill(x, y, containerWidth, containerHeight, false);
-  // Keep the controls connected. In sidebar mode they become a centered
-  // bottom bar; otherwise they remain the right-edge vertical controls.
+
+
   constexpr int rightCornerRestore = 4;
   if (!bottomBar) {
     renderer.rectangle.render(x, y, containerWidth, containerHeight, true, true);
@@ -1637,8 +1637,8 @@ navigation::Menu::Action Library::centerTap(const int tapX, const int tapY) cons
 bool Library::menuAction(const navigation::Menu::Action action) {
   if (action == navigation::Menu::Action::View || action == navigation::Menu::Action::Sort ||
       action == navigation::Menu::Action::Filter) {
-    // Keep the expensive library page, especially decoded thumbnail views, out
-    // of the redraw path while the control modal is open.
+
+
     storeOverlayFrame();
     controlModalOpen = true;
     controlTab = action == navigation::Menu::Action::View

@@ -19,7 +19,7 @@ std::string thumbnailPath(const RecentBook& book) {
   return book.thumbnailPath;
 }
 
-}  // namespace
+}
 
 std::string titleFor(const RecentBook& book) {
   if (!book.title.empty()) return book.title;
@@ -104,4 +104,4 @@ void drawMockProgress(const GfxRenderer& renderer, const int x, const int y, con
   renderer.rectangle.fill(x, y, static_cast<int>(width * progress + 0.5f), barHeight, true);
 }
 
-}  // namespace widget::support
+}

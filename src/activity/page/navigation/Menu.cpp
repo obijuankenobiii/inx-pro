@@ -44,9 +44,9 @@ constexpr int hiddenSidebarRowGap = 8;
 constexpr int hiddenSidebarIconSourceSize = 40;
 constexpr int hiddenSidebarIconSize = 32;
 constexpr int hiddenSidebarIconLabelGap = 16;
-// Sticky's touch panel reports a less consistent swipe start point near the
-// bezel, so give it a wider left-side activation band. Other devices retain
-// the narrower edge-only gesture guard.
+
+
+
 #if FREEINK_DEVICE_STICKY
 constexpr float hiddenSidebarSwipeStartNx = 0.30f;
 #else
@@ -68,9 +68,9 @@ const Item regularItems[regularItemCount] = {
     {Search, navigation::Menu::Action::Search, "Search"},
 };
 
-// The hidden sidebar has room for Statistics without changing the six-slot
-// bottom navigation. Keep Search last in this list so it remains the final
-// action in the sidebar.
+
+
+
 const Item hiddenItems[hiddenItemCount] = {
     {Recent, navigation::Menu::Action::Home, "Home"},
     {Library, navigation::Menu::Action::Library, "Library"},
@@ -88,8 +88,8 @@ const Item& itemForIndex(const int index) {
 bool current(const navigation::Menu& menu, navigation::Menu::Action action);
 
 bool excludedFromHiddenDrawer(const navigation::Menu& menu, const int index) {
-  // Keep Apps out of the drawer on sub-pages without a matching main-page action;
-  // otherwise keep every main-page item visible, including the current page.
+
+
   if (index == 4) {
     for (int candidate = 0; candidate < hiddenItemCount; ++candidate) {
       if (current(menu, hiddenItems[candidate].action)) return false;
@@ -214,8 +214,8 @@ void Menu::drawHeaderStatus(const int rightMargin) const {
   const int batteryWidth = showPercentage
                                ? ScreenComponents::BATTERY_ICON_WIDTH + ScreenComponents::BATTERY_TEXT_GAP + textWidth
                                : ScreenComponents::BATTERY_ICON_WIDTH;
-  // ScreenComponents adds the 8px artwork offset internally, so this places
-  // the visible battery and clock group 20px from the top edge.
+
+
   constexpr int top = 22;
   const int right = menuRenderer.getScreenWidth() - rightMargin;
   constexpr int bluetoothIconSize = 24;

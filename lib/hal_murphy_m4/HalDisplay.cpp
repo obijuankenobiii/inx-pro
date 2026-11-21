@@ -3,11 +3,14 @@
  * @brief Murphy M4 display HAL backed by FreeInkDisplay.
  */
 
+
+
+
 #include <BoardConfig.h>
 
-// Murphy needs one extra byte in SSD1677's Display Update Control 1 register,
-// but that is a panel quirk, not a FreeInk SDK behavior. Expose the bus only
-// in this HAL translation unit so the workaround remains local to Murphy.
+
+
+
 #define private public
 #include <EInkDisplay.h>
 #undef private
@@ -22,9 +25,9 @@
 
 namespace {
 
-// Murphy uses the same SSD1677 four-level image waveform that was already
-// validated on the X4 Pro. Keep the data local to this HAL: the Murphy target
-// must not link or depend on the X4 Pro display adapter.
+
+
+
 inline const unsigned char kMurphyQualityFastLut[] PROGMEM = {
     0x00, 0x4A, 0x88, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x80, 0x62, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -46,7 +49,7 @@ inline const unsigned char kMurphyQualityFastLut[] PROGMEM = {
     0x22, 0x22, 0x22, 0x22, 0x22,
     0x17, 0x41, 0xA8, 0x32, 0x30};
 
-}  // namespace
+}
 
 namespace {
 const BoardConfig::DisplayPins& panelPins() { return BoardConfig::ACTIVE.display; }
@@ -55,9 +58,9 @@ constexpr uint8_t kSsd1677DisplayUpdateControl1 = 0x21;
 constexpr uint8_t kSsd1677Control1Normal = 0x00;
 constexpr uint8_t kSsd1677Control1BypassRed = 0x40;
 
-// Match StickyDisplay's completion guard. BUSY can remain low briefly after
-// an async start; finishing immediately can miss the transition and leave the
-// controller's previous-frame state stale, which appears as idle ghosting.
+
+
+
 void finishMurphyRefresh(EInkDisplay& display) {
   if (!display.isRefreshPending()) return;
 
@@ -67,10 +70,10 @@ void finishMurphyRefresh(EInkDisplay& display) {
   display.finishDisplayAsync();
 }
 
-// The Murphy panel expects the two-byte form of SSD1677 command 0x21. The
-// vendored driver writes the first byte as part of every refresh, so priming
-// the register here leaves the second byte at the required value without
-// adding a Murphy branch to the vendored driver.
+
+
+
+
 void primeMurphyUpdateControl1(EInkDisplay& display, const HalDisplay::RefreshMode mode) {
   finishMurphyRefresh(display);
   const uint8_t firstByte = (mode == HalDisplay::FAST_REFRESH || mode == HalDisplay::MANUAL_REFRESH)
@@ -101,13 +104,13 @@ EInkDisplay::RefreshMode convertRefreshMode(const HalDisplay::RefreshMode mode) 
       return EInkDisplay::FAST_REFRESH;
   }
 }
-}  // namespace
+}
 
 namespace freeink {
 
-// Murphy uses the same SSD1677 glass family as the X4. The stock absolute
-// 0xFC sequence is safe but takes about 500 ms; use the driver's incremental
-// 0x1C DU path for normal page turns, matching the X4 fast-DU option.
+
+
+
 const Ssd1677Config& murphySsd1677Config() {
   static Ssd1677Config config = [] {
     Ssd1677Config value = ssd1677DefaultConfig();
@@ -117,7 +120,7 @@ const Ssd1677Config& murphySsd1677Config() {
   return config;
 }
 
-}  // namespace freeink
+}
 
 HalDisplay::HalDisplay()
     : display(panelPins().sclk, panelPins().mosi, panelPins().cs, panelPins().dc, panelPins().rst,
@@ -127,8 +130,8 @@ HalDisplay::HalDisplay()
 HalDisplay::~HalDisplay() = default;
 
 void HalDisplay::begin() {
-  // The Murphy panel is rated for 40 MHz SPI. The previous 20 MHz setting
-  // added ~43 ms to every full-frame page submission.
+
+
   BoardConfig::ACTIVE.displaySpiHz = 40000000;
   display.setBusyWaitSliceHook(murphyBusyWaitSlice);
   display.begin();
@@ -145,9 +148,9 @@ void HalDisplay::begin() {
 }
 
 void HalDisplay::serviceIdle() {
-  // Keep the panel powered between normal page turns. The upstream facade
-  // still owns completion and the post-waveform framebuffer handoff; this hook
-  // only retires the deferred refresh once BUSY is clear.
+
+
+
   if (!display.isRefreshPending() || millis() - asyncRefreshStartedAt < 30 || display.refreshBusy()) return;
   const unsigned long refreshAge = millis() - asyncRefreshStartedAt;
   const unsigned long finishStart = millis();
@@ -191,7 +194,7 @@ void HalDisplay::displayWindow(const uint16_t x, const uint16_t y, const uint16_
 
 void HalDisplay::displayBufferAsync(const HalDisplay::RefreshMode mode) {
   primeMurphyUpdateControl1(display, mode);
-  display.displayBufferAsync(convertRefreshMode(mode));
+  display.triggerDisplayAsync(convertRefreshMode(mode), true);
   asyncRefreshStartedAt = millis();
   INX_SERIAL.printf("[%lu] [MURPHY_M4][DISPLAY-TIMING] async-submit mode=%d\n", asyncRefreshStartedAt,
                     static_cast<int>(mode));
@@ -252,16 +255,13 @@ void HalDisplay::displayGrayBuffer(const bool quality, const bool trackForRevert
   (void)trackForRevert;
   primeMurphyUpdateControl1(display, FAST_REFRESH);
   if (quality) {
-    // Quality images use the absolute four-level waveform. The SDK's default
-    // differential grayscale path is intended for text AA and produces broken
-    // image tones when fed the two absolute image planes.
+
+
+
     display.displayGrayBuffer(true, freeink::lut_factory_quality, true);
     return;
   }
-  // Text AA is an overlay on the already-visible B/W page. Keep the SSD1677
-  // rails and clock alive after this pass so the next page turn can use the
-  // incremental DU path without paying another power-up/power-down cycle.
-  display.displayGrayBuffer(false, nullptr, false);
+  display.displayGrayBuffer(true, nullptr, false);
 }
 
 void HalDisplay::displayGrayBufferFastQuality() {
@@ -279,8 +279,7 @@ void HalDisplay::displayGrayBufferWindow(const uint16_t x, const uint16_t y, con
                         h);
     return;
   }
-  // Same powered overlay path for the non-quality grayscale window fallback.
-  display.displayGrayBuffer(false, nullptr, false);
+  display.displayGrayBuffer(true, nullptr, false);
 }
 
 bool HalDisplay::supportsWindowedQuality() const { return windowedGray.supports(); }

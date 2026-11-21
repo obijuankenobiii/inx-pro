@@ -33,9 +33,9 @@
 #endif
 
 namespace {
-// Rendering the font list can traverse preview glyphs, build several strings,
-// and enter the renderer's text path. Four kilobytes is not enough on ESP32-S3
-// and trips the stack canary before the download even starts.
+
+
+
 constexpr uint32_t kDisplayTaskStack = 8192;
 constexpr uint32_t kInstallTaskStack = 8192;
 constexpr int kBottomMargin = 44;
@@ -51,8 +51,8 @@ constexpr int kTransferCardPadding = 20;
 constexpr int kTransferCardGap = 12;
 constexpr int kTransferPanelButtonGap = 20;
 constexpr int kTransferTextGap = 20;
-// Only a swipe that starts at the physical bottom edge closes this page.  A
-// normal upward swipe in the font list remains a list-page navigation gesture.
+
+
 constexpr float kBottomEdgeSwipeStartNy = 0.95f;
 
 uint8_t fontFamilySlotForLabel(const std::vector<std::string>& labels, const std::string& label) {
@@ -239,7 +239,7 @@ void FontManagerActivity::loadPackages() {
 }
 
 int FontManagerActivity::visibleRowCount(const int bodyTop) const {
-  // The lower paginator/caret area still leaves room for one additional row.
+
   return std::max(1, (renderer.getScreenHeight() - kBottomMargin - bodyTop) / kRowHeight + 1);
 }
 
@@ -580,9 +580,9 @@ void FontManagerActivity::onWifiSelectionComplete(const bool connected) {
 
 
 void FontManagerActivity::render() {
-  // WifiSelectionActivity leaves the X4 Pro renderer after an async refresh.
-  // Re-seed the writable framebuffer from the frame actually on the panel
-  // before replacing it with the Font Manager screen.
+
+
+
   renderer.syncWriteBufferFromActive();
   renderer.clearScreen();
   const int bodyTop = SubPage::header(renderer, "Download", "Font");
@@ -762,8 +762,8 @@ void FontManagerActivity::loop() {
       const int maxScroll = std::max(0, visiblePackageCount() - visibleRows);
       const int pageCount = std::max(1, (visiblePackageCount() + visibleRows - 1) / visibleRows);
       const int pageStep = std::max(1, visibleRows - 1);
-      // A touch scroll is navigation, not a new row selection. Do not let a
-      // previously button-selected row pull the list back onto its old page.
+
+
       selectedVisible_ = false;
       if (swipeUp) {
         paginatorPage_ = std::min(pageCount - 1, paginatorPage_ + 1);

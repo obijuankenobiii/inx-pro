@@ -332,9 +332,9 @@ bool BookMetadataCache::buildBookBin(const std::string& epubPath, const BookMeta
     return false;
   }
 
-  // Build the central-directory index once. Without this, each spine-size
-  // lookup walks the ZIP directory again, which is especially expensive for
-  // large EPUBs with many split XHTML files.
+
+
+
   const bool zipIndexReady = zip.loadAllFileStatSlims();
   if (!zipIndexReady) {
     INX_SERIAL.printf("[%lu] [BMC] Warning: ZIP central-directory index unavailable\n", millis());

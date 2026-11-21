@@ -23,10 +23,10 @@
  * @brief Structure containing information about a detected WiFi network
  */
 struct WifiNetworkInfo {
-  std::string ssid;       ///< Network name (SSID)
-  int32_t rssi;           ///< Signal strength in dBm
-  bool isEncrypted;       ///< Whether the network requires a password
-  bool hasSavedPassword;  ///< Whether saved credentials exist for this network
+  std::string ssid;
+  int32_t rssi;
+  bool isEncrypted;
+  bool hasSavedPassword;
 };
 
 /**
@@ -34,14 +34,14 @@ struct WifiNetworkInfo {
  * @brief Possible states of the WiFi selection process
  */
 enum class WifiSelectionState {
-  SAVED_NETWORKS,     ///< Landing page showing saved Wi-Fi credentials without scanning
-  SCANNING,           ///< Actively scanning for available networks
-  NETWORK_LIST,       ///< Displaying list of found networks
-  PASSWORD_ENTRY,     ///< Password entry screen for encrypted network
-  CONNECTING,         ///< Attempting to establish connection
-  CONNECTED,          ///< Successfully connected to network
-  CONNECTION_FAILED,  ///< Connection attempt failed
-  FORGET_PROMPT       ///< Asking user whether to forget a saved network
+  SAVED_NETWORKS,
+  SCANNING,
+  NETWORK_LIST,
+  PASSWORD_ENTRY,
+  CONNECTING,
+  CONNECTED,
+  CONNECTION_FAILED,
+  FORGET_PROMPT
 };
 
 /**
@@ -99,37 +99,37 @@ class WifiSelectionActivity final : public ActivityWithSubactivity {
   const std::string& getConnectedIP() const { return connectedIP; }
 
  private:
-  TaskHandle_t displayTaskHandle = nullptr;                 ///< Handle for display task
-  TaskHandle_t scanTaskHandle = nullptr;                    ///< Handle for the native Wi-Fi scan task
-  SemaphoreHandle_t renderingMutex = nullptr;               ///< Mutex for rendering synchronization
-  bool updateRequired = false;                              ///< Flag indicating screen needs update
-  WifiSelectionState state = WifiSelectionState::SCANNING;  ///< Current activity state
-  int selectedNetworkIndex = 0;                             ///< Currently selected network index
-  bool selectedNetworkVisible = false;                      ///< Only show a highlight after navigation
-  int networkPage = 0;                                       ///< Current page of saved/scanned networks
-  std::vector<WifiNetworkInfo> networks;                    ///< List of found networks
-  const std::function<void(bool connected)> onComplete;     ///< Connection completion callback
-  const std::string headerTitle;                            ///< Main title for the requesting service
-  const std::string headerMode;                             ///< Optional gray mode for the requesting service
+  TaskHandle_t displayTaskHandle = nullptr;
+  TaskHandle_t scanTaskHandle = nullptr;
+  SemaphoreHandle_t renderingMutex = nullptr;
+  bool updateRequired = false;
+  WifiSelectionState state = WifiSelectionState::SCANNING;
+  int selectedNetworkIndex = 0;
+  bool selectedNetworkVisible = false;
+  int networkPage = 0;
+  std::vector<WifiNetworkInfo> networks;
+  const std::function<void(bool connected)> onComplete;
+  const std::string headerTitle;
+  const std::string headerMode;
 
   /** @brief Returns whether this caller should use the file-transfer landing UI. */
   bool usesFileTransferLayout() const { return headerTitle == "File Transfer" || headerTitle == "Download"; }
 
-  std::string selectedSSID;               ///< SSID of selected network
-  bool selectedRequiresPassword = false;  ///< Whether selected network requires password
+  std::string selectedSSID;
+  bool selectedRequiresPassword = false;
 
-  std::string connectedIP;      ///< IP address after successful connection
-  std::string connectionError;  ///< Error message if connection failed
+  std::string connectedIP;
+  std::string connectionError;
 
-  std::string enteredPassword;   ///< Password entered by user or from saved credentials
-  bool usedSavedPassword = false;  ///< Whether the connection used a saved password
-  bool completionNotified = false; ///< Prevents duplicate success callbacks while the connected card is shown
+  std::string enteredPassword;
+  bool usedSavedPassword = false;
+  bool completionNotified = false;
 
-  int forgetPromptSelection = 0;  ///< Forget prompt selection (0=Cancel, 1=Forget)
+  int forgetPromptSelection = 0;
 
-  volatile bool scanCancelled = false;     ///< Stops a native scan before this activity is destroyed
-  unsigned long scanStartedAt = 0;         ///< Timestamp used by the Wi-Fi scan diagnostics
-  unsigned long connectionStartTime = 0;  ///< Start time of current connection attempt
+  volatile bool scanCancelled = false;
+  unsigned long scanStartedAt = 0;
+  unsigned long connectionStartTime = 0;
   /**
    * @brief Static trampoline function for the display task
    * @param param Pointer to the WifiSelectionActivity instance

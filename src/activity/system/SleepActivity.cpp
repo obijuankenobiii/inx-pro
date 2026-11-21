@@ -55,10 +55,10 @@ bool sleepTwoBitEnabled() {
          SETTINGS.sleepScreenCoverFilter == SystemSetting::SLEEP_SCREEN_COVER_FILTER::NO_FILTER;
 }
 
-// INX_GRAY_OVERLAY boards (T5 S3) draw grey as an overlay on the last B/W push, and black
-// comes only from that push. The quality path skips it, so black pixels stayed white and a
-// cover came out nearly blank. The overlay driver ignores the quality flag anyway, so High
-// renders as Medium there.
+
+
+
+
 #ifndef INX_GRAY_OVERLAY
 #define INX_GRAY_OVERLAY 0
 #endif
@@ -87,14 +87,14 @@ bool hasSleepImageDisplayCache(GfxRenderer& renderer, const std::string& imagePa
   const int height = renderer.getScreenHeight();
   const ImageRender image = ImageRender::create(renderer, imagePath);
 
-  // The two-bit sleep path finishes by displaying the combined cache. Probe
-  // that entry so the loading popup covers the full first-time conversion.
+
+
   if (options.mode == ImageRenderMode::TwoBit) {
     return image.hasCachedGrayscale(0, 0, width, height, options, options.quality);
   }
 
-  // Low-quality and inverted covers use the regular one-plane cache created by
-  // ImageRender::render(). Match its cache key, including the current plane.
+
+
   ImageDisplayCacheOptions cacheOptions;
   cacheOptions.cropToFill = options.cropToFill;
   cacheOptions.mode = options.mode;
@@ -112,8 +112,8 @@ void prepareSleepImageBuffer(GfxRenderer& renderer) {
 
 void runSleepImageTwoBitPasses(GfxRenderer& renderer, const std::string& imagePath,
                                const ImageRender::Options& baseOptions, const bool allowQuality = true) {
-  // displayGrayscale() intentionally clears the screen for PNG's one-bit pass. Do not
-  // run that pass for a transparent overlay or it would erase the content beneath it.
+
+
   if (!sleepTwoBitEnabled() || baseOptions.preserveTransparency) {
     return;
   }
@@ -129,10 +129,10 @@ void runSleepImageTwoBitPasses(GfxRenderer& renderer, const std::string& imagePa
       .displayGrayscale(0, 0, renderer.getScreenWidth(), renderer.getScreenHeight(), options, quality);
 }
 
-// Transparent PNG sleep overlays use the dedicated CrossPoint sequence. The
-// shared ImageRender grayscale path is intentionally not used here: the panel
-// must retain the B/W screen as its base while the PNG is uploaded a second
-// time into the two grayscale planes.
+
+
+
+
 bool renderTransparentPngSleepScreen(GfxRenderer& renderer, const std::string& imagePath) {
   const int screenWidth = renderer.getScreenWidth();
   const int screenHeight = renderer.getScreenHeight();
@@ -140,10 +140,10 @@ bool renderTransparentPngSleepScreen(GfxRenderer& renderer, const std::string& i
   PngRender png(renderer);
 
   renderer.syncWriteBufferFromActive();
-  // Seed the transparent overlay in the normal B/W framebuffer using the
-  // image's two-bit quantizer.  Do not use ImageRenderMode::OneBit here:
-  // transparent sleep images must enter the same grayscale pipeline as the
-  // later LSB/MSB passes.
+
+
+
+
   renderer.setRenderMode(GfxRenderer::BW);
   if (!png.fromPath(imagePath, 0, 0, screenWidth, screenHeight, cropToFill, ImageRenderMode::TwoBit, 0.5f,
                    nullptr, true)) {

@@ -239,8 +239,8 @@ void HomeSubPage::loop() {
     return;
   }
 
-  // Home widget subpages have nested list/detail/lookup states, so handle the
-  // activity-level swipe before dispatching to one of those states.
+
+
   if (mappedInput.hasTouch() && mappedInput.wasTouchSwipeUp()) {
     dismiss();
     return;

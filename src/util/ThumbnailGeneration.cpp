@@ -202,7 +202,7 @@ struct Generator {
     return !cancelled();
   }
 };
-}  // namespace
+}
 
 bool ThumbnailGeneration::generate(GfxRenderer& renderer, SemaphoreHandle_t rendererMutex, Result& result,
                                    const std::function<void(int, const char*)>& progress,

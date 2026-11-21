@@ -3,9 +3,9 @@
 #include <Arduino.h>
 #include <EInkDisplay.h>
 
-// Project-owned Picco HQ adapter. The vendored FreeInk SSD2677 driver remains
-// the source of truth for normal/full-frame updates; this class is used only
-// for an explicitly armed EPUB HQ image window.
+
+
+
 class PiccoSsd2677WindowedGray {
  public:
   explicit PiccoSsd2677WindowedGray(freeink::FreeInkDisplay& display);

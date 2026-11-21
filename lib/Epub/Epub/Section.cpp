@@ -26,12 +26,12 @@
 #include "parsers/ChapterHtmlSlimParser.h"
 
 namespace {
-// Heading font IDs are stored per h1-h6 semantic size for outline fonts, and heading/drop-cap layout changed.
-// Image bounds now match the aspect-fitted raster dimensions, which also changes cached page layout.
-// The generic shrink-to-fit box geometry changed; cached pages must be rebuilt.
+
+
+
 constexpr uint8_t SECTION_FILE_VERSION = 106;
-// Bionic-reader normalization also changes cached word offsets; this version
-// invalidates caches produced before either geometry or text-layout change.
+
+
 constexpr uint32_t HEADER_SIZE = sizeof(uint8_t) + sizeof(int) + sizeof(float) + sizeof(float) + sizeof(bool) +
                                  sizeof(uint8_t) + sizeof(uint16_t) + sizeof(uint16_t) + sizeof(bool) + sizeof(bool) +
                                  sizeof(bool) + sizeof(uint32_t) + sizeof(uint16_t) + sizeof(uint32_t);
@@ -212,9 +212,9 @@ bool Section::loadSectionFile(const int fontId, const float lineCompression, con
   EpubImagePrefetch::IoLock ioLock;
   const std::string backupPath = filePath + ".bak";
 
-  // A power loss can happen after the old cache has been moved aside but
-  // before the replacement is renamed into place. Recover that old cache
-  // before treating the chapter as uncached.
+
+
+
   if (!SdMan.exists(filePath.c_str()) && SdMan.exists(backupPath.c_str())) {
     if (!SdMan.rename(backupPath.c_str(), filePath.c_str())) {
       INX_SERIAL.printf("[%lu] [SCT] failed to recover section cache: %s\n", millis(), backupPath.c_str());
@@ -323,8 +323,8 @@ bool Section::loadSectionFile(const int fontId, const float lineCompression, con
     return false;
   }
 
-  // The backup is only needed during publication. Once the new cache has
-  // been read and validated, it is safe to remove the stale copy.
+
+
   if (SdMan.exists(backupPath.c_str())) SdMan.remove(backupPath.c_str());
 
   return true;
@@ -635,9 +635,9 @@ bool Section::beginProgressiveSectionFile(const int fontId, const int headerFont
     return false;
   }
 
-  // Keep the chapter source in PSRAM and feed it to Expat cooperatively. The
-  // old resumable ZIP inflater could report Done before the central-directory
-  // length had been emitted, producing truncated XHTML and parser errors.
+
+
+
   progressiveSourcePath_ = localPath;
   progressiveXml_.reset();
   progressiveXmlOffset_ = 0;
@@ -647,8 +647,8 @@ bool Section::beginProgressiveSectionFile(const int fontId, const int headerFont
 
 bool Section::pumpProgressive(const uint32_t budgetMs) {
   if (!progressiveActive_ || !progressiveParser_ || progressiveSourcePath_.empty()) return false;
-  // Keep parser/layout slices bounded. The complete XHTML is loaded once into
-  // PSRAM, then Expat receives only a small piece per worker iteration.
+
+
   constexpr size_t kChunkBytes = 4 * 1024;
 
   const std::string backupPath = filePath + ".bak";
@@ -662,9 +662,9 @@ bool Section::pumpProgressive(const uint32_t budgetMs) {
     EpubImagePrefetch::IoLock ioLock;
     if (file) file.close();
     if (!progressiveFilePath_.empty()) SdMan.remove(progressiveFilePath_.c_str());
-    // If publication moved the previous good cache to .bak, keep the reader
-    // usable even when the replacement rename failed. The next load also has
-    // the same recovery path for a power loss between these two renames.
+
+
+
     if (!SdMan.exists(filePath.c_str()) && SdMan.exists(backupPath.c_str())) {
       SdMan.rename(backupPath.c_str(), filePath.c_str());
     }
@@ -675,9 +675,9 @@ bool Section::pumpProgressive(const uint32_t budgetMs) {
     return false;
   };
 
-  // Exactly one small inflater/parser step per reader-loop invocation. Do not
-  // wait for page 0 here: a long first page must never delay a button/touch
-  // event on the active chapter.
+
+
+
   if (budgetMs == 0) return pageCount > 0;
 
   if (!progressiveXml_) {
@@ -706,8 +706,8 @@ bool Section::pumpProgressive(const uint32_t budgetMs) {
       return fail();
     }
     progressiveXml_ = std::move(xml);
-    // Keep the full SD/ZIP read out of the renderer critical section. The
-    // worker will parse the first bounded chunk on its next iteration.
+
+
     return pageCount > 0;
   }
 
@@ -729,11 +729,11 @@ bool Section::pumpProgressive(const uint32_t budgetMs) {
   file.sync();
   file.close();
 
-  // Patch the header through a fresh read/write handle, then publish the
-  // completed file in one replace operation. The Murphy SD/FAT path can leave
-  // an in-place seek-back update unwritten even though all page data was
-  // flushed, which previously produced pages=0/lut=0 after a "successful"
-  // prefetch.
+
+
+
+
+
   FsFile finalized = SdMan.open(progressiveFilePath_.c_str(), O_RDWR);
   const bool headerPatched = finalized && finalized.seek(HEADER_SIZE - sizeof(uint32_t) - sizeof(pageCount)) &&
                              finalized.write(reinterpret_cast<const uint8_t*>(&pageCount), sizeof(pageCount)) ==
@@ -748,11 +748,11 @@ bool Section::pumpProgressive(const uint32_t budgetMs) {
   }
   finalized.sync();
   finalized.close();
-  // Publish transactionally. Never delete the only known-good cache before
-  // the completed .part file has a final name: a reset or an SD rename error
-  // in that window used to leave the chapter cache missing or truncated.
-  // Keeping the old file as .bak also gives the next reader loop a recovery
-  // path if power is lost between the two renames.
+
+
+
+
+
   if (SdMan.exists(backupPath.c_str()) && !SdMan.remove(backupPath.c_str())) {
     INX_SERIAL.printf("[%lu] [SCT] next chapter prefetch stale backup cleanup failed spine=%d\n", millis(), spineIndex);
     return fail();
@@ -768,13 +768,13 @@ bool Section::pumpProgressive(const uint32_t budgetMs) {
     return fail();
   }
   if (hadOld && SdMan.exists(backupPath.c_str()) && !SdMan.remove(backupPath.c_str())) {
-    // The new final cache is already complete. Leaving a backup is harmless;
-    // loadSectionFile removes it after validating the final cache.
+
+
     INX_SERIAL.printf("[%lu] [SCT] next chapter prefetch backup cleanup deferred spine=%d\n", millis(), spineIndex);
   }
-  // Progressive prefetch only builds section pages. Do not flush the shared
-  // EPUB image metadata from the background worker; metadata generation may
-  // be processing another book at the same time.
+
+
+
   progressiveParser_.reset();
   progressiveXml_.reset();
   progressiveSourcePath_.clear();
@@ -791,9 +791,9 @@ bool Section::pumpProgressive(const uint32_t budgetMs) {
  * @return Section-owned page, or nullptr on failure
  */
 Page* Section::loadPage(const int pageIndex) {
-  // The foreground reader and the background chapter inflater share the SD/SPI
-  // bus. Keep the complete seek/read/deserialize transaction together so the
-  // active page can never observe an interleaved filesystem read.
+
+
+
   EpubImagePrefetch::IoLock ioLock;
 
   if (pageIndex < 0 || pageIndex >= pageCount) {

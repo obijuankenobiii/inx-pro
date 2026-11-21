@@ -83,15 +83,15 @@ bool isHomeActivity(const Activity* activity) {
 }
 
 bool isBookReaderActivity(const Activity* activity) {
-  // ReaderActivity owns the EPUB/TXT/PDF/XTC subactivities. Let those
-  // activities consume horizontal swipes for TOC/page navigation.
+
+
   return activity && std::strcmp(activity->getName(), "Reader") == 0;
 }
 
 bool isSettingsActivity(const Activity* activity) {
   return activity && std::strcmp(activity->getName(), "Settings") == 0;
 }
-}  // namespace
+}
 
 unsigned long t1 = 0;
 unsigned long t2 = 0;
@@ -145,10 +145,10 @@ bool pollBluetoothInput() {
   if (!bluetoothEnabled()) return false;
   BleHid.poll();
 
-  // Some remotes leave a report gap while one button press is still settling.
-  // The HID host may then expose that gap as a release followed by another
-  // press. A page-turn button is a one-shot action, so suppress the duplicate
-  // at this application boundary without changing the shared HID SDK.
+
+
+
+
   constexpr unsigned long kPageTurnDebounceMs = 250;
   static uint8_t lastRoutedAction = 0;
   static unsigned long lastRoutedAtMs = 0;
@@ -214,19 +214,19 @@ bool pollBluetoothInput() {
 
     ble_mapping::Action action = ble_mapping::lookup(BleHid.connectedAddr(), event.code());
     if (action == ble_mapping::Action::None && event.mods == 0) {
-      // HID keyboard fallback for remotes that use ordinary arrow/page keys.
+
       switch (event.keycode) {
-        case 0x4F:  // Right
-        case 0x51:  // Down
-        case 0x4E:  // Page Down
-        case 0x28:  // Enter
-        case 0x2C:  // Space
+        case 0x4F:
+        case 0x51:
+        case 0x4E:
+        case 0x28:
+        case 0x2C:
           action = ble_mapping::Action::NextPage;
           break;
-        case 0x50:  // Left
-        case 0x52:  // Up
-        case 0x4B:  // Page Up
-        case 0x2A:  // Backspace
+        case 0x50:
+        case 0x52:
+        case 0x4B:
+        case 0x2A:
           action = ble_mapping::Action::PreviousPage;
           break;
         default:
@@ -248,9 +248,9 @@ bool pollBluetoothInput() {
     }
   }
 
-  // Raw edges are authoritative so a mapped key is not delivered twice through
-  // the decoded-key queue. If a peripheral only produces decoded key events,
-  // use those as the fallback path.
+
+
+
   freeink::KeyEvent key;
   while (BleHid.popKey(key)) {
     INX_SERIAL.printf("[BLE] key pressed=%d key=%02X mods=%02X special=%u ch=%02X\n", key.pressed ? 1 : 0,
@@ -279,9 +279,9 @@ void startBluetoothAfterFirstFrame(Activity* activityBeforeLoop) {
   if (startupAttempted || activityBeforeLoop == nullptr) return;
   if (!isHomeActivity(activityBeforeLoop) && !isBookReaderActivity(activityBeforeLoop)) return;
 
-  // Crosspoint starts the S3 controller only after the first Home/Reader frame
-  // is up. Starting it from setup() makes btdm_intr_alloc() run while the
-  // early boot path is still using the tiny prebuilt ipc0 stack.
+
+
+
   startupAttempted = true;
   startBluetooth();
 }
@@ -335,21 +335,21 @@ void switchTo(Args&&... args) {
   if (currentActivity) {
     currentActivity->onExit();
 #ifdef SIMULATOR
-    // The native simulator's abstract Page vtable emits a trap in its deleting
-    // destructor; keep the old activity alive for the process lifetime so UI
-    // navigation can still exercise the real renderer.
+
+
+
 #else
     delete currentActivity;
 #endif
     currentActivity = nullptr;
   }
 
-  // A page refresh can take long enough for the next activity to be created
-  // before the outgoing touch sequence has fully settled. Clear anything the
-  // old page latched so a swipe/tap cannot be replayed against the new page
-  // after its synchronous onEnter() work finishes. In particular, a stale
-  // upward swipe would make the reader immediately call its back callback
-  // after opening a book.
+
+
+
+
+
+
   input.discardPendingButtonEdges();
   input.discardPendingTouchTap();
   input.discardPendingSwipe();
@@ -664,12 +664,12 @@ void loop() {
     return;
   }
 
-  // Settings pages, including the embedded preset editor, own their bottom
-  // edge swipe. Do not let the global handler intercept it first.
+
+
   const bool allowGlobalExitGesture = !isHomeActivity(currentActivity) && !isBookReaderActivity(currentActivity) &&
                                       !isSettingsActivity(currentActivity);
-  // The reader owns vertical swipes: swipe-down opens its book settings drawer.
-  // Keep servicing an already-open global drawer so its touch controls remain usable.
+
+
   if (globalGestureHandler.handleInput(input, allowGlobalExitGesture, !isBookReaderActivity(currentActivity),
                                        [] { input.injectButtonEdge(MappedInputManager::Button::Back); },
                                        [] { onGoToHome(); })) {
@@ -690,8 +690,8 @@ void loop() {
 #endif
   }
 
-  // Run after BootActivity has loaded the saved brightness, so a physical
-  // switch can take precedence over the saved light state.
+
+
   DeviceRuntime::poll(gpio, enterDeepSleep);
 
 #if FREEINK_DEVICE_MURPHY_M4

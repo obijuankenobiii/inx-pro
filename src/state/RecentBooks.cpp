@@ -67,7 +67,7 @@ void hydrateUiMetadata(RecentBook& book, const bool forceRefresh) {
   if (!book.cachePath.empty()) {
     SdIoMutex::Lock ioLock;
     if (!book.thumbnailPath.empty() && SdMan.exists(book.thumbnailPath.c_str())) {
-      // Keep the already-selected thumbnail path and its cached dimensions.
+
     } else {
       book.thumbnailPath.clear();
     }
@@ -105,7 +105,7 @@ void hydrateUiMetadata(RecentBook& book, const bool forceRefresh) {
 
   book.uiMetadataReady = 1;
 }
-}  // namespace
+}
 
 RecentBooks RecentBooks::instance;
 

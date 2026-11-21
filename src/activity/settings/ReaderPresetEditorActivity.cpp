@@ -446,9 +446,9 @@ void ReaderPresetEditorActivity::promptName() {
 }
 
 void ReaderPresetEditorActivity::beginExit() {
-  // A swipe-up can open this prompt while the GPIO layer still reports the
-  // completed swipe. Clear it before the prompt starts accepting taps; the
-  // input manager otherwise rejects taps while any swipe remains latched.
+
+
+
   mappedInput.discardPendingSwipe();
   if (isNew_) {
     savePromptSelection_ = -1;
@@ -484,8 +484,8 @@ void ReaderPresetEditorActivity::dismissSavePrompt() {
   mappedInput.discardPendingButtonEdges();
   mappedInput.discardPendingTouchTap();
   mappedInput.discardPendingSwipe();
-  // The drawer owns the lower embedded region. Redraw it as a complete frame
-  // so closing the modal restores both the preview and live settings controls.
+
+
   if (drawer_) {
     drawer_->render();
   } else {
@@ -507,8 +507,8 @@ void ReaderPresetEditorActivity::handleSavePrompt() {
   static constexpr int optionCount = 2;
   const PopUpBounds box = PopUp::bounds(renderer, optionCount);
 
-  // The prompt is modal, but the editor's standard swipe-up exit gesture
-  // should still close it and return control to the page underneath.
+
+
   if (mappedInput.wasTouchSwipeUpForRenderer(renderer)) {
     dismissSavePrompt();
     return;
@@ -532,9 +532,9 @@ void ReaderPresetEditorActivity::handleSavePrompt() {
         }
         return;
       }
-      // Tapping outside the modal is equivalent to closing it. Consume the
-      // current touch sequence so the same tap cannot reach the drawer after
-      // the prompt is removed.
+
+
+
       dismissSavePrompt();
       return;
     }
@@ -590,11 +590,11 @@ void ReaderPresetEditorActivity::loop() {
     const bool fromBottomEdge = swipeStartNy >= 0.85f;
     INX_SERIAL.printf("[PRESET_EDITOR][TOUCH] swipe-up start=(%.3f,%.3f) edge=%d\n", swipeStartNx,
                       swipeStartNy, fromBottomEdge ? 1 : 0);
-    // Only the bottom edge closes the editor. Upward swipes elsewhere belong
-    // to the embedded settings drawer and must not be dropped by the editor.
+
+
     if (fromBottomEdge) {
-      // Treat swipe-up like the editor's Back button. Existing presets save on
-      // exit; new presets show the existing Save/Discard prompt.
+
+
       INX_SERIAL.println("[PRESET_EDITOR][TOUCH] bottom-edge swipe -> close editor");
       beginExit();
     } else if (drawer_) {
@@ -612,8 +612,8 @@ void ReaderPresetEditorActivity::loop() {
     return;
   }
 
-  // The margin editor is a child page of the drawer. Give it first refusal on
-  // every input edge so a value tap cannot be interpreted as activity Back.
+
+
   if (drawer_ && drawer_->isMarginEditorOpen()) {
     drawer_->handleInput(mappedInput);
     return;

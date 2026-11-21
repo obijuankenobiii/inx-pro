@@ -23,12 +23,12 @@ static const uint8_t font_preview_charis_14_regularBitmaps[169] = {
 };
 
 static const EpdGlyph font_preview_charis_14_regularGlyphs[] = {
-    { 17, 19, 18, 1, 19, 41, 0 }, // C
-    { 15, 14, 15, 0, 14, 27, 41 }, // a
-    { 16, 20, 17, 0, 20, 40, 68 }, // h
-    { 8, 20, 9, 0, 20, 20, 108 }, // i
-    { 12, 14, 11, 0, 14, 21, 128 }, // r
-    { 11, 14, 12, 0, 14, 20, 149 }, // s
+    { 17, 19, 18, 1, 19, 41, 0 },
+    { 15, 14, 15, 0, 14, 27, 41 },
+    { 16, 20, 17, 0, 20, 40, 68 },
+    { 8, 20, 9, 0, 20, 20, 108 },
+    { 12, 14, 11, 0, 14, 21, 128 },
+    { 11, 14, 12, 0, 14, 20, 149 },
 };
 
 static const EpdUnicodeInterval font_preview_charis_14_regularIntervals[] = {

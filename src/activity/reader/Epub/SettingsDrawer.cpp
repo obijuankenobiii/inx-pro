@@ -68,7 +68,7 @@ constexpr int embeddedTabVerticalPadding = 14;
 constexpr int selectorRows = 5;
 constexpr int selectorRowHeight = LIST_ITEM_HEIGHT;
 constexpr int standaloneRows = 5;
-// One row per frontlight slider: brightness, plus colour temperature on warm/cool boards.
+
 #if INX_HAS_FRONTLIGHT && !FREEINK_CAP_WARMLIGHT
 #define FRONTLIGHT_ROWS 1
 #else
@@ -710,8 +710,8 @@ void SettingsDrawer::show() {
   selectedIndex = -1;
   scrollOffset = 0;
   if (!embedded_) {
-    // Keep the reader page available for a fast close when no layout-affecting
-    // setting was changed. Embedded preset editing owns the surrounding frame.
+
+
     discardStoredFrame();
     renderer.syncWriteBufferFromActive();
     renderer.freeBwBufferChunks();
@@ -790,8 +790,8 @@ void SettingsDrawer::renderWithRefresh(HalDisplay::RefreshMode mode) {
   renderer.line.render(drawerX, drawerY + drawerHeight - 1, drawerX + drawerWidth, drawerY + drawerHeight - 1, true);
   if (embedded_) {
     if (onEmbeddedInvalidate_) onEmbeddedInvalidate_();
-    // The embedded callback only draws the preview. Commit the preview and drawer
-    // together so a later buffer sync cannot resurrect the previous screen.
+
+
     renderer.displayBuffer(mode);
     renderer.syncWriteBufferFromActive();
     selectorFrameRestored_ = false;
@@ -886,9 +886,9 @@ void SettingsDrawer::drawMarginEditor() {
   const int contentHeight = std::max(1, drawerHeight - drawerListTop(embedded_));
   const int rowHeight = std::max(1, contentHeight / 5);
   const int backY = startY + rowHeight * 4;
-  // The in-book editor shares the drawer with the page preview. The preset
-  // editor has no mini preview, so let its controls use the full embedded
-  // panel instead of leaving the left half empty.
+
+
+
   const int controlsLeft = embedded_ ? drawerX + 20 : drawerX + drawerWidth * 48 / 100;
 
   static constexpr const char* labels[] = {"Top", "Left", "Right", "Bottom"};
@@ -931,9 +931,9 @@ void SettingsDrawer::drawMarginPreview(const int x, const int y, const int width
   renderer.rectangle.fill(pageX, pageY, pageWidth, pageHeight, false);
   renderer.rectangle.render(pageX, pageY, pageWidth, pageHeight, true);
 
-  // Use the configured values directly. A zero margin therefore places the
-  // first stroke immediately inside the page border instead of leaving a
-  // hidden fixed inset in the preview.
+
+
+
   const int left = pageX + 1 + settings.marginLeft;
   const int right = pageX + pageWidth - 1 - settings.marginRight;
   const int top = pageY + 1 + settings.marginTop;
@@ -1025,8 +1025,8 @@ bool SettingsDrawer::handleMarginEditorInput(MappedInputManager& input) {
       const bool insideEditor = tapX >= drawerX && tapX < drawerX + drawerWidth && tapY >= editorTop &&
                                 tapY < editorBottom;
       if (!insideEditor) {
-        // The preset editor is embedded and has an explicit Back control. The
-        // in-book drawer is dismissed by tapping outside its content.
+
+
         if (!embedded_) {
           hide();
           lastInputTime = currentTime;
@@ -1253,10 +1253,10 @@ bool SettingsDrawer::handleFrontlightInput(MappedInputManager& input, const uint
                             kFrontlightCaretGap;
       const int trackRight = drawerX + drawerWidth - kFrontlightControlPadding - kFrontlightCaretSize -
                              kFrontlightCaretGap;
-      // Everything beside the track is an arrow, at any height in the row. A box around the
-      // arrow icon missed taps at the screen's bottom edge, where the brightness row sits on
-      // boards without a temperature row, and the press fell through to a drag clamped to
-      // the track end: 0% from the left arrow, 100% from the right.
+
+
+
+
       const bool leftArrow = x >= iconX + kFrontlightIconSize && x < trackLeft - kFrontlightCaretGap / 2;
       const bool rightArrow = x > trackRight + kFrontlightCaretGap / 2;
       if (frontlightDragControl_ == 0 && x >= iconX && x < iconX + kFrontlightIconSize) {
@@ -1344,9 +1344,9 @@ void SettingsDrawer::drawMenuItemRow(int visibleRow, int menuIndex) {
   const int valueColumnRight = drawerX + drawerWidth - 24;
   const int labelValueGap = 12;
   const int labelRight = textX + renderer.text.getWidth(systemFontId(), entry.name);
-  // Large system text can extend into the normal 40% value column. Move the
-  // select box right in that case, shortening it instead of letting it cover
-  // the label.
+
+
+
   const int valueAreaLeft = settingsValueAreaLeft(renderer, drawerX, drawerWidth, valueColumnRight, entry.name);
   if (entry.item == MenuItem::Margins) {
     constexpr int kIconSize = 30;
@@ -1596,8 +1596,8 @@ void SettingsDrawer::commitSelectorSelection() {
     settings.markCustomSettings();
     settingsUpdated = true;
   }
-  // Keep the selector open after a valid choice. This lets the preset editor
-  // apply and preview several values without reopening the same row each time.
+
+
   if (onSettingsChanged) onSettingsChanged();
 }
 
@@ -1852,13 +1852,13 @@ void SettingsDrawer::handleInput(MappedInputManager& input) {
         const int editorBottom = drawerY + drawerHeight;
         const bool insideEditor = tapX >= drawerX && tapX < drawerX + drawerWidth && tapY >= editorTop &&
                                   tapY < editorBottom;
-        // Put the tap back so the normal drawer handler can close the drawer
-        // or activate a tab when it is outside the margin controls.
+
+
         input.restoreTouchTapInScreen(renderer, tapNx, tapNy);
         if (!insideEditor) {
           closeMarginEditor();
-          // The tap that exits margin mode should still be handled by the
-          // drawer immediately (for example, when it lands on a tab).
+
+
           lastInputTime = 0;
           dispatchToDrawer = true;
         }
@@ -1871,9 +1871,9 @@ void SettingsDrawer::handleInput(MappedInputManager& input) {
     }
   }
 
-  // An upward swipe from the bottom edge dismisses the standalone reader
-  // settings drawer. Body swipes remain list pagination, while selector and
-  // margin-editor swipes are handled by their dedicated paths above.
+
+
+
   if (!embedded_ && input.hasTouch()) {
     float swipeStartNx = 0.0f;
     float swipeStartNy = 0.0f;
@@ -1884,9 +1884,9 @@ void SettingsDrawer::handleInput(MappedInputManager& input) {
     }
   }
 
-  // The preset editor is embedded and its tab buttons are expected to feel
-  // immediate. Keep a short guard there for touch bounce, while retaining the
-  // longer debounce for the standalone reader drawer.
+
+
+
   const TickType_t inputDebounce = embedded_ ? pdMS_TO_TICKS(40) : pdMS_TO_TICKS(150);
   if (currentTime - lastInputTime < inputDebounce) {
     return;

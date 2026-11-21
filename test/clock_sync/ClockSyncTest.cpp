@@ -38,7 +38,7 @@ void reset(time_t epoch, bool answer, uint32_t delay = 300, time_t reply = 17942
   status = SNTP_SYNC_STATUS_RESET;
   mode = SNTP_SYNC_MODE_SMOOTH;
 }
-}  // namespace
+}
 
 unsigned long millis() { return uptime; }
 void vTaskDelay(uint32_t ms) { uptime += ms; }
@@ -70,18 +70,18 @@ sntp_sync_status_t sntp_get_sync_status() {
 
 int main() {
   time_t synced = 123;
-  // Regression: a plausible old clock must not pass without a new response.
+
   reset(1794000000, false);
   assert(!syncSystemClockWithNtp(synced, 500));
   assert(synced == 123 && uptime >= 500 && !enabled);
 
-  // Completion from an earlier service must be reset before starting this one.
+
   reset(1794000000, false);
   enabled = true;
   status = SNTP_SYNC_STATUS_COMPLETED;
   assert(!syncSystemClockWithNtp(synced, 500));
 
-  // The completion getter resets itself; consume it only once.
+
   reset(1794000000, true);
   assert(syncSystemClockWithNtp(synced, 500));
   assert(received && uptime == 300 && synced == responseEpoch && !enabled);
@@ -93,7 +93,7 @@ int main() {
   synced = 123;
   assert(!syncSystemClockWithNtp(synced, 500) && synced == 123);
 
-  // A long-running device can wrap millis() while waiting for a reply.
+
   reset(1794000000, true);
   uptime = std::numeric_limits<uint32_t>::max() - 100;
   assert(syncSystemClockWithNtp(synced, 500) && synced == responseEpoch);
@@ -109,7 +109,7 @@ int main() {
   }
   assert(!clock_time::parseUtcOffset(nullptr, offset));
 
-  // UTC 2024-01-01 00:00:00, with one application of the chosen offset.
+
   constexpr time_t utc = 1704067200;
   DateTime dt{};
   setenv("TZ", "UTC0", 1);
@@ -124,8 +124,8 @@ int main() {
   assert(dt.year == 2023 && dt.month == 12 && dt.day == 31 && dt.hour == 20 && dt.minute == 30 && dt.weekday == 7);
   assert(clock_time::toRtcDateTime(utc, 345, dt) && dt.hour == 5 && dt.minute == 45);
 
-  // Verification accepts normal ticking across a minute/day/year rollover.
-  constexpr time_t rollover = utc + 366 * 86400;  // 2025-01-01
+
+  constexpr time_t rollover = utc + 366 * 86400;
   assert(clock_time::toRtcDateTime(rollover - 1, 0, dt));
   assert(clock_time::verifyRtcDateTime(dt, rollover - 1, 0, 0));
   assert(clock_time::toRtcDateTime(rollover, 0, dt));

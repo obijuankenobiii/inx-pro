@@ -32,7 +32,7 @@ inline void packPixels(const uint8_t msb, const uint8_t lsb, uint8_t* out) {
   out[0] = static_cast<uint8_t>(packed >> 8);
   out[1] = static_cast<uint8_t>(packed);
 }
-}  // namespace
+}
 
 PiccoSsd2677WindowedGray::PiccoSsd2677WindowedGray(freeink::FreeInkDisplay& display) : _display(display) {}
 
@@ -92,10 +92,10 @@ void PiccoSsd2677WindowedGray::prepare(const uint16_t x, const uint16_t y, const
   _windowW = static_cast<uint16_t>(alignedEndX - alignedX);
   _windowH = static_cast<uint16_t>(endY - y);
   _rowBytes = static_cast<uint16_t>(_windowW / 8);
-  // PTLW limits the panel scan/refresh area. It does not move the DTM RAM
-  // write origin: command 0x10 still consumes a complete 800x480 frame.
-  // Stage both full planes so the controller RAM remains correctly addressed,
-  // while DRF still refreshes only the requested window.
+
+
+
+
   if (!_rowBytes || !_windowH || !ensureBuffers(_display.getBufferSize())) return;
 
   _display.syncPendingAsync();
@@ -128,8 +128,8 @@ void PiccoSsd2677WindowedGray::setPartialWindow() {
 }
 
 void PiccoSsd2677WindowedGray::restoreFullWindow() {
-  // Restore the exact range used by the stock Picco initializer. The next
-  // normal full-frame transfer must never inherit the image PTLW.
+
+
   static constexpr uint8_t fullWindow[9] = {0x00, 0x00, 0x03, 0x1F, 0x00, 0xC8, 0x02, 0xA8, 0x01};
   _display._bus.cmd(kPanelWindow);
   _display._bus.data(fullWindow, sizeof(fullWindow));
@@ -159,8 +159,8 @@ void PiccoSsd2677WindowedGray::writePackedWindow() {
 
 void PiccoSsd2677WindowedGray::uploadImageLut(const bool fastQuality) {
   (void)fastQuality;
-  // The dedicated image LUT is required for the two-plane HQ image encoding.
-  // Do not substitute the menu or overlay-AA waveforms here.
+
+
   _display._bus.cmd(kLut);
   _display._bus.data(picco_se0400_image_lut, kLutLength);
 }
@@ -184,10 +184,10 @@ bool PiccoSsd2677WindowedGray::takeCompletedWindow() {
 
 void PiccoSsd2677WindowedGray::syncDualBufferBaseline() {
 #ifndef EINK_DISPLAY_SINGLE_BUFFER_MODE
-  // The partial waveform does not swap FreeInkDisplay's host buffers. After
-  // cleanup, frameBuffer is the restored B/W page while frameBufferActive is
-  // still the pre-window pointer. Keep both copies identical so the next
-  // syncWriteBufferFromActive() cannot resurrect the previous page.
+
+
+
+
   if (_display.frameBuffer && _display.frameBufferActive && _display.bufferSize) {
     memcpy(_display.frameBufferActive, _display.frameBuffer, _display.bufferSize);
     Serial.printf("[PICCO][HQ-WINDOW] dual-buffer baseline synced bytes=%u\n",
@@ -206,19 +206,19 @@ bool PiccoSsd2677WindowedGray::displayWindow(const uint16_t x, const uint16_t y,
   const unsigned long startedAt = millis();
   _display.syncPendingAsync();
   const unsigned long syncMs = millis() - startedAt;
-  // DTM (0x10) must be written while PTLW still describes the full panel.
-  // PTLW is opened only after both complete planes are staged, immediately
-  // before the LUT/PON/DRF sequence. Opening PTLW before DTM causes the
-  // controller to interpret the full stream with the partial cursor and
-  // produces corrupted/repeated image data.
+
+
+
+
+
   restoreFullWindow();
   const unsigned long fullWindowMs = millis() - startedAt - syncMs;
   writePackedWindow();
   const unsigned long ramStageMs = millis() - startedAt - syncMs - fullWindowMs;
   setPartialWindow();
   const unsigned long partialWindowMs = millis() - startedAt - syncMs - fullWindowMs - ramStageMs;
-  // Keep the proven SSD2677 order: load the waveform, power the analog
-  // section, and activate refresh for the already-staged partial window.
+
+
   uploadImageLut(fastQuality);
   const unsigned long lutMs = millis() - startedAt - syncMs - fullWindowMs - ramStageMs - partialWindowMs;
   _display._bus.cmd(kPowerOn);

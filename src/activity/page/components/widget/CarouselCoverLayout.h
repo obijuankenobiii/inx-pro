@@ -9,8 +9,8 @@ struct CarouselCoverSize {
   int width, height;
 };
 
-// All centered carousel cards use a 2:3 portrait frame. Crop-to-fill preserves
-// the image's aspect ratio while filling this frame without stretching it.
+
+
 inline CarouselCoverSize carouselCoverSize(int maxWidth, int maxHeight) {
   maxWidth = std::max(1, maxWidth);
   maxHeight = std::max(1, maxHeight);
@@ -35,8 +35,8 @@ inline void reduceCarouselCenter(int& x, int& y, int& width, int& height) {
 inline CenteredCarouselBounds reduceCarouselCenter(CenteredCarouselBounds layout) {
   const int previousRight = layout.centerX + layout.centerWidth;
   reduceCarouselCenter(layout.centerX, layout.centerY, layout.centerWidth, layout.centerHeight);
-  // Right-hand cards are positioned relative to the center's right edge.
-  // Preserve their position when reducing only the center card.
+
+
   layout.gap += previousRight - (layout.centerX + layout.centerWidth);
   return layout;
 }

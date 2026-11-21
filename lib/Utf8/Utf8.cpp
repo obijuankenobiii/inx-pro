@@ -44,13 +44,13 @@ void utf8NormalizeReaderText(std::string& text) {
   while (index < text.size()) {
     const unsigned char c0 = static_cast<unsigned char>(text[index]);
 
-    // Soft hyphen: EPUBs use this as a layout hint, not visible text.
+
     if (c0 == 0xC2 && index + 1 < text.size() && static_cast<unsigned char>(text[index + 1]) == 0xAD) {
       index += 2;
       continue;
     }
 
-    // Zero-width formatting characters commonly emitted by EPUB converters.
+
     if (c0 == 0xE2 && index + 2 < text.size() && static_cast<unsigned char>(text[index + 1]) == 0x80 &&
         (static_cast<unsigned char>(text[index + 2]) == 0x8B ||
          static_cast<unsigned char>(text[index + 2]) == 0x8C ||
@@ -69,8 +69,8 @@ void utf8NormalizeReaderText(std::string& text) {
       continue;
     }
 
-    // U+FB00..U+FB06 presentation ligatures. Keep the expanded ASCII text
-    // so regular and bold font runs use the same glyph sequence.
+
+
     if (c0 == 0xEF && index + 2 < text.size() && static_cast<unsigned char>(text[index + 1]) == 0xAC) {
       switch (static_cast<unsigned char>(text[index + 2])) {
         case 0x80:

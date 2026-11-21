@@ -15,9 +15,9 @@
    */
   var SIZES = [10, 12, 14, 16, 18];
   var RASTER_CALIBRATION = 0.74;
-  // Match fontcon/fontconvert.py 2-bit coverage buckets:
-  // coverage 0-111 white, 112-127 light gray, 128-207 dark gray, 208-255 black.
-  // This browser path stores from luminance, so the thresholds are inverted.
+
+
+
   var PACK_WHITE_LUM_THRESHOLD = 144;
   var PACK_LIGHT_GRAY_LUM_THRESHOLD = 128;
   var PACK_DARK_GRAY_LUM_THRESHOLD = 48;
@@ -85,9 +85,9 @@
   var MAX_ADVANCE = 256;
 
   function collectCodepoints(ranges, availableCodepoints) {
-    // Prefer the uploaded font's cmap so every supported script is included without
-    // hard-coded language ranges. The fixed ranges remain a fallback for unusual
-    // font containers whose cmap cannot be read in the browser.
+
+
+
     if (availableCodepoints && availableCodepoints.length) {
       var available = new Set();
       for (var ai = 0; ai < availableCodepoints.length; ai++) {

@@ -4,8 +4,8 @@
 
 namespace picco_charger {
 
-// A missing charger must not trigger a failed register transaction on every
-// header poll. Resume normal sampling as soon as a retry succeeds.
+
+
 class PollSchedule {
  public:
   bool due(uint32_t now) const { return !sampled_ || now - lastPollMs_ >= intervalMs_; }
@@ -32,9 +32,9 @@ bool readRegister(Bus& bus, uint8_t address, uint8_t reg, uint8_t& value) {
   return true;
 }
 
-// REG0B identifies SGM41562SA (0) or SGM41562 (4). REG0A[7:5]
-// independently reports its factory-programmed address, from 1 through 7.
-// An ACK alone is insufficient, especially on reserved low I2C addresses.
+
+
+
 template <typename Bus>
 bool matches(Bus& bus, uint8_t address) {
   if (address < 1 || address > 7) return false;
@@ -54,4 +54,4 @@ uint8_t findAddress(Bus& bus, uint8_t preferred) {
   return 0;
 }
 
-}  // namespace picco_charger
+}

@@ -218,10 +218,10 @@ bool GfxRenderer::readPackedRow1bpp(const int x, const int y, const int width, u
     return false;
   }
 
-  // Picco renders the reader in portrait while the SSD2677 framebuffer is
-  // landscape. A logical row is therefore one physical column. Keep this
-  // path allocation-free and avoid rotateCoordinates() for every pixel while
-  // the display-cache writer snapshots a grayscale plane.
+
+
+
+
   if (orientation == Portrait && x >= 0 && y >= 0 && x + width <= panelHeight && y < panelWidth) {
     const uint32_t physicalByte = static_cast<uint32_t>(y) / 8;
     const uint8_t physicalBit = static_cast<uint8_t>(1u << (7 - (y % 8)));
@@ -275,9 +275,9 @@ void GfxRenderer::drawPackedRow1bpp(const int x, const int y, const int width, c
     return;
   }
 
-  // Image rows are already packed.  On the unrotated landscape path, keep
-  // them packed all the way into the framebuffer instead of touching every
-  // pixel through drawPixel().
+
+
+
   if (orientation == LandscapeCounterClockwise && x >= 0 && y >= 0 && x % 8 == 0 && width % 8 == 0 &&
       x + width <= panelWidth && y < panelHeight) {
     uint8_t* destination = frameBuffer + static_cast<uint32_t>(y) * panelWidthBytes + x / 8;
@@ -432,9 +432,9 @@ void GfxRenderer::clearRect(const DisplayRegion& region, const uint8_t color) co
   uint16_t physicalHeight = 0;
   if (!mapDisplayRegion(region, &physicalX, &physicalY, &physicalWidth, &physicalHeight)) return;
 
-  // The PTL window expands the physical X range to complete source bytes.
-  // Clear that same expanded range so its padding cannot refresh stale black
-  // pixels around the image.
+
+
+
   for (uint16_t row = physicalY; row < physicalY + physicalHeight; ++row) {
     for (uint16_t column = physicalX; column < physicalX + physicalWidth; ++column) {
       const uint32_t byteIndex = static_cast<uint32_t>(row) * panelWidthBytes + (column / 8);
@@ -723,8 +723,8 @@ void GfxRenderer::renderGrayscalePasses(const bool quality, const bool preserveT
     restoreBwBuffer();
   } else {
     if (useWindow) {
-      // The panel still contains the previous frame outside the requested
-      // window. Rebuild the host B/W baseline from that committed frame.
+
+
       syncWriteBufferFromActive();
     } else {
       clearScreen(0xFF);
@@ -743,10 +743,10 @@ void GfxRenderer::renderGrayscalePasses(const bool quality, const bool preserveT
 void GfxRenderer::resetTransientReaderState() {
   freeBwBufferChunks();
   renderMode = BW;
-  // Dual-buffer panels swap on every refresh, so getFrameBuffer() here is the WRITE
-  // buffer - a stale frame, not what the panel is showing. Seeding the driver's OLD
-  // plane from it leaves the next refresh diffing against garbage. Pull the displayed
-  // frame in first.
+
+
+
+
   syncWriteBufferFromActive();
   cleanupGrayscaleWithFrameBuffer();
 }

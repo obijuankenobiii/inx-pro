@@ -56,7 +56,7 @@ class ReaderPresetEditorActivity final : public ActivityWithSubactivity {
   std::unique_ptr<SettingsDrawer> drawer_;
   int previewHeight_ = 0;
 
-  bool finishRequested_ = false;  ///< Deferred teardown of the keyboard sub-activity then save
+  bool finishRequested_ = false;
   bool savePromptOpen_ = false;
   int savePromptSelection_ = 0;
   uint32_t enteredAtMs_ = 0;

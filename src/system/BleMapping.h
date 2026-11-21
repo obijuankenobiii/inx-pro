@@ -20,4 +20,4 @@ bool learn(const char* address, uint32_t code, Action action);
 bool find(const char* address, Action action, uint32_t& code);
 void formatCode(char* out, size_t outSize, uint32_t code);
 
-}  // namespace ble_mapping
+}

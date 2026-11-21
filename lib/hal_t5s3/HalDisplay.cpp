@@ -14,9 +14,9 @@ namespace {
 
 const BoardConfig::DisplayPins& panelPins() { return BoardConfig::ACTIVE.display; }
 
-// LgfxEpdDriver maps FULL and HALF to LovyanGFX's epd_text waveform and everything else
-// to epd_fast. Keep the app's meaning: FULL/HALF/MANUAL are the ghost-clearing refreshes,
-// FAST and STRONG_FAST are page turns.
+
+
+
 EInkDisplay::RefreshMode convertRefreshMode(const HalDisplay::RefreshMode mode) {
   switch (mode) {
     case HalDisplay::FULL_REFRESH:
@@ -31,10 +31,10 @@ EInkDisplay::RefreshMode convertRefreshMode(const HalDisplay::RefreshMode mode) 
   }
 }
 
-}  // namespace
+}
 
-// The display pins in LILYGO_T5S3 are all PIN_UNASSIGNED: the parallel bus lives in the
-// board's LgfxEpdConfig, and the driver reports usesExternalBus() so EpdBus stays idle.
+
+
 HalDisplay::HalDisplay()
     : display(panelPins().sclk, panelPins().mosi, panelPins().cs, panelPins().dc, panelPins().rst, panelPins().busy) {}
 
@@ -99,8 +99,8 @@ void HalDisplay::copyGrayscaleMsbBuffers(const uint8_t* msbBuffer) { display.cop
 
 void HalDisplay::cleanupGrayscaleBuffers(const uint8_t* bwBuffer) { display.cleanupGrayscaleBuffers(bwBuffer); }
 
-// The driver has one gray path: overlay the planes on the base canvas and push with the
-// base's waveform. The quality flag only changed which tones went into the planes.
+
+
 void HalDisplay::displayGrayBuffer(const bool quality, const bool trackForRevert) {
   (void)quality;
   (void)trackForRevert;
@@ -121,7 +121,7 @@ bool HalDisplay::supportsWindowedQuality() const { return false; }
 
 void HalDisplay::displayGrayBufferFastQuality() { display.displayGrayBuffer(false, nullptr, false); }
 
-// Nothing to precondition: there is no controller RAM or LUT state to seed.
+
 void HalDisplay::prepareQualityGrayscale() {}
 
 void HalDisplay::prepareQualityGrayscaleWindow(const uint16_t x, const uint16_t y, const uint16_t w,

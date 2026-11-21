@@ -3,6 +3,9 @@
  * @brief Settings page and embedded settings panels.
  */
 
+
+
+
 #include "Settings.h"
 
 #include <cstdio>
@@ -133,7 +136,8 @@ std::vector<SettingInfo> buildSystemSettings() {
   settings.push_back(SettingInfo::Toggle("Turn off statistics", &SystemSetting::disableStatistics,
                                          GroupType::DEVICE_ADVANCED));
 #if FREEINK_DEVICE_PICCO
-  settings.push_back(SettingInfo::Enum("Toggle", &SystemSetting::piccoToggleMode, {"Light", "Power"},
+  settings.push_back(SettingInfo::Enum("Toggle", &SystemSetting::piccoToggleMode,
+                                       {"Light", "Power", "Dark mode", "Flick to turn"},
                                        GroupType::DEVICE_ADVANCED));
 #endif
 
@@ -167,9 +171,9 @@ void Settings::onExit() {
 
 void Settings::loop() {
 #if FREEINK_DEVICE_PICCO || FREEINK_DEVICE_MURPHY_M4
-  // Picco and Murphy can report a screen bottom-to-top gesture as raw left.
-  // MappedInputManager has already converted it to screen-up; consume that
-  // edge gesture before the menu or embedded list can reinterpret it.
+
+
+
   if (mappedInput.hasTouch()) {
     float swipeStartNx = 0.0f;
     float swipeStartNy = 0.0f;
@@ -184,9 +188,9 @@ void Settings::loop() {
   }
 #endif
 
-  // The shared page shell normally consumes swipes for navigation before an
-  // embedded panel sees them. Let the presets panel own its bottom-edge close
-  // gesture first; ordinary swipes still go through the shared menu.
+
+
+
   bool routedPresetCloseGesture = false;
   if (!panelDetailOpen() && currentPanel == SettingsPanel::Presets && presetsPanel) {
     float swipeStartNx = 0.0f;

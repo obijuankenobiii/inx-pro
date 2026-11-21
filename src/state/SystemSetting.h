@@ -5,6 +5,9 @@
  * @brief Public interface and types for SystemSetting.
  */
 
+
+
+
 #include <cstddef>
 #include <cstdint>
 #include <iosfwd>
@@ -27,14 +30,14 @@ class SystemSetting {
    * @brief Sleep screen display modes
    */
   enum SLEEP_SCREEN_MODE {
-    DARK = 0,         ///< Dark screen
-    LIGHT = 1,        ///< Light screen
-    CUSTOM = 2,       ///< Custom image
-    COVER = 3,        ///< Book cover
-    TRANSPARENT = 4,  ///< Transparent
-    BLANK = 5,        ///< Blank screen
-    DATETIME_LEGACY = 6,  ///< Removed; migrate old settings to the widget sleep screen
-    WIDGET = 7,       ///< Configurable sleep widgets
+    DARK = 0,
+    LIGHT = 1,
+    CUSTOM = 2,
+    COVER = 3,
+    TRANSPARENT = 4,
+    BLANK = 5,
+    DATETIME_LEGACY = 6,
+    WIDGET = 7,
     SLEEP_SCREEN_MODE_COUNT
   };
 
@@ -52,8 +55,8 @@ class SystemSetting {
    * @brief Sleep screen cover scaling modes
    */
   enum SLEEP_SCREEN_COVER_MODE {
-    FIT = 0,   ///< Fill: scale to screen with aspect crop (full uncropped EPUB cover)
-    CROP = 1,  ///< EPUB: use pre-cropped cover asset; draw full screen (no extra crop)
+    FIT = 0,
+    CROP = 1,
     SLEEP_SCREEN_COVER_MODE_COUNT
   };
 
@@ -61,16 +64,16 @@ class SystemSetting {
    * @brief Sleep screen cover filter options
    */
   enum SLEEP_SCREEN_COVER_FILTER {
-    NO_FILTER = 0,                 ///< No filter
-    BLACK_AND_WHITE = 1,           ///< Black and white
-    INVERTED_BLACK_AND_WHITE = 2,  ///< Inverted black and white
+    NO_FILTER = 0,
+    BLACK_AND_WHITE = 1,
+    INVERTED_BLACK_AND_WHITE = 2,
     SLEEP_SCREEN_COVER_FILTER_COUNT
   };
 
   enum SLEEP_IMAGE_QUALITY {
-    SLEEP_IMAGE_LOW = 0,     ///< 1-bit image rendering
-    SLEEP_IMAGE_MEDIUM = 1,  ///< 2-bit fast image rendering
-    SLEEP_IMAGE_HIGH = 2,    ///< 2-bit quality image rendering
+    SLEEP_IMAGE_LOW = 0,
+    SLEEP_IMAGE_MEDIUM = 1,
+    SLEEP_IMAGE_HIGH = 2,
     SLEEP_IMAGE_QUALITY_COUNT
   };
 
@@ -78,21 +81,21 @@ class SystemSetting {
    * @brief Status bar item types for configurable sections
    */
   enum STATUS_BAR_ITEM {
-    STATUS_ITEM_NONE = 0,                        ///< No item
-    STATUS_ITEM_PAGE_NUMBERS = 1,                ///< Page numbers
-    STATUS_ITEM_PERCENTAGE = 2,                  ///< Reading percentage
-    STATUS_ITEM_CHAPTER_TITLE = 3,               ///< Chapter title
-    STATUS_ITEM_BATTERY_ICON = 4,                ///< Battery icon only
-    STATUS_ITEM_BATTERY_PERCENTAGE = 5,          ///< Battery percentage text
-    STATUS_ITEM_BATTERY_ICON_WITH_PERCENT = 6,   ///< Battery icon with percentage
-    STATUS_ITEM_PROGRESS_BAR = 7,                ///< Progress bar only
-    STATUS_ITEM_PROGRESS_BAR_WITH_PERCENT = 8,   ///< Progress bar with percentage
-    STATUS_ITEM_PAGE_BARS = 9,                   ///< Page bars
-    STATUS_ITEM_BOOK_TITLE = 10,                 ///< Book title
-    STATUS_ITEM_AUTHOR_NAME = 11,                ///< Author name
-    STATUS_ITEM_PAGE_NUMBERS_WITH_PERCENT = 12,  ///< Page numbers and percentage combined (e.g., "12/340 45%")
-    STATUS_ITEM_TIME_LEFT_CHAPTER = 13,        ///< Estimated time left in the current chapter (ETA feature)
-    STATUS_ITEM_TIME_LEFT_BOOK = 14,          ///< Estimated time left in the complete book (ETA feature)
+    STATUS_ITEM_NONE = 0,
+    STATUS_ITEM_PAGE_NUMBERS = 1,
+    STATUS_ITEM_PERCENTAGE = 2,
+    STATUS_ITEM_CHAPTER_TITLE = 3,
+    STATUS_ITEM_BATTERY_ICON = 4,
+    STATUS_ITEM_BATTERY_PERCENTAGE = 5,
+    STATUS_ITEM_BATTERY_ICON_WITH_PERCENT = 6,
+    STATUS_ITEM_PROGRESS_BAR = 7,
+    STATUS_ITEM_PROGRESS_BAR_WITH_PERCENT = 8,
+    STATUS_ITEM_PAGE_BARS = 9,
+    STATUS_ITEM_BOOK_TITLE = 10,
+    STATUS_ITEM_AUTHOR_NAME = 11,
+    STATUS_ITEM_PAGE_NUMBERS_WITH_PERCENT = 12,
+    STATUS_ITEM_TIME_LEFT_CHAPTER = 13,
+    STATUS_ITEM_TIME_LEFT_BOOK = 14,
     STATUS_BAR_ITEM_COUNT
   };
 
@@ -100,14 +103,14 @@ class SystemSetting {
    * @brief Text-reader status bar mode
    */
   enum STATUS_BAR_MODE {
-    NONE = 0,                    ///< No status bar
-    NO_PROGRESS = 1,             ///< Status bar without progress
-    FULL = 2,                    ///< Full status bar with percentage
-    FULL_WITH_PROGRESS_BAR = 3,  ///< Full status bar with progress bar
-    ONLY_PROGRESS_BAR = 4,       ///< Progress bar only
-    BATTERY_PERCENTAGE = 5,      ///< Battery with percentage
-    PERCENTAGE = 6,              ///< Just percentage
-    PAGE_BARS = 7,               ///< Dynamic page bars
+    NONE = 0,
+    NO_PROGRESS = 1,
+    FULL = 2,
+    FULL_WITH_PROGRESS_BAR = 3,
+    ONLY_PROGRESS_BAR = 4,
+    BATTERY_PERCENTAGE = 5,
+    PERCENTAGE = 6,
+    PAGE_BARS = 7,
     STATUS_BAR_MODE_COUNT
   };
 
@@ -115,10 +118,10 @@ class SystemSetting {
    * @brief Screen orientation modes
    */
   enum ORIENTATION {
-    PORTRAIT = 0,       ///< Portrait orientation
-    LANDSCAPE_CW = 1,   ///< Landscape clockwise
-    INVERTED = 2,       ///< Inverted portrait
-    LANDSCAPE_CCW = 3,  ///< Landscape counter-clockwise
+    PORTRAIT = 0,
+    LANDSCAPE_CW = 1,
+    INVERTED = 2,
+    LANDSCAPE_CCW = 3,
     ORIENTATION_COUNT
   };
 
@@ -126,8 +129,8 @@ class SystemSetting {
    * @brief Side button layout configurations
    */
   enum SIDE_BUTTON_LAYOUT {
-    PREV_NEXT = 0,  ///< Previous on top, Next on bottom
-    NEXT_PREV = 1,  ///< Next on top, Previous on bottom
+    PREV_NEXT = 0,
+    NEXT_PREV = 1,
     SIDE_BUTTON_LAYOUT_COUNT
   };
 
@@ -135,11 +138,11 @@ class SystemSetting {
    * @brief Reader direction mapping for navigation
    */
   enum READER_DIRECTION_MAPPING {
-    MAP_LEFT_RIGHT = 0,  ///< Map left/right to prev/next
-    MAP_RIGHT_LEFT = 1,  ///< Map right/left to prev/next
-    MAP_UP_DOWN = 2,     ///< Map up/down to prev/next
-    MAP_DOWN_UP = 3,     ///< Map down/up to prev/next
-    MAP_NONE = 4,        ///< No mapping
+    MAP_LEFT_RIGHT = 0,
+    MAP_RIGHT_LEFT = 1,
+    MAP_UP_DOWN = 2,
+    MAP_DOWN_UP = 3,
+    MAP_NONE = 4,
     READER_DIRECTION_MAPPING_COUNT
   };
 
@@ -147,8 +150,8 @@ class SystemSetting {
    * @brief Which buttons navigate the main menu tab bar vs the page items.
    */
   enum MAIN_MENU_NAV {
-    MAIN_MENU_NAV_FRONT = 0,  ///< Front buttons: Left/Right switch tabs, Up/Down move items (default)
-    MAIN_MENU_NAV_SIDE = 1,   ///< Side buttons: Up/Down switch tabs, Left/Right move items
+    MAIN_MENU_NAV_FRONT = 0,
+    MAIN_MENU_NAV_SIDE = 1,
     MAIN_MENU_NAV_COUNT
   };
 
@@ -169,20 +172,20 @@ class SystemSetting {
    * @details 0 is the built-in font; 1+ select SD card folders under /fonts (sorted names), see FontManager.
    */
   enum FONT_FAMILY {
-    MONTSERRAT = 0,  ///< Montserrat
+    MONTSERRAT = 0,
     FONT_FAMILY_BUILTIN_COUNT,
-    FONT_FAMILY_COUNT = FONT_FAMILY_BUILTIN_COUNT  ///< Built-in count; reader option count includes SD families
+    FONT_FAMILY_COUNT = FONT_FAMILY_BUILTIN_COUNT
   };
 
   /**
    * @brief Font size options
    */
   enum FONT_SIZE {
-    EXTRA_SMALL = 0,  ///< Extra small font
-    SMALL = 1,        ///< Small font
-    MEDIUM = 2,       ///< Medium font
-    LARGE = 3,        ///< Large font
-    EXTRA_LARGE = 4,  ///< Extra large font
+    EXTRA_SMALL = 0,
+    SMALL = 1,
+    MEDIUM = 2,
+    LARGE = 3,
+    EXTRA_LARGE = 4,
     FONT_SIZE_COUNT
   };
 
@@ -190,10 +193,10 @@ class SystemSetting {
    * @brief Paragraph alignment options
    */
   enum PARAGRAPH_ALIGNMENT {
-    JUSTIFIED = 0,     ///< Justified alignment
-    LEFT_ALIGN = 1,    ///< Left alignment
-    CENTER_ALIGN = 2,  ///< Center alignment
-    RIGHT_ALIGN = 3,   ///< Right alignment
+    JUSTIFIED = 0,
+    LEFT_ALIGN = 1,
+    CENTER_ALIGN = 2,
+    RIGHT_ALIGN = 3,
     /** Same role as CrossPoint “Book style”: use EPUB `text-align` / cascade for each block (value must match
      *  EPUB_PARAGRAPH_ALIGNMENT_FOLLOW_CSS in lib/Epub/Epub/parsers/ChapterHtmlSlimParser.h). */
     FOLLOW_CSS = 4,
@@ -204,12 +207,12 @@ class SystemSetting {
    * @brief Sleep timeout duration options
    */
   enum SLEEP_TIMEOUT {
-    SLEEP_1_MIN = 0,   ///< 1 minute timeout
-    SLEEP_5_MIN = 1,   ///< 5 minute timeout
-    SLEEP_10_MIN = 2,  ///< 10 minute timeout
-    SLEEP_15_MIN = 3,  ///< 15 minute timeout
-    SLEEP_30_MIN = 4,  ///< 30 minute timeout
-    SLEEP_NEVER = 5,   ///< Disable automatic sleep
+    SLEEP_1_MIN = 0,
+    SLEEP_5_MIN = 1,
+    SLEEP_10_MIN = 2,
+    SLEEP_15_MIN = 3,
+    SLEEP_30_MIN = 4,
+    SLEEP_NEVER = 5,
     SLEEP_TIMEOUT_COUNT
   };
 
@@ -217,12 +220,12 @@ class SystemSetting {
    * @brief Screen refresh frequency options
    */
   enum REFRESH_FREQUENCY {
-    REFRESH_1 = 0,   ///< Refresh every page
-    REFRESH_5 = 1,   ///< Refresh every 5 pages
-    REFRESH_10 = 2,  ///< Refresh every 10 pages
-    REFRESH_15 = 3,  ///< Refresh every 15 pages
-    REFRESH_30 = 4,  ///< Refresh every 30 pages
-    REFRESH_OFF = 5, ///< Do not force a periodic full/half refresh
+    REFRESH_1 = 0,
+    REFRESH_5 = 1,
+    REFRESH_10 = 2,
+    REFRESH_15 = 3,
+    REFRESH_30 = 4,
+    REFRESH_OFF = 5,
     REFRESH_FREQUENCY_COUNT
   };
 
@@ -237,20 +240,27 @@ class SystemSetting {
    * @brief Global short power button behavior (for library, home, etc.)
    */
   enum SHORT_PWRBTN {
-    IGNORE = 0,        ///< Ignore short press
-    SLEEP = 1,         ///< Put to sleep
-    PAGE_REFRESH = 2,  ///< Refresh page
+    IGNORE = 0,
+    SLEEP = 1,
+    PAGE_REFRESH = 2,
     SHORT_PWRBTN_COUNT
   };
 
-  /** Picco's physical slide switch behavior. */
-  enum PICCO_TOGGLE_MODE { PICCO_TOGGLE_LIGHT = 0, PICCO_TOGGLE_POWER = 1, PICCO_TOGGLE_MODE_COUNT };
 
-  /**
-   * @brief Action assignable to a reader button's short or long press. Supersedes the older, more
-   * legacy reader-navigation settings, which are no longer surfaced in the settings UI or consulted
-   * by the reader - see ReaderButtonBindings.
-   */
+  /** Picco's physical slide switch behavior. */
+  enum PICCO_TOGGLE_MODE {
+    PICCO_TOGGLE_LIGHT = 0,
+    PICCO_TOGGLE_POWER = 1,
+    PICCO_TOGGLE_DARK_MODE = 2,
+    PICCO_TOGGLE_FLICK_PAGE = 3,
+    PICCO_TOGGLE_MODE_COUNT
+  };
+
+
+
+
+
+
   enum READER_BUTTON_ACTION {
     BTN_ACTION_NONE = 0,
     BTN_ACTION_PAGE_NEXT,
@@ -281,9 +291,9 @@ class SystemSetting {
    * @brief Battery percentage display options
    */
   enum HIDE_BATTERY_PERCENTAGE {
-    HIDE_NEVER = 0,   ///< Always show
-    HIDE_READER = 1,  ///< Hide in reader
-    HIDE_ALWAYS = 2,  ///< Always hide
+    HIDE_NEVER = 0,
+    HIDE_READER = 1,
+    HIDE_ALWAYS = 2,
     HIDE_BATTERY_PERCENTAGE_COUNT
   };
 
@@ -291,11 +301,11 @@ class SystemSetting {
    * @brief Library browser display modes
    */
   enum LIBRARY_MODE {
-    LIBRARY_LIST = 0,  ///< Compact list browser
-    LIBRARY_GRID = 1,  ///< 3x4 icon grid browser
-    LIBRARY_THUMBNAIL = 2,  ///< Cover thumbnail browser with a 3x3 layout
-    LIBRARY_LIST_THUMBNAIL = 3,  ///< Statistics-style list with cover thumbnails
-    LIBRARY_THUMBNAIL_3X2 = 4,  ///< Cover thumbnail browser with three columns and two rows
+    LIBRARY_LIST = 0,
+    LIBRARY_GRID = 1,
+    LIBRARY_THUMBNAIL = 2,
+    LIBRARY_LIST_THUMBNAIL = 3,
+    LIBRARY_THUMBNAIL_3X2 = 4,
     LIBRARY_MODE_COUNT
   };
 
@@ -303,10 +313,10 @@ class SystemSetting {
    * @brief Library browser content view
    */
   enum LIBRARY_VIEW_MODE {
-    LIBRARY_VIEW_FOLDERS = 0,  ///< Folder/group browser
-    LIBRARY_VIEW_BOOKS = 1,    ///< Flat book list
-    LIBRARY_VIEW_TAGS = 2,     ///< Tag groups in the Library sidebar
-    LIBRARY_VIEW_SHELF = 3,    ///< Legacy reserved value; restored as folders
+    LIBRARY_VIEW_FOLDERS = 0,
+    LIBRARY_VIEW_BOOKS = 1,
+    LIBRARY_VIEW_TAGS = 2,
+    LIBRARY_VIEW_SHELF = 3,
     LIBRARY_VIEW_FAVORITES = 4,
     LIBRARY_VIEW_READING = 5,
     LIBRARY_VIEW_FINISHED = 6,
@@ -320,8 +330,8 @@ class SystemSetting {
    * @brief Thumbnail sizing behavior shared by Library and home widgets.
    */
   enum THUMBNAIL_SIZE {
-    THUMBNAIL_ACTUAL = 0,  ///< Preserve the current source-proportional thumbnail layout
-    THUMBNAIL_EVEN = 1,    ///< Fill the thumbnail container with an aspect-ratio-preserving crop
+    THUMBNAIL_ACTUAL = 0,
+    THUMBNAIL_EVEN = 1,
     THUMBNAIL_SIZE_COUNT
   };
 
@@ -329,8 +339,8 @@ class SystemSetting {
    * @brief Boot destination settings
    */
   enum BOOT_SETTING {
-    RECENT_PAGE = 0,  ///< Boot to recent page
-    HOME_PAGE = 1,    ///< Boot to home page
+    RECENT_PAGE = 0,
+    HOME_PAGE = 1,
     BOOT_SETTING_COUNT
   };
 
@@ -341,9 +351,9 @@ class SystemSetting {
     X4PRO_HOME_BUTTON_COUNT
   };
 
-  uint8_t sleepScreen = LIGHT;                 ///< Sleep screen display mode
-  uint8_t sleepScreenCoverMode = FIT;          ///< Sleep screen cover scaling mode
-  uint8_t sleepScreenCoverFilter = NO_FILTER;  ///< Sleep screen cover filter
+  uint8_t sleepScreen = LIGHT;
+  uint8_t sleepScreenCoverMode = FIT;
+  uint8_t sleepScreenCoverFilter = NO_FILTER;
   /** Sleep image quality for the sleep-screen image renderer. */
   uint8_t sleepImageQuality = SLEEP_IMAGE_HIGH;
   /**
@@ -353,8 +363,8 @@ class SystemSetting {
    * Exactly "/sleep.bmp" (or /sleep.jpg/.jpeg) = use SD-root fallback file only.
    */
   char sleepCustomBmp[64] = "";
-  uint8_t sleepClockStyle = CLOCK_CENTERED_DATE;          ///< Date/time sleep screen style
-  uint8_t sleepClockTimeFormat = CLOCK_24_HOUR;           ///< 12/24 hour clock format
+  uint8_t sleepClockStyle = CLOCK_CENTERED_DATE;
+  uint8_t sleepClockTimeFormat = CLOCK_24_HOUR;
   /** UTC offset in 15-minute steps, biased by +12h. 0=UTC-12:00, 80=UTC+08:00, 104=UTC+14:00. */
   uint8_t timeZoneQuarterOffset = 80;
   /** When enabled, time sync may replace the stored offset using the network lookup. */
@@ -383,37 +393,39 @@ class SystemSetting {
   /** Persisted Light drawer text/icon theme: 0=light, 1=dark. */
   uint8_t darkMode = 0;
 
-  uint8_t shortPwrBtn = PAGE_REFRESH;  ///< Short power button behavior
+  uint8_t shortPwrBtn = PAGE_REFRESH;
+
 
   /** Picco-only physical slide switch behavior; ignored on other devices. */
   uint8_t piccoToggleMode = PICCO_TOGGLE_LIGHT;
 
-  uint8_t sideButtonLayout = PREV_NEXT;                 ///< Side button layout
+  uint8_t sideButtonLayout = PREV_NEXT;
 
-  uint8_t mainMenuNav = MAIN_MENU_NAV_FRONT;  ///< Main-menu tab vs item navigation buttons
+  uint8_t mainMenuNav = MAIN_MENU_NAV_FRONT;
   /** Active SD language package code; empty selects the built-in English UI. */
   char languageCode[33] = "";
 
-  uint8_t sleepTimeout = SLEEP_10_MIN;  ///< Sleep timeout; SLEEP_NEVER disables automatic sleep
+  uint8_t sleepTimeout = SLEEP_10_MIN;
 
-  char opdsServerUrl[128] = "";  ///< OPDS server URL
-  char opdsUsername[64] = "";    ///< OPDS username
-  char opdsPassword[64] = "";    ///< OPDS password
+  char opdsServerUrl[128] = "";
+  char opdsUsername[64] = "";
+  char opdsPassword[64] = "";
 
-  uint8_t hideBatteryPercentage = HIDE_NEVER;  ///< Hide battery percentage setting
+  /** Hide battery percentage setting. */
+  uint8_t hideBatteryPercentage = HIDE_NEVER;
   /** Long-press on prev/next values shared with book and reader settings. */
   static constexpr uint8_t LONG_PRESS_OFF = 0;
   static constexpr uint8_t LONG_PRESS_CHAPTER_SKIP = 1;
   static constexpr uint8_t LONG_PRESS_PAGE_SKIP_5 = 2;
-  uint8_t useLibraryIndex = 0;  ///< Use library index enabled
-  /** Half refresh once after first paint on hub screens (ghosting cleanup). */
+  uint8_t useLibraryIndex = 0;
+
   uint8_t refreshOnLoadRecent = 0;
   uint8_t refreshOnLoadLibrary = 0;
   uint8_t refreshOnLoadSettings = 0;
   uint8_t refreshOnLoadSync = 0;
   uint8_t refreshOnLoadStatistics = 0;
-  uint8_t libraryMode = LIBRARY_GRID;              ///< Library browser display mode
-  uint8_t libraryViewMode = LIBRARY_VIEW_FOLDERS;  ///< Last selected Library sidebar view
+  uint8_t libraryMode = LIBRARY_GRID;
+  uint8_t libraryViewMode = LIBRARY_VIEW_FOLDERS;
   /** Library sort mode persisted when leaving Library (0=Title A–Z … 5=Read Z–A). */
   uint8_t librarySortMode = 0;
   /** Hide book titles below covers in Library thumbnail view. */
@@ -423,15 +435,17 @@ class SystemSetting {
   /** Shared thumbnail sizing mode for Library and home widgets. */
   uint8_t thumbnailSize = THUMBNAIL_ACTUAL;
 
-  uint8_t bootSetting = RECENT_PAGE;  ///< Boot destination setting
-  uint8_t x4proHomeButton = X4PRO_HOME_BUTTON_BACK;  ///< X4 Pro Home key action
+  uint8_t bootSetting = RECENT_PAGE;
+  uint8_t x4proHomeButton = X4PRO_HOME_BUTTON_BACK;
+
+
 
   /** Book image quality (READER_IMAGE_QUALITY): 0=Low(1-bit), 1=Medium(fast 2-bit grayscale),
    *  2=High(quality 2-bit grayscale with text preserved). */
   enum READER_IMAGE_QUALITY {
-    READER_IMAGE_LOW = 0,     ///< 1-bit (no grayscale)
-    READER_IMAGE_MEDIUM = 1,  ///< 2-bit grayscale, fast LUT (lut_grayscale), text-preserving
-    READER_IMAGE_HIGH = 2,    ///< 2-bit grayscale, quality LUT, text preserved
+    READER_IMAGE_LOW = 0,
+    READER_IMAGE_MEDIUM = 1,
+    READER_IMAGE_HIGH = 2,
     READER_IMAGE_QUALITY_COUNT
   };
   /** When set, hub thumbnails use rounded clip on `GfxRenderer::drawBitmap` (Recent: sparse ink outside arc; stats:

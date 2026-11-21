@@ -43,6 +43,6 @@ class BootActivity : public Activity {
   void loop() override;
 
  private:
-  int bootProgress = 0;       ///< Current boot progress percentage (0-100)
-  bool bootComplete = false;  ///< Flag indicating if boot sequence has finished
+  int bootProgress = 0;
+  bool bootComplete = false;
 };

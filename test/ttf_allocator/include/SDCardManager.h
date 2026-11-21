@@ -36,8 +36,8 @@ class FsFile {
 
 struct TestSdManager {
   FsFile open(const char* path, int) {
-    // Distinct face paths can share a test fixture's bytes, while the actual
-    // ExternalFont cache still sees and manages each distinct path normally.
+
+
     std::string filename(path);
     const auto suffix = filename.find("?face=");
     if (suffix != std::string::npos) filename.resize(suffix);

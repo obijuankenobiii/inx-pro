@@ -95,7 +95,7 @@ const char* discoveredDisplayName(const freeink::DiscoveredDevice& device) {
   return "BLE device";
 }
 
-}  // namespace
+}
 
 void BluetoothActivity::onEnter() {
   Activity::onEnter();
@@ -400,4 +400,4 @@ void BluetoothActivity::loop() {
   if (currentSignature != renderedSignature_) render();
 }
 
-#endif  // FREEINK_CAP_BLE_HID_HOST
+#endif

@@ -2,9 +2,9 @@
 
 #include <cstdint>
 
-// The desktop simulator has no physical frontlight.  Keep the same public
-// surface as the device manager so the real UI can be exercised without
-// pulling the ESP32 BoardConfig into the native build.
+
+
+
 class FrontlightManager {
  public:
   void begin() {}

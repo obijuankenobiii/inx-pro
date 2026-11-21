@@ -20,10 +20,10 @@ static const uint8_t font_preview_lora_14_regularBitmaps[121] = {
 };
 
 static const EpdGlyph font_preview_lora_14_regularGlyphs[] = {
-    { 16, 20, 17, 1, 20, 40, 0 }, // L
-    { 15, 15, 15, 0, 15, 29, 40 }, // a
-    { 15, 15, 17, 1, 15, 29, 69 }, // o
-    { 12, 15, 13, 1, 15, 23, 98 }, // r
+    { 16, 20, 17, 1, 20, 40, 0 },
+    { 15, 15, 15, 0, 15, 29, 40 },
+    { 15, 15, 17, 1, 15, 29, 69 },
+    { 12, 15, 13, 1, 15, 23, 98 },
 };
 
 static const EpdUnicodeInterval font_preview_lora_14_regularIntervals[] = {

@@ -5,9 +5,9 @@ namespace library {
 
 namespace {
 int standardCellHeight(const int, const int fullHeight) { return fullHeight; }
-}  // namespace
+}
 
 ThumbLayout standardThumbLayout() { return {2, 2, standardCellHeight, 10, false, false, 1, 0, 20, 0}; }
 
-}  // namespace library
-}  // namespace views
+}
+}

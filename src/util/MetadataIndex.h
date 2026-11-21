@@ -50,8 +50,8 @@ class MetadataIndex final {
   };
 
   static bool hasIndex(Kind kind);
-  // Enumerating groups is linear in the number of displayed groups; locating a
-  // known group in the current index format is expected O(1).
+
+
   static bool loadGroups(Kind kind, std::vector<Group>& groups);
   static bool findGroup(Kind kind, const std::string& key, Group& group);
   static bool loadGroup(Kind kind, const Group& group, std::vector<Entry>& entries,

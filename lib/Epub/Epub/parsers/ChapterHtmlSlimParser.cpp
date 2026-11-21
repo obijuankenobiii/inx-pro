@@ -3,6 +3,9 @@
  * @brief Definitions for ChapterHtmlSlimParser.
  */
 
+
+
+
 #include "ChapterHtmlSlimParser.h"
 
 #include <Arduino.h>
@@ -38,8 +41,8 @@ const char* HEADER_TAGS[] = {"h1", "h2", "h3", "h4", "h5", "h6"};
 constexpr int NUM_HEADER_TAGS = sizeof(HEADER_TAGS) / sizeof(HEADER_TAGS[0]);
 
 constexpr size_t MIN_SIZE_FOR_POPUP = 30 * 1024;
-// Keep enough words together to amortize ParsedText's list-to-line extraction.
-// The block is still bounded and makePages() preserves the normal page breaks.
+
+
 constexpr size_t STREAMING_TEXTBLOCK_WORD_LIMIT = 256;
 constexpr size_t MAX_TABLE_ROWS = 512;
 constexpr size_t MAX_TABLE_CELL_BYTES = 16 * 1024;
@@ -335,10 +338,10 @@ bool endsWithCompleteUtf8Codepoint(const char* s, int byteLen) {
 }
 
 bool hasDropCapHint(const std::string& classAttr, const std::string& idAttr, const std::string& styleAttr) {
-  // Do not use a substring match here.  EPUB templates commonly put a
-  // marker such as `withDropcap` on a chapter wrapper even when the actual
-  // paragraph has no drop-cap element (for example, it may use lead-word
-  // spans instead).  Only an explicit drop-cap token is a layout instruction.
+
+
+
+
   const bool explicitClass = hasClassTokenPrefix(classAttr, "dropcap") ||
                              hasClassTokenPrefix(classAttr, "drop-cap") ||
                              hasClassTokenPrefix(classAttr, "initial-letter");
@@ -842,8 +845,8 @@ void ChapterHtmlSlimParser::processImageElement(const char** atts) {
   const bool shouldProbeHighQualityGeometry = imgWidth > 100 && imgHeight > 100 &&
                                               !StringUtils::checkFileExtension(cacheImgPath, ".png");
   bool needsHighQualityGeometry = shouldProbeHighQualityGeometry;
-  // Intrinsic dimensions complete one-sided CSS sizes. For large raster images,
-  // they also let PageImage use the height the high quality renderer actually fits.
+
+
   bool hasIntrinsicDimensions = false;
   if (!imageAvailable || needsHighQualityGeometry) {
     hasIntrinsicDimensions =
@@ -926,9 +929,9 @@ void ChapterHtmlSlimParser::processImageElement(const char** atts) {
       imgHeight = viewportHeight;
     }
 
-    // ImageRender fits raster content inside its target bounds while preserving
-    // the source aspect ratio. Keep large image bounds in sync with that fitted
-    // size so high quality rendering does not leave a taller box above and below.
+
+
+
     if (needsHighQualityGeometry && hasIntrinsicDimensions && imgWidth > 0 && imgHeight > 0) {
       const float fitScale = std::min(static_cast<float>(imgWidth) / actualW,
                                       static_cast<float>(imgHeight) / actualH);
@@ -1036,9 +1039,9 @@ void ChapterHtmlSlimParser::processBackgroundImageElement(const std::string& tag
     imageHeight = viewportHeight;
   }
 
-  // A CSS background belongs inside this block. Place it at the block's
-  // current flow position instead of using addImageToPage(), whose normal
-  // image spacing can push a title-page logo onto the following page.
+
+
+
   if (currentTextBlock && !currentTextBlock->isEmpty()) {
     makePages();
   }
@@ -1100,10 +1103,10 @@ void ChapterHtmlSlimParser::flushPartWordBuffer() {
     }
     const FontManager::FontInfo* dropCapInfo = FontManager::getFontInfo(dropCapFontId);
 
-    // Inline/one-line drop caps share the first line's baseline. A tall glyph
-    // can therefore extend above a chapter page whose content starts at y=0.
-    // Reserve that missing ascent in the page flow before placing both the
-    // drop cap and its first line, keeping their baseline alignment intact.
+
+
+
+
     if (inlineFirstLine) {
       const uint8_t* dropCapBytes = reinterpret_cast<const uint8_t*>(dropCapText.c_str());
       const uint32_t dropCapCodepoint = utf8NextCodepoint(&dropCapBytes);
@@ -1174,6 +1177,19 @@ void ChapterHtmlSlimParser::flushPartWordBuffer() {
         renderer, activeBlockFontId(), static_cast<uint16_t>(std::max(1, currentTextBlockContentWidth)),
         [this](TextBlock&& textBlock) { addLineToPage(std::move(textBlock)); }, false);
   }
+
+  if (!currentTextBlock) {
+    TextBlock::Style fallbackStyle = TextBlock::LEFT_ALIGN;
+    if (inHeader) {
+      fallbackStyle = TextBlock::CENTER_ALIGN;
+    } else if (paragraphAlignment <= 3) {
+      fallbackStyle = static_cast<TextBlock::Style>(paragraphAlignment);
+    } else if (paragraphAlignment == EPUB_PARAGRAPH_ALIGNMENT_FOLLOW_CSS) {
+      fallbackStyle = TextBlock::JUSTIFIED;
+    }
+    startNewTextBlock(fallbackStyle);
+  }
+
   currentTextBlock->addWord(partWordBuffer, fontStyle, smallCapsActive, underlineActive, nextWordJoinsPrevious,
                             verticalAlign,
                             static_cast<int16_t>(std::max<int>(
@@ -1529,9 +1545,9 @@ void ChapterHtmlSlimParser::applyDropCapHint(const XML_Char* name, const std::st
   dropCapLineCount = attrHint
                          ? detectDropCapLineCount(classAttr, idAttr, styleAttr)
                          : (pseudoHint ? css().getFirstLetterDropCapLineCount(tagLower, classAttr, idAttr, styleAttr)
-                                       // A scaled inline span (for example, an EPUB's
-                                       // `span.initial`) is an enlarged first-line glyph,
-                                       // not a default three-line float.
+
+
+
                                        : 1);
 }
 
@@ -1728,20 +1744,20 @@ int ChapterHtmlSlimParser::blockFontIdForEm(const float em) const {
   const int baseFontId = activeBlockFontId();
   const FontManager::FontInfo* baseInfo = FontManager::getFontInfo(baseFontId);
   if (baseInfo && !baseInfo->isBuiltin) {
-    // The reader-selected font is the baseline. CSS only scales that
-    // baseline when the book explicitly requests a different size. Do not
-    // cap generic blocks at a heading size: a styled <p> may legitimately be
-    // larger than h1.
+
+
+
+
     const int targetPt = std::max(1, static_cast<int>(baseInfo->size * em + 0.5f));
     if (em < 1.0f) {
-      // Choosing at-or-below is important when the family has discrete sizes;
-      // nearest-size lookup can promote a small CSS paragraph back to body size.
+
+
       return FontManager::getFontIdAtOrBelowPointSize(baseInfo->family, targetPt);
     }
     return FontManager::getFontIdNearestPointSize(baseInfo->family, targetPt);
   }
 
-  // Bitmap/built-in fonts do not have arbitrary point sizes available.
+
   if (em >= 1.5f) return headingFontIdForSteps(5);
   if (em >= 1.2f) return headerFontId;
   return -1;
@@ -1824,10 +1840,10 @@ void ChapterHtmlSlimParser::beginCssBlockBox(const std::string& tagLower, const 
   int horizontalLeft = marginLeft + borderLeft + paddingLeft;
   int horizontalRight = marginRight + borderRight + paddingRight;
   if (tagLower == "p" && !applyCssTextLayout) {
-    // In fixed reader paragraph modes, the paragraph should use the reader's
-    // content margins. Clear horizontal insets inherited from book wrappers
-    // for the duration of this paragraph; its inset scope restores them when
-    // the closing tag is handled.
+
+
+
+
     horizontalLeft = -currentCssInsetLeftPx;
     horizontalRight = -currentCssInsetRightPx;
   }
@@ -2067,9 +2083,9 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
   std::string tagLower;
   extractSelectorAttributes(name, atts, tagLower, classAttr, idAttr, styleAttr);
   const bool applyCssTextLayout = self->shouldApplyCssTextLayout(tagLower);
-  // Font-size is independent from paragraph alignment. Even when the user
-  // chooses a fixed alignment, an explicit CSS font-size still scales from
-  // the user's selected reader font.
+
+
+
   const bool hasCssFontSize = self->css().hasFontSizeSpecified(tagLower, classAttr, idAttr, styleAttr);
   const bool isHeaderTag = matches(name, HEADER_TAGS, NUM_HEADER_TAGS);
   const bool isBlockTag = matches(name, BLOCK_TAGS, NUM_BLOCK_TAGS);
@@ -2097,9 +2113,9 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
   if (elementHasExplicitTextAlign) {
     elementCssStyle = self->resolveTextAlignFromAttributes(name, atts, inheritedCssStyle);
   }
-  // Keep the EPUB's conventional center-text class explicit at the HTML
-  // boundary as well as in CssParser. This covers cached/minimal stylesheets
-  // where the class rule itself is not present in the parsed CSS rule set.
+
+
+
   if (applyCssTextLayout && isBlockLikeElement && hasExactClassToken(classAttr, "center-text")) {
     elementHasExplicitTextAlign = true;
     elementCssStyle = TextBlock::CENTER_ALIGN;
@@ -2536,9 +2552,9 @@ void XMLCALL ChapterHtmlSlimParser::endElement(void* userData, const XML_Char* n
         self->applyVerticalSpacing(self->cssBorderInnerGapPx());
       }
       self->applyVerticalSpacing(reservedBorderThickness(scope.borderBottom, scope.borderBottomStyle));
-      // Shrink-to-content boxes are finalized by makePages() from the actual
-      // rendered line extent. Do not replace that geometry with the current
-      // page cursor here, or a one-line box becomes page-height tall.
+
+
+
       if (scope.elem && !scope.shrinkToContent && self->currentPageNextY >= scope.y) {
         scope.elem->setGeometry(scope.x, scope.y, scope.width,
                                 static_cast<int16_t>(std::max<int>(
@@ -2550,9 +2566,9 @@ void XMLCALL ChapterHtmlSlimParser::endElement(void* userData, const XML_Char* n
     }
     const bool completedBorderBox = scope.finalized;
     self->cssBorderBoxStack.pop_back();
-    // The text belonging to this bordered block is complete. Release it
-    // before ancestor block scopes close; otherwise stale parent scopes can
-    // lay the same text out again while applying their own margins.
+
+
+
     if (completedBorderBox) {
       self->currentTextBlock.reset();
     }
@@ -2888,9 +2904,9 @@ void ChapterHtmlSlimParser::makePages(bool deferClosingSpacingToCaller) {
           shrinkToContentLines.emplace_back(std::move(textBlock));
         });
 
-    // Layout all lines before adding them when the box is shrink-to-content.
-    // Otherwise addLineToPage() can complete the page while the border is
-    // still open, and the open border is serialized at the page height.
+
+
+
     const int blockLineHeight = renderer.text.getLineHeight(activeBlockFontId()) * lineCompression;
     shrinkToContentEndY = static_cast<int>(currentBlockContentStartY) +
                           static_cast<int>(shrinkToContentLines.size()) * blockLineHeight;

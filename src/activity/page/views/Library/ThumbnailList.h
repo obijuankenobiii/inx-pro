@@ -30,8 +30,8 @@ class ThumbnailList final {
   int totalPages() const { return pageCount(); }
 
  private:
-  // Keep the Statistics proportions while allowing five rows on the normal
-  // 800px portrait layout above the bottom navigation menu.
+
+
   static constexpr int normalRowHeight = 130;
   static constexpr int sideMargin = 20;
   static constexpr int thumbnailWidth = 74;

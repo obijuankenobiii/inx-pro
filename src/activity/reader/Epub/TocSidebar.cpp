@@ -50,8 +50,8 @@ int TocSidebar::headerHeight() const { return rowHeight() + 8; }
 int TocSidebar::footerHeight() const { return Button::height + footerPadding * 2; }
 
 int TocSidebar::rowHeight() const {
-  // Preserve the normal row size while allowing taller configured system
-  // fonts enough vertical room.
+
+
   return std::max(66, renderer.text.getLineHeight(systemFontId()) + 40);
 }
 
@@ -116,17 +116,17 @@ void TocSidebar::show(Epub* book, const int spineIndex) {
   tocCount = epub ? epub->getTocItemsCount() : 0;
   static constexpr uint8_t kUnknownLevel = 0xFF;
   levels.assign(static_cast<size_t>(tocCount), kUnknownLevel);
-  // Parents start collapsed, but their levels and titles are fetched only as
-  // the corresponding rows enter the visible window.
+
+
   collapsed.assign(static_cast<size_t>(tocCount), 1);
 
   currentTocIndex = epub ? epub->getTocIndexForSpineIndex(spineIndex) : -1;
   scroll = 0;
   rows();
 
-  // Start the TOC at the chapter the reader is currently showing. Parents
-  // are collapsed by default, so reveal the ancestor chain before locating
-  // the current entry in the flattened visible-row list.
+
+
+
   if (currentTocIndex >= 0 && currentTocIndex < tocCount) {
     int childLevel = levelAt(currentTocIndex);
     for (int index = currentTocIndex - 1; index >= 0; --index) {

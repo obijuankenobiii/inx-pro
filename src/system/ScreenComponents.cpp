@@ -55,9 +55,9 @@ bool formatMenuClock(char* out, const size_t outSize) {
 }
 
 int menuStatusTextTop(const GfxRenderer& renderer, const int top, const int font) {
-  // Keep clock text on the same line box as the percentage next to the
-  // battery. This is important for external TTFs, whose ascender and line
-  // height differ from the embedded Montserrat metrics.
+
+
+
   return top + ScreenComponents::BATTERY_ICON_TOP_OFFSET +
          (ScreenComponents::BATTERY_ICON_HEIGHT - renderer.text.getLineHeight(font)) / 2;
 }
@@ -75,9 +75,9 @@ void ScreenComponents::drawBattery(const GfxRenderer& renderer, const int left, 
 #endif
   const int font = systemFontIdForPointSize(8);
   const auto percentageText = showPercentage ? std::to_string(percentage) + "%" : "";
-  // Align the font's line box to the battery artwork. External TTFs often have
-  // a taller ascender/line height than the built-in bitmap font, so using the
-  // header's raw top coordinate leaves the percentage visibly off-center.
+
+
+
   const int textY = top + BATTERY_ICON_TOP_OFFSET +
                     (BATTERY_ICON_HEIGHT - renderer.text.getLineHeight(font)) / 2;
   renderer.text.render(font, left + BATTERY_ICON_WIDTH + BATTERY_TEXT_GAP, textY, percentageText.c_str());
@@ -164,8 +164,8 @@ void ScreenComponents::drawWhiteOverlay(const GfxRenderer& renderer, const int s
   const int firstY = std::max(0, std::min(startY, height));
   const bool whitePixel = renderer.isDarkMode() && !renderer.isImageRendering();
 
-  // The display is 1-bit, so a paper-colored checkerboard creates a white
-  // scrim over the existing framebuffer while preserving the page underneath.
+
+
   for (int y = firstY; y < height; ++y) {
     for (int x = 0; x < width; ++x) {
       if ((x & 1) == (y & 1)) {
@@ -209,9 +209,9 @@ ScreenComponents::PopupLayout ScreenComponents::drawLoadingPopup(const GfxRender
   const int x = (renderer.getScreenWidth() - panelWidth) / 2;
   const int y = std::max(0, (renderer.getScreenHeight() - panelHeight) / 2);
 
-  // Paint a paper-white panel first, then inset it to leave an exact two-pixel
-  // ink border. This keeps the component independent from the text popup
-  // geometry.
+
+
+
   renderer.rectangle.fill(x, y, panelWidth, panelHeight, true);
   renderer.rectangle.fill(x + borderWidth, y + borderWidth, panelWidth - borderWidth * 2,
                           panelHeight - borderWidth * 2, false);
@@ -221,8 +221,8 @@ ScreenComponents::PopupLayout ScreenComponents::drawLoadingPopup(const GfxRender
   const int centerOffset = dotRadius * 2 + dotGap;
   const int dotXs[] = {centerX - centerOffset, centerX, centerX + centerOffset};
 
-  // The middle dot uses a light checkerboard for gray, while the outer dots
-  // stay solid paper and ink. There are no outline passes around the dots.
+
+
   renderer.circle.render(dotXs[0], centerY, dotRadius, true);
   renderer.circle.render(dotXs[0], centerY, dotRadius - 2, false);
   for (int dy = -dotRadius; dy <= dotRadius; ++dy) {

@@ -31,8 +31,8 @@ namespace library {
 namespace {
 
 int contentBottomInset() {
-  // The hidden sidebar replaces the bottom tab bar, but thumbnails still need
-  // a touch-safe breathing room at the bottom of the portrait panel.
+
+
   return SETTINGS.hiddenMenu != 0 ? UiLayout::LIBRARY_BOTTOM_BAR_HEIGHT : navigation::Menu::bottomInset();
 }
 
@@ -49,8 +49,8 @@ std::string bookTitle(const LibraryIndex::Book& book) {
 }
 
 std::string folderTitle(const LibraryIndex::Book& folder) {
-  // Author/series/tag groups use a synthetic hashed path for navigation, but
-  // their user-facing label is stored separately in the indexed title.
+
+
   if (folder.hasMetadata && !folder.title.empty()) return folder.title;
   if (folder.path == "/" || folder.path.empty()) return "Library";
   const size_t end = folder.path.find_last_not_of('/');
@@ -157,10 +157,10 @@ void drawContrastFrame(GfxRenderer& renderer, const int x, const int y, const in
                        const bool rounded) {
   if (width < 1 || height < 1) return;
   renderer.rectangle.render(x, y, width, height, true, rounded);
-  // A white inset frame produces sharp white pixels at the lower corners of
-  // rounded covers, especially when the artwork has a dark/gray shadow.
-  // The outer border is sufficient for rounded thumbnails; retain the inset
-  // cleanup only for square thumbnails.
+
+
+
+
   if (!rounded && width > 3 && height > 3) {
     renderer.rectangle.render(x + 1, y + 1, width - 2, height - 2, false, rounded);
   }
@@ -202,9 +202,9 @@ bool cover(GfxRenderer& renderer, const std::string& path, const int x, const in
   ImageRender::Options options;
   options.cropToFill = cropToFill;
   options.cropAnchorX = 0.5f;
-  // Cache hits are safe during the deferred shell pass. Cache misses must
-  // remain placeholders here; decoding a full 480x720 JPEG on Murphy can take
-  // close to a second per cover.
+
+
+
   options.useDisplayCache = true;
   options.asyncDisplayCache = true;
   options.cacheNamespace = ImageDisplayCacheNamespace::Library;
@@ -217,7 +217,7 @@ bool cover(GfxRenderer& renderer, const std::string& path, const int x, const in
   return true;
 }
 
-// Keep a small gap between the cover and the title at the bottom of a tile.
+
 constexpr int kFolderLabelGap = 10;
 
 void folderLabel(GfxRenderer& renderer, const std::string& value, const int labelX, const int labelWidthAvailable,
@@ -282,9 +282,9 @@ int progressPercentForBook(const std::string& path) {
     }
   }
 
-  // Most books have never been opened, so they do not have a progress.bin.
-  // Avoid reopening the same missing file on every page turn; failed SD opens
-  // are surprisingly expensive on Murphy and also produce noisy BPR logs.
+
+
+
   static std::unordered_set<std::string> missingProgressBooks;
   static std::unordered_map<std::string, int> progressCache;
   if (missingProgressBooks.find(path) != missingProgressBooks.end()) return 0;
@@ -385,9 +385,9 @@ std::string Thumb::thumbnailPathForBook(const std::string& bookPath) {
     return cached->second;
   }
 
-  // An empty result is not permanent. Thumbnail generation can finish after
-  // the library page has been built, so probe again instead of retaining the
-  // old miss forever.
+
+
+
   const std::string path = imagePathForBook(bookPath);
   thumbnailPathCache_[bookPath] = path;
   return path;
@@ -470,9 +470,9 @@ void Thumb::load() {
         }
       }
     } else {
-      // Resolve an existing cover during the initial page setup. Waiting for
-      // loadNext() made an already-generated cache appear as a white tile for
-      // at least one frame, and an input event could postpone that pass.
+
+
+
       thumbnail.image = thumbnailPathForBook(item.path);
       thumbnail.pathResolved = true;
       thumbnail.loaded = !thumbnail.image.empty();
@@ -502,9 +502,9 @@ void Thumb::load() {
       thumbnail.loaded = true;
       resolvedCache_[thumbnail.item] = thumbnail;
     } else if (!thumbnail.first.empty()) {
-      // A folder without its own cover uses the first book cover. Resolve it
-      // during the initial page setup as well, so a durable display cache can
-      // be drawn on the first frame instead of after loadNext().
+
+
+
       thumbnail.loaded = true;
       resolvedCache_[thumbnail.item] = thumbnail;
     }
@@ -636,9 +636,9 @@ bool Thumb::prefetchNextPage() {
 void Thumb::reset() {
   page = 0;
   thumbnailPathCache_.clear();
-  // A previous page can have resolved a missing cache as an empty thumbnail.
-  // Drop those resolutions so newly generated covers are discovered on the
-  // next load. Valid image files are cheap to resolve again from the index.
+
+
+
   resolvedCache_.clear();
 }
 
@@ -650,8 +650,8 @@ int Thumb::pageCount() const {
 int Thumb::top() const { return navigation::Menu::height; }
 
 void Thumb::calculate() {
-  // Keep the label gap and cover area inside the tile while using the outer
-  // margin to give each thumbnail a little more height.
+
+
   constexpr int gridMargin = 0;
   const int availableWidth = renderer.getScreenWidth() - sideMargin * 2;
   const int availableHeight = renderer.getScreenHeight() - top() - contentBottomInset() - gridMargin * 2 - layout.topGap;

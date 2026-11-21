@@ -84,8 +84,8 @@ void drawCover(GfxRenderer& renderer, const RecentBook& book, const int x, const
   const bool rounded = !squareCorners && SETTINGS.bitmapRoundedCorners != 0;
   if (!path.empty()) {
     ImageRender::Options options;
-    // Fill the card cover from top to bottom. The 20px inset belongs to the
-    // carousel bounds, not inside individual cards.
+
+
     options.cropToFill = true;
     options.cropAnchorX = 0.5f;
     options.cropAnchorY = 0.0f;
@@ -121,8 +121,8 @@ void drawCenteredRating(GfxRenderer& renderer, const int x, const int y, const i
 
 void drawFlowCard(GfxRenderer& renderer, const RecentBook& book, const int x, const int y, const int width,
                   const int height, const bool center, const std::string& author) {
-  // The reference card is portrait-oriented: the cover spans the full card
-  // width, followed by a separate white title/description section.
+
+
   const int font = center ? systemFontIdForPointSize(16) : systemFontIdForPointSize(10);
   const int authorFont = center ? systemFontIdForPointSize(10) : systemFontIdForPointSize(8);
   constexpr int detailTopPadding = 10;
@@ -302,7 +302,7 @@ void drawFlowArrow(GfxRenderer& renderer, const int x, const int y, const int si
   }
 }
 
-}  // namespace
+}
 
 int Flow::ratingStars(const RecentBook& book) const {
   if (ratingCachePath_ == book.path) return cachedRatingStars_;

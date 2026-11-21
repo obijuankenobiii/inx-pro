@@ -108,9 +108,9 @@ bool ImageRender::renderDisplayCacheOnly(int x, int y, int width, int height, co
   ImageRenderScope imageScope(renderer_);
   Options effectiveOptions = options;
   if (format_ == Format::Png) {
-    // Keep the caller's image mode. Normal cover/thumbnail renders use the
-    // same one-bit Atkinson path as JPEG; forcing PNG into TwoBit on a BW
-    // panel turns every non-white tone into solid ink.
+
+
+
     effectiveOptions.quality = effectiveOptions.mode == ImageRenderMode::TwoBit;
     effectiveOptions.fastQuality = false;
   }
@@ -162,9 +162,9 @@ bool ImageRender::render(int x, int y, int width, int height, const Options& opt
   ImageRenderScope imageScope(renderer_);
   Options effectiveOptions = options;
   if (format_ == Format::Png) {
-    // Use the same default one-bit dither path as JPEG covers and thumbnails.
-    // The direct PNG decoder preserves the source artwork; forcing TwoBit on a
-    // BW panel would make the dark photographic areas solid black.
+
+
+
     effectiveOptions.quality = effectiveOptions.mode == ImageRenderMode::TwoBit;
     effectiveOptions.fastQuality = false;
     if (!effectiveOptions.preserveTransparency && renderer_.getRenderMode() != GfxRenderer::BW) {
@@ -172,10 +172,10 @@ bool ImageRender::render(int x, int y, int width, int height, const Options& opt
     }
   }
 
-  // BW image renderers write ink pixels but do not overwrite white pixels. In
-  // dark mode the page background is black, so seed only the image rectangle
-  // with white before rendering; otherwise white image pixels are captured as
-  // black and the resulting display-cache entry is unusable.
+
+
+
+
   if (renderer_.isDarkMode() && renderer_.getRenderMode() == GfxRenderer::BW &&
       !effectiveOptions.preserveTransparency) {
     renderer_.rectangle.fill(x, y, width, height, false);
@@ -200,9 +200,9 @@ bool ImageRender::render(int x, int y, int width, int height, const Options& opt
     }
   }
 
-  // Let the first Home frame reach the panel without blocking on SD image
-  // decoding. The caller can render its normal placeholder and warm the cache
-  // on the following idle frame.
+
+
+
   if (renderer_.shouldDeferImageDecode()) return false;
 
   bool ok = false;
@@ -344,8 +344,8 @@ bool ImageRender::displayGrayscale(int x, int y, int width, int height, const Op
   }
 
   const bool effectiveQuality = quality && format_ != Format::Png;
-  // An overlay may draw outside the image rectangle (for example image-viewer
-  // controls), so keep the existing full-frame path whenever one is present.
+
+
   const bool useWindowedQuality = effectiveQuality && renderer_.supportsWindowedQuality() &&
                                   (!overlay || options.allowWindowedQualityWithOverlay);
   const GfxRenderer::DisplayRegion imageRegion{x, y, width, height};

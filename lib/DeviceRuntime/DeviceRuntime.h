@@ -16,4 +16,4 @@ void startDeepSleep(HalGPIO& gpio);
 void refreshAfterPowerButton(HalDisplay& display, GfxRenderer& renderer);
 void poll(HalGPIO& gpio, const std::function<void()>& enterDeepSleep);
 
-}  // namespace DeviceRuntime
+}

@@ -34,9 +34,9 @@ constexpr uint8_t kLegacyCarouselShadowStyleVersion = 9;
 constexpr uint8_t kSleepThemeVersion = 3;
 constexpr int kMaxThemes = 8;
 
-// These tables are persistent settings, not hot rendering buffers. Allocate
-// them once from PSRAM so the internal heap remains available to the reader
-// and display paths while preserving the existing reference-based API.
+
+
+
 Theme* themeStorage = nullptr;
 Theme* themes = nullptr;
 Theme* sleepThemeStorage = nullptr;
@@ -54,8 +54,8 @@ bool ensureStorage() {
   constexpr uint32_t caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
   themeStorage = static_cast<Theme*>(heap_caps_calloc(kMaxThemes * 2 + 1, sizeof(Theme), caps));
   if (themeStorage == nullptr) {
-    // Keep the reader functional if PSRAM is unavailable, while still
-    // preferring PSRAM on the target boards.
+
+
     themeStorage = static_cast<Theme*>(heap_caps_calloc(kMaxThemes * 2 + 1, sizeof(Theme), MALLOC_CAP_8BIT));
   }
   if (themeStorage == nullptr) return false;
@@ -302,10 +302,10 @@ void load() {
     uint8_t layout = 0;
     serialization::readString(file, name);
     serialization::readPod(file, layout);
-    // Layout value 3 is now the real 1 x 1 layout. Older files could contain
-    // that value from an abandoned experimental build; keeping it here lets
-    // the current editor repair and save those themes instead of silently
-    // converting them back to 1 x 2 on every load.
+
+
+
+
     if (!validLayout(layout) || name.empty()) return false;
 
     theme = {};

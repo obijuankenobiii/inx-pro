@@ -21,11 +21,11 @@ static const uint8_t font_preview_tinos_14_regularBitmaps[130] = {
 };
 
 static const EpdGlyph font_preview_tinos_14_regularGlyphs[] = {
-    { 18, 19, 18, 0, 19, 43, 0 }, // T
-    { 8, 19, 8, 0, 19, 19, 43 }, // i
-    { 15, 14, 15, 0, 14, 27, 62 }, // n
-    { 13, 14, 15, 1, 14, 23, 89 }, // o
-    { 10, 14, 11, 1, 14, 18, 112 }, // s
+    { 18, 19, 18, 0, 19, 43, 0 },
+    { 8, 19, 8, 0, 19, 19, 43 },
+    { 15, 14, 15, 0, 14, 27, 62 },
+    { 13, 14, 15, 1, 14, 23, 89 },
+    { 10, 14, 11, 1, 14, 18, 112 },
 };
 
 static const EpdUnicodeInterval font_preview_tinos_14_regularIntervals[] = {

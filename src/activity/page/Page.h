@@ -18,12 +18,12 @@
  */
 class UiPage : public Activity, public navigation::Menu {
  public:
-  static constexpr int LIST_ITEM_HEIGHT = UiLayout::LIST_ITEM_HEIGHT;      ///< one row in any settings/menu list
-  static constexpr int HEADER_HEIGHT = UiLayout::HEADER_HEIGHT;         ///< in-page header band
-  static constexpr int PAGE_HEADER_HEIGHT = UiLayout::PAGE_HEADER_HEIGHT;    ///< taller header used by drawer pages
-  static constexpr int TAB_BAR_HEIGHT = UiLayout::TAB_BAR_HEIGHT;        ///< bottom navigation strip
-  static constexpr int CONTENT_TOP = UiLayout::CONTENT_TOP;           ///< first usable y below the status row
-  static constexpr int CONTENT_BOTTOM_PADDING = UiLayout::CONTENT_BOTTOM_PADDING; ///< gap between content and the tab bar
+  static constexpr int LIST_ITEM_HEIGHT = UiLayout::LIST_ITEM_HEIGHT;
+  static constexpr int HEADER_HEIGHT = UiLayout::HEADER_HEIGHT;
+  static constexpr int PAGE_HEADER_HEIGHT = UiLayout::PAGE_HEADER_HEIGHT;
+  static constexpr int TAB_BAR_HEIGHT = UiLayout::TAB_BAR_HEIGHT;
+  static constexpr int CONTENT_TOP = UiLayout::CONTENT_TOP;
+  static constexpr int CONTENT_BOTTOM_PADDING = UiLayout::CONTENT_BOTTOM_PADDING;
   static constexpr int LIST_BOTTOM_PADDING = UiLayout::LIST_BOTTOM_PADDING;
 
   /** Last usable y for page content, i.e. just above the bottom tab bar. */

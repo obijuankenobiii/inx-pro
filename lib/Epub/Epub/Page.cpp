@@ -419,27 +419,27 @@ std::unique_ptr<PageHeader> PageHeader::deserialize(FsFile& file) {
  */
 void PageDropCap::render(GfxRenderer& renderer, const int fontId, const int xOffset, const int yOffset,
                          ImageRenderMode) {
-  // Cached pages retain the proportional drop-cap font ID, but the font itself
-  // may have been unloaded when the book was closed. Rebind it before measuring
-  // or drawing; otherwise TextRender silently has no family and the drop cap is blank.
+
+
+
   const int renderDropCapFontId = FontManager::ensureFontReady(dropCapFontId, renderer) ? dropCapFontId : fontId;
   const uint8_t* p = reinterpret_cast<const uint8_t*>(text.c_str());
   const uint32_t dropCp = utf8NextCodepoint(&p);
-  // Use the first line's actual glyph metrics as the vertical reference. The
-  // old fixed -2px nudge made the drop-cap drift relative to the first line
-  // between font families and sizes.
+
+
+
   int alignY = yPos + yOffset;
   if (inlineFirstLine) {
-    // Page::render() places normal body text at y - bodyTopInset before
-    // TextRender adds the body's ascender. Use that same baseline here;
-    // otherwise an inline enlarged first letter sits below its sentence.
+
+
+
     const int bodyTopInset = renderer.text.getFontTopInset(fontId, EpdFontFamily::REGULAR);
     const int bodyBaseline = yPos + yOffset - bodyTopInset + renderer.text.getFontAscenderSize(fontId);
     alignY = bodyBaseline - renderer.text.getFontAscenderSize(renderDropCapFontId);
   } else {
-    // Page::render() passes body text through `y - bodyTopInset`, so the
-    // body glyph's top is already at yPos.  Do not add bodyTopInset here:
-    // doing so shifts every multiline drop cap down by that inset.
+
+
+
     const int dropInset = renderer.text.getGlyphTopInset(renderDropCapFontId, dropCp, style);
     alignY += -dropInset + PageDropCap::VERTICAL_ADJUSTMENT;
   }
@@ -1187,9 +1187,9 @@ void Page::render(GfxRenderer& renderer, const int fontId, const int headerFontI
     } else if (tag == TAG_PageHeader) {
       const auto* header = static_cast<const PageHeader*>(element.get());
       int feId = header->getHeaderFontId() > 0 ? header->getHeaderFontId() : headerFontId;
-      // Page::render() draws the TextBlock directly, so PageHeader::render()
-      // cannot repair a cached outline font by itself after reopening a book.
-      // Rebind it here before layout-dependent rendering and fall back safely.
+
+
+
       if (!FontManager::ensureFontReady(feId, renderer)) {
         feId = FontManager::ensureFontReady(headerFontId, renderer) ? headerFontId : fontId;
       }
@@ -1343,9 +1343,9 @@ std::unique_ptr<Page> Page::deserialize(FsFile& file) {
   auto page = std::unique_ptr<Page>(new Page());
   uint16_t count;
   serialization::readPod(file, count);
-  // A completed parser page always contains at least one drawable element.
-  // Treat an empty serialized page as a bad cache entry so the caller can
-  // rebuild it instead of presenting a blank page.
+
+
+
   if (count == 0) return nullptr;
   for (uint16_t i = 0; i < count; i++) {
     uint8_t tag;

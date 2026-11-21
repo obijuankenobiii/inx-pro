@@ -5,8 +5,8 @@
 #include <esp_err.h>
 #include <esp_rom_sys.h>
 
-// Murphy M4's touch controller and RX8010 share native I2C1. Keep one IDF bus
-// handle and add one device handle per peripheral so they can be used together.
+
+
 namespace murphy_m4_i2c {
 
 inline i2c_master_bus_handle_t bus = nullptr;
@@ -72,4 +72,4 @@ inline bool read(i2c_master_dev_handle_t device, const uint8_t reg, uint8_t* dat
   return device != nullptr && i2c_master_transmit_receive(device, &reg, 1, data, length, 20) == ESP_OK;
 }
 
-}  // namespace murphy_m4_i2c
+}

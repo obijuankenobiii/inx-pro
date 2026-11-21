@@ -12,4 +12,4 @@ class Microphone {
   int read(int16_t *, size_t, uint32_t) { return 0; }
 };
 
-}  // namespace freeink
+}

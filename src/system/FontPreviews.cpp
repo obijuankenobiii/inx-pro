@@ -99,7 +99,7 @@ constexpr PreviewSlot kPreviewSlots[] = {
     {"Tinos", kFirstPreviewFontId + 18, &font_preview_tinos_14_regular},
 };
 
-}  // namespace
+}
 
 void initialize(GfxRenderer& renderer) {
   for (size_t i = 0; i < sizeof(kPreviewSlots) / sizeof(kPreviewSlots[0]); ++i) {
@@ -114,4 +114,4 @@ int fontIdForFamily(const std::string& family) {
   return -1;
 }
 
-}  // namespace FontPreviews
+}

@@ -8,4 +8,4 @@ namespace SettingsListLayout {
 constexpr int kRowHeight = UiLayout::LIST_ITEM_HEIGHT + 10;
 constexpr int kDividerInset = 20;
 
-}  // namespace SettingsListLayout
+}

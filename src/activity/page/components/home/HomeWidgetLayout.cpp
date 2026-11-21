@@ -65,8 +65,8 @@ void halfStackRowHeights(const HomeTheme::Layout layout, const int areaH, const 
 
   if (!bottomMenuPresent) return;
 
-  // Keep the smaller rows at their original height. The bottom menu consumes
-  // space from the larger row(s), including both 40% rows in a 40/40/20 layout.
+
+
   const int smallestPercent = std::min({halfStackRowPercent(layout, 0), halfStackRowPercent(layout, 1),
                                         halfStackRowPercent(layout, 2)});
   int largeRowCount = 0;
@@ -107,9 +107,9 @@ bool isHalfStack50Row(const HomeTheme::Layout layout, const int slot) {
   return isHalfStackLayout(layout) && halfStackRowPercent(layout, slot) == 50;
 }
 
-// The 50% row in a 1x3 half-stack has enough room for the established 1x2
-// widget treatment.  Keep the special carousel presentation independent, but
-// let every other widget opt out of the 1x3 compact styling in that row.
+
+
+
 bool useOneByTwoWidgetLayout(const HomeTheme::Layout layout, const int slot) {
   return isCompactLayout(layout) && !isHalfStack50Row(layout, slot);
 }
@@ -121,15 +121,15 @@ bool useLargeCenterCarousel(const HomeTheme::Theme& theme, const int slot,
          (theme.layout == HomeTheme::Layout::OneByTwo && SETTINGS.hiddenMenu != 0);
 }
 
-// Compact layouts normally use the multi-card carousel treatment. The large
-// center treatment remains reserved for the dedicated 50% carousel and the
-// menu-free 1x2 layout.
+
+
+
 bool useFourBookCarousel(const HomeTheme::Theme& theme, const int slot) {
   return isCompactLayout(theme.layout) &&
          !useLargeCenterCarousel(theme, slot, theme.carouselStyles[slot]);
 }
 
-}  // namespace
+}
 
 HomeWidgetLayout::HomeWidgetLayout(GfxRenderer& renderer)
     : renderer_(renderer),
@@ -455,9 +455,9 @@ void HomeWidgetLayout::renderSlot(const HomeTheme::Theme& theme, const int slot,
       break;
     case HomeTheme::Widget::Heatmap:
       {
-        // Heatmap's historical compact branch is its 1x2 treatment (the
-        // other widgets use compact for 1x3), so keep that mapping explicit
-        // for a 50% half-stack row.
+
+
+
         const bool heatmapOneByTwo = theme.layout == HomeTheme::Layout::OneByTwo ||
                                      isHalfStack50Row(theme.layout, slot);
         const bool heatmapCompact = compactWidgetLayout || heatmapOneByTwo;

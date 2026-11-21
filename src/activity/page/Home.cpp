@@ -68,7 +68,7 @@ bool removeTree(const std::string& path, int& removed) {
   return SdMan.removeDir(path.c_str());
 }
 
-}  // namespace
+}
 
 Home::Home(GfxRenderer& renderer, MappedInputManager& mappedInput)
     : UiPage("Home", renderer, mappedInput), widgetLayout(renderer) {}
@@ -118,9 +118,9 @@ void Home::loop() {
     return;
   }
 
-  // The first Home frame intentionally uses thumbnail placeholders. Warm all
-  // image caches only after that frame has been displayed and the device is
-  // idle, so entering Home never waits on SD decoding.
+
+
+
   if (thumbnailWarmupPending_ && !mappedInput.wasTouchActivity()) {
     thumbnailWarmupPending_ = false;
     updateRequired = true;
@@ -128,9 +128,9 @@ void Home::loop() {
   }
 
   if (widgetLayout.needsRefresh(HomeTheme::active())) updateRequired = true;
-  // Let the first Home frame reach the panel before doing carousel I/O and
-  // thumbnail decoding. The preload is still done on the next idle loop, so
-  // it remains warm for a swipe without extending the visible screen render.
+
+
+
   const bool renderedThisLoop = updateRequired;
   if (handleSwipe()) return;
   if (handleTap()) return;
@@ -196,9 +196,9 @@ bool Home::handleSwipe() {
       renderPage();
       return true;
     }
-    // A completed swipe owns this input cycle even when the current layout has
-    // no page to move to. Do not let the same release fall through to a book
-    // tap hit-test.
+
+
+
     return true;
   }
   float swipeNx = 0.0f;
@@ -244,9 +244,9 @@ bool Home::handleSwipe() {
     }
     return true;
   }
-  // Keep all classified horizontal swipes out of handleTap(). This matters on
-  // touch controllers that expose tap and swipe state on the same release
-  // edge, and on edge swipes that start outside a widget's hit area.
+
+
+
   return true;
 }
 
@@ -320,8 +320,8 @@ bool Home::handleTap() {
       updateRequired = true;
       return true;
     }
-    // Statistics is opened through the long-press popup only. A regular tap
-    // on the widget should not navigate away from the home page.
+
+
     return true;
   }
   if (favoriteHit.type == HomeWidgetLayout::HitType::Favorites) {
@@ -426,7 +426,7 @@ bool Home::handleTap() {
 
 bool Home::handleShortcut(const int item) {
   if (SETTINGS.disableStatistics != 0 && item == 3) {
-    // Removing Statistics shifts Dictionary from row 4 to row 3.
+
     openHomeSubPage(HomeSubPage::Section::Dictionary);
     return true;
   }

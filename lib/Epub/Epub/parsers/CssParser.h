@@ -250,7 +250,7 @@ class CssParser {
     std::array<bool, 256> present{};
     bool valid = false;
   };
-  // Keep the large per-element tables off ChapterHtmlSlimParser's task stack.
+
   mutable std::unique_ptr<WinningRuleCacheTable[]> winningRuleCache_;
   struct SelectorIndexEntry {
     std::string key;

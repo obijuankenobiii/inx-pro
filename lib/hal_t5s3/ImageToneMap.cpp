@@ -24,7 +24,7 @@ namespace {
 constexpr uint8_t kOverlayKeep = 0b00;
 constexpr uint8_t kOverlayDark = 0b01;
 constexpr uint8_t kOverlayLight = 0b10;
-}  // namespace
+}
 
 const uint8_t* grayscaleCodeTable() {
   static constexpr uint8_t kTable[4] = {
@@ -36,8 +36,8 @@ const uint8_t* grayscaleCodeTable() {
   return kTable;
 }
 
-// The quality (GRAY2) planes carry this value's bits directly, so it is the same overlay
-// code as the medium table.
+
+
 uint8_t mapQualityGray2Level(const uint8_t level) { return grayscaleCodeTable()[level & 3u]; }
 
 const uint8_t* mediumTextCodeTable() { return grayscaleCodeTable(); }

@@ -157,7 +157,7 @@ void renderTimezoneKeyboardControl(const GfxRenderer& renderer, const int y, con
                              iconSize, iconSize, iconSize, iconSize, BitmapRender::Orientation::Rotate270CW);
 }
 
-}  // namespace
+}
 
 void TimeSyncActivity::onEnter() {
   ActivityWithSubactivity::onEnter();
@@ -588,8 +588,8 @@ void TimeSyncActivity::performSync() {
     return;
   }
 
-  // Timezone HTTP lookup can take seconds. Sample the synchronized clock again
-  // immediately before writing the external RTC rather than saving stale time.
+
+
   utcNow = time(nullptr);
   const int offsetMinutes = SETTINGS.getTimeZoneOffsetMinutes();
   HalGPIO::DateTime dt{};

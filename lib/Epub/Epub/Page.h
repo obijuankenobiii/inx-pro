@@ -280,7 +280,7 @@ class PageTable final : public PageElement {
  private:
   int16_t tableWidth;
   int16_t tableHeight;
-  int16_t lineHeight;  ///< Effective per-text-line height (font line height * line spacing setting)
+  int16_t lineHeight;
   bool showBorders;
   std::vector<uint16_t> columnWidths;
   std::vector<uint16_t> rowHeights;

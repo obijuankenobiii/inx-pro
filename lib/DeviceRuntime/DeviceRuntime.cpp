@@ -34,16 +34,16 @@ void initialize(HalGPIO& gpio) {
 #endif
 
 #if !defined(SIMULATOR)
-  // Configure the charger after peripherals have finished their bus setup.
-  // The SDK gates board-specific writes; other boards return immediately.
+
+
   if (BatteryMonitor::configureCharger()) INX_SERIAL.println("[PWR] Charger configured");
 #endif
 }
 
 void beforeActivitySwitch(HalDisplay& display, GfxRenderer& renderer, MappedInputManager& input) {
 #if FREEINK_DEVICE_MURPHY_M4
-  // Murphy's async dual-buffer display must finish before the next activity
-  // copies the currently displayed frame into its write buffer.
+
+
   display.finishPendingRefresh();
   renderer.syncWriteBufferFromActive();
 #endif
@@ -100,13 +100,30 @@ void poll(HalGPIO& gpio, const std::function<void()>& enterDeepSleep) {
   }
 
   if (synchronized && !switchChanged && !modeChanged) return;
-  if (gpio.isToggleSwitchOn()) {
-    frontlight.on();
-  } else {
-    frontlight.off();
+
+  const bool switchOn = gpio.isToggleSwitchOn();
+  switch (SETTINGS.piccoToggleMode) {
+    case SystemSetting::PICCO_TOGGLE_DARK_MODE:
+      SETTINGS.darkMode = switchOn ? 1 : 0;
+      SETTINGS.saveToFile();
+      INX_SERIAL.printf("[INPUT][DARK-MODE-SWITCH] %s\n", switchOn ? "on" : "off");
+      break;
+    case SystemSetting::PICCO_TOGGLE_FLICK_PAGE:
+      SETTINGS.shakePageTurn = switchOn ? 1 : 0;
+      SETTINGS.saveToFile();
+      INX_SERIAL.printf("[INPUT][FLICK-SWITCH] %s\n", switchOn ? "on" : "off");
+      break;
+    case SystemSetting::PICCO_TOGGLE_LIGHT:
+    default:
+      if (switchOn) {
+        frontlight.on();
+      } else {
+        frontlight.off();
+      }
+      frontlight_ui::persist();
+      INX_SERIAL.printf("[INPUT][LIGHT-SWITCH] %s\n", switchOn ? "on" : "off");
+      break;
   }
-  frontlight_ui::persist();
-  INX_SERIAL.printf("[INPUT][LIGHT-SWITCH] %s\n", gpio.isToggleSwitchOn() ? "on" : "off");
   synchronized = true;
   lastMode = SETTINGS.piccoToggleMode;
 #else
@@ -115,4 +132,4 @@ void poll(HalGPIO& gpio, const std::function<void()>& enterDeepSleep) {
 #endif
 }
 
-}  // namespace DeviceRuntime
+}

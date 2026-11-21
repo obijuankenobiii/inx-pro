@@ -141,8 +141,8 @@ bool ThumbnailList::handleInput() {
 
 std::string ThumbnailList::titleFor(const LibraryIndex::Book& book) {
   if (book.type == LibraryIndex::Book::Type::FOLDER) {
-    // Metadata groups navigate through synthetic hashed paths, while the
-    // indexed title contains the user-facing author/series/tag label.
+
+
     if (book.hasMetadata && !book.title.empty()) return book.title;
     if (book.path == "/" || book.path.empty()) return "Library";
     const size_t end = book.path.find_last_not_of('/');

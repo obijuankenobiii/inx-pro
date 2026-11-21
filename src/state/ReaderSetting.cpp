@@ -335,7 +335,7 @@ bool ReaderSetting::loadFromFile() {
     return false;
   }
   uint8_t settingsRead = 0;
-  // These fields were appended in versions 8 and 9 so older settings files remain readable.
+
   disableHighlight = 0;
   seamlessChapters = 1;
 
@@ -393,9 +393,9 @@ bool ReaderSetting::loadFromFile() {
         fontSize = static_cast<uint8_t>(FontManager::pointSizeForLegacyReaderSize(fontSize));
       }
     } else if (fontSize >= SystemSetting::FONT_SIZE_COUNT) {
-      // A settings file written while an outline family was selected can be
-      // reopened after that family is removed or replaced by a legacy .bin
-      // family. Convert the stored point size back to the legacy index.
+
+
+
       fontSize = FontManager::legacyReaderSizeForPointSize(fontSize);
     }
 #else
@@ -523,9 +523,9 @@ bool ReaderSetting::loadFromFile() {
       ++settingsRead;
     }
     if (version == READER_SETTINGS_VERSION_6) {
-      // Version 6 stored a separate action for every row in each column.
-      // Collapse that legacy 3x3 data into the new three full-height columns,
-      // keeping the first configured action in each column.
+
+
+
       uint8_t legacyUp[9] = {};
       uint8_t legacyDown[9] = {};
       uint8_t legacyLeft[9] = {};
@@ -649,9 +649,9 @@ bool ReaderSetting::loadFromFile() {
       doubleTapZoneActions[i] = SystemSetting::BTN_ACTION_NONE;
     }
   }
-  // The current tap editor has three full-height columns. Older settings used
-  // four rows, so bring any configured action from those legacy rows into the
-  // visible column before the grid is rendered.
+
+
+
   for (int column = 0; column < ReaderSetting::TAP_ZONE_COLUMNS; ++column) {
     uint8_t tapAction = SystemSetting::BTN_ACTION_NONE;
     uint8_t doubleTapActionForColumn = SystemSetting::BTN_ACTION_NONE;

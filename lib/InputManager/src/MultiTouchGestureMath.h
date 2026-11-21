@@ -55,8 +55,8 @@ inline bool classifyRotation(const GesturePoint& startFirst, const GesturePoint&
   if (startSeparationSq < minSeparationPxSq || endSeparationSq < minSeparationPxSq) return false;
   if (!hasRotationScale(startFirst, startSecond, endFirst, endSecond)) return false;
 
-  // Panel coordinates use a downward-positive Y axis, so a positive cross
-  // product is a clockwise visual rotation.
+
+
   const int64_t cross = startDx * endDy - startDy * endDx;
   const int64_t dot = startDx * endDx + startDy * endDy;
   const float degrees =
@@ -108,4 +108,4 @@ inline bool classifyPinch(const GesturePoint& startFirst, const GesturePoint& st
   return true;
 }
 
-}  // namespace freeink::input_detail
+}

@@ -19,12 +19,12 @@
 #include "state/SystemSetting.h"
 
 namespace {
-constexpr time_t kMinimumValidEpoch = 1704067200;  // 2024-01-01 00:00:00 UTC
+constexpr time_t kMinimumValidEpoch = 1704067200;
 
-// Murphy M4 exposes the power key on the same physical GPIO as the legacy
-// confirm input. Treat that shared electrical signal as power only; touch is
-// the confirm mechanism on this device, so a power press must never activate
-// a UI Confirm action.
+
+
+
+
 bool isSharedConfirmButton(const uint8_t buttonIndex) {
   return buttonIndex == HalGPIO::BTN_CONFIRM;
 }
@@ -70,9 +70,9 @@ void HalGPIO::begin() {
 
   BoardConfig::holdPowerRails();
 
-  // GPIO9 is the Murphy battery sense input. Set its attenuation explicitly
-  // before BatteryMonitor creates its ADC channel; otherwise the first ADC
-  // calibration can inherit a different attenuation from another peripheral.
+
+
+
   if (BoardConfig::ACTIVE.batteryAdc >= 0) {
     pinMode(BoardConfig::ACTIVE.batteryAdc, INPUT);
     analogSetPinAttenuation(BoardConfig::ACTIVE.batteryAdc, ADC_11db);
@@ -130,13 +130,13 @@ void HalGPIO::serviceTouchGestures() {
 
 void HalGPIO::update() {
   if (touchSwipeLatchedDuringDisplay) {
-    // Preserve the swipe detected by the BUSY-wait poll for the first normal
-    // input cycle after the waveform completes.
+
+
     touchSwipeLatchedDuringDisplay = false;
     return;
   }
-  // Start a fresh query window. All callers in the previous release frame
-  // must observe the same suppressed result.
+
+
   postSwipeTapBlockedThisFrame = false;
   inputMgr.update();
   touchDriver.update();
@@ -180,10 +180,10 @@ bool HalGPIO::wasTouchTap(float& nx, float& ny) const {
   if (suppressTouchUntilRelease || touchDriver.isPressed() || postSwipeTapBlockedThisFrame) return false;
   const bool tapped = touchDriver.wasTap(nx, ny);
   if (tapped && suppressPostSwipeTap) {
-    // Murphy can remain in the panel BUSY interval after a swipe. Match the
-    // X4 Pro guard: only suppress a short contact that returns to the swipe's
-    // original point. A real follow-up tap, such as a sidebar item, may be
-    // anywhere else and must remain responsive.
+
+
+
+
     constexpr unsigned long kPostSwipeTapWindowMs = 3000;
     constexpr unsigned long kPostSwipeTapMaxHoldMs = 300;
     constexpr unsigned long kPostSwipeDuplicateWindowMs = 500;
@@ -261,7 +261,7 @@ void HalGPIO::ignoreCurrentTouchUntilRelease() {
 
 void HalGPIO::discardTouchSwipe() {
   touchSwipeDirection = TouchSwipe::None;
-  // Keep the one-shot post-swipe tap guard across the activity transition.
+
   touchPressedEvents = 0;
   touchReleasedEvents = 0;
 }
@@ -276,7 +276,7 @@ HalGPIO::MotionGesture HalGPIO::readMotionGesture(const uint8_t orientation, con
 
 void HalGPIO::startDeepSleep() {
   const auto& power = BoardConfig::ACTIVE.power;
-  // Keep the battery and peripheral rails latched while deep sleep isolates GPIOs.
+
   for (const int8_t pin : {power.latch0, power.latch1}) {
     if (pin < 0) continue;
     const auto gpioPin = static_cast<gpio_num_t>(pin);
@@ -285,7 +285,7 @@ void HalGPIO::startDeepSleep() {
     digitalWrite(pin, HIGH);
     gpio_hold_en(gpioPin);
   }
-  // The caller has already put the panel to sleep and shut down mounted storage.
+
   freeink::PowerManager::powerDownRailsForSleep();
   freeink::PowerManager::deepSleepUntilPowerButton();
 }
@@ -311,9 +311,9 @@ bool HalGPIO::isCharging() const {
 
 bool HalGPIO::isUsbConnected() const {
   if (BoardConfig::ACTIVE.usbDetect < 0) {
-    // Murphy has no separate VBUS/charger-status GPIO. Native USB CDC is the
-    // only reliable runtime indication available to the firmware; this is also
-    // the connection used by the web installer.
+
+
+
     return HWCDC::isPlugged();
   }
   return digitalRead(BoardConfig::ACTIVE.usbDetect) == HIGH;

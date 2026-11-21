@@ -158,10 +158,10 @@ void drawVerticalSwipeAction(const GfxRenderer& renderer, const TapGridCellBound
   if (action == SystemSetting::BTN_ACTION_NONE && (!fallbackLabel || *fallbackLabel == '\0')) return;
   constexpr int arrowSize = 13;
   const int labelHeight = renderer.text.getLineHeight(font);
-  // Keep a 20pt clear gap between the rotated label and the arrowhead.
+
   const int arrowX = labelCenterX + labelHeight / 2 + 20 + arrowSize;
-  // The supplied bounds are one visual third of a side column. The arrow shaft
-  // stays inside that third, with Down at its bottom and Up at its top.
+
+
   const int arrowTipY = up ? bounds.y + 14 : bounds.y + bounds.height - 14;
   const int baseY = up ? arrowTipY + arrowSize : arrowTipY - arrowSize;
   const int pointsX[] = {arrowX, arrowX - arrowSize, arrowX + arrowSize};
@@ -176,7 +176,7 @@ void drawVerticalSwipeAction(const GfxRenderer& renderer, const TapGridCellBound
                           ? fallbackLabel
                           : SystemSetting::readerButtonActionLabel(action);
   const int labelWidth = renderer.text.getWidth(font, label);
-  // Keep the rotated label 20pt inside the corresponding visual third.
+
   const int labelCenterY = up ? bounds.y + bounds.height - 20 - labelWidth / 2
                               : bounds.y + 20 + labelWidth / 2;
   renderCenteredRotatedLabel(renderer, bounds, font, labelCenterX, labelCenterY, label);
@@ -193,13 +193,13 @@ void drawHorizontalSwipeAction(const GfxRenderer& renderer, const TapGridCellBou
                           ? fallbackLabel
                           : SystemSetting::readerButtonActionLabel(action);
   const int labelLineHeight = renderer.text.getLineHeight(font);
-  // Keep a 20pt clear gap between the complete label and the arrowhead.
+
   const int arrowY = rowCenterY + labelLineHeight / 2 + 20 + arrowSize;
-  // Extend the arrow through the outer column and into the middle area. The
-  // tip lands around the center of the display instead of being clipped to the
-  // edge-column bounds.
-  // Both arrows reach toward the display center, but stop short of one
-  // another so their heads remain visibly separate.
+
+
+
+
+
   const int arrowTipX = left ? bounds.x - bounds.width / 2 + arrowGap / 2
                              : bounds.x + bounds.width + bounds.width / 2 - arrowGap / 2;
   const int baseX = left ? arrowTipX + arrowSize : arrowTipX - arrowSize;
@@ -213,9 +213,9 @@ void drawHorizontalSwipeAction(const GfxRenderer& renderer, const TapGridCellBou
   }
 
   const int labelWidth = renderer.text.getWidth(font, label);
-  // Keep left/right labels horizontal and pin them to the outer edge of their
-  // side zone.  If a label is wide, it may extend inward into the middle zone,
-  // but it never crosses the outside container border or wraps to a second line.
+
+
+
   const int labelX = left ? bounds.x + bounds.width - labelInset - labelWidth : bounds.x + labelInset;
   renderer.text.render(font, labelX, rowCenterY - labelLineHeight / 2, label, true,
                        EpdFontFamily::REGULAR);
@@ -606,8 +606,8 @@ void ButtonMappingActivity::handleTapGridInput() {
     const TapGridCellBounds bounds = tapGridCellBounds(renderer, cell);
     if (tapX >= bounds.x && tapX < bounds.x + bounds.width && tapY >= bounds.y &&
         tapY < bounds.y + bounds.height) {
-      // The mode is selected by the separate Tap or Double tap settings row.
-      // Do not switch configuration arrays based on how long the zone is held.
+
+
       openTapZoneSelector(cell);
       return;
     }
@@ -633,9 +633,9 @@ void ButtonMappingActivity::handleSwipeGridInput() {
         SwipeDirection direction;
         bool selectable = true;
         if (cell == 1) {
-          // The center column is one continuous horizontal swipe zone; its
-          // dotted thirds are visual guides only. Use the tap's side of the
-          // column to choose which horizontal action to edit.
+
+
+
           direction = tapX < bounds.x + bounds.width / 2 ? SwipeDirection::Left : SwipeDirection::Right;
         } else if (tapY >= middleTop && tapY < middleBottom && cell == 0) {
           direction = SwipeDirection::Right;
@@ -675,8 +675,8 @@ void ButtonMappingActivity::handleSwipeGridInput() {
     }
 
     if (swipeDetected) {
-      // Preserve the editor's bottom-edge swipe-up exit before processing a
-      // custom side-column Up action.
+
+
       if (direction == SwipeDirection::Up && startNy >= 0.95f) {
         swipeGridOpen_ = false;
         selectorOpen_ = false;
@@ -699,8 +699,8 @@ void ButtonMappingActivity::handleSwipeGridInput() {
                                                 ? (verticalDirection || direction == SwipeDirection::Left)
                                                 : horizontalDirection;
           if (directionAllowed) openSwipeZoneSelector(cell, direction);
-          // Consume every swipe detected inside the editor. Invalid directions
-          // must not fall through to the page-close gesture.
+
+
           return;
         }
       }
@@ -831,8 +831,8 @@ void ButtonMappingActivity::renderTapGrid() {
       const int rotatedTextWidth = renderer.text.getWidth(font, label);
       const int rotatedTopInset = renderer.text.getFontTopInset(font);
       const int rotatedX = bounds.x + (bounds.width - rotatedTextHeight) / 2 - rotatedTopInset;
-      // rotated90CW advances upward from its y anchor, so the centered anchor
-      // is below the visual center by half of the text's source width.
+
+
       const int rotatedY = bounds.y + (bounds.height + rotatedTextWidth) / 2;
       renderer.text.rotated90CW(font, rotatedX, rotatedY, label, true,
                                 EpdFontFamily::REGULAR);
@@ -884,8 +884,8 @@ void ButtonMappingActivity::renderSwipeGrid() {
     }
   }
 
-  // This divider is only a visual guide. Touch selection remains column-only;
-  // the upper and lower halves are not separate swipe zones.
+
+
   const TapGridCellBounds left = swipeGridCellBounds(renderer, 0);
   const TapGridCellBounds right = swipeGridCellBounds(renderer, ReaderSetting::SWIPE_ZONE_COLUMNS - 1);
   const int firstDividerY = left.y + left.height / 3;

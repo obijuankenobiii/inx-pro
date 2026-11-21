@@ -86,8 +86,8 @@ void StoreActivity::loop() {
     return;
   }
 
-  // Store is a top-level sub-page: an upward swipe should dismiss it just like
-  // the other pages opened from Home.
+
+
   if (SubPage::closeInput(renderer, mappedInput, onBack_)) return;
 
   if (mappedInput.hasTouch() &&
@@ -131,9 +131,9 @@ void StoreActivity::render() {
   const int font = systemFontId();
   const int screenW = renderer.getScreenWidth();
   const int maxTextWidth = std::max(1, screenW - kTextX - kSideMargin);
-  // Keep the Store list aligned with Apps and Device Management.  The shared
-  // header's returned baseline differs on some devices, while bodyTop() is
-  // the common content offset used by those main pages and by touch handling.
+
+
+
   const int firstRowY = bodyTop();
   const int subtitleFont = systemFontIdForPointSize(8);
   const int contentHeight = renderer.text.getLineHeight(font) + kSubtitleGap +

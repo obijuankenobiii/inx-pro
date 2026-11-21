@@ -29,8 +29,8 @@ struct FallbackKey {
   const char* key;
 };
 
-// This catalog lets existing renderer call sites become language-aware without
-// making book titles, authors, or other arbitrary text eligible for translation.
+
+
 constexpr FallbackKey kFallbackKeys[] = {
     {"Home", "nav.home"},
     {"Library", "nav.library"},
@@ -704,7 +704,7 @@ bool loadActive(const std::string& code) {
   return true;
 }
 
-}  // namespace
+}
 
 void LanguageManager::initialize() {
   if (initialized && activeCode == SETTINGS.languageCode) return;
@@ -713,7 +713,7 @@ void LanguageManager::initialize() {
     return;
   }
   if (!loadActive(SETTINGS.languageCode)) {
-    // A removed or malformed package must never make the system UI unusable.
+
     SETTINGS.languageCode[0] = '\0';
     loadActive("");
   }
@@ -801,7 +801,7 @@ const char* LanguageManager::translateText(const char* englishText) {
   initialize();
   if (activeCode.empty()) return englishText;
 
-  // Also accept a key directly for future call sites that use semantic keys.
+
   if (const char* translated = findTranslation(englishText)) return translated;
   if (const char* key = findFallbackKey(englishText)) {
     if (const char* translated = findTranslation(key)) return translated;

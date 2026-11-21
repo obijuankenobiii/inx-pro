@@ -595,9 +595,9 @@ void BitmapRender::iconScaled(const uint8_t bitmap[], const int x, const int y, 
     }
     for (int dx = 0; dx < targetWidth; ++dx) {
       if (downscaling) {
-        // A nearest-neighbor reduction makes thin diagonal bitmap icons
-        // visibly jagged. Average the covered source pixels instead, then
-        // threshold the coverage back to the panel's one-bit icon raster.
+
+
+
         const float sourceX0 = static_cast<float>(dx * orientedSourceW) / targetWidth;
         const float sourceX1 = static_cast<float>((dx + 1) * orientedSourceW) / targetWidth;
         const float sourceY0 = static_cast<float>(dy * orientedSourceH) / targetHeight;

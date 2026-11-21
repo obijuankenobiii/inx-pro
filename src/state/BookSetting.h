@@ -22,22 +22,22 @@
  * @brief Status bar item types for display sections
  */
 enum class StatusBarItem {
-  NONE,                       ///< Nothing displayed
-  PAGE_NUMBERS,               ///< Current page / total pages (e.g., "5/120")
-  PERCENTAGE,                 ///< Reading percentage (e.g., "42%")
-  CHAPTER_TITLE,              ///< Current chapter title
-  BATTERY_ICON,               ///< Battery icon only
-  BATTERY_PERCENTAGE,         ///< Battery percentage text only
-  BATTERY_ICON_WITH_PERCENT,  ///< Battery icon with percentage
-  PROGRESS_BAR,               ///< Horizontal progress bar
-  PROGRESS_BAR_WITH_PERCENT,  ///< Progress bar with percentage
-  PAGE_BARS,                  ///< Vertical bars representing pages
-  BOOK_TITLE,                 ///< Book title
-  AUTHOR_NAME,                ///< Author name
-  PAGE_NUMBERS_WITH_PERCENT,  ///< Page numbers and percentage combined (e.g., "12/340 45%")
-  TIME_LEFT_CHAPTER,          ///< Estimated time left in the current chapter (ETA feature)
-  TIME_LEFT_BOOK,             ///< Estimated time left in the complete book (ETA feature)
-  CLOCK,                      ///< Current local time from the device RTC
+  NONE,
+  PAGE_NUMBERS,
+  PERCENTAGE,
+  CHAPTER_TITLE,
+  BATTERY_ICON,
+  BATTERY_PERCENTAGE,
+  BATTERY_ICON_WITH_PERCENT,
+  PROGRESS_BAR,
+  PROGRESS_BAR_WITH_PERCENT,
+  PAGE_BARS,
+  BOOK_TITLE,
+  AUTHOR_NAME,
+  PAGE_NUMBERS_WITH_PERCENT,
+  TIME_LEFT_CHAPTER,
+  TIME_LEFT_BOOK,
+  CLOCK,
   STATUS_BAR_ITEM_COUNT
 };
 
@@ -85,45 +85,45 @@ struct StatusBarSectionConfig {
  * @brief Complete status bar layout with left, middle, and right sections
  */
 struct StatusBarLayout {
-  StatusBarSectionConfig left;    ///< Left status bar section
-  StatusBarSectionConfig middle;  ///< Middle status bar section
-  StatusBarSectionConfig right;   ///< Right status bar section
+  StatusBarSectionConfig left;
+  StatusBarSectionConfig middle;
+  StatusBarSectionConfig right;
 };
 
 /**
  * @brief Per-book reading settings
  */
 struct BookSettings {
-  uint8_t fontFamily = SystemSetting::MONTSERRAT;         ///< Font family
+  uint8_t fontFamily = SystemSetting::MONTSERRAT;
   /** Preferred language package for this book. Empty means follow the system/default reader language. */
   char languageCode[33] = "";
-  uint8_t fontSize = SystemSetting::SMALL;                 ///< Legacy index for built-in/.bin fonts; actual 6-45pt for TTF/OTF
-  uint8_t lineHeight = 100;                                ///< Line height, % of natural (10-200)
-  uint8_t textSpace = 100;                                 ///< Word spacing, % of natural (10-200)
-  uint8_t paragraphAlignment = SystemSetting::FOLLOW_CSS;  ///< Paragraph alignment
+  uint8_t fontSize = SystemSetting::SMALL;
+  uint8_t lineHeight = 100;
+  uint8_t textSpace = 100;
+  uint8_t paragraphAlignment = SystemSetting::FOLLOW_CSS;
   /** Honor CSS `text-indent` when on (mirrors global "Indent" when unset in per-book file). */
   uint8_t paragraphCssIndentEnabled = 0;
 
-  uint8_t extraParagraphSpacing = 1;  ///< Extra paragraph spacing enabled
-  uint8_t textAntiAliasing = 0;       ///< Text anti-aliasing enabled
-  uint8_t hyphenationEnabled = 1;     ///< Hyphenation enabled
-  uint8_t bionicReadingEnabled = 0;   ///< Bionic Reading enabled
+  uint8_t extraParagraphSpacing = 1;
+  uint8_t textAntiAliasing = 0;
+  uint8_t hyphenationEnabled = 1;
+  uint8_t bionicReadingEnabled = 0;
 
-  uint8_t marginTop = 0;     ///< Top screen margin in pixels
-  uint8_t marginLeft = 0;    ///< Left screen margin in pixels
-  uint8_t marginRight = 0;   ///< Right screen margin in pixels
-  uint8_t marginBottom = 0;  ///< Bottom screen margin in pixels
+  uint8_t marginTop = 0;
+  uint8_t marginLeft = 0;
+  uint8_t marginRight = 0;
+  uint8_t marginBottom = 0;
 
-  uint8_t orientation = SystemSetting::PORTRAIT;  ///< Screen orientation
+  uint8_t orientation = SystemSetting::PORTRAIT;
 
   /** Same values as SystemSetting::LONG_PRESS_* (0=off, 1=chapter skip, 2=skip 5 pages). */
   uint8_t longPressChapterSkip = SystemSetting::LONG_PRESS_CHAPTER_SKIP;
 
-  uint8_t refreshFrequency = 0;  ///< Screen refresh frequency in pages
+  uint8_t refreshFrequency = 0;
 
-  StatusBarSectionConfig statusBarLeft;    ///< Left status bar section
-  StatusBarSectionConfig statusBarMiddle;  ///< Middle status bar section
-  StatusBarSectionConfig statusBarRight;   ///< Right status bar section
+  StatusBarSectionConfig statusBarLeft;
+  StatusBarSectionConfig statusBarMiddle;
+  StatusBarSectionConfig statusBarRight;
   uint8_t statusBarFullStyle = static_cast<uint8_t>(StatusBarItem::NONE);
 
   /**
@@ -142,16 +142,16 @@ struct BookSettings {
 
   static constexpr uint8_t kNoReaderPreset = 0xFF;
 
-  bool useCustomSettings = false;  ///< Whether custom settings are active
+  bool useCustomSettings = false;
   uint8_t readerPresetIndex = kNoReaderPreset;
 
   /**
    * @brief Complete layout structure
    */
   struct Layout {
-    StatusBarSectionConfig left;    ///< Left section config
-    StatusBarSectionConfig middle;  ///< Middle section config
-    StatusBarSectionConfig right;   ///< Right section config
+    StatusBarSectionConfig left;
+    StatusBarSectionConfig middle;
+    StatusBarSectionConfig right;
   };
 
   /**

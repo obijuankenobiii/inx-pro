@@ -28,7 +28,7 @@ uint8_t weekdayFromCalendarDate(const uint16_t year, const uint8_t month, const 
   return static_cast<uint8_t>(sundayZero == 0 ? 7 : sundayZero);
 }
 
-}  // namespace
+}
 
 void HalGPIO::begin() {
   INX_SERIAL.begin(115200);
@@ -36,9 +36,9 @@ void HalGPIO::begin() {
 
   BoardConfig::holdPowerRails();
 
-  // Must run before InputManager (GT911 shares this I2C bus), before SdMan.begin() (it
-  // brings up the SD SPI bus) and before HalDisplay::begin() (the panel's power hooks
-  // drive the PCA9535 and TPS65185 over I2C). It also installs the user-button hook.
+
+
+
   BoardT5S3::begin();
   INX_SERIAL.printf("[T5S3] PCA9535 present=%d\n", BoardT5S3::pca9535Present() ? 1 : 0);
 
@@ -182,7 +182,7 @@ HalGPIO::MotionGesture HalGPIO::readMotionGesture(const uint8_t orientation, con
 
 void HalGPIO::startDeepSleep() {
   const auto& power = BoardConfig::ACTIVE.power;
-  // Keep the battery and peripheral rails latched while deep sleep isolates GPIOs.
+
   for (const int8_t pin : {power.latch0, power.latch1}) {
     if (pin < 0) continue;
     const auto gpioPin = static_cast<gpio_num_t>(pin);
@@ -191,7 +191,7 @@ void HalGPIO::startDeepSleep() {
     digitalWrite(pin, HIGH);
     gpio_hold_en(gpioPin);
   }
-  // The caller has already put the panel to sleep and shut down mounted storage.
+
   freeink::PowerManager::powerDownRailsForSleep();
   freeink::PowerManager::deepSleepUntilPowerButton();
 }
@@ -311,7 +311,7 @@ bool HalGPIO::getTemperatureAndHumidity(float& outTempC, float& outHumidityPct) 
   return false;
 }
 
-// The bottom-edge phantom tap is an X4 Pro digitizer quirk; nothing to suppress here.
+
 bool suppressBottomEdgeTap(const float ny, const unsigned long heldMs) {
   (void)ny;
   (void)heldMs;

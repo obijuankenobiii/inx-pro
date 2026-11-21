@@ -119,8 +119,8 @@ bool installArchiveLocked(const std::string& archivePath, const std::string& cod
   size_t translationSize = 0;
   size_t extractedBytes = 0;
 
-  // Validate the complete archive before writing anything. This keeps a
-  // malformed package from leaving a half-installed language behind.
+
+
   for (size_t i = 0; i < zip.entryCount(); ++i) {
     const char* name = zip.fileNameAt(i);
     if (!name) continue;
@@ -228,7 +228,7 @@ bool installArchiveLocked(const std::string& archivePath, const std::string& cod
   }
   return true;
 }
-}  // namespace
+}
 
 bool LanguagePackageManager::fetchAvailable(std::vector<Package>& packages, std::string& error) {
   packages.clear();

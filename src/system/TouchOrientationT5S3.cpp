@@ -131,5 +131,5 @@ void screenToNative(const GfxRenderer::Orientation orientation, const float scre
   }
 }
 
-}  // namespace touch
-}  // namespace inx
+}
+}

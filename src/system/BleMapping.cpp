@@ -12,7 +12,7 @@
 namespace {
 constexpr char kMappingFile[] = "/.system/ble_mapping.bin";
 constexpr char kLegacyMappingFile[] = "/.system/murphy_ble_mapping.bin";
-constexpr uint32_t kMagic = 0x314D424Du;  // "MBM1"
+constexpr uint32_t kMagic = 0x314D424Du;
 constexpr uint8_t kVersion = 1;
 constexpr uint8_t kMaxRemotes = 4;
 constexpr uint8_t kMaxBindings = 8;
@@ -68,11 +68,11 @@ void save() {
 
 bool openMappingFile(FsFile& file) {
   if (SdMan.openFileForRead("CPS", kMappingFile, file)) return true;
-  // One-time compatibility for mappings saved by the earlier Murphy-only UI.
+
   return SdMan.openFileForRead("CPS", kLegacyMappingFile, file);
 }
 
-}  // namespace
+}
 
 namespace ble_mapping {
 
@@ -171,6 +171,6 @@ void formatCode(char* out, const size_t outSize, const uint32_t code) {
                 static_cast<unsigned>((code >> 8) & 0xFF), static_cast<unsigned>(code & 0xFF));
 }
 
-}  // namespace ble_mapping
+}
 
-#endif  // FREEINK_CAP_BLE_HID_HOST
+#endif

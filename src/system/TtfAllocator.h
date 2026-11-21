@@ -24,9 +24,9 @@ inline void release(void* buffer) {
   std::free(buffer);
 #endif
 }
-}  // namespace inx::ttf
+}
 
-// stb's outline, scanline and active-edge storage must follow the same PSRAM
-// policy as font bytes and glyph bitmaps. Its default allocator is plain malloc.
+
+
 #define STBTT_malloc(bytes, userdata) ((void)(userdata), inx::ttf::allocate(bytes))
 #define STBTT_free(buffer, userdata) ((void)(userdata), inx::ttf::release(buffer))

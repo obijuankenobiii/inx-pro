@@ -44,8 +44,8 @@ void HalGPIO::begin() {
   BoardConfig::holdPowerRails();
 
 #if FREEINK_DEVICE_STICKY
-  // Sticky's GT911 needs this unit-specific calibration. Other targets that
-  // reuse this HAL wrapper (Picco) must keep their BoardConfig profile intact.
+
+
   BoardConfig::ACTIVE.touch.swapXY = false;
   BoardConfig::ACTIVE.touch.flipX = false;
   BoardConfig::ACTIVE.touch.rawMinX = 0;
@@ -85,9 +85,9 @@ void HalGPIO::serviceTouchGestures() {
 
     const bool startedAtEdge = sx < kEdgeSwipeMargin || sx > (1.0f - kEdgeSwipeMargin) || sy < kEdgeSwipeMargin ||
                                sy > (1.0f - kEdgeSwipeMargin);
-    // A rightward swipe beginning at the left edge is the hidden-sidebar
-    // gesture. Do not convert it into a synthetic Back press before the page
-    // navigation layer can consume it.
+
+
+
     if (sx < kEdgeSwipeMargin && touchSwipeDirection == TouchSwipe::Right) {
       return;
     }
@@ -235,7 +235,7 @@ HalGPIO::MotionGesture HalGPIO::readMotionGesture(const uint8_t orientation, con
 
 void HalGPIO::startDeepSleep() {
   const auto& power = BoardConfig::ACTIVE.power;
-  // Keep the battery and peripheral rails latched while deep sleep isolates GPIOs.
+
   for (const int8_t pin : {power.latch0, power.latch1}) {
     if (pin < 0) continue;
     const auto gpioPin = static_cast<gpio_num_t>(pin);
@@ -244,7 +244,7 @@ void HalGPIO::startDeepSleep() {
     digitalWrite(pin, HIGH);
     gpio_hold_en(gpioPin);
   }
-  // The caller has already put the panel to sleep and shut down mounted storage.
+
   freeink::PowerManager::powerDownRailsForSleep();
   freeink::PowerManager::deepSleepUntilPowerButton();
 }

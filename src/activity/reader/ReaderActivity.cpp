@@ -199,9 +199,9 @@ void ReaderActivity::onGoToEpubReader(std::unique_ptr<Epub> epub) {
   auto callback = onGoBack;
 
   exitActivity();
-  // Keep the SD/PSRAM reader fonts resident while moving between Reader
-  // sessions. EpubActivity::onEnter() already reuses loaded entries; forcing
-  // an unload here turns every reopen into a full TTF reconstruction.
+
+
+
   enterNewActivity(new EpubActivity(
       renderer, mappedInput, std::move(epub),
       [callback, bookPath] {
@@ -280,9 +280,9 @@ void ReaderActivity::onEnter() {
     return;
   }
 
-  // Type detection and metadata loading happen synchronously before the
-  // concrete reader activity exists. Show feedback only on the first user
-  // open; reopening a known book should return to the reader immediately.
+
+
+
   BookState::Book knownBook;
   const bool showOpeningFeedback = !BOOK_STATE.findBook(initialBookPath, knownBook);
   if (showOpeningFeedback) {

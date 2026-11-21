@@ -43,7 +43,7 @@ inline void progressBar(const GfxRenderer& renderer, const int x, const int y, c
   const int fillWidth = std::max(0, std::min(innerWidth, innerWidth * percent / 100));
   if (fillWidth > 0) renderer.rectangle.fill(x + 1, y + 1, fillWidth, height - 2, true);
 }
-}  // namespace
+}
 
 inline void render(GfxRenderer& renderer, const int bodyTop, const int font, const char* title,
                    const std::string& packageName, const size_t downloaded, const size_t total,
@@ -91,4 +91,4 @@ inline void render(GfxRenderer& renderer, const int bodyTop, const int font, con
                        status, true);
 }
 
-}  // namespace DownloadTransferUi
+}

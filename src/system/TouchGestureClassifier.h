@@ -2,12 +2,12 @@
 
 #include <cmath>
 
-// App gesture policy, independent of the SDK's more permissive release-tap
-// threshold. Coordinates stay in the native panel frame until UI mapping.
+
+
 class TouchGestureClassifier {
  public:
   static constexpr int swipeMinPx = 20;
-  // A contact that reaches the swipe threshold must never remain a tap.
+
   static constexpr int tapSlopPx = swipeMinPx - 1;
   static constexpr unsigned long swipeMaxMs = 700;
 
@@ -28,7 +28,7 @@ class TouchGestureClassifier {
     float sx = 0, sy = 0, ex = 0, ey = 0;
     const bool backendSwipe = input.wasSwipe(sx, sy, ex, ey);
     const bool backendTap = input.wasTouchTap(x, y);
-    // Backend eligibility preserves contact suppression and multi-touch rules.
+
     if (backendSwipe) {
       if (!active_) {
         startX_ = sx;

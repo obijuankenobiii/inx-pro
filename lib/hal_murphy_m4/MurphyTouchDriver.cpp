@@ -15,7 +15,7 @@ bool writeRegister(const uint8_t reg, const uint8_t value) {
   return murphy_m4_i2c::write(murphy_m4_i2c::touchDevice(touch.sda, touch.scl, touch.i2cAddress), payload,
                                sizeof(payload));
 }
-}  // namespace
+}
 
 void MurphyTouchDriver::begin() {
   const auto& touch = BoardConfig::ACTIVE.touch;
@@ -42,9 +42,9 @@ void MurphyTouchDriver::begin() {
     return;
   }
 
-  // These are the volatile settings used by the Murphy Reader controller.
-  // The driver remains in polling mode; INT is diagnostic only because its
-  // report pulses are shorter than the application's normal loop interval.
+
+
+
   const bool modeOk = writeRegister(0x00, 0x00);
   const bool thresholdOk = writeRegister(0x80, 0x16);
   const bool rateOk = writeRegister(0x88, 0x04);
@@ -66,7 +66,7 @@ void MurphyTouchDriver::update() {
   if (now < nextReadAt_) return;
   nextReadAt_ = now + kSampleDelayMs;
 
-  // Register 0x02 returns TD_STATUS followed by the first point's XH/XL/YH/YL.
+
   uint8_t frame[11] = {};
   if (!readFrame(frame, sizeof(frame))) {
     if (pressed_ && now - point_.timestamp >= kStaleReleaseMs) finishRelease(now);

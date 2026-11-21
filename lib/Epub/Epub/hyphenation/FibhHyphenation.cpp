@@ -82,7 +82,7 @@ const uint8_t* keyAt(const Table& table, uint32_t index, uint8_t& keyLength) {
   return record + 1;
 }
 
-}  // namespace
+}
 
 bool isValidFibhHyphenation(const uint8_t* data, const size_t size) {
   Table table;

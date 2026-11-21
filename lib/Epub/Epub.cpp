@@ -65,8 +65,8 @@ bool spineHrefLooksLikeRenderableHtml(const std::string& href) {
 
 constexpr const char* kPackagedDeviceThumbnailPath = "META-INF/thumbnail.jpg";
 constexpr const char* kBookMetadataCacheFile = "/book.bin";
-// Keep generated EPUB thumbnails at the X4 Pro's native portrait width scale so
-// library/carousel views do not have to enlarge a low-resolution cover.
+
+
 constexpr int kThumbnailMaxWidth = 480;
 constexpr int kThumbnailMaxHeight = 720;
 constexpr uint8_t kThumbnailJpegQuality = 96;
@@ -716,10 +716,10 @@ void pngThumbTask(void* arg) {
 
 bool runWithDecodeStack(const std::function<bool()>& work) {
 #ifdef SIMULATOR
-  // The native simulator's FreeRTOS semaphore shim is mutex-backed and does
-  // not model an initially-empty binary semaphore. Run this small diagnostic
-  // conversion synchronously so the caller cannot return while the detached
-  // shim task still references the stack-owned job.
+
+
+
+
   return work();
 #else
   PngThumbJob job;
@@ -1071,10 +1071,10 @@ bool Epub::parseTocNavFile() const {
  * @return true if the book was successfully loaded, false otherwise
  */
 bool Epub::load(const bool buildIfMissing) {
-  // Metadata parsing writes several per-book temporary files before publishing
-  // book.bin. Keep the whole transaction serialized with incremental chapter
-  // prefetch and other library workers so their SD/FAT operations cannot
-  // interleave and corrupt another book's cache.
+
+
+
+
   EpubImagePrefetch::IoLock ioLock;
   setupCacheDir();
 
@@ -1561,9 +1561,9 @@ const CssParser* Epub::getParsedCssParser(const CssParser::UsageFilter* usageFil
     return parsedCssParser_.get();
   }
 
-  // The CSS dictionary and its indexes live in PSRAM. Keep only a modest
-  // internal-heap floor for transient ZIP/string work so BLE does not make
-  // otherwise valid stylesheet rules disappear.
+
+
+
   constexpr uint32_t kMinFreeHeapForCss = 16 * 1024;
   if (ESP.getFreeHeap() < kMinFreeHeapForCss) {
     INX_SERIAL.printf("[EBP] Low heap (%u bytes), skipping EPUB stylesheet CSS\n",

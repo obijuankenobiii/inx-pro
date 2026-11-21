@@ -54,9 +54,9 @@ int scaleMetricRound(const int value, const uint8_t scalePct) {
   return std::max(1, (value * static_cast<int>(scalePct) + kScaleRoundBias) / 100);
 }
 
-// A few converted Arabic font tables contain visible glyphs with a zero
-// advance. Treat those as a normal glyph-width advance; otherwise every
-// following Arabic glyph is painted at the same cursor position.
+
+
+
 int glyphAdvanceX(const EpdGlyph& glyph) {
   return glyph.advanceX > 0 ? glyph.advanceX : static_cast<int>(glyph.width);
 }
@@ -132,8 +132,8 @@ bool read1BitRowPixel(const uint8_t* row, const int width, const int x) {
   return ((row[x / 8] >> (7 - (x % 8))) & 1u) != 0;
 }
 
-// TTF glyph bitmaps are packed as one continuous pixel stream, so a row can
-// begin partway through a byte when the glyph width is not divisible by four.
+
+
 uint8_t read2BitRowPixel(const uint8_t* row, const size_t rowPixelOffset, const int x) {
   const size_t packedPixel = rowPixelOffset + static_cast<size_t>(x);
   const uint8_t byte = row[packedPixel / 4u];
@@ -180,13 +180,13 @@ enum class MarkAnchor : uint8_t {
 
 MarkAnchor markAnchorFor(const uint32_t cp) {
   switch (cp) {
-    case 0x05BC:  // dagesh / mapiq / shuruk dot
-    case 0x05BA:  // holam haser for vav
+    case 0x05BC:
+    case 0x05BA:
       return MarkAnchor::CENTER_NATIVE;
-    case 0x05C1:  // shin dot
+    case 0x05C1:
       return MarkAnchor::RIGHT_NATIVE;
-    case 0x05B9:  // holam
-    case 0x05C2:  // sin dot
+    case 0x05B9:
+    case 0x05C2:
       return MarkAnchor::LEFT_NATIVE;
     default:
       return MarkAnchor::CENTER_RAISED;
@@ -303,10 +303,10 @@ int TextRender::getUntranslatedWidth(const int fontId, const char* text, const E
   }
   if (!text || *text == '\0') return 0;
 
-  // Streaming TTF fonts already expose cached glyph metadata. Measure the
-  // common no-fallback case in one pass; the old path first scanned every
-  // codepoint for fallback glyphs and then scanned the same text again for
-  // its width, doubling the hot-path work during EPUB pagination.
+
+
+
+
   if (ExternalFont* stream = findStreamingFont(gfx, primary->getData(style))) {
     int streamingWidth = 0;
     int streamingInkRight = 0;
@@ -336,11 +336,11 @@ int TextRender::getUntranslatedWidth(const int fontId, const char* text, const E
     }
   }
 
-  // Use the same cursor-advance model as the renderer for every font. The
-  // family bounding-box helper measures ink extents, not the distance the
-  // cursor advances. That difference is especially visible with Arabic
-  // joining forms and their overhangs: a line can be measured too narrowly,
-  // causing the next word to overlap and RTL margins to drift.
+
+
+
+
+
   int totalWidth = 0;
   int inkRight = 0;
   const uint8_t* ptr = reinterpret_cast<const uint8_t*>(text);
@@ -404,16 +404,16 @@ int TextRender::getGlyphTopInset(const int fontId, const uint32_t cp, const EpdF
 }
 
 int TextRender::getFontTopInset(const int fontId, const EpdFontFamily::Style style) const {
-  // The line box must be positioned from the glyph that reaches highest, not
-  // from one arbitrary reference glyph. Keep this list to common ascenders so
-  // punctuation/descenders cannot pull the whole line out of position.
+
+
+
   constexpr uint32_t kAscenderGlyphs[] = {'H', 'A', 'b', 'd', 'f', 'h', 'k', 'l', 't'};
   int topInset = 0;
   bool found = false;
   for (const uint32_t cp : kAscenderGlyphs) {
     const int inset = getGlyphTopInset(fontId, cp, style);
-    // A zero result also means that the glyph is unavailable. Ignore it when
-    // another usable glyph exists, but retain the old H-based fallback below.
+
+
     if (inset <= 0) continue;
     if (!found || inset < topInset) {
       topInset = inset;
@@ -630,8 +630,8 @@ void TextRender::rotated90CW(const int fontId, const int x, const int y, const c
     if (isOverlayMark(cp)) {
       if (!lastBase.valid || !lookupGlyph(gfx, *resolvedFont, cp, style, glyphStorage, glyph, false)) continue;
       const MarkAnchor anchor = markAnchorFor(cp);
-      // In the rotated coordinate system the horizontal anchor becomes a
-      // vertical cursor position. The mark remains zero-advance.
+
+
       int markY = lastBase.cursorX - lastBase.left - markAnchorShift(anchor, lastBase.width, glyph->width) + glyph->left;
       int markX = x;
       renderChar(*resolvedFont, cp, &markX, &markY, black, style, false);
@@ -740,9 +740,9 @@ void TextRender::renderUntranslated(const int fontId, const int x, const int y, 
     EpdGlyph glyphStorage{};
     const EpdGlyph* glyph = nullptr;
     if (isOverlayMark(cp)) {
-      // Arabic harakat and Hebrew niqqud have no cursor advance. Draw them
-      // over the preceding base glyph; rendering them at the current cursor
-      // is what caused the visible overlap reported on Arabic pages.
+
+
+
       if (!lastBase.valid || !lookupGlyph(gfx, *resolvedFont, cp, style, glyphStorage, glyph, false)) continue;
       const MarkAnchor anchor = markAnchorFor(cp);
       int markX = markCursorX(anchor, lastBase, *glyph);
@@ -1128,10 +1128,10 @@ void TextRender::renderScaledChar(const EpdFontFamily& fontFamily, const uint32_
   const uint8_t width = glyph->width;
   const uint8_t height = glyph->height;
   const int scaledAdvanceX = scaleMetricRound(glyphAdvanceX(*glyph), scalePct);
-  // Demand-loaded fonts legitimately expose whitespace/empty glyphs with no
-  // bitmap dimensions. Keep their advance, but do not enter the scaled bitmap
-  // sampler: a zero-width glyph would leave sampleCount at zero and divide by
-  // zero while averaging the 2-bit pixels.
+
+
+
+
   if (width == 0 || height == 0 || scalePct == 0) {
     *x += scaledAdvanceX;
     return;

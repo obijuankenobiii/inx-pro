@@ -203,7 +203,7 @@ bool installArchiveLocked(const std::string& archivePath, const std::string& fol
   if (SdMan.exists(backupPath.c_str())) removeDirectoryTree(backupPath);
   return true;
 }
-}  // namespace
+}
 
 bool DictionaryPackageManager::fetchAvailable(std::vector<Package>& packages, std::string& error) {
   packages.clear();

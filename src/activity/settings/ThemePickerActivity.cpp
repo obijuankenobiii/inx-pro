@@ -31,10 +31,10 @@
 
 namespace {
 
-// Keep Theme's mode/theme lists aligned with the shared Settings list geometry.
+
 constexpr int kRowHeight = SettingsListLayout::kRowHeight;
 constexpr int kBottomButtonMargin = 20;
-// SubPage::header leaves a 20pt gap below the header icon before page content.
+
 constexpr int kThemeContentTop = navigation::Menu::topPadding + navigation::Menu::iconSize + 20;
 
 struct PreviewBounds {
@@ -257,9 +257,9 @@ bool isHalfStack50Row(const HomeTheme::Layout layout, const int slot) {
   return isHalfStackLayout(layout) && halfStackRowPercent(layout, slot) == 50;
 }
 
-// The 50% row has the same breathing room as a 1x2 section.  Only the
-// centered carousel keeps its dedicated 50% presentation; other widgets use
-// their regular 1x2 treatment there.
+
+
+
 bool useOneByTwoWidgetLayout(const HomeTheme::Layout layout, const int slot) {
   return isCompactLayout(layout) && !isHalfStack50Row(layout, slot);
 }
@@ -656,7 +656,7 @@ void ThemePickerActivity::renderWidgetPicker() {
                                                   std::max(0, widgetOptionIndex(layout_, editingSleep_, widgets_[firstSlot])));
   const int lastSlot = layout_ == HomeTheme::Layout::OneByOne ? firstSlot + 1 : HomeTheme::slotCount(layout_);
   if (layout_ == HomeTheme::Layout::OneByOne) {
-    // firstSlot is a persistent storage slot. It is never a screen row.
+
     renderWidgetPreview(widgets_[firstSlot], layoutX, layoutY, cellW, cellH, backgrounds_[firstSlot] != 0,
                         carouselStyles_[firstSlot], carouselLabels_[firstSlot] != 0,
                         carouselLabelColors_[firstSlot], carouselShadowStyles_[firstSlot],
@@ -669,8 +669,8 @@ void ThemePickerActivity::renderWidgetPicker() {
                         statisticsSummary_[firstSlot] != 0, streakCompact_[firstSlot] != 0, false, false, false, true,
                         firstSlot);
   } else {
-    // Keep the established 1 x 2 preview path: two storage slots map directly
-    // to the two visible rows.
+
+
     for (int slot = 0; slot < HomeTheme::slotCount(layout_); ++slot) {
       const LayoutCellBounds cell = layoutCellBounds(layout_, layoutX, layoutY, layoutW, layoutH, slot);
       renderWidgetPreview(widgets_[slot], cell.x, cell.y, cell.width, cell.height, backgrounds_[slot] != 0,
@@ -1034,8 +1034,8 @@ void ThemePickerActivity::renderWidgetPopup() {
                         HomeTheme::HeatmapView::Monthly, libraryFolders_[widgetSlot_], true, true, true, true,
                         true, true, true, true, true, false, true, false, false, false, true, widgetSlot_);
 
-    // Empty already has its label inside the placeholder preview. Do not
-    // repeat it beneath the cell like the other widget options.
+
+
     if (widget != HomeTheme::Widget::Empty) {
       const std::string label = HomeTheme::widgetLabel(widget);
       const std::string shown = renderer.text.truncate(font, label.c_str(), box.cellWidth - 16);
@@ -1191,8 +1191,8 @@ void ThemePickerActivity::initializeNewThemeEditor() {
 }
 
 void ThemePickerActivity::applySelectedLayout() {
-  // Half-stack layouts share the 1x3 picker entry. In edit mode, confirming
-  // that already-selected entry must not discard the saved section ratios.
+
+
   const HomeTheme::Layout nextLayout = !creatingTheme_ && isHalfStackLayout(layout_) &&
                                                layoutSelection_ == layoutIndex(layout_)
                                            ? layout_

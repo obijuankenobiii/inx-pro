@@ -15,8 +15,8 @@ struct RecentBook {
   std::string title;
   std::string author;
   float progress = -1.0f;
-  // UI data is persisted with the recent entry so home widgets never need to
-  // probe the SD card for the cover or reopen the EPUB metadata cache.
+
+
   std::string thumbnailPath;
   std::string description;
   std::string rating;

@@ -34,7 +34,7 @@ namespace {
 constexpr int kRowValueRightInset = 30;
 constexpr int kNavigationRightInset = 24;
 constexpr int kEmbeddedListTopExtra = 30;
-constexpr int kPresetVisibleCount = 7;  // Six requested rows plus one additional row using the spare space.
+constexpr int kPresetVisibleCount = 7;
 constexpr int kPresetListGap = 20;
 constexpr const char* kAddPresetButtonLabel = "New preset +";
 
@@ -155,8 +155,8 @@ void ReaderPresetsActivity::onEnter() {
   const int screenH = renderer.getScreenHeight();
   const int listTop = navigation::Menu::height + 20 + UiPage::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra;
   const int contentBottom = screenH - navigation::Menu::bottomInset() - 10;
-  // Keep the main Reader page on the same fixed row height as the other
-  // settings pages. The Add/Edit preset editor owns its own compact sizing.
+
+
   listItemHeight_ = kListItemHeight;
   if (!presetsOnly_) {
     const int rows = rowCount();
@@ -250,8 +250,8 @@ void ReaderPresetsActivity::render() {
   for (int i = 0; i < itemsPerPage_ && (i + scrollOffset_) < rows; i++) {
     const int rowIndex = i + scrollOffset_;
     const int itemY = (presetsOnly_ ? presetListTop : listTop) + i * listItemHeight_;
-    // Reader settings are touch-activated; rows do not have a persistent
-    // hardware-selection state or inverted active-row appearance.
+
+
     constexpr bool isSelected = false;
     const bool hasNextItem = i + 1 < itemsPerPage_ && rowIndex + 1 < rows;
     const int textY = itemY + (listItemHeight_ - renderer.text.getLineHeight(systemFontId())) / 2;
@@ -540,8 +540,8 @@ void ReaderPresetsActivity::renderActionSelectorOverlay() {
 }
 
 void ReaderPresetsActivity::openEditor(int presetIndex) {
-  // The edit action is opened from a touch-driven overlay. Clear the overlay's
-  // consumed edges before the new editor starts receiving input.
+
+
   mappedInput.discardPendingButtonEdges();
   mappedInput.discardPendingTouchTap();
   mappedInput.discardPendingSwipe();
@@ -662,8 +662,8 @@ void ReaderPresetsActivity::handleListInput() {
 
   float swipeStartNx = 0.0f;
   float swipeStartNy = 0.0f;
-  // A swipe-up from the bottom edge is the page-close gesture. Keep the
-  // start-band guard so ordinary swipes in the list remain pagination.
+
+
   if (mappedInput.wasTouchSwipeUpInScreen(renderer, swipeStartNx, swipeStartNy) && swipeStartNy >= 0.95f) {
     if (onHardwareBack_) {
       onHardwareBack_();

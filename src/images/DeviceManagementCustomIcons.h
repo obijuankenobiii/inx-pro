@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-// Generated from the supplied 1-bit UI icons; 1=transparent, 0=black.
+
 
 static const uint8_t DeviceManagementFileTransfer[200] = {
     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,

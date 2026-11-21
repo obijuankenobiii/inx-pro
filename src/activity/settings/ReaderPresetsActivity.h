@@ -48,12 +48,12 @@ class ReaderPresetsActivity final : public ActivityWithSubactivity, public navig
 
   void render();
   void renderOverlay();
-  int rowCount() const;  ///< Flattened Reader rows or the Presets list rows
+  int rowCount() const;
   int systemHeaderRow() const { return 0; }
   bool isSystemSettingRow(int row) const;
   void changeSystemSetting(int row, int delta);
   int presetRowsStart() const;
-  int presetIndexForRow(int row) const;  ///< store index for a preset row, or -1 for the Add-new row
+  int presetIndexForRow(int row) const;
   bool isButtonMappingRow(int row) const;
   bool isFontManagerRow(int row) const;
   void activateSelectedRow();
@@ -66,7 +66,7 @@ class ReaderPresetsActivity final : public ActivityWithSubactivity, public navig
                            std::function<void(int)> onCommit);
   void handleActionSelectorInput();
   void renderActionSelectorOverlay();
-  void openSelectorForRow(int row);  ///< Builds the right options/onCommit for whichever row this is
+  void openSelectorForRow(int row);
 
   const std::function<void()> onGoBack_;
   const std::function<void()> onHardwareBack_;

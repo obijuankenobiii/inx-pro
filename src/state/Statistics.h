@@ -16,19 +16,19 @@
  * and other metrics for a specific EPUB book.
  */
 struct BookReadingStats {
-  std::string path;    ///< Full filesystem path to the book file
-  std::string title;   ///< Title of the book from EPUB metadata
-  std::string author;  ///< Author of the book from EPUB metadata
+  std::string path;
+  std::string title;
+  std::string author;
 
-  uint32_t totalReadingTimeMs;  ///< Total time spent reading in milliseconds
-  uint32_t totalPagesRead;      ///< Total number of pages turned
-  uint32_t totalChaptersRead;   ///< Number of chapters fully read
-  uint32_t lastReadTimeMs;      ///< Timestamp of last reading session
-  float progressPercent;        ///< Current reading progress (0.0-100.0)
-  uint16_t lastSpineIndex;      ///< Index of last accessed chapter
-  uint16_t lastPageNumber;      ///< Page number within last chapter
-  uint32_t avgPageTimeMs;       ///< Average time per page in milliseconds
-  uint32_t sessionCount;        ///< Number of reading sessions for this book
+  uint32_t totalReadingTimeMs;
+  uint32_t totalPagesRead;
+  uint32_t totalChaptersRead;
+  uint32_t lastReadTimeMs;
+  float progressPercent;
+  uint16_t lastSpineIndex;
+  uint16_t lastPageNumber;
+  uint32_t avgPageTimeMs;
+  uint32_t sessionCount;
 
   /**
    * Default constructor initializing all numeric fields to zero
@@ -61,12 +61,12 @@ struct BookListMetadata {
  * Structure containing aggregated reading statistics across all books.
  */
 struct GlobalReadingStats {
-  uint32_t totalBooksStarted;   ///< Total number of books ever opened
-  uint32_t totalBooksFinished;  ///< Total number of books completed (progress >= 99.9%)
-  uint32_t totalReadingTimeMs;  ///< Total reading time across all books in milliseconds
-  uint32_t totalPagesRead;      ///< Total pages turned across all books
-  uint32_t totalChaptersRead;   ///< Total chapters read across all books
-  uint32_t totalSessions;       ///< Total number of reading sessions across all books
+  uint32_t totalBooksStarted;
+  uint32_t totalBooksFinished;
+  uint32_t totalReadingTimeMs;
+  uint32_t totalPagesRead;
+  uint32_t totalChaptersRead;
+  uint32_t totalSessions;
 
   /**
    * Default constructor initializing all fields to zero.

@@ -186,8 +186,8 @@ EvaluationResult evaluateWord(const TestCase& testCase,
     result.f1Score = 2 * result.precision * result.recall / (result.precision + result.recall);
   }
 
-  // Treat words that contain no hyphenation marks in both the expected data and the
-  // algorithmic output as perfect matches so they don't drag down the per-word averages.
+
+
   if (expected.empty() && actual.empty()) {
     result.precision = 1.0;
     result.recall = 1.0;
@@ -256,7 +256,7 @@ void printResults(const std::string& language, const std::vector<TestCase>& test
   std::cout << "Overall F1 Score:        " << (overallF1 * 100.0) << "%" << std::endl;
   std::cout << std::endl;
 
-  // Filter out perfect matches from the “worst cases” section so that only actionable failures appear.
+
   auto hasImperfection = [](const EvaluationResult& r) { return r.weightedScore < 0.999999; };
   std::vector<std::pair<TestCase, EvaluationResult>> imperfectCases;
   imperfectCases.reserve(worstCases.size());
@@ -287,7 +287,7 @@ void printResults(const std::string& language, const std::vector<TestCase>& test
     std::cout << std::endl;
   }
 
-  // Additional compact list of the worst ~100 words to aid iteration
+
   int compactCount = std::min(100, static_cast<int>(imperfectCases.size()));
   if (compactCount > 0) {
     std::cout << "--- Compact Worst Cases (" << compactCount << ") ---" << std::endl;

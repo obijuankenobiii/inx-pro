@@ -12,8 +12,8 @@ namespace {
 
 void drawLightGraySelection(const GfxRenderer& renderer, const int x, const int y, const int width,
                             const int height) {
-  // Use a sparse 3px dither so the selected row stays visibly lighter on the
-  // 1-bit display instead of becoming a dense gray block.
+
+
   constexpr int kDitherSpacing = 3;
   const bool inkPixel = !(renderer.isDarkMode() && !renderer.isImageRendering());
   for (int row = y; row < y + height; ++row) {

@@ -92,8 +92,8 @@ void DeviceInfoActivity::buildRows() {
   rows.push_back({"FREE HEAP", formatBytes(ESP.getFreeHeap())});
   rows.push_back({"ESP-IDF", esp_get_idf_version()});
 
-  // WiFi.macAddress() reads the STA netif, which only exists while Wi-Fi is running, so it is
-  // all zeros here. The base MAC in eFuse is always readable.
+
+
   uint8_t mac[6] = {};
   char macLine[18] = "Unavailable";
   if (esp_read_mac(mac, ESP_MAC_WIFI_STA) == ESP_OK) {

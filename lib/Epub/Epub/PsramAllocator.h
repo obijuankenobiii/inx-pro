@@ -34,8 +34,8 @@ class EpubPsramAllocator {
 
   void deallocate(T* memory, std::size_t) noexcept {
 #if defined(ARDUINO_ARCH_ESP32)
-    // heap_caps_malloc() allocations must be returned through the ESP heap
-    // API. std::free() can corrupt the heap when the block lives in PSRAM.
+
+
     heap_caps_free(memory);
 #else
     std::free(memory);

@@ -6,7 +6,7 @@
 
 static void portrait(int width, int height) {
   assert(width > 0 && height > 0);
-  assert(std::abs(width * 3 - height * 2) <= 1);  // integer rounding only
+  assert(std::abs(width * 3 - height * 2) <= 1);
 }
 
 int main() {

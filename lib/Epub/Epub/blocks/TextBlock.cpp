@@ -333,14 +333,14 @@ void TextBlock::render(GfxRenderer& renderer, const int fontId, const int x, con
     const size_t dataIndex = rtl ? wordCount - placementIndex - 1 : placementIndex;
     const WordSlot& slot = wordSlots[dataIndex];
     const EpdFontFamily::Style wordStyle = wordStyles ? (*wordStyles)[dataIndex] : EpdFontFamily::REGULAR;
-    // Bionic prefixes are defined in logical LTR order. Do not split an RTL
-    // word into two independently rendered runs.
+
+
     const uint8_t prefixBytes = !rtl && hasBionicVector ? (*bionicPrefixBytes)[dataIndex] : bionicPrefixDefault;
     const bool smallCaps = hasSmallCapsVector ? ((*wordSmallCaps)[dataIndex] != 0) : (smallCapsDefault != 0);
     const bool underline = hasUnderlineVector ? ((*wordUnderline)[dataIndex] != 0) : (underlineDefault != 0);
     const uint8_t verticalAlign = hasVerticalAlignVector ? (*wordVerticalAlign)[dataIndex] : verticalAlignDefault;
-    // Positions are laid out in visual left-to-right slots. RTL swaps the
-    // logical word assigned to each slot while TextRender reverses each word.
+
+
     const int startX = wordSlots[placementIndex].xpos + x;
     int endX = startX;
 

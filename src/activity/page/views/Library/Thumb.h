@@ -102,8 +102,8 @@ class Thumb final {
   void preloadImageCache(const std::string& path, int x, int y, int width, int height, bool cropToFill,
                          float cropAnchorX) const;
 
-  // Entries survive page changes, while reset() clears them after a library
-  // refresh so newly generated or deleted thumbnails are discovered.
+
+
   std::unordered_map<std::string, std::string> thumbnailPathCache_;
 };
 

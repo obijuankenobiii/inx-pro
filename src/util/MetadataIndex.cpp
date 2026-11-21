@@ -667,7 +667,7 @@ bool generateSelected(const MetadataIndex::Options& options,
           if (!addRecord(records[index], groupKeyFor(value, kind), value, path, title, author, order)) return false;
         }
 
-        // The complete-record index has historically contained EPUB records only.
+
         if (allMetadataOpen && !isXtc) {
           if (!writeFullMetadata(allMetadataFile, path, metadata)) return false;
           ++allMetadataCount;

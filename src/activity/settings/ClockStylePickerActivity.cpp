@@ -63,9 +63,9 @@ void ClockStylePickerActivity::onEnter() {
   pageIndex = selectedIndex / itemsPerPage;
 
   updateRequired = true;
-  // Clock previews rasterize glyphs from the selected TTF. stb_truetype uses
-  // substantially more call-stack space than the normal settings renderer;
-  // keep this task from tripping the ESP32 stack canary while drawing a face.
+
+
+
   xTaskCreate(&ClockStylePickerActivity::taskTrampoline, "ClockStylePickerTask", 8192, this, 1, &displayTaskHandle);
 }
 
@@ -165,7 +165,7 @@ void ClockStylePickerActivity::loop() {
     return;
   }
 
-  // Only a bottom-edge upward swipe exits. Body swipes paginate the picker.
+
   if (SubPage::closeInput(renderer, mappedInput, onBack, false)) return;
 
   if (mappedInput.hasTouch()) {

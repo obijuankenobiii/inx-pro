@@ -18,5 +18,5 @@ struct ThumbLayout {
 
 ThumbLayout standardThumbLayout();
 
-}  // namespace library
-}  // namespace views
+}
+}

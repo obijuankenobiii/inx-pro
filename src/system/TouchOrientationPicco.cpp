@@ -112,7 +112,7 @@ void screenToNative(const GfxRenderer::Orientation orientation, const float scre
   }
 }
 
-}  // namespace touch
-}  // namespace inx
+}
+}
 
-#endif  // FREEINK_DEVICE_PICCO
+#endif

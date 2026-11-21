@@ -33,9 +33,9 @@ constexpr size_t kIoBufferSize = 16384;
 constexpr size_t kAsyncCacheQueueLength = 6;
 constexpr size_t kRamCacheSlots = 64;
 constexpr size_t kRamCacheByteBudget = 512 * 1024;
-// Source files are immutable cache inputs for the lifetime of the firmware
-// process. Keep their sizes until the cache is explicitly rebuilt instead of
-// forcing an SD open every few seconds while looking up a display cache hit.
+
+
+
 constexpr size_t kSourceSizeCacheSlots = 64;
 
 struct CacheHeader {

@@ -110,8 +110,8 @@ void coverRect(const Geometry& g, const int x, const int column, const int row, 
 
 void drawThumbnail(GfxRenderer& renderer, const RecentBook& book, const int x, const int y, const int width,
                    const int height) {
-  // Match the Recent/Carousel widgets: draw a gray offset shadow underneath the cover,
-  // rather than outlining the cover itself.
+
+
   BaseCarousel::renderShadow(renderer, x + 4, y + 4, width, height, HomeTheme::CarouselShadowStyle::Gray);
   renderer.rectangle.fill(x, y, width, height, false);
   const std::string path = thumbnailPath(book);
@@ -238,7 +238,7 @@ void mockCard(const GfxRenderer& renderer, const int index, const Geometry& g, c
                    index == 1 ? 0.12f : index == 2 ? 0.0f : 0.42f);
 }
 
-}  // namespace
+}
 
 void RecentGrid::render(const int x, const int y, const int width, const int height, const int pageIndex) const {
   const auto& books = RECENT_BOOKS.getBooks();

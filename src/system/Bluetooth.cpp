@@ -49,7 +49,7 @@ void startTaskEntry(void*) {
   startInFlight.store(false, std::memory_order_release);
   vTaskDelete(nullptr);
 }
-}  // namespace
+}
 
 bool bluetoothEnabled() {
   ensurePreferenceLoaded();
@@ -97,4 +97,4 @@ bool bluetoothRunning() { return false; }
 void startBluetooth() {}
 void stopBluetooth() {}
 
-#endif  // FREEINK_CAP_BLE_HID_HOST
+#endif

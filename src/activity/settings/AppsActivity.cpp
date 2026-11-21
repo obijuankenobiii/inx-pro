@@ -45,7 +45,7 @@ constexpr int kTextX = 88;
 constexpr int kSubtitleGap = 5;
 }
 
-// Keep the Apps list aligned with Store's first-row position.
+
 int AppsActivity::bodyTop() { return FREEINK_DEVICE_X4PRO ? 80 : 70; }
 
 int AppsActivity::rowHeight() const {
@@ -183,7 +183,7 @@ void AppsActivity::content() {
     const int y = top + visible * currentRowHeight;
     const int titleY = y + (currentRowHeight - contentHeight) / 2;
     renderer.bitmap.icon(item.icon, kIconX, y + (currentRowHeight - kIconSize) / 2, kIconSize, kIconSize);
-    // Keep every title visible; the Store list renders labels in the same ink mode.
+
     renderer.text.render(titleFont, kTextX, titleY, item.label, true, EpdFontFamily::REGULAR);
     const std::string subtitle = renderer.text.truncate(subtitleFont, item.subtitle, maxTextWidth);
     renderer.text.render(subtitleFont, kTextX, titleY + titleHeight + kSubtitleGap, subtitle.c_str(), true,

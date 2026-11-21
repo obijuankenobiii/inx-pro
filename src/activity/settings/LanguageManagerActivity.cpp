@@ -67,7 +67,7 @@ void drawScrollBar(const GfxRenderer& renderer, const int x, const int y, const 
   renderer.rectangle.fill(x, y, width, height, static_cast<int>(GfxRenderer::FillTone::Gray), true);
   renderer.rectangle.fill(x, thumbY, width, thumbHeight, static_cast<int>(GfxRenderer::FillTone::Ink), true);
 }
-}  // namespace
+}
 
 void LanguageManagerActivity::displayTaskTrampoline(void* param) {
   static_cast<LanguageManagerActivity*>(param)->displayTaskLoop();
@@ -126,8 +126,8 @@ void LanguageManagerActivity::loadPackages() {
     for (const LanguagePackageManager::Package& package : available) packages_.push_back(package);
   }
 
-  // Also show packages copied directly to the SD card, even if they are not
-  // listed in the store catalog.
+
+
   for (const LanguageManager::LanguageInfo& language : LanguageManager::installedLanguages()) {
     if (language.code.empty()) continue;
     auto existing = std::find_if(packages_.begin(), packages_.end(), [&language](const auto& package) {
@@ -140,8 +140,8 @@ void LanguageManagerActivity::loadPackages() {
     }
   }
 
-  // Keep installed languages together at the top. Non-installed store rows
-  // remain visible below them as disabled entries.
+
+
   std::stable_sort(packages_.begin() + 1, packages_.end(), [](const auto& left, const auto& right) {
     return isInstalledLanguage(left) && !isInstalledLanguage(right);
   });
@@ -207,9 +207,9 @@ void LanguageManagerActivity::installSelected() {
     updateDisplay();
     return;
   }
-  // Store entries are intentionally disabled here. Installation remains
-  // available from the Store flow, while Device > Language only manages
-  // packages that are already installed on the SD card.
+
+
+
 }
 
 void LanguageManagerActivity::removeSelected() {

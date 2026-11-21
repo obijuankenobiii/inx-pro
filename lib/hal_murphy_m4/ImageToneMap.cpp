@@ -28,7 +28,7 @@ uint8_t mapQualityGray2Level(const uint8_t level) {
 
 const uint8_t* mediumTextCodeTable() { return grayscaleCodeTable(); }
 
-// Murphy's quality image path uses the same neutral tone mapping as Sticky.
-// The previous contrast boost plus darkening crushed image midtones before the
-// four-level waveform ran, making covers appear unnecessarily dark.
+
+
+
 int applyDeviceToneCurve(const int gray) { return gray; }

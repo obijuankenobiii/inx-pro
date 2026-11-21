@@ -7,5 +7,5 @@ namespace library {
 
 ThumbLayout thumb3x2Layout();
 
-}  // namespace library
-}  // namespace views
+}
+}

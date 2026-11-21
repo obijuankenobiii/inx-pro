@@ -304,9 +304,9 @@ static bool pngInflateRead(PngDecodeContext& ctx, uint8_t* dest, const size_t le
     }
 
     if (ctx.zstream.avail_in == 0 && !pngLoadIdatInput(ctx)) {
-      // The last IDAT chunk can be exhausted while miniz still has a small
-      // amount of decompressed output buffered internally. Give it one final
-      // chance to drain that output before treating the PNG as truncated.
+
+
+
       const unsigned int availOutBefore = ctx.zstream.avail_out;
       const int res = mz_inflate(&ctx.zstream, MZ_FINISH);
       if (res == MZ_STREAM_END && ctx.zstream.avail_out == 0) return true;

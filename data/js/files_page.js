@@ -276,7 +276,7 @@ async function loadMoveFolders() {
           }
         }
       } catch (_) {
-        // Keep folders already discovered usable if one directory disappears while scanning.
+
       }
     }
   }
@@ -538,8 +538,8 @@ async function uploadFolderThumbnail(path) {
   input.click();
 }
 
-// Sleep images are sized to the device's portrait screen (540x960 on the T5 S3, 480x800 on
-// the others). /api/status reports it; fall back to 480x800 if that request fails.
+
+
 let sleepImageSizePromise = null;
 function sleepImageSize() {
   if (!sleepImageSizePromise) {

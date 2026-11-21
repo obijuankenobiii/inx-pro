@@ -38,12 +38,12 @@ namespace {
 constexpr uint32_t kPackedFontMagic = 0x45504446u;
 constexpr uint32_t kPackedFontVersion = 1u;
 
-// Outline fonts are intentionally kept out of the internal heap. stb_truetype
-// reads the font face repeatedly while rasterizing glyphs, so falling back to
-// internal RAM here both competes with the display/input tasks and makes the
-// result dependent on allocation order. The ESP32 targets all provide PSRAM;
-// fail the load cleanly if it is unavailable instead of silently moving a TTF
-// into internal RAM.
+
+
+
+
+
+
 uint8_t* allocateTtfPsramBuffer(const size_t bytes) {
   return inx::ttf::allocate(bytes);
 }
@@ -71,24 +71,24 @@ int roundedMetric(const float value) {
   return static_cast<int>(value + (value < 0.0f ? -0.5f : 0.5f));
 }
 
-// Reader font sizes are point sizes. Keep the TTF path consistent with the
-// legacy FreeType converter, which renders at 150 DPI (pt * 150 / 72 px/em).
+
+
 constexpr float kReaderFontDpi = 150.0f;
 
 uint8_t quantizeReaderTextCoverage(const uint8_t coverage) {
 #if defined(FREEINK_DEVICE_MURPHY_M4)
-  // Murphy's SSD1677 medium-AA waveform renders the two edge tones lighter
-  // than the other reader panels. Lift the coverage only for this target so
-  // the anti-aliased edges retain their shape without changing X4 Pro or
-  // other devices.
+
+
+
+
   constexpr uint8_t kMurphyTextCoverageBoost = 20;
   const uint16_t boosted = std::min<uint16_t>(255u, static_cast<uint16_t>(coverage) + kMurphyTextCoverageBoost);
   return static_cast<uint8_t>((boosted * 3u + 127u) / 255u);
 #else
-  // Map coverage to the nearest of the four panel tones. The old fixed
-  // thresholds plus a coverage boost made curved stems change tone too early,
-  // which produced lumpy edges and uneven bowls. Midpoint quantization keeps
-  // the average glyph coverage intact instead of systematically thickening it.
+
+
+
+
   return static_cast<uint8_t>((static_cast<uint16_t>(coverage) * 3u + 127u) / 255u);
 #endif
 }
@@ -98,7 +98,7 @@ float ttfScaleForPointSize(const stbtt_fontinfo* font, const uint16_t pointSize)
   return stbtt_ScaleForMappingEmToPixels(font, pixelsPerEm);
 }
 
-}  // namespace
+}
 
 /** Clear the per-instance glyph metadata cache. */
 void ExternalFont::metaCacheClear() {
@@ -376,7 +376,7 @@ bool ExternalFont::loadTtf(const char* path, const uint16_t pointSize) {
     m_ttfDataSize = static_cast<uint32_t>(fileSize);
     m_ttfData = allocateTtfPsramBuffer(m_ttfDataSize);
     if (!m_ttfData) {
-      // Retired faces must not prevent loading the current system/reader face.
+
       clearTtfCache();
       m_ttfData = allocateTtfPsramBuffer(m_ttfDataSize);
     }
@@ -415,8 +415,8 @@ bool ExternalFont::loadTtf(const char* path, const uint16_t pointSize) {
       }
     }
     if (cacheSlot < 0) {
-      // Every live file must remain shareable across sizes and styles. A fixed
-      // eight-face table made additional sizes copy entire TTF files again.
+
+
       cacheSlot = static_cast<int>(s_ttfSharedCache.size());
       s_ttfSharedCache.emplace_back();
     }
@@ -647,9 +647,9 @@ size_t ExternalFont::metaCacheStore(uint32_t cp, const EpdGlyph& g) {
     }
   }
   if (m_isTtf && m_metaCache[slot].cp != 0xFFFFFFFFu) {
-    // TTF bitmap offsets encode the metadata-cache slot. Invalidate both
-    // caches before reusing a slot so an evicted glyph cannot alias its
-    // predecessor's rasterized bitmap.
+
+
+
     m_ttfBitmapToken = 0;
     bitmapCacheClear();
   }
@@ -819,9 +819,9 @@ bool ExternalFont::ensureTtfBitmap(const size_t metaSlot) {
   const size_t pixelCount = static_cast<size_t>(glyph.width) * static_cast<size_t>(glyph.height);
   if (!m_ttfBitmapBuffer || m_ttfBitmapBufferSize < pixelCount) {
     releaseFontBuffer(m_ttfBitmapBuffer);
-    // Keep the temporary grayscale glyph raster in PSRAM too. This buffer can
-    // grow for large glyphs and must not consume the internal heap used by the
-    // display and font UI tasks.
+
+
+
     m_ttfBitmapBuffer = allocateTtfPsramBuffer(pixelCount);
     m_ttfBitmapBufferSize = m_ttfBitmapBuffer ? pixelCount : 0;
   }
