@@ -144,6 +144,7 @@ HomeWidgetLayout::HomeWidgetLayout(GfxRenderer& renderer)
       shortcutList_(renderer),
       temperature_(renderer),
       humidity_(renderer),
+      imageWidget_(renderer),
       todaysReading_(renderer),
       weeklyStatistics_(renderer),
       streaks_(renderer),
@@ -225,6 +226,29 @@ bool HomeWidgetLayout::needsRefresh(const HomeTheme::Theme& theme) const {
 int HomeWidgetLayout::carouselBookCount(const HomeTheme::Theme& theme, const int bookCount) const {
   if (bookCount <= 0) return 0;
   return std::max(0, bookCount - (hideFirstCarouselBook(theme) ? 1 : 0));
+}
+
+void HomeWidgetLayout::widgetBounds(const HomeTheme::Layout layout, const int slot, const bool sleep, int& x, int& y,
+                                    int& width, int& height, const HomeTheme::Theme* theme) const {
+  if (layout == HomeTheme::Layout::OneByOne) {
+    x = 0;
+    y = navigation::Menu::height;
+    width = renderer_.getScreenWidth();
+    height = renderer_.getScreenHeight() - navigation::Menu::height - navigation::Menu::bottomInset();
+    return;
+  }
+  const Bounds bounds = slotBounds(grid(layout, sleep, theme), slot);
+  x = bounds.x;
+  y = bounds.y;
+  width = bounds.width;
+  height = bounds.height;
+}
+
+void HomeWidgetLayout::widgetSize(const HomeTheme::Layout layout, const int slot, const bool sleep, int& width,
+                                  int& height, const HomeTheme::Theme* theme) const {
+  int x = 0;
+  int y = 0;
+  widgetBounds(layout, slot, sleep, x, y, width, height, theme);
 }
 
 void HomeWidgetLayout::renderSleep(const HomeTheme::Theme& theme) const {
@@ -433,6 +457,11 @@ void HomeWidgetLayout::renderSlot(const HomeTheme::Theme& theme, const int slot,
       weeklyStatistics_.render(bounds.x, bounds.y, bounds.width, bounds.height, compactWidgetLayout,
                                theme.carouselStyles[slot] == HomeTheme::CarouselStyle::Left,
                                theme.statisticsSummary[slot] != 0);
+      break;
+    case HomeTheme::Widget::Image:
+      imageWidget_.render(bounds.x, bounds.y, bounds.width, bounds.height, theme.imagePaths[slot],
+                          theme.imageCropToFill[slot] != 0, theme.imagePadding[slot] != 0,
+                          theme.imageCropAnchorX[slot] / 255.0f, theme.imageCropAnchorY[slot] / 255.0f);
       break;
     case HomeTheme::Widget::Streaks:
       {

@@ -92,7 +92,10 @@ void WeeklyStatistics::renderContent(const int x, const int y, const int width, 
   const int headerLine = renderer_.text.getLineHeight(headerFont);
   const int valueLine = renderer_.text.getLineHeight(valueFont);
   const int smallLine = renderer_.text.getLineHeight(smallFont);
-  if (right <= left || height < (showSummary ? headerLine + valueLine + smallLine + 50 : smallLine + 50)) return;
+  const int summaryHeight = headerLine + valueLine + smallLine + 50;
+  const bool renderSummary = showSummary && height >= summaryHeight;
+  const int minimumHeight = compact ? smallLine + 32 : smallLine + 50;
+  if (right <= left || height < minimumHeight) return;
 
   std::array<uint32_t, 7> daily{};
   uint32_t totalMs = 0;
@@ -131,7 +134,7 @@ void WeeklyStatistics::renderContent(const int x, const int y, const int width, 
   }
 
   int plotTop = y + verticalPadding + 8;
-  if (showSummary) {
+  if (renderSummary) {
     renderer_.text.renderGray(headerFont, left, y + verticalPadding, "This week", true, EpdFontFamily::REGULAR);
     const std::string goalText = "Goal · " + formatReadingDuration(goalMs);
     const int goalWidth = renderer_.text.getWidth(headerFont, goalText.c_str(), EpdFontFamily::REGULAR);

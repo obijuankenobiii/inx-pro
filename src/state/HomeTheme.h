@@ -47,6 +47,7 @@ enum class Widget : uint8_t {
   VerticalBookshelf = 16,
   Statistics = 17,
   Streaks = 18,
+  Image = 19,
 };
 
 enum class HeatmapView : uint8_t {
@@ -103,6 +104,11 @@ struct Theme {
   uint8_t streakCompact[4];
   HeatmapView heatmapViews[4];
   char libraryFolders[4][3][128];
+  char imagePaths[4][128];
+  uint8_t imageCropToFill[4];
+  uint8_t imagePadding[4];
+  uint8_t imageCropAnchorX[4];
+  uint8_t imageCropAnchorY[4];
 };
 
 void load();
@@ -170,6 +176,8 @@ bool removeSleep(int index);
 bool remove(int index);
 bool rename(int index, const char* name);
 bool renameSleep(int index, const char* name);
+void setImageSettings(int index, bool sleepMode, const char (*paths)[128], const uint8_t* cropToFill,
+                      const uint8_t* padding, const uint8_t* cropAnchorX, const uint8_t* cropAnchorY);
 
 const char* layoutLabel(Layout layout);
 const char* widgetLabel(Widget widget);

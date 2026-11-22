@@ -122,6 +122,8 @@ bool supportsStreaksSettings(const HomeTheme::Widget widget) {
   return widget == HomeTheme::Widget::Streaks;
 }
 
+bool supportsImageSettings(const HomeTheme::Widget widget) { return widget == HomeTheme::Widget::Image; }
+
 #if FREEINK_DEVICE_STICKY
 bool supportsTemperatureSettings(const HomeTheme::Widget widget) {
   return widget == HomeTheme::Widget::Temperature;
@@ -273,18 +275,18 @@ void setDefaultLibraryFolders(char (&folders)[3][128]) {
 
 int widgetOptionCount(const HomeTheme::Layout layout, const bool sleepTheme) {
   if (layout == HomeTheme::Layout::Classic) return 1;
-  if (layout == HomeTheme::Layout::OneByOne && !sleepTheme) return 3;
+  if (layout == HomeTheme::Layout::OneByOne && !sleepTheme) return 4;
   if (sleepTheme) {
 #if FREEINK_DEVICE_STICKY
-    return 8;
+    return 9;
 #else
-    return 6;
+    return 7;
 #endif
   }
 #if FREEINK_DEVICE_STICKY
-  const int count = 19;
+  const int count = 20;
 #else
-  const int count = 17;
+  const int count = 18;
 #endif
   return count - (layout == HomeTheme::Layout::OneByOne ? 0 : 3);
 }
@@ -294,6 +296,7 @@ HomeTheme::Widget widgetOptionAt(const HomeTheme::Layout layout, const bool slee
       HomeTheme::Widget::RecentGrid,
       HomeTheme::Widget::Flow,
       HomeTheme::Widget::VerticalBookshelf,
+      HomeTheme::Widget::Image,
   };
   static constexpr HomeTheme::Widget homeOptions[] = {
       HomeTheme::Widget::Empty,
@@ -319,6 +322,7 @@ HomeTheme::Widget widgetOptionAt(const HomeTheme::Layout layout, const bool slee
     HomeTheme::Widget::Library,
     HomeTheme::Widget::Statistics,
     HomeTheme::Widget::Streaks,
+    HomeTheme::Widget::Image,
   };
   if (layout == HomeTheme::Layout::OneByOne && !sleepTheme) {
     if (index < 0 || index >= static_cast<int>(sizeof(oneByOneOptions) / sizeof(oneByOneOptions[0]))) {
@@ -337,6 +341,7 @@ HomeTheme::Widget widgetOptionAt(const HomeTheme::Layout layout, const bool slee
       HomeTheme::Widget::Heatmap,
       HomeTheme::Widget::Statistics,
       HomeTheme::Widget::Streaks,
+      HomeTheme::Widget::Image,
   };
   const HomeTheme::Widget* options = sleepTheme ? sleepOptions : homeOptions;
   const int optionCount = sleepTheme ? static_cast<int>(sizeof(sleepOptions) / sizeof(sleepOptions[0]))
@@ -660,7 +665,10 @@ void ThemePickerActivity::renderWidgetPicker() {
     renderWidgetPreview(widgets_[firstSlot], layoutX, layoutY, cellW, cellH, backgrounds_[firstSlot] != 0,
                         carouselStyles_[firstSlot], carouselLabels_[firstSlot] != 0,
                         carouselLabelColors_[firstSlot], carouselShadowStyles_[firstSlot],
-                        heatmapViews_[firstSlot], libraryFolders_[firstSlot],
+                        heatmapViews_[firstSlot], libraryFolders_[firstSlot], imagePaths_[firstSlot],
+                        imageCropToFill_[firstSlot] != 0,
+                        imagePadding_[firstSlot] != 0,
+                        imageCropAnchorX_[firstSlot] / 255.0f, imageCropAnchorY_[firstSlot] / 255.0f,
                         descriptionTitles_[firstSlot] != 0, descriptionAuthors_[firstSlot] != 0,
                         descriptionProgress_[firstSlot] != 0, descriptionRatings_[firstSlot] != 0,
                         recentTitles_[firstSlot] != 0, recentAuthors_[firstSlot] != 0,
@@ -675,7 +683,10 @@ void ThemePickerActivity::renderWidgetPicker() {
       const LayoutCellBounds cell = layoutCellBounds(layout_, layoutX, layoutY, layoutW, layoutH, slot);
       renderWidgetPreview(widgets_[slot], cell.x, cell.y, cell.width, cell.height, backgrounds_[slot] != 0,
                           carouselStyles_[slot], carouselLabels_[slot] != 0, carouselLabelColors_[slot],
-                          carouselShadowStyles_[slot], heatmapViews_[slot], libraryFolders_[slot],
+                          carouselShadowStyles_[slot], heatmapViews_[slot], libraryFolders_[slot], imagePaths_[slot],
+                          imageCropToFill_[slot] != 0,
+                          imagePadding_[slot] != 0,
+                          imageCropAnchorX_[slot] / 255.0f, imageCropAnchorY_[slot] / 255.0f,
                           descriptionTitles_[slot] != 0, descriptionAuthors_[slot] != 0,
                           descriptionProgress_[slot] != 0, descriptionRatings_[slot] != 0,
                           recentTitles_[slot] != 0, recentAuthors_[slot] != 0,
@@ -777,6 +788,12 @@ void ThemePickerActivity::renderWidgetPicker() {
       renderer.bitmap.icon(Setting, settings.x, settings.y, settings.size, settings.size);
     }
     if (supportsDescriptionSettings(widgets_[slot])) {
+      const CarouselSettingsBounds settings = carouselSettingsBounds(cellX, cellY, cellW, cellH);
+      renderer.rectangle.fill(settings.x - 4, settings.y - 4, settings.size + 8, settings.size + 8, false);
+      renderer.rectangle.render(settings.x - 4, settings.y - 4, settings.size + 8, settings.size + 8, true);
+      renderer.bitmap.icon(Setting, settings.x, settings.y, settings.size, settings.size);
+    }
+    if (supportsImageSettings(widgets_[slot])) {
       const CarouselSettingsBounds settings = carouselSettingsBounds(cellX, cellY, cellW, cellH);
       renderer.rectangle.fill(settings.x - 4, settings.y - 4, settings.size + 8, settings.size + 8, false);
       renderer.rectangle.render(settings.x - 4, settings.y - 4, settings.size + 8, settings.size + 8, true);
@@ -890,7 +907,10 @@ void ThemePickerActivity::renderWidgetPreview(const HomeTheme::Widget widget, co
                                               const HomeTheme::CarouselLabelColor labelColor,
                                               const HomeTheme::CarouselShadowStyle shadowStyle,
                                               const HomeTheme::HeatmapView heatmapView,
-                                              const char (*libraryFolders)[128], const bool descriptionShowTitle,
+                                              const char (*libraryFolders)[128], const char* imagePath,
+                                              const bool imageCropToFill, const bool imagePadding,
+                                              const float imageCropAnchorX, const float imageCropAnchorY,
+                                              const bool descriptionShowTitle,
                                               const bool descriptionShowAuthor, const bool descriptionShowProgress,
                                               const bool descriptionShowRating,
                                               const bool recentShowTitle, const bool recentShowAuthor,
@@ -967,6 +987,10 @@ void ThemePickerActivity::renderWidgetPreview(const HomeTheme::Widget widget, co
         streaks_.preview(x, y, width, height, monthly, compact, compact20);
       }
       break;
+    case HomeTheme::Widget::Image:
+      imageWidget_.render(x, y, width, height, imagePath, imageCropToFill, imagePadding, imageCropAnchorX,
+                          imageCropAnchorY);
+      break;
     case HomeTheme::Widget::Favorites:
       favorites_.preview(x, y, width, height, background, style, showLabel, labelColor, shadowStyle,
                          carouselFullHeight, compactWidgetLayout);
@@ -1031,7 +1055,11 @@ void ThemePickerActivity::renderWidgetPopup() {
     renderWidgetPreview(widget, previewX, previewY, previewW, previewH, false,
                         HomeTheme::defaultCarouselStyle(widget), false,
                         HomeTheme::CarouselLabelColor::Black, HomeTheme::CarouselShadowStyle::None,
-                        HomeTheme::HeatmapView::Monthly, libraryFolders_[widgetSlot_], true, true, true, true,
+                        HomeTheme::HeatmapView::Monthly, libraryFolders_[widgetSlot_], imagePaths_[widgetSlot_],
+                        imageCropToFill_[widgetSlot_] != 0,
+                        imagePadding_[widgetSlot_] != 0,
+                        imageCropAnchorX_[widgetSlot_] / 255.0f, imageCropAnchorY_[widgetSlot_] / 255.0f,
+                        true, true, true, true,
                         true, true, true, true, true, false, true, false, false, false, true, widgetSlot_);
 
 
@@ -1107,6 +1135,12 @@ void ThemePickerActivity::editTheme() {
     carouselLabelColors_[i] = theme.carouselLabelColors[i];
     carouselShadowStyles_[i] = theme.carouselShadowStyles[i];
     heatmapViews_[i] = theme.heatmapViews[i];
+    std::strncpy(imagePaths_[i], theme.imagePaths[i], sizeof(imagePaths_[i]) - 1);
+    imagePaths_[i][sizeof(imagePaths_[i]) - 1] = '\0';
+    imageCropToFill_[i] = theme.imageCropToFill[i] != 0 ? 1 : 0;
+    imagePadding_[i] = theme.imagePadding[i] != 0 ? 1 : 0;
+    imageCropAnchorX_[i] = theme.imageCropAnchorX[i];
+    imageCropAnchorY_[i] = theme.imageCropAnchorY[i];
     for (int folder = 0; folder < LibraryWidget::kFolderCount; ++folder) {
       std::strncpy(libraryFolders_[i][folder], theme.libraryFolders[i][folder],
                    sizeof(libraryFolders_[i][folder]) - 1);
@@ -1152,6 +1186,11 @@ void ThemePickerActivity::editTheme() {
       style = HomeTheme::CarouselShadowStyle::None;
     }
     for (HomeTheme::HeatmapView& view : heatmapViews_) view = HomeTheme::HeatmapView::Weekly;
+    for (char (&imagePath)[128] : imagePaths_) imagePath[0] = '\0';
+    for (uint8_t& value : imageCropToFill_) value = 0;
+    for (uint8_t& value : imagePadding_) value = 0;
+    for (uint8_t& value : imageCropAnchorX_) value = 128;
+    for (uint8_t& value : imageCropAnchorY_) value = 128;
   }
   widgetSlot_ = 0;
   widgetPageIndex_ = 0;
@@ -1186,6 +1225,11 @@ void ThemePickerActivity::initializeNewThemeEditor() {
     statisticsSummary_[i] = 1;
     streakCompact_[i] = 0;
     heatmapViews_[i] = HomeTheme::HeatmapView::Weekly;
+    imagePaths_[i][0] = '\0';
+    imageCropToFill_[i] = 0;
+    imagePadding_[i] = 0;
+    imageCropAnchorX_[i] = 128;
+    imageCropAnchorY_[i] = 128;
     setDefaultLibraryFolders(libraryFolders_[i]);
   }
 }
@@ -1341,6 +1385,11 @@ void ThemePickerActivity::promoteSelectedOneByOneWidget() {
   std::swap(carouselLabelColors_[0], carouselLabelColors_[selectedSlot]);
   std::swap(carouselShadowStyles_[0], carouselShadowStyles_[selectedSlot]);
   std::swap(heatmapViews_[0], heatmapViews_[selectedSlot]);
+  std::swap(imagePaths_[0], imagePaths_[selectedSlot]);
+  std::swap(imageCropToFill_[0], imageCropToFill_[selectedSlot]);
+  std::swap(imagePadding_[0], imagePadding_[selectedSlot]);
+  std::swap(imageCropAnchorX_[0], imageCropAnchorX_[selectedSlot]);
+  std::swap(imageCropAnchorY_[0], imageCropAnchorY_[selectedSlot]);
   for (int folder = 0; folder < LibraryWidget::kFolderCount; ++folder) {
     std::swap(libraryFolders_[0][folder], libraryFolders_[selectedSlot][folder]);
   }
@@ -1359,6 +1408,8 @@ void ThemePickerActivity::saveEditorState() {
                              recentRatings_, carouselProgress_, carouselFullHeight_, statisticsSummary_, libraryFolders_,
                              HomeTheme::slotCount(layout_));
       HomeTheme::updateStreakCompact(selected_, true, streakCompact_);
+      HomeTheme::setImageSettings(selected_, true, imagePaths_, imageCropToFill_, imagePadding_, imageCropAnchorX_,
+                                  imageCropAnchorY_);
     } else {
         HomeTheme::update(selected_, layout_, widgets_, borders_, backgrounds_, carouselStyles_, carouselLabels_,
                         carouselLabelColors_, carouselShadowStyles_, heatmapViews_, descriptionTitles_,
@@ -1367,6 +1418,8 @@ void ThemePickerActivity::saveEditorState() {
                         recentRatings_, carouselProgress_, carouselFullHeight_, statisticsSummary_, libraryFolders_,
                         HomeTheme::slotCount(layout_));
       HomeTheme::updateStreakCompact(selected_, false, streakCompact_);
+      HomeTheme::setImageSettings(selected_, false, imagePaths_, imageCropToFill_, imagePadding_, imageCropAnchorX_,
+                                  imageCropAnchorY_);
     }
   }
 }
@@ -1391,6 +1444,8 @@ void ThemePickerActivity::saveEditorAndClose() {
     if (index >= 0) {
       selected_ = index;
       HomeTheme::updateStreakCompact(selected_, editingSleep_, streakCompact_);
+    HomeTheme::setImageSettings(selected_, editingSleep_, imagePaths_, imageCropToFill_, imagePadding_, imageCropAnchorX_,
+                                imageCropAnchorY_);
     }
   } else if (editingSleep_) {
     HomeTheme::updateSleepAt(selected_, layout_, widgets_, borders_, backgrounds_, carouselStyles_, carouselLabels_,
@@ -1399,6 +1454,8 @@ void ThemePickerActivity::saveEditorAndClose() {
                            recentAuthors_, recentProgress_, recentRatings_, carouselProgress_, carouselFullHeight_,
                            statisticsSummary_, libraryFolders_, HomeTheme::slotCount(layout_));
     HomeTheme::updateStreakCompact(selected_, true, streakCompact_);
+    HomeTheme::setImageSettings(selected_, true, imagePaths_, imageCropToFill_, imagePadding_, imageCropAnchorX_,
+                                imageCropAnchorY_);
   } else {
     HomeTheme::update(selected_, layout_, widgets_, borders_, backgrounds_, carouselStyles_, carouselLabels_,
                      carouselLabelColors_, carouselShadowStyles_, heatmapViews_, descriptionTitles_,
@@ -1406,6 +1463,8 @@ void ThemePickerActivity::saveEditorAndClose() {
                      recentProgress_, recentRatings_, carouselProgress_, carouselFullHeight_, statisticsSummary_,
                      libraryFolders_, HomeTheme::slotCount(layout_));
     HomeTheme::updateStreakCompact(selected_, false, streakCompact_);
+    HomeTheme::setImageSettings(selected_, false, imagePaths_, imageCropToFill_, imagePadding_, imageCropAnchorX_,
+                                imageCropAnchorY_);
   }
   returnToThemeList();
 }
@@ -1613,6 +1672,37 @@ void ThemePickerActivity::openDescriptionSettings(const int slot) {
       [] {}));
 }
 
+void ThemePickerActivity::openImageSettings(const int slot) {
+  widgetSlot_ = slot;
+  imageSettingsFinished_ = false;
+  const int visualSlot = layout_ == HomeTheme::Layout::OneByOne ? 0 : slot;
+  int widgetX = 0;
+  int widgetY = 0;
+  int widgetWidth = 0;
+  int widgetHeight = 0;
+  HomeTheme::Theme layoutTheme{};
+  layoutTheme.layout = layout_;
+  for (int index = 0; index < HomeTheme::slotCount(layout_); ++index) {
+    layoutTheme.widgets[index] = widgets_[index];
+  }
+  homeWidgetLayout_.widgetBounds(layout_, visualSlot, editingSleep_, widgetX, widgetY, widgetWidth, widgetHeight,
+                                 editingSleep_ ? &layoutTheme : nullptr);
+  enterNewActivity(new ImageSettingsActivity(
+      renderer, mappedInput, imagePaths_[slot], imageCropToFill_[slot] != 0, imagePadding_[slot] != 0,
+      imageCropAnchorX_[slot], imageCropAnchorY_[slot], widgetX, widgetY, widgetWidth, widgetHeight,
+      [this, slot](const std::string& path, const bool cropToFill, const bool padding,
+                   const uint8_t cropAnchorX, const uint8_t cropAnchorY) {
+        std::strncpy(imagePaths_[slot], path.c_str(), sizeof(imagePaths_[slot]) - 1);
+        imagePaths_[slot][sizeof(imagePaths_[slot]) - 1] = '\0';
+        imageCropToFill_[slot] = cropToFill ? 1 : 0;
+        imagePadding_[slot] = padding ? 1 : 0;
+        imageCropAnchorX_[slot] = cropAnchorX;
+        imageCropAnchorY_[slot] = cropAnchorY;
+        imageSettingsFinished_ = true;
+      },
+      [] {}));
+}
+
 void ThemePickerActivity::moveWidgetPopupSelection(const int delta) {
   const int options = widgetOptionCount(layout_, editingSleep_);
   if (options <= 0) return;
@@ -1802,6 +1892,11 @@ void ThemePickerActivity::handleTouch(const int x, const int y, const bool longP
       const bool wasCarousel = widgets_[widgetSlot_] == HomeTheme::Widget::Carousel;
       const bool wasStreaks = widgets_[widgetSlot_] == HomeTheme::Widget::Streaks;
       widgets_[widgetSlot_] = widgetOptionAt(layout_, editingSleep_, popupSelected_);
+      if (widgets_[widgetSlot_] == HomeTheme::Widget::Image && imagePaths_[widgetSlot_][0] == '\0') {
+        widgetPopup_ = false;
+        openImageSettings(widgetSlot_);
+        return;
+      }
       if (widgets_[widgetSlot_] == HomeTheme::Widget::Empty) borders_[widgetSlot_] = HomeTheme::Border::None;
       if (layout_ == HomeTheme::Layout::OneByOne) {
         const int itemCount = oneByOneWidgetCount(widgets_);
@@ -1959,6 +2054,13 @@ void ThemePickerActivity::handleTouch(const int x, const int y, const bool longP
           return;
         }
       }
+      if (supportsImageSettings(widgets_[slot])) {
+        const CarouselSettingsBounds settings = carouselSettingsBounds(cellX, cellY, cellW, cellH);
+        if (inside(x, y, settings.x - 8, settings.y - 8, settings.size + 16, settings.size + 16)) {
+          openImageSettings(slot);
+          return;
+        }
+      }
       if (supportsStatisticsSettings(widgets_[slot])) {
         const CarouselSettingsBounds settings = carouselSettingsBounds(cellX, cellY, cellW, cellH);
         if (inside(x, y, settings.x - 8, settings.y - 8, settings.size + 16, settings.size + 16)) {
@@ -2045,6 +2147,11 @@ void ThemePickerActivity::loop() {
     if (streaksSettingsFinished_) {
       exitActivity();
       streaksSettingsFinished_ = false;
+      render();
+    }
+    if (imageSettingsFinished_) {
+      exitActivity();
+      imageSettingsFinished_ = false;
       render();
     }
     return;
@@ -2242,6 +2349,11 @@ void ThemePickerActivity::loop() {
         const bool wasCarousel = widgets_[widgetSlot_] == HomeTheme::Widget::Carousel;
         const bool wasStreaks = widgets_[widgetSlot_] == HomeTheme::Widget::Streaks;
         widgets_[widgetSlot_] = widgetOptionAt(layout_, editingSleep_, popupSelected_);
+        if (widgets_[widgetSlot_] == HomeTheme::Widget::Image && imagePaths_[widgetSlot_][0] == '\0') {
+          widgetPopup_ = false;
+          openImageSettings(widgetSlot_);
+          return;
+        }
         if (widgets_[widgetSlot_] == HomeTheme::Widget::Empty) borders_[widgetSlot_] = HomeTheme::Border::None;
         if (layout_ == HomeTheme::Layout::OneByOne) {
           const int itemCount = oneByOneWidgetCount(widgets_);
