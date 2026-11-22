@@ -58,6 +58,7 @@ class MetadataIndex final {
                         size_t maxEntries = static_cast<size_t>(-1));
   static bool generate(const Options& options,
                        const std::function<void(int, int, const char*, const char*)>& progress,
-                       const std::function<bool()>& shouldCancel = {});
+                       const std::function<bool()>& shouldCancel = {},
+                       const std::function<bool(const char*)>& onBook = {});
   static std::string authorKey(const std::string& author);
 };

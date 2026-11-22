@@ -9,7 +9,9 @@
 
 #include "activity/page/SubPage.h"
 #include "activity/page/components/global/Button.h"
+#include "activity/page/components/widget/BaseCarousel.h"
 #include "activity/settings/ReaderFontSettingsDraw.h"
+#include "state/SystemSetting.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
 #include "system/UiLayout.h"
@@ -22,6 +24,7 @@ constexpr int kRowHeight = SettingsListLayout::kRowHeight;
 constexpr int kButtonWidth = 180;
 constexpr int kButtonSideMargin = 20;
 constexpr int kButtonBottomMargin = 20;
+constexpr int kCardPadding = 20;
 constexpr const char* kOptionLabels[kOptionCount] = {
     "Thumbnails", "Authors", "Series", "Tags", "Publisher", "Language", "Rating", "Publication date",
     "Identifiers", "Title sort", "Author sort", "Description, dates, UUID + custom fields"};
@@ -52,6 +55,7 @@ void MetadataGeneratorActivity::onEnter() {
   currentStage[0] = '\0';
   currentBook[0] = '\0';
   completionSummary[0] = '\0';
+  processedBooks.clear();
 }
 
 void MetadataGeneratorActivity::onExit() {
@@ -90,6 +94,7 @@ void MetadataGeneratorActivity::startGeneration() {
   currentStage[0] = '\0';
   currentBook[0] = '\0';
   completionSummary[0] = '\0';
+  processedBooks.clear();
   thumbnailPhase = false;
   state = RUNNING;
   updateRequired = true;
@@ -113,37 +118,30 @@ void MetadataGeneratorActivity::workerTaskLoop() {
   options.titleSorts = selectedOptions[9];
   options.authorSorts = selectedOptions[10];
   options.completeRecords = selectedOptions[11];
-  const bool needsIndexes = options.authors || options.series || options.tags || options.publishers || options.languages ||
-                            options.ratings || options.publicationDates || options.identifiers || options.titleSorts ||
-                            options.authorSorts || options.completeRecords;
-  bool indexed = !needsIndexes || MetadataIndex::generate(
+  ThumbnailGeneration::Result thumbnailResult;
+  bool indexed = MetadataIndex::generate(
       options,
       [this](const int current, const int total, const char* stage, const char* book) {
+        if (renderingMutex) xSemaphoreTake(renderingMutex, portMAX_DELAY);
         processedCount = current;
         totalCount = total;
         if (stage) strlcpy(currentStage, stage, sizeof(currentStage));
-        if (book) strlcpy(currentBook, book, sizeof(currentBook));
+        if (book) {
+          strlcpy(currentBook, book, sizeof(currentBook));
+          if (!thumbnailPhase && (processedBooks.empty() || processedBooks.back() != book)) {
+            processedBooks.emplace_back(book);
+          }
+        }
         updateRequired = true;
+        if (renderingMutex) xSemaphoreGive(renderingMutex);
       },
-      [this] { return cancelRequested; });
-
-  ThumbnailGeneration::Result thumbnailResult;
-  if (indexed && selectedOptions[0] && !cancelRequested) {
-    thumbnailPhase = true;
-    processedCount = 0;
-    totalCount = 0;
-    currentBook[0] = '\0';
-    strlcpy(currentStage, "Thumbnail", sizeof(currentStage));
-    updateRequired = true;
-    indexed = ThumbnailGeneration::generate(
-        renderer, renderingMutex, thumbnailResult,
-        [this](const int current, const char* book) {
-          processedCount = current;
-          totalCount = 0;
-          if (book) strlcpy(currentBook, book, sizeof(currentBook));
-          updateRequired = true;
-        },
-        [this] { return cancelRequested; });
+      [this] { return cancelRequested; },
+      [this, &thumbnailResult](const char* book) {
+        if (!selectedOptions[0]) return true;
+        return ThumbnailGeneration::generateOne(renderer, renderingMutex, thumbnailResult, book,
+                                                [this] { return cancelRequested; });
+      });
+  if (selectedOptions[0]) {
     std::snprintf(completionSummary, sizeof(completionSummary), "Thumbnails: %d new, %d existing, %d failed",
                   thumbnailResult.generated, thumbnailResult.skipped, thumbnailResult.failed);
   }
@@ -171,6 +169,43 @@ void MetadataGeneratorActivity::render() {
   const int contentTop = SubPage::header(renderer, "Generate Metadata");
   const int screenWidth = renderer.getScreenWidth();
   const int font = systemFontId();
+  const int lineHeight = renderer.text.getLineHeight(font);
+  constexpr int rowGap = 12;
+  constexpr int barHeight = 8;
+  const int cardHeight = UiLayout::LIST_ITEM_HEIGHT;
+  const int cardX = kCardPadding;
+  const int cardWidth = screenWidth - 2 * kCardPadding;
+  const bool rounded = SETTINGS.bitmapRoundedCorners != 0;
+
+  auto renderBookCards = [&](const int listTop, const int listBottom) {
+    const int rowStep = cardHeight + rowGap;
+    const int visibleCards = std::max(1, (listBottom - listTop + rowGap) / rowStep);
+    int cardRow = 0;
+    auto drawBookCard = [&](const char* bookName) {
+      if (cardRow >= visibleCards) return;
+      const int cardY = listTop + cardRow * rowStep;
+      BaseCarousel::renderShadow(renderer, cardX + 4, cardY + 4, cardWidth, cardHeight,
+                                 HomeTheme::CarouselShadowStyle::Gray);
+      renderer.rectangle.fill(cardX, cardY, cardWidth, cardHeight, false, rounded);
+      renderer.rectangle.render(cardX, cardY, cardWidth, cardHeight, true, rounded);
+      const int maxBookWidth = std::max(1, cardWidth - 2 * kCardPadding);
+      const std::string book = renderer.text.truncate(font, bookName, maxBookWidth, EpdFontFamily::REGULAR);
+      const int bookTextY = cardY + (cardHeight - lineHeight) / 2;
+      renderer.text.render(font, cardX + kCardPadding, bookTextY, book.c_str(), true, EpdFontFamily::REGULAR);
+      ++cardRow;
+    };
+
+    bool skippedCurrent = false;
+    if (currentBook[0]) drawBookCard(currentBook);
+    for (auto it = processedBooks.rbegin(); it != processedBooks.rend() && cardRow < visibleCards; ++it) {
+      if (currentBook[0] && !skippedCurrent && *it == currentBook) {
+        skippedCurrent = true;
+        continue;
+      }
+      drawBookCard(it->c_str());
+    }
+    if (cardRow == 0) drawBookCard("Preparing...");
+  };
 
   if (state == READY) {
     const ButtonBounds bounds = actionBounds(renderer);
@@ -200,18 +235,10 @@ void MetadataGeneratorActivity::render() {
     Button::render(renderer, bounds, "Generate", true, font);
     mappedInput.mapLabels("\xC2\xAB Back", "Generate", "Up", "Down");
   } else if (state == RUNNING) {
-    const char* stage = currentStage[0] ? currentStage : (thumbnailPhase ? "Thumbnail" : "Metadata");
     const ButtonBounds stopBounds = actionBounds(renderer);
-    const int lineHeight = renderer.text.getLineHeight(font);
-    constexpr int rowGap = 12;
-    constexpr int barHeight = 8;
-    const int blockHeight = lineHeight * 3 + rowGap * 3 + barHeight;
-    const int blockTop = contentTop + std::max(0, (stopBounds.y - contentTop - blockHeight) / 2);
-    const int stageY = blockTop;
-    const int progressY = stageY + lineHeight + rowGap;
+    const int progressY = contentTop + rowGap;
     const int barY = progressY + lineHeight + rowGap;
-    const int bookY = barY + barHeight + rowGap;
-    renderer.text.centered(font, stageY, stage, true, EpdFontFamily::BOLD);
+    const int bookCardY = barY + barHeight + rowGap;
     char progress[64];
     if (totalCount > 0) {
       std::snprintf(progress, sizeof(progress), "Processed %d of %d books", static_cast<int>(processedCount),
@@ -219,9 +246,10 @@ void MetadataGeneratorActivity::render() {
     } else {
       std::snprintf(progress, sizeof(progress), "Processed %d books", static_cast<int>(processedCount));
     }
-    renderer.text.centered(font, progressY, progress, true, EpdFontFamily::REGULAR);
-    const int barWidth = std::min(320, screenWidth - 80);
-    const int barX = (screenWidth - barWidth) / 2;
+    const int contentLeft = kCardPadding;
+    renderer.text.render(font, contentLeft, progressY, progress, true, EpdFontFamily::REGULAR);
+    const int barWidth = screenWidth - 2 * kCardPadding;
+    const int barX = contentLeft;
     renderer.rectangle.render(barX, barY, barWidth, 8, true);
     renderer.rectangle.fill(barX + 1, barY + 1, std::max(1, barWidth - 2), 6, false);
     if (totalCount > 0) {
@@ -233,25 +261,32 @@ void MetadataGeneratorActivity::render() {
       const int fillX = (processedCount * 17) % travel;
       renderer.rectangle.fill(barX + 1 + fillX, barY + 1, fillWidth, 6, true);
     }
-    if (currentBook[0]) {
-      const std::string book = renderer.text.truncate(font, currentBook, screenWidth - 40,
-                                                       EpdFontFamily::REGULAR);
-      renderer.text.centered(font, bookY, book.c_str(), true, EpdFontFamily::REGULAR);
-    }
+    const int listTop = bookCardY;
+    const int listBottom = stopBounds.y - rowGap;
+    renderBookCards(listTop, listBottom);
     Button::render(renderer, actionBounds(renderer), "Stop", true, font);
     mappedInput.mapLabels("Stop", "", "", "");
   } else {
     const bool success = state == SUCCESS;
     const bool cancelled = state == CANCELLED;
-    renderer.text.centered(font, contentTop + 106,
-                           success ? "Metadata ready" : (cancelled ? "Generation stopped" : "Generation failed"),
-                           true, EpdFontFamily::BOLD);
-    char progress[64];
-    std::snprintf(progress, sizeof(progress), "Processed %d books", static_cast<int>(processedCount));
-    renderer.text.centered(font, contentTop + 148, progress, true, EpdFontFamily::REGULAR);
-    renderer.text.centered(font, contentTop + 188,
-                           success && completionSummary[0] ? completionSummary : "Tap Back to return", true,
-                           EpdFontFamily::REGULAR);
+    if (success) {
+      char completed[64];
+      std::snprintf(completed, sizeof(completed), "Completed %d books", static_cast<int>(processedCount));
+      const int progressY = contentTop + rowGap;
+      const int barY = progressY + lineHeight + rowGap;
+      renderer.text.render(font, kCardPadding, progressY, completed, true, EpdFontFamily::REGULAR);
+      const int barWidth = screenWidth - 2 * kCardPadding;
+      renderer.rectangle.render(kCardPadding, barY, barWidth, barHeight, true);
+      renderer.rectangle.fill(kCardPadding + 1, barY + 1, std::max(1, barWidth - 2), barHeight - 2, true);
+      renderBookCards(barY + barHeight + rowGap, renderer.getScreenHeight() - rowGap);
+    } else {
+      renderer.text.centered(font, contentTop + 106, cancelled ? "Generation stopped" : "Generation failed", true,
+                             EpdFontFamily::BOLD);
+      char progress[64];
+      std::snprintf(progress, sizeof(progress), "Processed %d books", static_cast<int>(processedCount));
+      renderer.text.centered(font, contentTop + 148, progress, true, EpdFontFamily::REGULAR);
+      renderer.text.centered(font, contentTop + 188, "Tap Back to return", true, EpdFontFamily::REGULAR);
+    }
     mappedInput.mapLabels("\xC2\xAB Back", "", "", "");
   }
   renderer.displayBuffer();

@@ -20,4 +20,6 @@ class ThumbnailGeneration final {
   static bool generate(GfxRenderer& renderer, SemaphoreHandle_t rendererMutex, Result& result,
                        const std::function<void(int, const char*)>& progress,
                        const std::function<bool()>& shouldCancel = {});
+  static bool generateOne(GfxRenderer& renderer, SemaphoreHandle_t rendererMutex, Result& result,
+                          const char* path, const std::function<bool()>& shouldCancel = {});
 };

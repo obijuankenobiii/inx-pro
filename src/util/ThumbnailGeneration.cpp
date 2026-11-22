@@ -212,3 +212,12 @@ bool ThumbnailGeneration::generate(GfxRenderer& renderer, SemaphoreHandle_t rend
   Generator generator{renderer, rendererMutex, result, progress, shouldCancel};
   return generator.scan("/");
 }
+
+bool ThumbnailGeneration::generateOne(GfxRenderer& renderer, SemaphoreHandle_t rendererMutex, Result& result,
+                                      const char* path, const std::function<bool()>& shouldCancel) {
+  if (!path || path[0] == '\0' || (shouldCancel && shouldCancel())) return false;
+  SdIoMutex::Lock ioLock;
+  const std::function<void(int, const char*)> noProgress;
+  Generator generator{renderer, rendererMutex, result, noProgress, shouldCancel};
+  return generator.process(path);
+}

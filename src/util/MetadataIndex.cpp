@@ -81,6 +81,11 @@ bool supportedXtc(const char* name) {
          (length >= 5 && strcasecmp(name + length - 5, ".xtch") == 0);
 }
 
+bool supportedPdf(const char* name) {
+  const size_t length = std::strlen(name);
+  return length >= 4 && strcasecmp(name + length - 4, ".pdf") == 0;
+}
+
 bool skipDirectory(const char* name) {
   return !name || name[0] == '.' || strcasecmp(name, "sleep") == 0 || strcasecmp(name, "fonts") == 0 ||
          strcasecmp(name, "dictionaries") == 0 || strcasecmp(name, "System Volume Information") == 0;
@@ -433,7 +438,8 @@ bool writeFullMetadata(FsFile& output, const std::string& path, const BookMetada
 
 template <typename Visitor>
 bool scanLibrary(const bool includeXtc, const std::function<void(int, int, const char*)>& progress,
-                 const std::function<bool()>& shouldCancel, Visitor&& visitor) {
+                 const std::function<bool()>& shouldCancel, Visitor&& visitor,
+                 const std::function<bool(const char*)>& onBook = {}, const bool includePdf = false) {
   int total = 0;
   FsFile root = SdMan.open("/");
   if (root) {
@@ -470,7 +476,8 @@ bool scanLibrary(const bool includeXtc, const std::function<void(int, int, const
       }
       const bool isEpub = supportedEpub(name);
       const bool isXtc = includeXtc && supportedXtc(name);
-      if (!isEpub && !isXtc) continue;
+      const bool isPdf = includePdf && supportedPdf(name);
+      if (!isEpub && !isXtc && !isPdf) continue;
 
       if (isEpub) {
         Epub epub(fullPath, "/.metadata/epub");
@@ -480,7 +487,7 @@ bool scanLibrary(const bool includeXtc, const std::function<void(int, int, const
             return false;
           }
         }
-      } else {
+      } else if (isXtc) {
         Xtc xtc(fullPath, "/.metadata/xtc");
         const bool loaded = xtc.load();
         const std::string title = loaded ? xtc.getTitle() : std::string();
@@ -492,6 +499,10 @@ bool scanLibrary(const bool includeXtc, const std::function<void(int, int, const
       }
       ++current;
       if (progress) progress(current, total, fullPath.c_str());
+      if (onBook && !onBook(fullPath.c_str())) {
+        directory.close();
+        return false;
+      }
       if ((current & 3) == 0) vTaskDelay(pdMS_TO_TICKS(1));
     }
     directory.close();
@@ -580,7 +591,8 @@ bool generateAllMetadata(const std::function<void(int, int, const char*)>& progr
 
 bool generateSelected(const MetadataIndex::Options& options,
                       const std::function<void(int, int, const char*, const char*)>& progress,
-                      const std::function<bool()>& shouldCancel) {
+                      const std::function<bool()>& shouldCancel,
+                      const std::function<bool(const char*)>& onBook) {
   constexpr std::array<MetadataIndex::Kind, 10> kinds = {
       MetadataIndex::Kind::Authors,          MetadataIndex::Kind::Series,
       MetadataIndex::Kind::Tags,             MetadataIndex::Kind::Publishers,
@@ -631,7 +643,7 @@ bool generateSelected(const MetadataIndex::Options& options,
   }
 
   const bool completed = scanLibrary(
-      options.authors,
+      options.authors || static_cast<bool>(onBook),
       [&progress](const int current, const int total, const char* path) {
         if (progress) progress(current, total, "Metadata", path);
       },
@@ -673,7 +685,8 @@ bool generateSelected(const MetadataIndex::Options& options,
           ++allMetadataCount;
         }
         return true;
-      });
+      },
+      onBook, static_cast<bool>(onBook));
 
   if (allMetadataOpen) {
     if (completed && !(shouldCancel && shouldCancel())) {
@@ -865,15 +878,16 @@ bool MetadataIndex::loadGroup(const Kind kind, const Group& group, std::vector<E
 
 bool MetadataIndex::generate(const Options& options,
                              const std::function<void(int, int, const char*, const char*)>& progress,
-                             const std::function<bool()>& shouldCancel) {
+                             const std::function<bool()>& shouldCancel,
+                             const std::function<bool(const char*)>& onBook) {
   SdIoMutex::Lock ioLock;
   if (!options.authors && !options.series && !options.tags && !options.publishers && !options.languages &&
       !options.ratings && !options.publicationDates && !options.identifiers && !options.titleSorts &&
-      !options.authorSorts && !options.completeRecords) {
+      !options.authorSorts && !options.completeRecords && !onBook) {
     return false;
   }
   if (!SdMan.exists("/.metadata")) SdMan.mkdir("/.metadata");
   if (!SdMan.exists(kDirectory)) SdMan.mkdir(kDirectory);
 
-  return generateSelected(options, progress, shouldCancel);
+  return generateSelected(options, progress, shouldCancel, onBook);
 }

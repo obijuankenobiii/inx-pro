@@ -36,6 +36,7 @@ constexpr int kRowHeight = SettingsListLayout::kRowHeight;
 constexpr int kBottomButtonMargin = 20;
 
 constexpr int kThemeContentTop = navigation::Menu::topPadding + navigation::Menu::iconSize + 20;
+constexpr int kThemeModeListGap = 10;
 
 struct PreviewBounds {
   int x;
@@ -44,8 +45,7 @@ struct PreviewBounds {
   int height;
 };
 
-PreviewBounds widgetPreviewBounds(const GfxRenderer& renderer) {
-  const int contentTop = kThemeContentTop;
+PreviewBounds widgetPreviewBounds(const GfxRenderer& renderer, const int contentTop) {
   const int previewHeight = std::max(1, renderer.getScreenHeight() - contentTop - 20);
   return {0, contentTop, renderer.getScreenWidth(), previewHeight};
 }
@@ -423,14 +423,14 @@ struct WidgetGridBounds {
   int cellHeight;
 };
 
-WidgetGridBounds widgetGridBounds(const GfxRenderer& renderer) {
+WidgetGridBounds widgetGridBounds(const GfxRenderer& renderer, const int contentTop) {
   constexpr int padding = 20;
   constexpr int gap = 12;
   const int screenWidth = renderer.getScreenWidth();
   const int screenHeight = renderer.getScreenHeight();
   const int width = screenWidth;
   const int height = screenHeight;
-  const int header = (FREEINK_DEVICE_X4PRO ? 20 : 15) + 40 + 20;
+  const int header = contentTop;
   const int x = 0;
   const int y = 0;
   const int gridX = x;
@@ -544,11 +544,12 @@ void ThemePickerActivity::render() {
 
 void ThemePickerActivity::renderMode() {
   const int contentTop = SubPage::header(renderer, "Theme");
+  const int listTop = contentTop + kThemeModeListGap;
   const int font = systemFontId();
   const int width = renderer.getScreenWidth();
   const char* labels[] = {"Home", "Sleep"};
   for (int index = 0; index < 2; ++index) {
-    const int y = contentTop + index * kRowHeight;
+    const int y = listTop + index * kRowHeight;
     renderer.rectangle.fill(0, y, width, kRowHeight, static_cast<int>(GfxRenderer::FillTone::Paper));
     renderer.text.render(font, 20, y + (kRowHeight - renderer.text.getLineHeight(font)) / 2, labels[index], true,
                          EpdFontFamily::REGULAR);
@@ -562,7 +563,7 @@ void ThemePickerActivity::renderMode() {
 
 void ThemePickerActivity::renderList() {
   const char* subtitle = sleepMode_ ? "Sleep" : "Home";
-  const int contentTop = SubPage::header(renderer, "Theme", subtitle);
+  const int contentTop = SubPage::header(renderer, "Theme", subtitle) + kThemeModeListGap;
   const int titleFont = systemFontIdForPointSize(16);
   const int font = systemFontId();
   const int width = renderer.getScreenWidth();
@@ -683,7 +684,7 @@ void ThemePickerActivity::activateSleepTheme(const int index) {
 }
 
 void ThemePickerActivity::renderLayoutPicker() {
-  const int contentTop = SubPage::header(renderer, "Choose layout");
+  const int contentTop = SubPage::header(renderer, "Choose layout") + kThemeModeListGap;
   const int font = systemFontId();
   const int width = renderer.getScreenWidth();
   const int availableHeight = std::max(1, renderer.getScreenHeight() - contentTop);
@@ -738,8 +739,8 @@ void ThemePickerActivity::renderThemeActionPopup() {
 }
 
 void ThemePickerActivity::renderWidgetPicker() {
-  SubPage::header(renderer, "Layout Builder");
-  const PreviewBounds preview = widgetPreviewBounds(renderer);
+  const int contentTop = SubPage::header(renderer, "Layout Builder") + kThemeModeListGap;
+  const PreviewBounds preview = widgetPreviewBounds(renderer, contentTop);
   const int previewX = preview.x;
   const int previewY = preview.y;
   const int previewW = preview.width;
@@ -1138,8 +1139,8 @@ void ThemePickerActivity::renderWidgetPreview(const HomeTheme::Widget widget, co
 
 void ThemePickerActivity::renderWidgetPopup() {
   const int options = widgetOptionCount(layout_, editingSleep_);
-  SubPage::header(renderer, "Choose widget");
-  const WidgetGridBounds box = widgetGridBounds(renderer);
+  const int contentTop = SubPage::header(renderer, "Choose widget") + kThemeModeListGap;
+  const WidgetGridBounds box = widgetGridBounds(renderer, contentTop);
   const int font = systemFontId();
 
   const int previewLabelHeight = renderer.text.getLineHeight(font);
@@ -1903,7 +1904,7 @@ void ThemePickerActivity::switchLayout(const HomeTheme::Layout layout) {
 
 void ThemePickerActivity::handleTouch(const int x, const int y, const bool longPress) {
   if (screen_ == Screen::Mode) {
-    const int top = kThemeContentTop;
+    const int top = kThemeContentTop + kThemeModeListGap;
     if (y >= top && y < top + 2 * kRowHeight) {
       sleepMode_ = y >= top + kRowHeight;
       selected_ = sleepMode_ ? HomeTheme::sleepActiveIndex() : HomeTheme::activeIndex();
@@ -1914,7 +1915,7 @@ void ThemePickerActivity::handleTouch(const int x, const int y, const bool longP
     return;
   }
   if (screen_ == Screen::List) {
-    const int contentTop = kThemeContentTop;
+    const int contentTop = kThemeContentTop + kThemeModeListGap;
     if (themeActionPopup_) {
       const int actionCount = sleepFixedOptionPopup_ ? 1 : 3;
       const PopUpBounds box = PopUp::bounds(renderer, actionCount);
@@ -1980,7 +1981,7 @@ void ThemePickerActivity::handleTouch(const int x, const int y, const bool longP
     return;
   }
   if (screen_ == Screen::Layouts) {
-    const int contentTop = kThemeContentTop;
+    const int contentTop = kThemeContentTop + kThemeModeListGap;
     const int availableHeight = std::max(1, renderer.getScreenHeight() - contentTop);
     const int sectionHeight = std::max(1, availableHeight / kLayoutsPerPage);
     if (y >= contentTop && y < contentTop + availableHeight) {
@@ -2024,7 +2025,7 @@ void ThemePickerActivity::handleTouch(const int x, const int y, const bool longP
     }
     if (widgetPopup_) {
       const int options = widgetOptionCount(layout_, editingSleep_);
-      const WidgetGridBounds box = widgetGridBounds(renderer);
+      const WidgetGridBounds box = widgetGridBounds(renderer, kThemeContentTop + kThemeModeListGap);
       if (!inside(x, y, box.x, box.y, box.width, box.height)) {
         widgetPopup_ = false;
         render();
@@ -2120,7 +2121,7 @@ void ThemePickerActivity::handleTouch(const int x, const int y, const bool longP
       render();
       return;
     }
-    const PreviewBounds preview = widgetPreviewBounds(renderer);
+    const PreviewBounds preview = widgetPreviewBounds(renderer, kThemeContentTop + kThemeModeListGap);
     const int previewX = preview.x;
     const int previewY = preview.y;
     const int previewW = preview.width;

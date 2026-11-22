@@ -47,13 +47,17 @@ void renderPanelTab(const GfxRenderer& renderer, const int x, const int y, const
   const int horizontalPadding = panelTabHorizontalPadding();
   const std::string shown = renderer.text.truncate(font, label ? label : "",
                                                    std::max(1, width - horizontalPadding * 2));
-  const EpdFontFamily::Style style = selected ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR;
-  const int textWidth = renderer.text.getUntranslatedWidth(font, shown.c_str(), style);
+  const EpdFontFamily::Style style = EpdFontFamily::REGULAR;
+  const int textWidth = renderer.text.getWidth(font, shown.c_str(), style);
   const int textY = y + (height - renderer.text.getLineHeight(font)) / 2;
   const int textX = alignment == 0       ? x + horizontalPadding
                     : alignment == 2 ? x + width - horizontalPadding - textWidth
                                      : x + (width - textWidth) / 2;
-  renderer.text.renderUntranslated(font, textX, textY, shown.c_str(), true, style);
+  if (selected) {
+    renderer.text.render(font, textX, textY, shown.c_str(), true, style);
+  } else {
+    renderer.text.renderGray(font, textX, textY, shown.c_str(), true, style);
+  }
 
   if (selected) {
     renderer.rectangle.fill(textX, y + height - 3, std::max(1, textWidth), 2, true);

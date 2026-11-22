@@ -5,6 +5,8 @@
 #include <freertos/task.h>
 
 #include <functional>
+#include <string>
+#include <vector>
 
 #include "activity/Activity.h"
 
@@ -42,6 +44,7 @@ class MetadataGeneratorActivity final : public Activity {
   char currentStage[48] = {0};
   char currentBook[256] = {0};
   char completionSummary[120] = {0};
+  std::vector<std::string> processedBooks;
   int optionListTop = 0;
   int optionListRows = 0;
   int scrollOffset = 0;
