@@ -88,8 +88,9 @@ const Item& itemForIndex(const int index) {
 bool current(const navigation::Menu& menu, navigation::Menu::Action action);
 
 bool excludedFromHiddenDrawer(const navigation::Menu& menu, const int index) {
-
-
+  if (SETTINGS.disableStatistics != 0 && index == 5) {
+    return true;
+  }
   if (index == 4) {
     for (int candidate = 0; candidate < hiddenItemCount; ++candidate) {
       if (current(menu, hiddenItems[candidate].action)) return false;

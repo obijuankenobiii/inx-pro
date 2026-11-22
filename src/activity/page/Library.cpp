@@ -1425,7 +1425,7 @@ void Library::center() const {
         break;
     }
     currentPage = std::max(0, std::min(currentPage, totalPages - 1));
-    const std::string pagination = std::to_string(currentPage + 1) + " / " + std::to_string(totalPages);
+    const std::string pagination = std::to_string(currentPage + 1) + " - " + std::to_string(totalPages);
     const int paginationFont = systemFontId();
     renderer.text.render(paginationFont, 20,
                          y + (containerHeight - renderer.text.getLineHeight(paginationFont)) / 2,

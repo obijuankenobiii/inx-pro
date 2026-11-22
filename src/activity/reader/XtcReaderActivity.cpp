@@ -549,6 +549,11 @@ void XtcReaderActivity::renderScreen() {
   }
 
   if (currentPage >= xtc->getPageCount()) {
+    if (SETTINGS.disableStatistics != 0) {
+      renderer.clearScreen(0xff);
+      renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+      return;
+    }
     const uint32_t pageCount = xtc->getPageCount();
     if (pageCount > 0) {
       bookStats.progressPercent = 100.f;
@@ -855,7 +860,7 @@ void XtcReaderActivity::ensureThumbnailExists() {
 }
 
 void XtcReaderActivity::initStats() {
-  if (!xtc) {
+  if (SETTINGS.disableStatistics != 0 || !xtc) {
     return;
   }
 
@@ -881,10 +886,12 @@ void XtcReaderActivity::initStats() {
   lastSaveTime = millis();
 }
 
-void XtcReaderActivity::startPageTimer() { pageStartTime = millis(); }
+void XtcReaderActivity::startPageTimer() {
+  if (SETTINGS.disableStatistics == 0) pageStartTime = millis();
+}
 
 void XtcReaderActivity::endPageTimer() {
-  if (pageStartTime == 0 || !xtc) {
+  if (SETTINGS.disableStatistics != 0 || pageStartTime == 0 || !xtc) {
     return;
   }
 
@@ -919,7 +926,7 @@ void XtcReaderActivity::endPageTimer() {
 }
 
 void XtcReaderActivity::saveBookStatsToFile() {
-  if (!xtc) {
+  if (SETTINGS.disableStatistics != 0 || !xtc) {
     return;
   }
   bookStats.lastReadTimeMs = millis();

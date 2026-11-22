@@ -413,6 +413,7 @@ void onSelectBook(const std::string& path) {
  * @brief Navigates to the statistics activity.
  */
 void onGoToStatistics() {
+  if (SETTINGS.disableStatistics != 0) return;
   switchTo<Statistics>(render, input, [] { onGoToHome(); });
 }
 

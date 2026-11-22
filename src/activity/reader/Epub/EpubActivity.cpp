@@ -2656,7 +2656,9 @@ bool EpubActivity::pageTurn(bool forward) {
     } else {
       int totalSpines = epub->getSpineItemsCount();
       if (currentSpineIndex < totalSpines - 1) {
-        readingStats_.addChapterRead();
+        if (SETTINGS.disableStatistics == 0) {
+          readingStats_.addChapterRead();
+        }
         newSpineIndex = currentSpineIndex + 1;
         newNextPageNumber = 0;
         needSectionReset = true;
@@ -3428,39 +3430,41 @@ void EpubActivity::applyBookSettings() {
  * @brief Initializes reading statistics
  */
 void EpubActivity::initStats() {
-  if (epub) {
+  if (SETTINGS.disableStatistics == 0 && epub) {
     readingStats_.init(*epub, section.get(), currentSpineIndex);
   }
 }
 
 void EpubActivity::maybeCommitReadingSessionCount() {
-  if (epub) {
+  if (SETTINGS.disableStatistics == 0 && epub) {
     readingStats_.maybeCommitSession(*epub);
   }
 }
 
-void EpubActivity::startPageTimer() { readingStats_.startPageTimer(); }
+void EpubActivity::startPageTimer() {
+  if (SETTINGS.disableStatistics == 0) readingStats_.startPageTimer();
+}
 
 void EpubActivity::pauseReadingStats() {
-  if (epub) {
+  if (SETTINGS.disableStatistics == 0 && epub) {
     readingStats_.pausePageTimer(*epub, section.get(), currentSpineIndex);
   }
 }
 
 void EpubActivity::endPageTimer() {
-  if (epub) {
+  if (SETTINGS.disableStatistics == 0 && epub) {
     readingStats_.endPageTimer(*epub, section.get(), currentSpineIndex);
   }
 }
 
 void EpubActivity::saveBookStats() {
-  if (epub) {
+  if (SETTINGS.disableStatistics == 0 && epub) {
     readingStats_.save(*epub);
   }
 }
 
 void EpubActivity::displayBookStats() {
-  if (epub) {
+  if (SETTINGS.disableStatistics == 0 && epub) {
     readingStats_.display(renderer, *epub);
   }
 }

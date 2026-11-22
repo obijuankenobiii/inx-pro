@@ -87,6 +87,7 @@ void AppsActivity::enterChild(Activity* activity) {
 
 void AppsActivity::openSelected() {
   const int item = itemIndex(selectedIndex_);
+  if (SETTINGS.disableStatistics != 0 && item == 3) return;
   const auto close = [this] { subActivityFinished_ = true; };
   switch (item) {
     case 0:
