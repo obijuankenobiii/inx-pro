@@ -134,24 +134,20 @@ void ImagePositionActivity::updatePreviewBounds() {
   const int height = renderer.getScreenHeight();
   const int font = systemFontIdForPointSize(12);
   const int lineHeight = renderer.text.getLineHeight(font);
-  if (widgetWidth_ > 0 && widgetHeight_ > 0) {
-    const int insetX = insetFor(padding_, widgetWidth_);
-    const int insetY = insetFor(padding_, widgetHeight_);
-    previewX_ = widgetX_ + insetX;
-    previewY_ = widgetY_ + insetY;
-    previewWidth_ = std::max(1, widgetWidth_ - insetX * 2);
-    previewHeight_ = std::max(1, widgetHeight_ - insetY * 2);
-  } else {
-    const int previewY = navigation::Menu::topPadding + navigation::Menu::iconSize + 20;
-    const int outerWidth = std::max(1, width);
-    const int outerHeight = std::max(1, height - previewY - lineHeight - 10);
-    const int insetX = insetFor(padding_, outerWidth);
-    const int insetY = insetFor(padding_, outerHeight);
-    previewX_ = insetX;
-    previewY_ = previewY + insetY;
-    previewWidth_ = std::max(1, outerWidth - insetX * 2);
-    previewHeight_ = std::max(1, outerHeight - insetY * 2);
-  }
+  const int contentTop = navigation::Menu::topPadding + navigation::Menu::iconSize + 20;
+  const int availableHeight = std::max(1, height - contentTop - lineHeight - 10);
+
+  outerPreviewWidth_ = widgetWidth_ > 0 ? widgetWidth_ : std::max(1, width);
+  outerPreviewHeight_ = widgetHeight_ > 0 ? widgetHeight_ : availableHeight;
+  outerPreviewX_ = (width - outerPreviewWidth_) / 2;
+  outerPreviewY_ = contentTop + (availableHeight - outerPreviewHeight_) / 2;
+
+  const int insetX = insetFor(padding_, outerPreviewWidth_);
+  const int insetY = insetFor(padding_, outerPreviewHeight_);
+  previewX_ = outerPreviewX_ + insetX;
+  previewY_ = outerPreviewY_ + insetY;
+  previewWidth_ = std::max(1, outerPreviewWidth_ - insetX * 2);
+  previewHeight_ = std::max(1, outerPreviewHeight_ - insetY * 2);
 }
 
 bool ImagePositionActivity::renderCachedImage(const int x, const int y, const int width, const int height) {
@@ -204,9 +200,9 @@ void ImagePositionActivity::render() {
   const int lineHeight = renderer.text.getLineHeight(font);
   updatePreviewBounds();
 
-  if (widgetWidth_ > 0 && widgetHeight_ > 0) {
+  if (outerPreviewWidth_ > 0 && outerPreviewHeight_ > 0) {
     const bool rounded = SETTINGS.bitmapRoundedCorners != 0;
-    renderer.rectangle.fill(widgetX_, widgetY_, widgetWidth_, widgetHeight_, false, rounded,
+    renderer.rectangle.fill(outerPreviewX_, outerPreviewY_, outerPreviewWidth_, outerPreviewHeight_, false, rounded,
                             SETTINGS.bitmapRoundedCorners == 2);
   }
   const int imageX = previewX_;
@@ -235,6 +231,13 @@ void ImagePositionActivity::render() {
                          imageY + std::max(0, (imageHeight - lineHeight) / 2), label, true,
                          EpdFontFamily::REGULAR);
   }
+
+  const int outerRight = outerPreviewX_ + outerPreviewWidth_ - 1;
+  const int outerBottom = outerPreviewY_ + outerPreviewHeight_ - 1;
+  renderer.line.render(outerPreviewX_, outerPreviewY_, outerRight, outerPreviewY_, true,
+                       LineRender::Style::Solid);
+  renderer.line.render(outerPreviewX_, outerBottom, outerRight, outerBottom, true,
+                       LineRender::Style::Solid);
 
   if (previewY_ + previewHeight_ + lineHeight + 10 <= height) {
     const char* instruction = cropToFill_ ? "Drag image to position" : "Turn on Crop to fill to position";

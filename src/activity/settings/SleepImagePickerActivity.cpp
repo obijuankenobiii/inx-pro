@@ -17,6 +17,8 @@
 
 #include "state/SystemSetting.h"
 #include "images/Close.h"
+#include "images/LibraryFilterLeft.h"
+#include "images/LibraryFilterRight.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
 #include "ReaderFontSettingsDraw.h"
@@ -35,6 +37,8 @@ constexpr int THUMB_INSET_Y = 12;
 constexpr int RANDOM_BUTTON_W = 178;
 constexpr int RANDOM_BUTTON_H = 28;
 constexpr int FOOTER_SIDE_PAD = 20;
+constexpr int BOTTOM_BAR_HEIGHT = 70;
+constexpr int BOTTOM_BAR_CELL_WIDTH = 60;
 
 }
 
@@ -170,7 +174,7 @@ void SleepImagePickerActivity::drawPickerChrome(const int pageStart, const int r
   renderer.bitmap.icon(Close, pageWidth - 60, 20, 40, 40);
 
   const int buttonX = pageWidth - RANDOM_BUTTON_W - FOOTER_SIDE_PAD;
-  const int buttonY = pageHeight - 76;
+  const int buttonY = pageHeight - BOTTOM_BAR_HEIGHT;
   const int gridBottom = buttonY - 14;
   const int gridHeight = std::max(1, gridBottom - GRID_TOP);
   const int cellW = (pageWidth - GRID_MARGIN_X * 2 - GRID_GAP_X) / GRID_COLS;
@@ -204,6 +208,14 @@ void SleepImagePickerActivity::drawPickerChrome(const int pageStart, const int r
                          emptyY + (emptyH - renderer.text.getLineHeight(msgFont)) / 2, msg, true);
   }
 
+  const int bottomMenuX = std::max(0, pageWidth - BOTTOM_BAR_CELL_WIDTH * 3);
+  renderer.line.render(0, buttonY, pageWidth, buttonY, true, LineRender::Style::Dotted);
+  renderer.line.render(bottomMenuX + BOTTOM_BAR_CELL_WIDTH, buttonY, bottomMenuX + BOTTOM_BAR_CELL_WIDTH, pageHeight, true,
+                       LineRender::Style::Dotted);
+  renderer.line.render(bottomMenuX + BOTTOM_BAR_CELL_WIDTH * 2, buttonY,
+                       bottomMenuX + BOTTOM_BAR_CELL_WIDTH * 2, pageHeight,
+                       true, LineRender::Style::Dotted);
+
   if (hasImages) {
     const int totalPages = std::max(1, (rowCount + GRID_ITEMS - 1) / GRID_ITEMS);
     const int currentPage = std::min(totalPages, pageStart / GRID_ITEMS + 1);
@@ -211,16 +223,16 @@ void SleepImagePickerActivity::drawPickerChrome(const int pageStart, const int r
     std::snprintf(pageText, sizeof(pageText), "%d - %d", currentPage, totalPages);
 
     const int pageFont = systemFontIdForPointSize(12);
-    const int pagePadX = 8;
-    const int pageTextW = renderer.text.getWidth(pageFont, pageText);
     const int pageLineH = renderer.text.getLineHeight(pageFont);
-    const int pageTagH = pageLineH + 6;
-    const int pageTagW = pageTextW + pagePadX * 2;
-    const int pageTagX = FOOTER_SIDE_PAD;
-    const int pageTagY = buttonY + (RANDOM_BUTTON_H - pageTagH) / 2;
-    renderer.rectangle.fill(pageTagX, pageTagY, pageTagW, pageTagH, true, true);
-    renderer.text.render(pageFont, pageTagX + pagePadX, pageTagY + (pageTagH - pageLineH) / 2, pageText, false,
+    renderer.text.render(pageFont, FOOTER_SIDE_PAD,
+                         buttonY + (BOTTOM_BAR_HEIGHT - pageLineH) / 2, pageText, true,
                          EpdFontFamily::REGULAR);
+    if (!allowRandom) {
+      renderer.bitmap.icon(LibraryFilterLeft, bottomMenuX + BOTTOM_BAR_CELL_WIDTH + 14,
+                           buttonY + (BOTTOM_BAR_HEIGHT - 30) / 2, 32, 30);
+      renderer.bitmap.icon(LibraryFilterRight, bottomMenuX + BOTTOM_BAR_CELL_WIDTH * 2 + 14,
+                           buttonY + (BOTTOM_BAR_HEIGHT - 30) / 2, 32, 30);
+    }
   }
 
   if (allowRandom) {
@@ -240,7 +252,7 @@ void SleepImagePickerActivity::drawPickerChrome(const int pageStart, const int r
 void SleepImagePickerActivity::drawPickerThumbnails(const int pageStart, const int rowCount) {
   const int pageWidth = renderer.getScreenWidth();
   const int pageHeight = renderer.getScreenHeight();
-  const int buttonY = pageHeight - 76;
+  const int buttonY = pageHeight - BOTTOM_BAR_HEIGHT;
   const int gridBottom = buttonY - 14;
   const int gridHeight = std::max(1, gridBottom - GRID_TOP);
   const int cellW = (pageWidth - GRID_MARGIN_X * 2 - GRID_GAP_X) / GRID_COLS;
@@ -295,7 +307,7 @@ void SleepImagePickerActivity::drawSelectionFrame(const int pageStart, const int
   }
   const int pageWidth = renderer.getScreenWidth();
   const int pageHeight = renderer.getScreenHeight();
-  const int buttonY = pageHeight - 76;
+  const int buttonY = pageHeight - BOTTOM_BAR_HEIGHT;
   const int gridBottom = buttonY - 14;
   const int gridHeight = std::max(1, gridBottom - GRID_TOP);
   const int cellW = (pageWidth - GRID_MARGIN_X * 2 - GRID_GAP_X) / GRID_COLS;
@@ -363,12 +375,11 @@ void SleepImagePickerActivity::render() {
   const bool hasImages = rowCount > 0;
   const int pageStart = hasImages ? pageStartForIndex(selectedIndex) : 0;
   const bool lazyFirstPass = hasImages && renderedPageStart != pageStart;
-  const bool pageNeedsHalfRefresh = hasImages && renderedPageStart != pageStart;
 
   if (hasImages && restoreGridBuffer(pageStart)) {
     drawPickerChrome(pageStart, rowCount, hasImages, randomEnabled, false);
     drawSelectionFrame(pageStart, rowCount, selectedIndex);
-    renderer.displayBuffer(pageNeedsHalfRefresh ? HalDisplay::HALF_REFRESH : HalDisplay::FAST_REFRESH);
+    renderer.displayBuffer(HalDisplay::FAST_REFRESH);
     renderedPageStart = pageStart;
     return;
   }
@@ -385,7 +396,7 @@ void SleepImagePickerActivity::render() {
     drawPickerThumbnails(pageStart, rowCount);
     storeGridBuffer(pageStart);
     drawSelectionFrame(pageStart, rowCount, selectedIndex);
-    renderer.displayBuffer(pageNeedsHalfRefresh ? HalDisplay::HALF_REFRESH : HalDisplay::FAST_REFRESH);
+    renderer.displayBuffer(HalDisplay::FAST_REFRESH);
     renderedPageStart = pageStart;
   }
 }
@@ -455,8 +466,20 @@ void SleepImagePickerActivity::loop() {
   }
 
   if (mappedInput.hasTouch()) {
-    if (mappedInput.wasTouchSwipeUp()) {
+    float swipeStartNx = 0.0f;
+    float swipeStartNy = 0.0f;
+    const bool swipeUp = mappedInput.wasTouchSwipeUpInScreen(renderer, swipeStartNx, swipeStartNy);
+    const bool swipeDown = !swipeUp && mappedInput.wasTouchSwipeDownInScreen(renderer, swipeStartNx, swipeStartNy);
+    if (swipeUp && swipeStartNy >= 0.95f) {
       onBack();
+      return;
+    }
+    if (swipeUp) {
+      paginate(1);
+      return;
+    }
+    if (swipeDown) {
+      paginate(-1);
       return;
     }
     if (mappedInput.wasTouchSwipeRight()) {
@@ -480,7 +503,16 @@ void SleepImagePickerActivity::loop() {
         onBack();
         return;
       }
-      const int buttonY = screenHeight - 76;
+      const int buttonY = screenHeight - BOTTOM_BAR_HEIGHT;
+      const int bottomMenuX = std::max(0, screenWidth - BOTTOM_BAR_CELL_WIDTH * 3);
+      if (!allowRandom && tapY >= buttonY && tapY < screenHeight) {
+        if (tapX >= bottomMenuX + BOTTOM_BAR_CELL_WIDTH && tapX < bottomMenuX + BOTTOM_BAR_CELL_WIDTH * 2) {
+          paginate(-1);
+        } else if (tapX >= bottomMenuX + BOTTOM_BAR_CELL_WIDTH * 2 && tapX < bottomMenuX + BOTTOM_BAR_CELL_WIDTH * 3) {
+          paginate(1);
+        }
+        return;
+      }
       const int buttonX = screenWidth - RANDOM_BUTTON_W - FOOTER_SIDE_PAD;
       if (allowRandom && tapX >= buttonX && tapX < buttonX + RANDOM_BUTTON_W && tapY >= buttonY &&
           tapY < buttonY + RANDOM_BUTTON_H) {

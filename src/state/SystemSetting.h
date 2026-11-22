@@ -60,16 +60,6 @@ class SystemSetting {
     SLEEP_SCREEN_COVER_MODE_COUNT
   };
 
-  /**
-   * @brief Sleep screen cover filter options
-   */
-  enum SLEEP_SCREEN_COVER_FILTER {
-    NO_FILTER = 0,
-    BLACK_AND_WHITE = 1,
-    INVERTED_BLACK_AND_WHITE = 2,
-    SLEEP_SCREEN_COVER_FILTER_COUNT
-  };
-
   enum SLEEP_IMAGE_QUALITY {
     SLEEP_IMAGE_LOW = 0,
     SLEEP_IMAGE_MEDIUM = 1,
@@ -280,6 +270,7 @@ class SystemSetting {
     BTN_ACTION_GENERATE_THUMBNAIL,
     BTN_ACTION_GO_TO_PERCENT,
     BTN_ACTION_TOGGLE_LIGHT,
+    BTN_ACTION_EXIT,
     READER_BUTTON_ACTION_COUNT
   };
 
@@ -353,7 +344,6 @@ class SystemSetting {
 
   uint8_t sleepScreen = LIGHT;
   uint8_t sleepScreenCoverMode = FIT;
-  uint8_t sleepScreenCoverFilter = NO_FILTER;
   /** Sleep image quality for the sleep-screen image renderer. */
   uint8_t sleepImageQuality = SLEEP_IMAGE_HIGH;
   /**
@@ -428,8 +418,6 @@ class SystemSetting {
   uint8_t libraryViewMode = LIBRARY_VIEW_FOLDERS;
   /** Library sort mode persisted when leaving Library (0=Title A–Z … 5=Read Z–A). */
   uint8_t librarySortMode = 0;
-  /** Hide book titles below covers in Library thumbnail view. */
-  uint8_t hideThumbnailTitles = 0;
   /** Hide finished books from the normal folder and All Books library views. */
   uint8_t hideFinishedBooks = 0;
   /** Shared thumbnail sizing mode for Library and home widgets. */

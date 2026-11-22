@@ -69,13 +69,6 @@ std::vector<SettingInfo> buildSystemSettings() {
   settings.push_back(SettingInfo::Separator("Display ", GroupType::DEVICE_DISPLAY));
   settings.push_back(SettingInfo::Toggle("Sidebar Menu", &SystemSetting::hiddenMenu,
                                          GroupType::DEVICE_DISPLAY));
-  settings.push_back(SettingInfo::Enum(
-      "Sleep Screen", &SystemSetting::sleepScreen,
-      {"Dark", "Light", "Custom", "Recent Book", "Transparent", "None", "Widget"},
-      {SystemSetting::DARK, SystemSetting::LIGHT, SystemSetting::CUSTOM, SystemSetting::COVER,
-       SystemSetting::TRANSPARENT, SystemSetting::BLANK, SystemSetting::WIDGET},
-      GroupType::DEVICE_DISPLAY));
-  settings.push_back(SettingInfo::Action("Choose sleep image", GroupType::DEVICE_DISPLAY));
   settings.push_back(SettingInfo::Enum("Hide Battery %", &SystemSetting::hideBatteryPercentage,
                                        {"Never", "In Reader", "Always"}, GroupType::DEVICE_DISPLAY));
   settings.push_back(SettingInfo::Enum("Keyboard", &SystemSetting::keyboardLayout, {"QWERTY", "Numpad"},
@@ -84,9 +77,6 @@ std::vector<SettingInfo> buildSystemSettings() {
                                        FontManager::readerFontFamilyEnumLabels(), GroupType::DEVICE_DISPLAY));
   settings.push_back(SettingInfo::Enum("Text size", &SystemSetting::systemTextSize, {"Small", "Medium", "Large"},
                                        GroupType::DEVICE_DISPLAY));
-  settings.push_back(SettingInfo::Toggle("Hide title for thumbnails", &SystemSetting::hideThumbnailTitles,
-                                         GroupType::DEVICE_DISPLAY));
-
   settings.push_back(SettingInfo::Separator("Clock", GroupType::CLOCK));
   settings.push_back(SettingInfo::Action("Face", GroupType::CLOCK));
   settings.push_back(
@@ -95,12 +85,6 @@ std::vector<SettingInfo> buildSystemSettings() {
   settings.push_back(SettingInfo::Action("Sync", GroupType::CLOCK));
 
   settings.push_back(SettingInfo::Separator("Image", GroupType::IMAGE));
-  settings.push_back(
-      SettingInfo::Enum("Cover Mode", &SystemSetting::sleepScreenCoverMode, {"Fill", "Crop"}, GroupType::IMAGE));
-  settings.push_back(SettingInfo::Enum("Cover Filter", &SystemSetting::sleepScreenCoverFilter,
-                                       {"None", "Contrast", "Inverted"}, GroupType::IMAGE));
-  settings.push_back(SettingInfo::Enum("Sleep Image Quality", &SystemSetting::sleepImageQuality,
-                                       {"Low", "Medium", "High"}, GroupType::IMAGE));
   settings.push_back(SettingInfo::Enum("Thumbnail corners", &SystemSetting::bitmapRoundedCorners,
                                        {"Square", "Rounded", "Subtle"}, GroupType::IMAGE));
 
@@ -119,9 +103,6 @@ std::vector<SettingInfo> buildSystemSettings() {
                                        GroupType::DEVICE_ADVANCED));
 #endif
   settings.push_back(SettingInfo::Action("Language", GroupType::DEVICE_ADVANCED));
-#if FREEINK_CAP_BLE_HID_HOST
-  settings.push_back(SettingInfo::Action("Bluetooth", GroupType::DEVICE_ADVANCED));
-#endif
 #if FREEINK_DEVICE_STICKY || FREEINK_DEVICE_PICCO
   settings.push_back(SettingInfo::Enum("Flick page turn", &SystemSetting::shakePageTurn,
                                        {"Off", "Normal", "Inverted"}, GroupType::DEVICE_ADVANCED));
@@ -170,7 +151,7 @@ void Settings::onExit() {
 }
 
 void Settings::loop() {
-#if FREEINK_DEVICE_PICCO || FREEINK_DEVICE_MURPHY_M4
+#if FREEINK_DEVICE_STICKY || FREEINK_DEVICE_PICCO || FREEINK_DEVICE_MURPHY_M4
 
 
 

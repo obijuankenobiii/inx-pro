@@ -1393,10 +1393,12 @@ void Library::center() const {
                          x + containerWidth - 1, y + containerHeight - 1, true);
     renderer.line.render(x, y + buttonSize, x + containerWidth, y + buttonSize, true);
   } else {
-    renderer.line.render(x + buttonSize, y, x + buttonSize, y + containerHeight, true);
-    renderer.line.render(x + buttonSize * 2, y, x + buttonSize * 2, y + containerHeight, true);
-    renderer.line.render(x, y + containerHeight - 1, x + containerWidth, y + containerHeight - 1, true);
-    renderer.line.render(0, y, screenWidth, y, true);
+    constexpr LineRender::Style borderStyle = LineRender::Style::Dotted;
+    renderer.line.render(x + buttonSize, y, x + buttonSize, y + containerHeight, true, borderStyle);
+    renderer.line.render(x + buttonSize * 2, y, x + buttonSize * 2, y + containerHeight, true, borderStyle);
+    renderer.line.render(x, y + containerHeight - 1, x + containerWidth, y + containerHeight - 1, true,
+                         borderStyle);
+    renderer.line.render(0, y, screenWidth, y, true, borderStyle);
 
     int currentPage = 0;
     int totalPages = 1;

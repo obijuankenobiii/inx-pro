@@ -8,6 +8,7 @@
 #include "activity/settings/BaseStatisticsActivity.h"
 #include "activity/settings/BaseStreaksActivity.h"
 #include "activity/settings/SleepImagePickerActivity.h"
+#include "activity/settings/SleepWallpaperActivity.h"
 #include "activity/settings/ImageSettingsActivity.h"
 #include "activity/page/components/widget/Calendar.h"
 #include "activity/page/components/widget/Carousel.h"
@@ -91,6 +92,7 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
   bool borderPopup_ = false;
   bool ratioPopup_ = false;
   bool themeActionPopup_ = false;
+  bool sleepFixedOptionPopup_ = false;
   bool carouselSettingsFinished_ = false;
   bool heatmapSettingsFinished_ = false;
   bool temperatureSettingsFinished_ = false;
@@ -99,11 +101,16 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
   bool statisticsSettingsFinished_ = false;
   bool streaksSettingsFinished_ = false;
   bool imageSettingsFinished_ = false;
+  bool sleepWallpaperSettingsFinished_ = false;
+  bool sleepWallpaperSettingsBookCover_ = false;
+  bool sleepWallpaperSettingsFixedOption_ = false;
+  uint8_t sleepScreenMode_ = 0;
   int popupSelected_ = 0;
   int widgetPopupScroll_ = 0;
   int borderPopupSelected_ = 0;
   int ratioPopupSelected_ = 0;
   int themeActionSelected_ = 0;
+  int sleepFixedOption_ = 0;
   Carousel carousel_;
   Shortcut shortcut_;
   ShortcutList shortcutList_;
@@ -172,6 +179,10 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
   void openLibrarySettings(int slot);
   void openDescriptionSettings(int slot);
   void openImageSettings(int slot);
+  void openSleepWallpaperSettings(bool bookCover = false, bool fixedOption = false);
+  void saveSleepSpecialTheme(const char* name, uint8_t mode);
+  void activateSleepTheme(int index);
+  void applySelectedSleepScreenMode();
   void openStatisticsSettings(int slot);
   void openStreaksSettings(int slot);
   void renderBorderPopup();

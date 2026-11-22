@@ -333,7 +333,6 @@ constexpr FallbackKey kFallbackKeys[] = {
     {"Face", "settings.clock_face"},
     {"Format", "settings.clock_format"},
     {"Cover Mode", "settings.cover_mode"},
-    {"Cover Filter", "settings.cover_filter"},
     {"Sleep Image Quality", "settings.sleep_image_quality"},
     {"Thumbnail corners", "settings.thumbnail_corners"},
     {"Flick page turn", "settings.flick_page_turn"},

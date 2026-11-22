@@ -48,6 +48,10 @@ class ImagePositionActivity final : public Activity {
   int previewY_ = 0;
   int previewWidth_ = 0;
   int previewHeight_ = 0;
+  int outerPreviewX_ = 0;
+  int outerPreviewY_ = 0;
+  int outerPreviewWidth_ = 0;
+  int outerPreviewHeight_ = 0;
   uint8_t* rasterCache_ = nullptr;
   size_t rasterCacheBytes_ = 0;
   int rasterWidth_ = 0;

@@ -344,23 +344,20 @@ void drawFolderPlaceholder(GfxRenderer& renderer, const LibraryIndex::Book& item
                            const int width, const int height, const bool favorite, const int bookCount,
                            const int folderCount = 0, const std::string& titleOverride = {},
                            const bool inlineCount = false) {
-  const bool hideTitle = SETTINGS.hideThumbnailTitles != 0;
   constexpr int padding = 3;
-  const int lineHeight = hideTitle ? 0 : renderer.text.getLineHeight(systemFontId());
+  const int lineHeight = renderer.text.getLineHeight(systemFontId());
   const int titleLines = inlineCount ? 2 : 1;
-  const int titleHeight = hideTitle ? 0 : lineHeight * titleLines + kFolderLabelGap;
+  const int titleHeight = lineHeight * titleLines + kFolderLabelGap;
   const int imageY = y + padding;
   const int imageHeight = std::max(8, height - titleHeight - padding * 2);
   const int emptyWidth = std::max(8, width - padding * 2);
   const int emptyX = x + (width - emptyWidth) / 2;
   const std::string title = titleOverride.empty() ? folderTitle(item) : titleOverride;
-  placeholder(renderer, emptyX, imageY, emptyWidth, imageHeight, hideTitle ? title : "");
-  if (!hideTitle) {
-    if (inlineCount) {
-      folderLabelWithCount(renderer, title, emptyX, emptyWidth, y, height, bookCount + folderCount);
-    } else {
-      folderLabel(renderer, title, emptyX, emptyWidth, y, height);
-    }
+  placeholder(renderer, emptyX, imageY, emptyWidth, imageHeight, "");
+  if (inlineCount) {
+    folderLabelWithCount(renderer, title, emptyX, emptyWidth, y, height, bookCount + folderCount);
+  } else {
+    folderLabel(renderer, title, emptyX, emptyWidth, y, height);
   }
   drawFavoriteBadge(renderer, emptyX, imageY, emptyWidth, favorite, false);
   if (!inlineCount) drawFolderBookCountBadge(renderer, emptyX, imageY, emptyWidth, imageHeight, bookCount);
@@ -693,9 +690,8 @@ void Thumb::preloadBookCache(const Thumbnail& thumbnail, const int x, const int 
                              const int height) const {
   if (thumbnail.image.empty()) return;
   constexpr int padding = 3;
-  const bool hideTitle = SETTINGS.hideThumbnailTitles != 0;
-  const int lineHeight = hideTitle ? 0 : renderer.text.getLineHeight(systemFontId());
-  const int titleHeight = hideTitle ? 0 : lineHeight * layout.titleLines + kFolderLabelGap;
+  const int lineHeight = renderer.text.getLineHeight(systemFontId());
+  const int titleHeight = lineHeight * layout.titleLines + kFolderLabelGap;
   const int imageAreaY = y + padding;
   const int imageAreaWidth = std::max(8, width - padding * 2);
   const int imageAreaHeight = std::max(8, height - titleHeight - padding * 2);
@@ -707,10 +703,9 @@ void Thumb::preloadFolderCache(const Thumbnail& thumbnail, const int x, const in
   const std::string& frontPath = thumbnail.first.empty() ? thumbnail.image : thumbnail.first;
   if (frontPath.empty()) return;
 
-  const bool hideTitle = SETTINGS.hideThumbnailTitles != 0;
   constexpr int padding = 3;
-  const int lineHeight = hideTitle ? 0 : renderer.text.getLineHeight(systemFontId());
-  const int titleHeight = hideTitle ? 0 : lineHeight * layout.titleLines + kFolderLabelGap;
+  const int lineHeight = renderer.text.getLineHeight(systemFontId());
+  const int titleHeight = lineHeight * layout.titleLines + kFolderLabelGap;
   const int imageY = y + padding;
   const int imageHeight = std::max(8, height - titleHeight - padding * 2);
   const int imageWidth = std::max(12, width - padding * 2);
@@ -729,12 +724,11 @@ bool Thumb::drawItem(const LibraryIndex::Book& item, const int x, const int y, c
   const bool rounded = SETTINGS.bitmapRoundedCorners != 0;
   const Thumbnail* thumbnail = find(item.path);
   if (item.type == LibraryIndex::Book::Type::FOLDER) {
-    const bool hideTitle = SETTINGS.hideThumbnailTitles != 0;
-    const bool inlineCount = layout.inlineFolderCount && !hideTitle;
+    const bool inlineCount = layout.inlineFolderCount;
     constexpr bool evenThumbnails = true;
     constexpr int padding = 3;
-    const int lineHeight = hideTitle ? 0 : renderer.text.getLineHeight(systemFontId());
-    const int titleHeight = hideTitle ? 0 : lineHeight * layout.titleLines + kFolderLabelGap;
+    const int lineHeight = renderer.text.getLineHeight(systemFontId());
+    const int titleHeight = lineHeight * layout.titleLines + kFolderLabelGap;
     const int imageY = y + padding;
     const int imageHeight = std::max(8, height - titleHeight - padding * 2);
     const std::string liveFolderImage =
@@ -743,13 +737,11 @@ bool Thumb::drawItem(const LibraryIndex::Book& item, const int x, const int y, c
     if (thumbnail && thumbnail->loaded && !thumbnail->first.empty()) {
       const int imageWidth = std::max(12, width - padding * 2);
       if (cover(renderer, thumbnail->first, x + padding, imageY, imageWidth, imageHeight, rounded, true, true)) {
-        if (!hideTitle) {
-          if (inlineCount) {
-            folderLabelWithCount(renderer, folderTitle(item), x + padding, imageWidth, y, height,
-                                 thumbnail->bookCount + thumbnail->folderCount);
-          } else {
-            folderLabel(renderer, folderTitle(item), x + padding, imageWidth, y, height, evenThumbnails ? 5 : 10);
-          }
+        if (inlineCount) {
+          folderLabelWithCount(renderer, folderTitle(item), x + padding, imageWidth, y, height,
+                               thumbnail->bookCount + thumbnail->folderCount);
+        } else {
+          folderLabel(renderer, folderTitle(item), x + padding, imageWidth, y, height, evenThumbnails ? 5 : 10);
         }
         drawFavoriteBadge(renderer, x + padding, imageY, imageWidth, favorite, false);
         if (!inlineCount) drawFolderBookCountBadge(renderer, x + padding, imageY, imageWidth, imageHeight, thumbnail->bookCount);
@@ -762,14 +754,12 @@ bool Thumb::drawItem(const LibraryIndex::Book& item, const int x, const int y, c
     if (!liveFolderImage.empty()) {
       const int imageWidth = std::max(12, width - padding * 2);
       if (cover(renderer, liveFolderImage, x + padding, imageY, imageWidth, imageHeight, rounded, true, true)) {
-        if (!hideTitle) {
-          const std::string title = folderTitle(item);
-          if (inlineCount) {
-            folderLabelWithCount(renderer, title, x + padding, imageWidth, y, height,
-                                 thumbnail->bookCount + thumbnail->folderCount);
-          } else {
-            folderLabel(renderer, title, x + padding, imageWidth, y, height, evenThumbnails ? 5 : 10);
-          }
+        const std::string title = folderTitle(item);
+        if (inlineCount) {
+          folderLabelWithCount(renderer, title, x + padding, imageWidth, y, height,
+                               thumbnail->bookCount + thumbnail->folderCount);
+        } else {
+          folderLabel(renderer, title, x + padding, imageWidth, y, height, evenThumbnails ? 5 : 10);
         }
         drawFavoriteBadge(renderer, x + padding, imageY, imageWidth, favorite, false);
         if (!singleBook && !inlineCount) {
@@ -790,9 +780,8 @@ bool Thumb::drawItem(const LibraryIndex::Book& item, const int x, const int y, c
       thumbnail && thumbnail->pathResolved ? thumbnail->image : imagePathForBook(item.path);
   if (!liveBookImage.empty()) {
     constexpr int padding = 3;
-    const bool hideTitle = SETTINGS.hideThumbnailTitles != 0;
-    const int lineHeight = hideTitle ? 0 : renderer.text.getLineHeight(systemFontId());
-    const int titleHeight = hideTitle ? 0 : lineHeight * layout.titleLines + kFolderLabelGap;
+    const int lineHeight = renderer.text.getLineHeight(systemFontId());
+    const int titleHeight = lineHeight * layout.titleLines + kFolderLabelGap;
     const int imageAreaY = y + padding;
     const int imageAreaWidth = std::max(8, width - padding * 2);
     const int imageAreaHeight = std::max(8, height - titleHeight - padding * 2);
@@ -802,13 +791,11 @@ bool Thumb::drawItem(const LibraryIndex::Book& item, const int x, const int y, c
     const int imageHeight = imageAreaHeight;
     renderer.rectangle.fill(x + padding, imageAreaY, imageAreaWidth, imageAreaHeight, false, rounded);
     if (cover(renderer, liveBookImage, imageX, imageY, imageWidth, imageHeight, rounded, true, true)) {
-      if (!hideTitle) {
-        if (layout.titleLines > 1) {
-          bookLabelWithProgress(renderer, bookTitle(item), x + padding, imageAreaWidth, imageAreaY, imageAreaHeight,
-                                thumbnail->progressPercent);
-        } else {
-          folderLabel(renderer, bookTitle(item), x + padding, imageAreaWidth, y, height);
-        }
+      if (layout.titleLines > 1) {
+        bookLabelWithProgress(renderer, bookTitle(item), x + padding, imageAreaWidth, imageAreaY, imageAreaHeight,
+                              thumbnail ? thumbnail->progressPercent : 0);
+      } else {
+        folderLabel(renderer, bookTitle(item), x + padding, imageAreaWidth, y, height);
       }
       drawFavoriteBadge(renderer, imageX, imageY, imageWidth, favorite);
       drawItemBadge(renderer, imageX, imageY, imageWidth, imageHeight, item.badge);
@@ -816,23 +803,19 @@ bool Thumb::drawItem(const LibraryIndex::Book& item, const int x, const int y, c
     }
   }
   constexpr int padding = 3;
-  const bool hideTitle = SETTINGS.hideThumbnailTitles != 0;
-  const int lineHeight = hideTitle ? 0 : renderer.text.getLineHeight(systemFontId());
-  const int titleHeight = hideTitle ? 0 : lineHeight * layout.titleLines + kFolderLabelGap;
+  const int lineHeight = renderer.text.getLineHeight(systemFontId());
+  const int titleHeight = lineHeight * layout.titleLines + kFolderLabelGap;
   const int imageAreaY = y + padding;
   const int imageAreaHeight = std::max(8, height - titleHeight - padding * 2);
   const int placeholderWidth = std::max(8, width - padding * 2);
   const int placeholderX = x + (width - placeholderWidth) / 2;
-  placeholder(renderer, placeholderX, imageAreaY, placeholderWidth, imageAreaHeight,
-              hideTitle ? bookTitle(item) : "");
-  if (!hideTitle) {
-    const int labelWidth = std::max(8, width - padding * 2);
-    if (layout.titleLines > 1) {
-      bookLabelWithProgress(renderer, bookTitle(item), x + padding, labelWidth, imageAreaY, imageAreaHeight,
-                            thumbnail ? thumbnail->progressPercent : 0);
-    } else {
-      folderLabel(renderer, bookTitle(item), x + padding, labelWidth, y, height);
-    }
+  placeholder(renderer, placeholderX, imageAreaY, placeholderWidth, imageAreaHeight, "");
+  const int labelWidth = std::max(8, width - padding * 2);
+  if (layout.titleLines > 1) {
+    bookLabelWithProgress(renderer, bookTitle(item), x + padding, labelWidth, imageAreaY, imageAreaHeight,
+                          thumbnail ? thumbnail->progressPercent : 0);
+  } else {
+    folderLabel(renderer, bookTitle(item), x + padding, labelWidth, y, height);
   }
   drawFavoriteBadge(renderer, placeholderX, imageAreaY, placeholderWidth, favorite);
   drawItemBadge(renderer, placeholderX, imageAreaY, placeholderWidth, imageAreaHeight, item.badge);

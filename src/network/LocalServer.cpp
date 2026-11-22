@@ -2151,8 +2151,6 @@ void LocalServer::handleSettingsPage() const {
 void LocalServer::handleSettingsGet() const {
   JsonDocument doc;
   const bool clockAvailable = clockSettingsAvailable();
-  const uint8_t sleepScreen = SETTINGS.sleepScreen == SystemSetting::DATETIME_LEGACY ? SystemSetting::WIDGET
-                                                                                : SETTINGS.sleepScreen;
 
   doc["clockAvailable"] = clockAvailable;
   doc["flickPageTurnAvailable"] =
@@ -2161,11 +2159,6 @@ void LocalServer::handleSettingsGet() const {
 #else
       false;
 #endif
-  doc["sleepScreen"] = sleepScreen;
-  doc["sleepScreenCoverMode"] = SETTINGS.sleepScreenCoverMode;
-  doc["sleepScreenCoverFilter"] = SETTINGS.sleepScreenCoverFilter;
-  doc["sleepImageQuality"] = SETTINGS.sleepImageQuality;
-  doc["sleepCustomBmp"] = SETTINGS.sleepCustomBmp;
   if (clockAvailable) {
     doc["sleepClockStyle"] = SETTINGS.sleepClockStyle;
     doc["sleepClockTimeFormat"] = SETTINGS.sleepClockTimeFormat;
@@ -2181,7 +2174,6 @@ void LocalServer::handleSettingsGet() const {
     option["label"] = systemFontLabels[i];
   }
   doc["systemTextSize"] = SETTINGS.systemTextSize;
-  doc["hideThumbnailTitles"] = SETTINGS.hideThumbnailTitles;
   doc["thumbnailSize"] = SETTINGS.thumbnailSize;
 
   doc["shakePageTurn"] = SETTINGS.shakePageTurn;
@@ -2329,37 +2321,7 @@ void LocalServer::handleSettingsUpdate() const {
     const char* key = kv.key().c_str();
     int value = kv.value().as<int>();
 
-    if (strcmp(key, "sleepScreen") == 0) {
-      uint8_t v = static_cast<uint8_t>(value);
-      if (v == SystemSetting::DATETIME_LEGACY) v = SystemSetting::WIDGET;
-      if (v >= SystemSetting::SLEEP_SCREEN_MODE_COUNT) {
-        v = SystemSetting::LIGHT;
-      }
-      SETTINGS.sleepScreen = v;
-      changed = true;
-    } else if (strcmp(key, "sleepScreenCoverMode") == 0) {
-      SETTINGS.sleepScreenCoverMode = (value >= 0 && value < SystemSetting::SLEEP_SCREEN_COVER_MODE_COUNT)
-                                          ? static_cast<uint8_t>(value)
-                                          : SystemSetting::FIT;
-      changed = true;
-    } else if (strcmp(key, "sleepScreenCoverFilter") == 0) {
-      SETTINGS.sleepScreenCoverFilter = (value >= 0 && value < SystemSetting::SLEEP_SCREEN_COVER_FILTER_COUNT)
-                                            ? static_cast<uint8_t>(value)
-                                            : SystemSetting::NO_FILTER;
-      changed = true;
-    } else if (strcmp(key, "sleepImageQuality") == 0) {
-      SETTINGS.sleepImageQuality = (value >= 0 && value < SystemSetting::SLEEP_IMAGE_QUALITY_COUNT)
-                                       ? static_cast<uint8_t>(value)
-                                       : SystemSetting::SLEEP_IMAGE_LOW;
-      changed = true;
-    } else if (strcmp(key, "sleepCustomBmp") == 0) {
-      if (kv.value().isNull()) {
-        SETTINGS.setSleepCustomBmpFromInput(nullptr);
-      } else {
-        SETTINGS.setSleepCustomBmpFromInput(kv.value().as<const char*>());
-      }
-      changed = true;
-    } else if (clockAvailable && strcmp(key, "sleepClockStyle") == 0) {
+    if (clockAvailable && strcmp(key, "sleepClockStyle") == 0) {
       uint8_t v = static_cast<uint8_t>(value);
       if (v >= SystemSetting::SLEEP_CLOCK_STYLE_COUNT) v = SystemSetting::CLOCK_CENTERED_DATE;
       SETTINGS.sleepClockStyle = v;
@@ -2392,9 +2354,6 @@ void LocalServer::handleSettingsUpdate() const {
       SETTINGS.systemTextSize = (v >= 0 && v < SystemSetting::SYSTEM_TEXT_SIZE_COUNT)
                                     ? static_cast<uint8_t>(v)
                                     : SystemSetting::SYSTEM_TEXT_MEDIUM;
-      changed = true;
-    } else if (strcmp(key, "hideThumbnailTitles") == 0) {
-      SETTINGS.hideThumbnailTitles = value ? 1 : 0;
       changed = true;
     } else if (strcmp(key, "thumbnailSize") == 0) {
       const int v = static_cast<int>(value);

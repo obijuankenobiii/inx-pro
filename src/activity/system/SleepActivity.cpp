@@ -51,8 +51,7 @@ bool isSupportedSleepImageFile(const std::string& filename) {
 }
 
 bool sleepTwoBitEnabled() {
-  return SETTINGS.sleepImageQuality != SystemSetting::SLEEP_IMAGE_LOW &&
-         SETTINGS.sleepScreenCoverFilter == SystemSetting::SLEEP_SCREEN_COVER_FILTER::NO_FILTER;
+  return SETTINGS.sleepImageQuality != SystemSetting::SLEEP_IMAGE_LOW;
 }
 
 
@@ -196,6 +195,9 @@ std::string pathForFixedSleepBmp() {
   if (strcmp(SETTINGS.sleepCustomBmp, "/sleep.jpg") == 0) return SdMan.exists("/sleep.jpg") ? "/sleep.jpg" : "";
   if (strcmp(SETTINGS.sleepCustomBmp, "/sleep.jpeg") == 0) return SdMan.exists("/sleep.jpeg") ? "/sleep.jpeg" : "";
   if (strcmp(SETTINGS.sleepCustomBmp, "/sleep.png") == 0) return SdMan.exists("/sleep.png") ? "/sleep.png" : "";
+  if (strncmp(SETTINGS.sleepCustomBmp, "/sleep/", 7) == 0) {
+    return SdMan.exists(SETTINGS.sleepCustomBmp) ? SETTINGS.sleepCustomBmp : "";
+  }
   const std::string path = std::string("/sleep/") + SETTINGS.sleepCustomBmp;
   if (SdMan.exists(path.c_str())) {
     return path;
@@ -401,6 +403,14 @@ std::string resolveLastReadCoverPathForSleep(const std::string& path) {
 void SleepActivity::onEnter() {
   Activity::onEnter();
 
+  const uint8_t themeSleepMode = HomeTheme::sleep().sleepScreenMode;
+  if (themeSleepMode == SystemSetting::CUSTOM || themeSleepMode == SystemSetting::COVER ||
+      themeSleepMode == SystemSetting::TRANSPARENT) {
+    SETTINGS.sleepScreen = themeSleepMode;
+    SETTINGS.setSleepCustomBmpFromInput(HomeTheme::sleep().sleepCustomBmp);
+    SETTINGS.sleepImageQuality = HomeTheme::sleep().sleepImageQuality;
+  }
+
   const bool renderSleepImage = BoardConfig::ACTIVE.displayController == BoardConfig::DisplayController::UC8179 &&
                                 (SETTINGS.sleepScreen == SystemSetting::SLEEP_SCREEN_MODE::CUSTOM ||
                                  SETTINGS.sleepScreen == SystemSetting::SLEEP_SCREEN_MODE::COVER);
@@ -545,9 +555,6 @@ void SleepActivity::renderCoverSleepScreen() const {
       ScreenComponents::drawLoadingPopup(renderer);
     }
     if (image.render(0, 0, renderer.getScreenWidth(), renderer.getScreenHeight(), options)) {
-      if (SETTINGS.sleepScreenCoverFilter == SystemSetting::SLEEP_SCREEN_COVER_FILTER::INVERTED_BLACK_AND_WHITE) {
-        renderer.invertScreen();
-      }
       if (!sleepImageQualityEnabled()) {
         renderer.displayBuffer();
       }
@@ -601,9 +608,6 @@ void SleepActivity::renderFill(const Bitmap& bitmap) const {
   constexpr bool kCoverFill = true;
   renderer.bitmap.sleepScreen(bitmap, x, y, pageWidth, pageHeight, cropX, cropY, kCoverFill, sleepImageRenderMode());
 
-  if (SETTINGS.sleepScreenCoverFilter == SystemSetting::SLEEP_SCREEN_COVER_FILTER::INVERTED_BLACK_AND_WHITE) {
-    renderer.invertScreen();
-  }
 
   renderer.displayBuffer();
 
@@ -677,9 +681,6 @@ void SleepActivity::renderBitmapSleepScreen(const Bitmap& bitmap, const bool pre
 
   renderer.bitmap.sleepScreen(bitmap, x, y, pageWidth, pageHeight, cropX, cropY, coverFill, sleepImageRenderMode());
 
-  if (SETTINGS.sleepScreenCoverFilter == SystemSetting::SLEEP_SCREEN_COVER_FILTER::INVERTED_BLACK_AND_WHITE) {
-    renderer.invertScreen();
-  }
 
   renderer.displayBuffer();
 

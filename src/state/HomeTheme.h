@@ -109,6 +109,9 @@ struct Theme {
   uint8_t imagePadding[4];
   uint8_t imageCropAnchorX[4];
   uint8_t imageCropAnchorY[4];
+  uint8_t sleepScreenMode;
+  char sleepCustomBmp[64];
+  uint8_t sleepImageQuality;
 };
 
 void load();
@@ -121,6 +124,9 @@ int sleepCount();
 const Theme& sleepAt(int index);
 int sleepActiveIndex();
 void activateSleep(int index);
+uint8_t sleepScreenMode(int index);
+void setSleepScreenMode(int index, uint8_t mode);
+void setSleepSettings(int index, uint8_t mode, const char* imagePath, uint8_t imageQuality);
 int activeIndex();
 const Theme& active();
 void activate(int index);

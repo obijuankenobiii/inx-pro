@@ -421,7 +421,9 @@ void HomeWidgetLayout::renderSlot(const HomeTheme::Theme& theme, const int slot,
                        theme.layout == HomeTheme::Layout::OneByTwo && SETTINGS.hiddenMenu != 0,
                        useLargeCenterCarousel(theme, slot, theme.carouselStyles[slot]));
       break;
-    case HomeTheme::Widget::Shortcuts: shortcut_.render(bounds.x, bounds.y, bounds.width, bounds.height); break;
+    case HomeTheme::Widget::Shortcuts:
+      shortcut_.render(bounds.x, bounds.y, bounds.width, bounds.height, compactWidgetLayout);
+      break;
     case HomeTheme::Widget::ListShortcuts: shortcutList_.render(bounds.x, bounds.y, bounds.width, bounds.height); break;
     case HomeTheme::Widget::Clock:
       clock_.render(bounds.x, bounds.y, bounds.width, bounds.height, compactWidgetLayout, mostCompactRow);
@@ -847,13 +849,14 @@ int HomeWidgetLayout::shortcutAt(const HomeTheme::Theme& theme, const int x, con
     return shortcut_.hitTest(x, y, 20, navigation::Menu::height + Carousel::kHeight + 20,
                              renderer_.getScreenWidth() - 40,
                              renderer_.getScreenHeight() - navigation::Menu::height - Carousel::kHeight -
-                                 navigation::Menu::bottomInset() - 40);
+                                 navigation::Menu::bottomInset() - 40, false);
   }
   if (theme.layout == HomeTheme::Layout::OneByOne) return -1;
   const int slot = findWidget(theme, HomeTheme::Widget::Shortcuts, x, y);
   if (slot >= 0) {
     const Bounds bounds = slotBounds(grid(theme.layout), slot);
-    return shortcut_.hitTest(x, y, bounds.x, bounds.y, bounds.width, bounds.height);
+    return shortcut_.hitTest(x, y, bounds.x, bounds.y, bounds.width, bounds.height,
+                             useOneByTwoWidgetLayout(theme.layout, slot));
   }
   const int listSlot = findWidget(theme, HomeTheme::Widget::ListShortcuts, x, y);
   if (listSlot < 0) return -1;

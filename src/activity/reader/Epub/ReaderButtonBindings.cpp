@@ -238,6 +238,10 @@ void ReaderButtonBindings::dispatch(EpubActivity& act, const uint8_t action) {
       }
 #endif
       break;
+    case SystemSetting::BTN_ACTION_EXIT:
+      act.endPageTimer();
+      act.onGoBack();
+      break;
     case SystemSetting::BTN_ACTION_ANNOTATE:
       act.pauseReadingStats();
       act.annUi_.enter(act);

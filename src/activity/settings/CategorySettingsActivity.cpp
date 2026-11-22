@@ -31,7 +31,6 @@
 #include "TimeSyncActivity.h"
 #include "activity/page/components/global/PopUp.h"
 #include "ReaderFontSettingsDraw.h"
-#include "SleepImagePickerActivity.h"
 #include "MetadataGeneratorActivity.h"
 #include "ThemePickerActivity.h"
 #include "images/Close.h"
@@ -485,14 +484,6 @@ void CategorySettingsActivity::setupMenu() {
             if (strcmp(settingPtr->name, "Delete Cache") == 0) {
               exitActivity();
               enterNewActivity(new ClearCacheActivity(renderer, mappedInput, [this] {
-                exitActivity();
-                updateRequired = true;
-              }));
-              return;
-            }
-            if (strcmp(settingPtr->name, "Choose sleep image") == 0) {
-              exitActivity();
-              enterNewActivity(new SleepImagePickerActivity(renderer, mappedInput, [this] {
                 exitActivity();
                 updateRequired = true;
               }));

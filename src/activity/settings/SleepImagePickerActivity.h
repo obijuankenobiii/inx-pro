@@ -27,7 +27,7 @@ class SleepImagePickerActivity final : public ActivityWithSubactivity {
 
   explicit SleepImagePickerActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
                                     const std::function<void()>& onBack, SelectionCallback onSelected = {},
-                                    std::string initialPath = {}, std::string title = "Choose sleep image",
+                                    std::string initialPath = {}, std::string title = "Choose an image",
                                     bool allowRandom = true)
       : ActivityWithSubactivity("SleepImagePicker", renderer, mappedInput), onBack(onBack),
         onSelected(std::move(onSelected)), initialPath(std::move(initialPath)), title(std::move(title)),

@@ -46,6 +46,8 @@ void readAndValidate(FsFile& file, uint8_t& member, const uint8_t maxValue) {
 namespace {
 constexpr uint8_t SETTINGS_FILE_VERSION = 1;
 constexpr uint8_t SETTINGS_COUNT = 48;
+constexpr uint8_t RESERVED_THUMBNAIL_TITLE_SETTING = 0;
+constexpr uint8_t RESERVED_SLEEP_COVER_FILTER_SETTING = 0;
 constexpr char SETTINGS_FILE[] = "/.system/settings.bin";
 constexpr char SYSTEM_FONT_SELECTION_FILE[] = "/.system/system_font_selection.txt";
 constexpr uint32_t FNV1A_OFFSET = 2166136261UL;
@@ -138,6 +140,20 @@ void sanitizeSleepCustomBmp(char* buf) {
   if (strcmp(buf, "/sleep.bmp") == 0 || strcmp(buf, "/sleep.jpg") == 0 || strcmp(buf, "/sleep.jpeg") == 0) {
     return;
   }
+  if (strncmp(buf, "/sleep/", 7) == 0) {
+    const char* relativePath = buf + 7;
+    if (relativePath[0] == '\0' || strstr(relativePath, "..") != nullptr) {
+      buf[0] = '\0';
+      return;
+    }
+    for (const char* p = relativePath; *p != '\0'; ++p) {
+      if (*p == '\\' || *p == ':') {
+        buf[0] = '\0';
+        return;
+      }
+    }
+    return;
+  }
   if (strstr(buf, "..") != nullptr) {
     buf[0] = '\0';
     return;
@@ -181,7 +197,7 @@ uint32_t settingsHash(const SystemSetting& settings) {
   hashPod(hash, settings.hideBatteryPercentage);
   hashString(hash, settings.opdsUsername);
   hashString(hash, settings.opdsPassword);
-  hashPod(hash, settings.sleepScreenCoverFilter);
+  hashPod(hash, RESERVED_SLEEP_COVER_FILTER_SETTING);
   hashPod(hash, settings.useLibraryIndex);
   hashPod(hash, settings.bootSetting);
   hashPod(hash, settings.sleepImageQuality);
@@ -211,7 +227,7 @@ uint32_t settingsHash(const SystemSetting& settings) {
   hashPod(hash, settings.keyboardLayout);
   hashPod(hash, settings.systemTextSize);
   hashPod(hash, settings.darkMode);
-  hashPod(hash, settings.hideThumbnailTitles);
+  hashPod(hash, RESERVED_THUMBNAIL_TITLE_SETTING);
   hashPod(hash, settings.hideFinishedBooks);
   hashPod(hash, settings.thumbnailSize);
   hashString(hash, settings.languageCode);
@@ -243,7 +259,8 @@ const char* SystemSetting::readerButtonActionLabel(const uint8_t action) {
                                         "Generate Full Data",
                                         "Generate Thumbnail",
                                         "Go to Percent",
-                                        "Toggle Light"};
+                                        "Toggle Light",
+                                        "Exit"};
   if (action >= SystemSetting::READER_BUTTON_ACTION_COUNT) {
     return "None";
   }
@@ -309,7 +326,7 @@ bool SystemSetting::saveToFile() const {
   serialization::writePod(outputFile, hideBatteryPercentage);
   serialization::writeString(outputFile, std::string(opdsUsername));
   serialization::writeString(outputFile, std::string(opdsPassword));
-  serialization::writePod(outputFile, sleepScreenCoverFilter);
+  serialization::writePod(outputFile, RESERVED_SLEEP_COVER_FILTER_SETTING);
   serialization::writePod(outputFile, useLibraryIndex);
   serialization::writePod(outputFile, bootSetting);
   serialization::writePod(outputFile, sleepImageQuality);
@@ -333,7 +350,7 @@ bool SystemSetting::saveToFile() const {
   serialization::writePod(outputFile, keyboardLayout);
   serialization::writePod(outputFile, systemTextSize);
   serialization::writePod(outputFile, darkMode);
-  serialization::writePod(outputFile, hideThumbnailTitles);
+  serialization::writePod(outputFile, RESERVED_THUMBNAIL_TITLE_SETTING);
   serialization::writePod(outputFile, hideFinishedBooks);
   serialization::writePod(outputFile, thumbnailSize);
   serialization::writePod(outputFile, timeZoneAutoDetectEnabled);
@@ -391,6 +408,8 @@ bool SystemSetting::loadFromFile() {
     return false;
   }
   uint8_t settingsRead = 0;
+  uint8_t reservedThumbnailTitleSetting = 0;
+  uint8_t reservedSleepCoverFilterSetting = 0;
 
   do {
     readAndValidate(inputFile, sleepScreen, SLEEP_SCREEN_MODE_COUNT);
@@ -435,7 +454,7 @@ bool SystemSetting::loadFromFile() {
     }
     if (++settingsRead >= fileSettingsCount) break;
 
-    readAndValidate(inputFile, sleepScreenCoverFilter, SLEEP_SCREEN_COVER_FILTER_COUNT);
+    serialization::readPod(inputFile, reservedSleepCoverFilterSetting);
     if (++settingsRead >= fileSettingsCount) break;
 
     serialization::readPod(inputFile, useLibraryIndex);
@@ -526,8 +545,7 @@ bool SystemSetting::loadFromFile() {
       ++settingsRead;
     }
     if (settingsRead < fileSettingsCount) {
-      serialization::readPod(inputFile, hideThumbnailTitles);
-      if (hideThumbnailTitles > 1) hideThumbnailTitles = 0;
+      serialization::readPod(inputFile, reservedThumbnailTitleSetting);
       ++settingsRead;
     }
     if (settingsRead < fileSettingsCount) {
@@ -640,7 +658,6 @@ bool SystemSetting::loadFromFile() {
   }
 #endif
   if (darkMode > 1) darkMode = 0;
-  if (hideThumbnailTitles > 1) hideThumbnailTitles = 0;
   if (hideFinishedBooks > 1) hideFinishedBooks = 0;
   if (thumbnailSize >= THUMBNAIL_SIZE_COUNT) thumbnailSize = THUMBNAIL_ACTUAL;
   if (librarySortMode > 7) librarySortMode = 0;

@@ -12,7 +12,7 @@ namespace HomeTheme {
 namespace {
 
 constexpr char kThemeFile[] = "/.system/home_themes.bin";
-constexpr uint8_t kVersion = 32;
+constexpr uint8_t kVersion = 34;
 constexpr uint8_t kSleepThemesVersion = 27;
 constexpr uint8_t kDescriptionOptionsVersion = 17;
 constexpr uint8_t kRecentOptionsVersion = 18;
@@ -24,6 +24,8 @@ constexpr uint8_t kImagePathsVersion = 29;
 constexpr uint8_t kImageCropToFillVersion = 30;
 constexpr uint8_t kImagePaddingVersion = 31;
 constexpr uint8_t kImageCropAnchorVersion = 32;
+constexpr uint8_t kSleepScreenModeVersion = 33;
+constexpr uint8_t kSleepSettingsVersion = 34;
 constexpr uint8_t kBookDetailsOptionsVersion = 20;
 constexpr uint8_t kLegacyFavoriteIconOptionVersion = 20;
 constexpr uint8_t kVersionBeforeRecentRatingOptions = 21;
@@ -302,6 +304,7 @@ void load() {
        version != kSleepThemesVersion && version != kStreakCompactVersion && version != kImagePathsVersion &&
        version != kImageCropToFillVersion &&
        version != kImagePaddingVersion && version != kImageCropAnchorVersion &&
+       version != kSleepScreenModeVersion &&
        version != kVersion) || storedCount == 0 ||
       storedCount > kMaxThemes) {
     file.close();
@@ -542,6 +545,20 @@ void load() {
       for (uint8_t& value : theme.imageCropAnchorX) serialization::readPod(file, value);
       for (uint8_t& value : theme.imageCropAnchorY) serialization::readPod(file, value);
     }
+    if (version >= kSleepScreenModeVersion) {
+      serialization::readPod(file, theme.sleepScreenMode);
+      if (theme.sleepScreenMode != 0 && theme.sleepScreenMode != 2 && theme.sleepScreenMode != 3 &&
+          theme.sleepScreenMode != 4) {
+        theme.sleepScreenMode = 0;
+      }
+    }
+    if (version >= kSleepSettingsVersion) {
+      serialization::readString(file, name);
+      std::strncpy(theme.sleepCustomBmp, name.c_str(), sizeof(theme.sleepCustomBmp) - 1);
+      theme.sleepCustomBmp[sizeof(theme.sleepCustomBmp) - 1] = '\0';
+      serialization::readPod(file, theme.sleepImageQuality);
+      if (theme.sleepImageQuality >= 3) theme.sleepImageQuality = 2;
+    }
     if (theme.layout == Layout::Classic) {
       theme.layout = Layout::OneByTwo;
       for (Widget& widget : theme.widgets) widget = Widget::Empty;
@@ -578,7 +595,7 @@ void load() {
     uint8_t storedSleepActive = 0;
     serialization::readPod(file, storedSleepCount);
     serialization::readPod(file, storedSleepActive);
-    if (storedSleepCount == 0 || storedSleepCount > kMaxThemes) {
+    if (storedSleepCount > kMaxThemes) {
       file.close();
       makeDefault();
       return;
@@ -591,7 +608,7 @@ void load() {
       }
       ++sleepThemeCount;
     }
-    selectedSleepTheme = std::min<int>(storedSleepActive, sleepThemeCount - 1);
+    selectedSleepTheme = sleepThemeCount > 0 ? std::min<int>(storedSleepActive, sleepThemeCount - 1) : 0;
   } else if (version >= kSleepThemeVersion && !readTheme(sleepThemes[0])) {
     file.close();
     makeDefault();
@@ -606,16 +623,7 @@ void load() {
   } else {
     setName(themes[0], "Home");
     selectedTheme = std::min<int>(storedActive, themeCount - 1);
-    if (sleepThemeCount == 0) {
-      sleepThemeCount = 1;
-      selectedSleepTheme = 0;
-      sleepThemes[0] = {};
-      setName(sleepThemes[0], "Sleep");
-      sleepThemes[0].layout = Layout::OneByTwo;
-      sleepThemes[0].widgets[0] = Widget::Clock;
-      setDefaultLibraryFolders(sleepThemes[0]);
-    }
-    selectedSleepTheme = std::min(selectedSleepTheme, sleepThemeCount - 1);
+    selectedSleepTheme = sleepThemeCount > 0 ? std::min(selectedSleepTheme, sleepThemeCount - 1) : 0;
     if (version < kLegacyCarouselShadowVersion) {
       sleepThemes[0] = {};
       setName(sleepThemes[0], "Sleep");
@@ -693,6 +701,9 @@ bool save() {
     for (const uint8_t value : theme.imagePadding) serialization::writePod(file, value);
     for (const uint8_t value : theme.imageCropAnchorX) serialization::writePod(file, value);
     for (const uint8_t value : theme.imageCropAnchorY) serialization::writePod(file, value);
+    serialization::writePod(file, theme.sleepScreenMode);
+    serialization::writeString(file, std::string(theme.sleepCustomBmp));
+    serialization::writePod(file, theme.sleepImageQuality);
   };
   for (int i = 0; i < themeCount; ++i) writeTheme(themes[i]);
   const uint8_t storedSleepCount = static_cast<uint8_t>(sleepThemeCount);
@@ -717,7 +728,7 @@ const Theme& at(const int index) {
 
 const Theme& sleep() {
   ensureLoaded();
-  return sleepTheme;
+  return sleepThemeCount > 0 ? sleepTheme : sleepThemes[0];
 }
 
 int sleepCount() {
@@ -727,19 +738,46 @@ int sleepCount() {
 
 const Theme& sleepAt(const int index) {
   ensureLoaded();
+  if (sleepThemeCount <= 0) return sleepThemes[0];
   const int safeIndex = std::max(0, std::min(index, sleepThemeCount - 1));
   return sleepThemes[safeIndex];
 }
 
 int sleepActiveIndex() {
   ensureLoaded();
-  return selectedSleepTheme;
+  return sleepThemeCount > 0 ? selectedSleepTheme : 0;
 }
 
 void activateSleep(const int index) {
   ensureLoaded();
   if (index < 0 || index >= sleepThemeCount) return;
   selectedSleepTheme = index;
+  save();
+}
+
+uint8_t sleepScreenMode(const int index) {
+  ensureLoaded();
+  if (index < 0 || index >= sleepThemeCount) return 0;
+  return sleepThemes[index].sleepScreenMode;
+}
+
+void setSleepScreenMode(const int index, const uint8_t mode) {
+  ensureLoaded();
+  if (index < 0 || index >= sleepThemeCount) return;
+  if (mode != 0 && mode != 2 && mode != 3 && mode != 4) return;
+  sleepThemes[index].sleepScreenMode = mode;
+  save();
+}
+
+void setSleepSettings(const int index, const uint8_t mode, const char* imagePath, const uint8_t imageQuality) {
+  ensureLoaded();
+  if (index < 0 || index >= sleepThemeCount) return;
+  if (mode != 0 && mode != 2 && mode != 3 && mode != 4) return;
+  sleepThemes[index].sleepScreenMode = mode;
+  std::strncpy(sleepThemes[index].sleepCustomBmp, imagePath ? imagePath : "",
+               sizeof(sleepThemes[index].sleepCustomBmp) - 1);
+  sleepThemes[index].sleepCustomBmp[sizeof(sleepThemes[index].sleepCustomBmp) - 1] = '\0';
+  sleepThemes[index].sleepImageQuality = imageQuality < 3 ? imageQuality : 2;
   save();
 }
 
@@ -1091,10 +1129,12 @@ void setImageSettings(const int index, const bool sleepMode, const char (*paths)
 
 bool removeSleep(const int index) {
   ensureLoaded();
-  if (index < 0 || index >= sleepThemeCount || sleepThemeCount <= 1) return false;
+  if (index < 0 || index >= sleepThemeCount) return false;
   for (int i = index; i < sleepThemeCount - 1; ++i) sleepThemes[i] = sleepThemes[i + 1];
   --sleepThemeCount;
-  if (selectedSleepTheme > index) {
+  if (sleepThemeCount <= 0) {
+    selectedSleepTheme = 0;
+  } else if (selectedSleepTheme > index) {
     --selectedSleepTheme;
   } else if (selectedSleepTheme == index) {
     selectedSleepTheme = std::min(selectedSleepTheme, sleepThemeCount - 1);

@@ -77,13 +77,10 @@
     <section id="system-tab" class="tab-content active">
       <section class="settings-section">
         <div class="section-header"><h2>Display</h2></div>
-        <div class="setting-item"><span class="setting-label">Sleep Screen</span><div class="setting-control"><select id="sleepScreen"></select></div></div>
-        <div class="setting-item"><span class="setting-label">Choose sleep image</span><div class="setting-control"><input id="sleepCustomBmp" type="text" placeholder="Filename or empty for random" autocomplete="off"></div></div>
         <div class="setting-item"><span class="setting-label">Hide Battery %</span><div class="setting-control"><select id="hideBatteryPercentage"></select></div></div>
         <div class="setting-item"><span class="setting-label">Keyboard</span><div class="setting-control"><select id="keyboardLayout"></select></div></div>
         <div class="setting-item"><span class="setting-label">System font</span><div class="setting-control"><select id="systemFontFamily"></select></div></div>
         <div class="setting-item"><span class="setting-label">Text size</span><div class="setting-control"><select id="systemTextSize"></select></div></div>
-        <div class="setting-item"><span class="setting-label">Hide title for thumbnails</span><div class="setting-control"><label class="toggle-switch"><input id="hideThumbnailTitles" type="checkbox"><span class="toggle-slider"></span></label></div></div>
       </section>
 
       <section id="clockSettingsSection" class="settings-section">
@@ -94,9 +91,6 @@
 
       <section class="settings-section">
         <div class="section-header"><h2>Image</h2></div>
-        <div class="setting-item"><span class="setting-label">Cover Mode</span><div class="setting-control"><select id="sleepScreenCoverMode"></select></div></div>
-        <div class="setting-item"><span class="setting-label">Cover Filter</span><div class="setting-control"><select id="sleepScreenCoverFilter"></select></div></div>
-        <div class="setting-item"><span class="setting-label">Sleep Image Quality</span><div class="setting-control"><select id="sleepImageQuality"></select></div></div>
         <div class="setting-item"><span class="setting-label">Thumbnail corners</span><div class="setting-control"><select id="bitmapRoundedCorners"></select></div></div>
       </section>
 
@@ -160,15 +154,11 @@
     let pendingChanges = {};
     let wifiNetworks = [];
     const enumOptions = {
-      sleepScreen: {labels: ['Dark', 'Light', 'Custom', 'Recent Book', 'Transparent Cover', 'None', 'Widget'], values: [0, 1, 2, 3, 4, 5, 7]},
       hideBatteryPercentage: {labels: ['Never', 'In Reader', 'Always']},
       keyboardLayout: {labels: ['QWERTY', 'Numpad']},
       systemTextSize: {labels: ['Small', 'Medium', 'Large']},
       sleepClockStyle: {labels: ['Stacked', 'Centered', 'Card', 'Days']},
       sleepClockTimeFormat: {labels: ['12 hour', '24 hour']},
-      sleepScreenCoverMode: {labels: ['Fill', 'Crop']},
-      sleepScreenCoverFilter: {labels: ['None', 'Contrast', 'Inverted']},
-      sleepImageQuality: {labels: ['Low', 'Medium', 'High']},
       bitmapRoundedCorners: {labels: ['Square', 'Rounded', 'Subtle']},
       sleepTimeout: {labels: ['1 min', '5 min', '10 min', '15 min', '30 min', 'Never']},
       bootSetting: {labels: ['Recent Book', 'Home Page']},
@@ -178,7 +168,7 @@
       refreshFrequency: {labels: ['1 page', '5 pages', '10 pages', '15 pages', '30 pages', 'Off']},
       readerImageGrayscale: {labels: ['Low', 'Medium', 'High']}
     };
-    const boolFields = ['hideThumbnailTitles', 'textAntiAliasing'];
+    const boolFields = ['textAntiAliasing'];
 
     function switchTab(name, button) {
       document.querySelectorAll('.tab-content').forEach(tab => tab.classList.toggle('active', tab.id === name + '-tab'));
@@ -237,9 +227,6 @@
         input.checked = Number(settingsData[id]) !== 0;
         input.onchange = () => { pendingChanges[id] = input.checked ? 1 : 0; markChanged(input); };
       });
-      const sleepCustomBmp = document.getElementById('sleepCustomBmp');
-      sleepCustomBmp.value = settingsData.sleepCustomBmp || '';
-      sleepCustomBmp.oninput = () => { pendingChanges.sleepCustomBmp = sleepCustomBmp.value; markChanged(sleepCustomBmp); };
       const flickAvailable = settingsData.flickPageTurnAvailable === true || Number(settingsData.flickPageTurnAvailable) === 1;
       document.getElementById('flickPageTurnSetting').hidden = !flickAvailable;
       document.getElementById('flickSensitivitySetting').hidden = !flickAvailable;
