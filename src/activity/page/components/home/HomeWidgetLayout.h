@@ -14,7 +14,6 @@
 #include "../widget/Flow.h"
 #include "../widget/verticalbookshelf/VerticalBookshelf.h"
 #include "../widget/Shortcut.h"
-#include "../widget/ShortcutList.h"
 #include "../widget/Temperature.h"
 #include "../widget/TodaysReading.h"
 #include "../widget/WeeklyStatistics.h"
@@ -121,7 +120,6 @@ class HomeWidgetLayout final {
   Flow flow_;
   widget::verticalbookshelf::VerticalBookshelf verticalBookshelf_;
   Shortcut shortcut_;
-  ShortcutList shortcutList_;
   Temperature temperature_;
   Humidity humidity_;
   ImageWidget imageWidget_;

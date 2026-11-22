@@ -12,7 +12,7 @@ namespace HomeTheme {
 namespace {
 
 constexpr char kThemeFile[] = "/.system/home_themes.bin";
-constexpr uint8_t kVersion = 34;
+constexpr uint8_t kVersion = 35;
 constexpr uint8_t kSleepThemesVersion = 27;
 constexpr uint8_t kDescriptionOptionsVersion = 17;
 constexpr uint8_t kRecentOptionsVersion = 18;
@@ -26,6 +26,7 @@ constexpr uint8_t kImagePaddingVersion = 31;
 constexpr uint8_t kImageCropAnchorVersion = 32;
 constexpr uint8_t kSleepScreenModeVersion = 33;
 constexpr uint8_t kSleepSettingsVersion = 34;
+constexpr uint8_t kShortcutItemsVersion = 35;
 constexpr uint8_t kBookDetailsOptionsVersion = 20;
 constexpr uint8_t kLegacyFavoriteIconOptionVersion = 20;
 constexpr uint8_t kVersionBeforeRecentRatingOptions = 21;
@@ -93,6 +94,12 @@ void setDefaultHeatmapViews(Theme& theme);
 void setDefaultLibraryFolders(Theme& theme);
 void setDefaultImageCropAnchors(Theme& theme);
 
+void setDefaultShortcutItems(Theme& theme) {
+  for (int index = 0; index < kShortcutSlotCount; ++index) {
+    theme.shortcutItems[index] = static_cast<uint8_t>(index);
+  }
+}
+
 void makeDefault() {
   themeCount = 1;
   selectedTheme = 0;
@@ -115,6 +122,7 @@ void makeDefault() {
   setDefaultHeatmapViews(themes[0]);
   setDefaultLibraryFolders(themes[0]);
   setDefaultImageCropAnchors(themes[0]);
+  setDefaultShortcutItems(themes[0]);
   themes[0].carouselStyles[0] = CarouselStyle::Left;
   themes[0].borders[0] = Border::Normal;
   themes[0].carouselLabels[0] = 0;
@@ -129,6 +137,7 @@ void makeDefault() {
   sleepTheme.widgets[0] = Widget::Clock;
   setDefaultLibraryFolders(sleepTheme);
   setDefaultImageCropAnchors(sleepTheme);
+  setDefaultShortcutItems(sleepTheme);
 }
 
 bool repairEmptyHomeTheme() {
@@ -304,7 +313,7 @@ void load() {
        version != kSleepThemesVersion && version != kStreakCompactVersion && version != kImagePathsVersion &&
        version != kImageCropToFillVersion &&
        version != kImagePaddingVersion && version != kImageCropAnchorVersion &&
-       version != kSleepScreenModeVersion &&
+       version != kSleepScreenModeVersion && version != kSleepSettingsVersion &&
        version != kVersion) || storedCount == 0 ||
       storedCount > kMaxThemes) {
     file.close();
@@ -334,6 +343,7 @@ void load() {
         return false;
       }
       widget = static_cast<Widget>(value);
+      if (widget == Widget::ListShortcuts) widget = Widget::Shortcuts;
     }
     for (Border& border : theme.borders) {
       if (version == 1) {
@@ -559,6 +569,14 @@ void load() {
       serialization::readPod(file, theme.sleepImageQuality);
       if (theme.sleepImageQuality >= 3) theme.sleepImageQuality = 2;
     }
+    if (version >= kShortcutItemsVersion) {
+      for (uint8_t& value : theme.shortcutItems) {
+        serialization::readPod(file, value);
+        if (value > kShortcutItemCount) value = 0;
+      }
+    } else {
+      setDefaultShortcutItems(theme);
+    }
     if (theme.layout == Layout::Classic) {
       theme.layout = Layout::OneByTwo;
       for (Widget& widget : theme.widgets) widget = Widget::Empty;
@@ -704,6 +722,7 @@ bool save() {
     serialization::writePod(file, theme.sleepScreenMode);
     serialization::writeString(file, std::string(theme.sleepCustomBmp));
     serialization::writePod(file, theme.sleepImageQuality);
+    for (const uint8_t value : theme.shortcutItems) serialization::writePod(file, value);
   };
   for (int i = 0; i < themeCount; ++i) writeTheme(themes[i]);
   const uint8_t storedSleepCount = static_cast<uint8_t>(sleepThemeCount);
@@ -1123,6 +1142,17 @@ void setImageSettings(const int index, const bool sleepMode, const char (*paths)
     themeList[index].imagePadding[slot] = padding[slot] != 0 ? 1 : 0;
     themeList[index].imageCropAnchorX[slot] = cropAnchorX[slot];
     themeList[index].imageCropAnchorY[slot] = cropAnchorY[slot];
+  }
+  save();
+}
+
+void setShortcutItems(const int index, const bool sleepMode, const uint8_t* items) {
+  ensureLoaded();
+  Theme* themeList = sleepMode ? sleepThemes : themes;
+  const int themeCountValue = sleepMode ? sleepThemeCount : themeCount;
+  if (!items || index < 0 || index >= themeCountValue) return;
+  for (int slot = 0; slot < kShortcutSlotCount; ++slot) {
+    themeList[index].shortcutItems[slot] = items[slot] <= kShortcutItemCount ? items[slot] : kShortcutItemCount;
   }
   save();
 }

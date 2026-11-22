@@ -28,6 +28,9 @@
 extern void openReaderFromCallback(const std::string& path, std::function<void()> returnToCaller);
 extern void onGoToHome();
 extern void onGoToLibrary(const std::string& path);
+extern void onGoToSettings();
+extern void onGoToFileTransfer();
+extern void onGoToApps();
 extern void openHomeSubPage(HomeSubPage::Section section);
 extern void openHomeDescription(const std::string& bookPath, const std::string& cachePath);
 extern void onGoToStatistics();
@@ -425,26 +428,36 @@ bool Home::handleTap() {
 }
 
 bool Home::handleShortcut(const int item) {
-  if (SETTINGS.disableStatistics != 0 && item == 3) {
-
-    openHomeSubPage(HomeSubPage::Section::Dictionary);
-    return true;
-  }
-  switch (item) {
-    case 0:
+  switch (static_cast<HomeTheme::ShortcutItem>(item)) {
+    case HomeTheme::ShortcutItem::Bookmarks:
       openHomeSubPage(HomeSubPage::Section::Bookmarks);
       return true;
-    case 1:
+    case HomeTheme::ShortcutItem::Highlights:
       openHomeSubPage(HomeSubPage::Section::Highlights);
       return true;
-    case 2:
+    case HomeTheme::ShortcutItem::Favorites:
       openHomeSubPage(HomeSubPage::Section::Favorites);
       return true;
-    case 3:
+    case HomeTheme::ShortcutItem::Statistics:
       onGoToStatistics();
       return true;
-    case 4:
-      openHomeSubPage(HomeSubPage::Section::Dictionary);
+    case HomeTheme::ShortcutItem::Home:
+      onGoToHome();
+      return true;
+    case HomeTheme::ShortcutItem::Library:
+      onGoToLibrary("/");
+      return true;
+    case HomeTheme::ShortcutItem::Settings:
+      onGoToSettings();
+      return true;
+    case HomeTheme::ShortcutItem::Device:
+      onGoToFileTransfer();
+      return true;
+    case HomeTheme::ShortcutItem::Apps:
+      onGoToApps();
+      return true;
+    case HomeTheme::ShortcutItem::Search:
+      search();
       return true;
     default:
       return false;

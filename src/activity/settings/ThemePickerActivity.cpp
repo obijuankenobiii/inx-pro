@@ -124,6 +124,8 @@ bool supportsStreaksSettings(const HomeTheme::Widget widget) {
 
 bool supportsImageSettings(const HomeTheme::Widget widget) { return widget == HomeTheme::Widget::Image; }
 
+bool supportsShortcutSettings(const HomeTheme::Widget widget) { return widget == HomeTheme::Widget::Shortcuts; }
+
 #if FREEINK_DEVICE_STICKY
 bool supportsTemperatureSettings(const HomeTheme::Widget widget) {
   return widget == HomeTheme::Widget::Temperature;
@@ -288,12 +290,31 @@ int widgetOptionCount(const HomeTheme::Layout layout, const bool sleepTheme) {
     return 7;
 #endif
   }
+  static constexpr HomeTheme::Widget homeOptions[] = {
+      HomeTheme::Widget::Empty, HomeTheme::Widget::RecentGrid, HomeTheme::Widget::Flow,
+      HomeTheme::Widget::VerticalBookshelf, HomeTheme::Widget::Carousel, HomeTheme::Widget::Shortcuts,
+      HomeTheme::Widget::Clock, HomeTheme::Widget::Recent, HomeTheme::Widget::Description,
 #if FREEINK_DEVICE_STICKY
-  const int count = 20;
-#else
-  const int count = 18;
+      HomeTheme::Widget::Temperature,
 #endif
-  return count - (layout == HomeTheme::Layout::OneByOne ? 0 : 3);
+      HomeTheme::Widget::Calendar,
+#if FREEINK_DEVICE_STICKY
+      HomeTheme::Widget::Humidity,
+#endif
+      HomeTheme::Widget::TodaysReading, HomeTheme::Widget::Favorites, HomeTheme::Widget::Heatmap,
+      HomeTheme::Widget::Library, HomeTheme::Widget::Statistics, HomeTheme::Widget::Streaks,
+      HomeTheme::Widget::Image,
+  };
+  int count = 0;
+  for (const HomeTheme::Widget widget : homeOptions) {
+    if (layout != HomeTheme::Layout::OneByOne &&
+        (widget == HomeTheme::Widget::RecentGrid || widget == HomeTheme::Widget::Flow ||
+         widget == HomeTheme::Widget::VerticalBookshelf)) {
+      continue;
+    }
+    ++count;
+  }
+  return count;
 }
 
 HomeTheme::Widget widgetOptionAt(const HomeTheme::Layout layout, const bool sleepTheme, const int index) {
@@ -317,7 +338,6 @@ HomeTheme::Widget widgetOptionAt(const HomeTheme::Layout layout, const bool slee
       HomeTheme::Widget::Temperature,
 #endif
       HomeTheme::Widget::Calendar,
-      HomeTheme::Widget::ListShortcuts,
 #if FREEINK_DEVICE_STICKY
       HomeTheme::Widget::Humidity,
 #endif
@@ -871,6 +891,12 @@ void ThemePickerActivity::renderWidgetPicker() {
       renderer.rectangle.render(settings.x - 4, settings.y - 4, settings.size + 8, settings.size + 8, true);
       renderer.bitmap.icon(Setting, settings.x, settings.y, settings.size, settings.size);
     }
+    if (supportsShortcutSettings(widgets_[slot])) {
+      const CarouselSettingsBounds settings = carouselSettingsBounds(cellX, cellY, cellW, cellH);
+      renderer.rectangle.fill(settings.x - 4, settings.y - 4, settings.size + 8, settings.size + 8, false);
+      renderer.rectangle.render(settings.x - 4, settings.y - 4, settings.size + 8, settings.size + 8, true);
+      renderer.bitmap.icon(Setting, settings.x, settings.y, settings.size, settings.size);
+    }
     if (supportsHeatmapSettings(widgets_[slot])) {
       const CarouselSettingsBounds settings = carouselSettingsBounds(cellX, cellY, cellW, cellH);
       renderer.rectangle.fill(settings.x - 4, settings.y - 4, settings.size + 8, settings.size + 8, false);
@@ -1054,10 +1080,7 @@ void ThemePickerActivity::renderWidgetPreview(const HomeTheme::Widget widget, co
       verticalBookshelf_.preview(renderer, x, y, width, height);
       break;
     case HomeTheme::Widget::Shortcuts:
-      shortcut_.render(x, y, width, height, compactWidgetLayout);
-      break;
-    case HomeTheme::Widget::ListShortcuts:
-      shortcutList_.render(x, y, width, height);
+      shortcut_.render(x, y, width, height, compactWidgetLayout, shortcutItems_);
       break;
     case HomeTheme::Widget::Clock:
       clock_.render(x, y, width, height, compactWidgetLayout, compact20);
@@ -1221,6 +1244,9 @@ void ThemePickerActivity::editTheme() {
   const HomeTheme::Theme& theme = editingSleep_ ? HomeTheme::sleepAt(selected_) : HomeTheme::at(selected_);
   layout_ = theme.layout;
   sleepScreenMode_ = editingSleep_ ? HomeTheme::sleepScreenMode(selected_) : 0;
+  for (int slot = 0; slot < HomeTheme::kShortcutSlotCount; ++slot) {
+    shortcutItems_[slot] = theme.shortcutItems[slot];
+  }
   if (editingSleep_) applySelectedSleepScreenMode();
   for (int i = 0; i < 4; ++i) {
     widgets_[i] = theme.widgets[i];
@@ -1317,6 +1343,9 @@ void ThemePickerActivity::editTheme() {
 void ThemePickerActivity::beginEditTheme() { editTheme(); }
 
 void ThemePickerActivity::initializeNewThemeEditor() {
+  for (int slot = 0; slot < HomeTheme::kShortcutSlotCount; ++slot) {
+    shortcutItems_[slot] = static_cast<uint8_t>(slot);
+  }
   for (int i = 0; i < 4; ++i) {
     widgets_[i] = HomeTheme::Widget::Empty;
     borders_[i] = HomeTheme::Border::None;
@@ -1537,6 +1566,7 @@ void ThemePickerActivity::saveEditorState() {
       HomeTheme::setImageSettings(selected_, true, imagePaths_, imageCropToFill_, imagePadding_, imageCropAnchorX_,
                                   imageCropAnchorY_);
       HomeTheme::setSleepSettings(selected_, sleepScreenMode_, SETTINGS.sleepCustomBmp, SETTINGS.sleepImageQuality);
+      HomeTheme::setShortcutItems(selected_, true, shortcutItems_);
     } else {
         HomeTheme::update(selected_, layout_, widgets_, borders_, backgrounds_, carouselStyles_, carouselLabels_,
                         carouselLabelColors_, carouselShadowStyles_, heatmapViews_, descriptionTitles_,
@@ -1547,6 +1577,7 @@ void ThemePickerActivity::saveEditorState() {
       HomeTheme::updateStreakCompact(selected_, false, streakCompact_);
       HomeTheme::setImageSettings(selected_, false, imagePaths_, imageCropToFill_, imagePadding_, imageCropAnchorX_,
                                   imageCropAnchorY_);
+      HomeTheme::setShortcutItems(selected_, false, shortcutItems_);
     }
   }
 }
@@ -1576,6 +1607,7 @@ void ThemePickerActivity::saveEditorAndClose() {
       if (editingSleep_) {
         HomeTheme::setSleepSettings(selected_, sleepScreenMode_, SETTINGS.sleepCustomBmp, SETTINGS.sleepImageQuality);
       }
+      HomeTheme::setShortcutItems(selected_, editingSleep_, shortcutItems_);
     }
   } else if (editingSleep_) {
     HomeTheme::updateSleepAt(selected_, layout_, widgets_, borders_, backgrounds_, carouselStyles_, carouselLabels_,
@@ -1587,6 +1619,7 @@ void ThemePickerActivity::saveEditorAndClose() {
     HomeTheme::setImageSettings(selected_, true, imagePaths_, imageCropToFill_, imagePadding_, imageCropAnchorX_,
                                 imageCropAnchorY_);
     HomeTheme::setSleepSettings(selected_, sleepScreenMode_, SETTINGS.sleepCustomBmp, SETTINGS.sleepImageQuality);
+    HomeTheme::setShortcutItems(selected_, true, shortcutItems_);
   } else {
     HomeTheme::update(selected_, layout_, widgets_, borders_, backgrounds_, carouselStyles_, carouselLabels_,
                      carouselLabelColors_, carouselShadowStyles_, heatmapViews_, descriptionTitles_,
@@ -1596,6 +1629,7 @@ void ThemePickerActivity::saveEditorAndClose() {
     HomeTheme::updateStreakCompact(selected_, false, streakCompact_);
     HomeTheme::setImageSettings(selected_, false, imagePaths_, imageCropToFill_, imagePadding_, imageCropAnchorX_,
                                 imageCropAnchorY_);
+    HomeTheme::setShortcutItems(selected_, false, shortcutItems_);
   }
   returnToThemeList();
 }
@@ -1832,6 +1866,16 @@ void ThemePickerActivity::openImageSettings(const int slot) {
         imageSettingsFinished_ = true;
       },
       [] {}));
+}
+
+void ThemePickerActivity::openShortcutSettings() {
+  shortcutSettingsFinished_ = false;
+  enterNewActivity(new ShortcutSettingsActivity(
+      renderer, mappedInput, shortcutItems_,
+      [this](const uint8_t* items) {
+        for (int slot = 0; slot < HomeTheme::kShortcutSlotCount; ++slot) shortcutItems_[slot] = items[slot];
+      },
+      [this] { shortcutSettingsFinished_ = true; }));
 }
 
 void ThemePickerActivity::moveWidgetPopupSelection(const int delta) {
@@ -2177,6 +2221,13 @@ void ThemePickerActivity::handleTouch(const int x, const int y, const bool longP
           return;
         }
       }
+      if (supportsShortcutSettings(widgets_[slot])) {
+        const CarouselSettingsBounds settings = carouselSettingsBounds(cellX, cellY, cellW, cellH);
+        if (inside(x, y, settings.x - 8, settings.y - 8, settings.size + 16, settings.size + 16)) {
+          openShortcutSettings();
+          return;
+        }
+      }
       if (supportsHeatmapSettings(widgets_[slot])) {
         const CarouselSettingsBounds settings = carouselSettingsBounds(cellX, cellY, cellW, cellH);
         if (inside(x, y, settings.x - 8, settings.y - 8, settings.size + 16, settings.size + 16)) {
@@ -2332,6 +2383,11 @@ void ThemePickerActivity::loop() {
     if (imageSettingsFinished_) {
       exitActivity();
       imageSettingsFinished_ = false;
+      render();
+    }
+    if (shortcutSettingsFinished_) {
+      exitActivity();
+      shortcutSettingsFinished_ = false;
       render();
     }
     return;

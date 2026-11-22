@@ -9,6 +9,7 @@
 #include "activity/settings/BaseStreaksActivity.h"
 #include "activity/settings/SleepImagePickerActivity.h"
 #include "activity/settings/SleepWallpaperActivity.h"
+#include "activity/settings/ShortcutSettingsActivity.h"
 #include "activity/settings/ImageSettingsActivity.h"
 #include "activity/page/components/widget/Calendar.h"
 #include "activity/page/components/widget/Carousel.h"
@@ -18,7 +19,6 @@
 #include "activity/page/components/widget/Flow.h"
 #include "activity/page/components/widget/verticalbookshelf/VerticalBookshelf.h"
 #include "activity/page/components/widget/Shortcut.h"
-#include "activity/page/components/widget/ShortcutList.h"
 #include "activity/page/components/widget/Temperature.h"
 #include "activity/page/components/widget/Humidity.h"
 #include "activity/page/components/widget/ImageWidget.h"
@@ -37,7 +37,7 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
   ThemePickerActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, std::function<void()> onBack,
                       bool openSleepTheme = false)
       : ActivityWithSubactivity("ThemePicker", renderer, mappedInput), carousel_(renderer), shortcut_(renderer),
-        shortcutList_(renderer), clock_(renderer), calendar_(renderer), recent_(renderer), temperature_(renderer),
+        clock_(renderer), calendar_(renderer), recent_(renderer), temperature_(renderer),
         humidity_(renderer), todaysReading_(renderer),
         favorites_(renderer), heatmap_(renderer), library_(renderer), description_(renderer), recentGrid_(renderer),
         flow_(renderer), weeklyStatistics_(renderer), streaks_(renderer), imageWidget_(renderer),
@@ -83,6 +83,12 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
   uint8_t imagePadding_[4] = {};
   uint8_t imageCropAnchorX_[4] = {};
   uint8_t imageCropAnchorY_[4] = {};
+  uint8_t shortcutItems_[HomeTheme::kShortcutSlotCount] = {
+      static_cast<uint8_t>(HomeTheme::ShortcutItem::Bookmarks),
+      static_cast<uint8_t>(HomeTheme::ShortcutItem::Highlights),
+      static_cast<uint8_t>(HomeTheme::ShortcutItem::Favorites),
+      static_cast<uint8_t>(HomeTheme::ShortcutItem::Statistics),
+  };
   bool editingExisting_ = false;
   bool creatingTheme_ = false;
   bool editingSleep_ = false;
@@ -101,6 +107,7 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
   bool statisticsSettingsFinished_ = false;
   bool streaksSettingsFinished_ = false;
   bool imageSettingsFinished_ = false;
+  bool shortcutSettingsFinished_ = false;
   bool sleepWallpaperSettingsFinished_ = false;
   bool sleepWallpaperSettingsBookCover_ = false;
   bool sleepWallpaperSettingsFixedOption_ = false;
@@ -113,7 +120,6 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
   int sleepFixedOption_ = 0;
   Carousel carousel_;
   Shortcut shortcut_;
-  ShortcutList shortcutList_;
   Clock clock_;
   Calendar calendar_;
   Recent recent_;
@@ -179,6 +185,7 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
   void openLibrarySettings(int slot);
   void openDescriptionSettings(int slot);
   void openImageSettings(int slot);
+  void openShortcutSettings();
   void openSleepWallpaperSettings(bool bookCover = false, bool fixedOption = false);
   void saveSleepSpecialTheme(const char* name, uint8_t mode);
   void activateSleepTheme(int index);

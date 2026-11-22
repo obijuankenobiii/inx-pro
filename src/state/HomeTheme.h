@@ -50,6 +50,22 @@ enum class Widget : uint8_t {
   Image = 19,
 };
 
+enum class ShortcutItem : uint8_t {
+  Bookmarks = 0,
+  Highlights = 1,
+  Favorites = 2,
+  Statistics = 3,
+  Home = 4,
+  Library = 5,
+  Settings = 6,
+  Device = 7,
+  Apps = 8,
+  Search = 9,
+};
+
+constexpr int kShortcutItemCount = 10;
+constexpr int kShortcutSlotCount = 4;
+
 enum class HeatmapView : uint8_t {
   Daily = 0,
   Weekly = 1,
@@ -112,6 +128,7 @@ struct Theme {
   uint8_t sleepScreenMode;
   char sleepCustomBmp[64];
   uint8_t sleepImageQuality;
+  uint8_t shortcutItems[kShortcutSlotCount];
 };
 
 void load();
@@ -184,6 +201,7 @@ bool rename(int index, const char* name);
 bool renameSleep(int index, const char* name);
 void setImageSettings(int index, bool sleepMode, const char (*paths)[128], const uint8_t* cropToFill,
                       const uint8_t* padding, const uint8_t* cropAnchorX, const uint8_t* cropAnchorY);
+void setShortcutItems(int index, bool sleepMode, const uint8_t* items);
 
 const char* layoutLabel(Layout layout);
 const char* widgetLabel(Widget widget);

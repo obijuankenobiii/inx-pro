@@ -141,7 +141,6 @@ HomeWidgetLayout::HomeWidgetLayout(GfxRenderer& renderer)
       flow_(renderer),
       verticalBookshelf_(),
       shortcut_(renderer),
-      shortcutList_(renderer),
       temperature_(renderer),
       humidity_(renderer),
       imageWidget_(renderer),
@@ -422,9 +421,8 @@ void HomeWidgetLayout::renderSlot(const HomeTheme::Theme& theme, const int slot,
                        useLargeCenterCarousel(theme, slot, theme.carouselStyles[slot]));
       break;
     case HomeTheme::Widget::Shortcuts:
-      shortcut_.render(bounds.x, bounds.y, bounds.width, bounds.height, compactWidgetLayout);
+      shortcut_.render(bounds.x, bounds.y, bounds.width, bounds.height, compactWidgetLayout, theme.shortcutItems);
       break;
-    case HomeTheme::Widget::ListShortcuts: shortcutList_.render(bounds.x, bounds.y, bounds.width, bounds.height); break;
     case HomeTheme::Widget::Clock:
       clock_.render(bounds.x, bounds.y, bounds.width, bounds.height, compactWidgetLayout, mostCompactRow);
       break;
@@ -854,20 +852,19 @@ const char* HomeWidgetLayout::libraryFolder(const HomeTheme::Theme& theme, const
 
 int HomeWidgetLayout::shortcutAt(const HomeTheme::Theme& theme, const int x, const int y) const {
   if (theme.layout == HomeTheme::Layout::Classic) {
-    return shortcut_.hitTest(x, y, 20, navigation::Menu::height + Carousel::kHeight + 20,
-                             renderer_.getScreenWidth() - 40,
-                             renderer_.getScreenHeight() - navigation::Menu::height - Carousel::kHeight -
-                                 navigation::Menu::bottomInset() - 40, false);
+    const int visible = shortcut_.hitTest(x, y, 20, navigation::Menu::height + Carousel::kHeight + 20,
+                                          renderer_.getScreenWidth() - 40,
+                                          renderer_.getScreenHeight() - navigation::Menu::height - Carousel::kHeight -
+                                              navigation::Menu::bottomInset() - 40, false);
+    return shortcut_.itemForVisibleIndex(visible);
   }
   if (theme.layout == HomeTheme::Layout::OneByOne) return -1;
   const int slot = findWidget(theme, HomeTheme::Widget::Shortcuts, x, y);
   if (slot >= 0) {
     const Bounds bounds = slotBounds(grid(theme.layout), slot);
-    return shortcut_.hitTest(x, y, bounds.x, bounds.y, bounds.width, bounds.height,
-                             useOneByTwoWidgetLayout(theme.layout, slot));
+    const int visible = shortcut_.hitTest(x, y, bounds.x, bounds.y, bounds.width, bounds.height,
+                                          useOneByTwoWidgetLayout(theme.layout, slot), theme.shortcutItems);
+    return shortcut_.itemForVisibleIndex(visible, theme.shortcutItems);
   }
-  const int listSlot = findWidget(theme, HomeTheme::Widget::ListShortcuts, x, y);
-  if (listSlot < 0) return -1;
-  const Bounds bounds = slotBounds(grid(theme.layout), listSlot);
-  return shortcutList_.hitTest(x, y, bounds.x, bounds.y, bounds.width, bounds.height);
+  return -1;
 }
