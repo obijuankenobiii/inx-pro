@@ -9,6 +9,7 @@
 
 #include "state/ReadingGoal.h"
 #include "state/RecentBooks.h"
+#include "images/LibraryFilterRight.h"
 #include "system/Fonts.h"
 
 namespace {
@@ -224,13 +225,13 @@ void renderReadingDuration(const GfxRenderer& renderer, const int fontId, const 
 }
 
 void TodaysReading::render(const int x, const int y, const int width, const int height, const bool compact,
-                           const bool compact20) const {
-  renderContent(x, y, width, height, false, compact, compact20);
+                           const bool compact20, const bool compact30) const {
+  renderContent(x, y, width, height, false, compact, compact20, compact30);
 }
 
 void TodaysReading::preview(const int x, const int y, const int width, const int height, const bool compact,
-                            const bool compact20) const {
-  renderContent(x, y, width, height, true, compact, compact20);
+                            const bool compact20, const bool compact30) const {
+  renderContent(x, y, width, height, true, compact, compact20, compact30);
 }
 
 bool TodaysReading::buttonHitTest(const int tapX, const int tapY, const int areaX, const int areaY,
@@ -263,7 +264,7 @@ bool TodaysReading::buttonHitTest(const int tapX, const int tapY, const int area
 }
 
 void TodaysReading::renderContent(const int x, const int y, const int width, const int height, const bool sample,
-                                  const bool compact, const bool compact20) const {
+                                  const bool compact, const bool compact20, const bool compact30) const {
   if (width <= 0 || height <= 0) return;
   renderer_.rectangle.fill(x, y, width, height, false);
 
@@ -316,12 +317,17 @@ void TodaysReading::renderContent(const int x, const int y, const int width, con
     const int contentY = y + verticalInset;
     const int contentWidth = std::max(1, width - horizontalInset * 2);
     const int contentHeight = std::max(1, height - verticalInset * 2);
-    const int leftWidth = std::max(1, contentWidth * 44 / 100);
+    const int leftWidth = std::max(1, contentWidth * (compact20 ? 32 : 44) / 100);
     const int detailX = contentX + leftWidth + 6;
-    const int detailWidth = std::max(1, contentX + contentWidth - detailX);
-    const int centerX = contentX + leftWidth / 2;
+    constexpr int caretSize = 30;
+    constexpr int caretGap = 8;
+    const int detailWidth = std::max(1, contentX + contentWidth - detailX - (compact20 ? caretSize + caretGap : 0));
+    const int baseOuterRadius = compact20
+                                    ? std::max(20, std::min(leftWidth / 2 - 4, contentHeight / 2 + 10))
+                                    : std::max(20, std::min(leftWidth / 2 + 10, contentHeight / 2 + 10));
+    const int outerRadius = compact30 ? std::max(20, baseOuterRadius - 10) : baseOuterRadius;
+    const int centerX = compact20 ? contentX + outerRadius + 4 : contentX + leftWidth / 2;
     const int centerY = contentY + contentHeight / 2;
-    const int outerRadius = std::max(20, std::min(leftWidth / 2 + 10, contentHeight / 2 + 10));
     drawReadingGauge(renderer_, centerX, centerY, outerRadius, std::max(8, outerRadius / 8), progress, true);
 
     const int compactTimeFont = systemFontIdForPointSize(18);
@@ -340,6 +346,12 @@ void TodaysReading::renderContent(const int x, const int y, const int width, con
     const std::string goalDisplay = renderer_.text.truncate(compactGoalFont, goalText, detailWidth);
     renderer_.text.renderGray(compactGoalFont, detailX, goalY, goalDisplay.c_str(), true,
                               EpdFontFamily::REGULAR);
+
+    if (compact20) {
+      const int caretX = x + width - horizontalInset - caretSize;
+      const int caretY = contentY + (contentHeight - caretSize) / 2;
+      renderer_.bitmap.iconScaled(LibraryFilterRight, caretX, caretY, 32, 30, caretSize, caretSize);
+    }
 
     if (!compact20) {
       const std::string bookTitle = sample ? std::string{} : recentBookTitle();

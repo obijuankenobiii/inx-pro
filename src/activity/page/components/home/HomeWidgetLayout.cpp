@@ -453,7 +453,9 @@ void HomeWidgetLayout::renderSlot(const HomeTheme::Theme& theme, const int slot,
     case HomeTheme::Widget::Humidity: humidity_.render(bounds.x, bounds.y, bounds.width, bounds.height); break;
 #endif
     case HomeTheme::Widget::TodaysReading:
-      todaysReading_.render(bounds.x, bounds.y, bounds.width, bounds.height, compactWidgetLayout, mostCompactRow);
+      todaysReading_.render(bounds.x, bounds.y, bounds.width, bounds.height, compactWidgetLayout, mostCompactRow,
+                            theme.layout == HomeTheme::Layout::OneByThree ||
+                                (isHalfStackLayout(theme.layout) && halfStackRowPercent(theme.layout, slot) == 30));
       break;
     case HomeTheme::Widget::Statistics:
       weeklyStatistics_.render(bounds.x, bounds.y, bounds.width, bounds.height, compactWidgetLayout,
@@ -810,8 +812,14 @@ int HomeWidgetLayout::todaysReadingAt(const HomeTheme::Theme& theme, const int x
   for (int slot = 0; slot < HomeTheme::slotCount(theme.layout); ++slot) {
     if (theme.widgets[slot] != HomeTheme::Widget::TodaysReading) continue;
     const Bounds bounds = slotBounds(layout, slot);
-    if (todaysReading_.buttonHitTest(x, y, bounds.x, bounds.y, bounds.width, bounds.height,
-                                     useOneByTwoWidgetLayout(theme.layout, slot), isMostCompactRow(theme.layout, slot)))
+    const bool wholeWidget = isMostCompactRow(theme.layout, slot);
+    const bool hit = wholeWidget
+                         ? (x >= bounds.x && x < bounds.x + bounds.width && y >= bounds.y &&
+                            y < bounds.y + bounds.height)
+                         : todaysReading_.buttonHitTest(x, y, bounds.x, bounds.y, bounds.width, bounds.height,
+                                                        useOneByTwoWidgetLayout(theme.layout, slot),
+                                                        isMostCompactRow(theme.layout, slot));
+    if (hit)
       return slot;
   }
   return -1;

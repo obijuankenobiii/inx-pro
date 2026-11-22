@@ -1073,7 +1073,9 @@ void ThemePickerActivity::renderWidgetPreview(const HomeTheme::Widget widget, co
       break;
 #endif
     case HomeTheme::Widget::TodaysReading:
-      todaysReading_.preview(x, y, width, height, compactWidgetLayout, compact20);
+      todaysReading_.preview(x, y, width, height, compactWidgetLayout, compact20,
+                             layout_ == HomeTheme::Layout::OneByThree ||
+                                 (isHalfStackLayout(layout_) && halfStackRowPercent(layout_, layoutSlot) == 30));
       break;
     case HomeTheme::Widget::Statistics:
       weeklyStatistics_.preview(x, y, width, height, compactWidgetLayout,
