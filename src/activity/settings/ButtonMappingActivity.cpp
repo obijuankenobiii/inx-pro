@@ -67,9 +67,14 @@ constexpr int kTapGridTopPadding = 10;
 constexpr int kTapGridBottomPadding = 20;
 constexpr int kTapGridGap = 0;
 constexpr int kTapGridDotSpacing = 4;
+constexpr int kHeaderToListGap = 10;
+
+int buttonMappingContentTop() {
+  return navigation::Menu::topPadding + navigation::Menu::iconSize + 20 + kHeaderToListGap;
+}
 
 int tapGridBodyTop() {
-  return navigation::Menu::topPadding + navigation::Menu::iconSize + 20;
+  return buttonMappingContentTop();
 }
 
 struct TapGridCellBounds {
@@ -297,7 +302,7 @@ void ButtonMappingActivity::onEnter() {
 }
 
 int ButtonMappingActivity::itemY(const int row) const {
-  const int bodyTop = UiLayout::PAGE_HEADER_HEIGHT;
+  const int bodyTop = buttonMappingContentTop();
   const int quickActionTop = bodyTop;
   const int buttonHeaderTop = quickActionTop + kRowHeight + kQuickActionToButtonGap;
   const int buttonRowsTop = buttonHeaderTop + kSectionHeaderHeight;
@@ -315,7 +320,7 @@ int ButtonMappingActivity::sectionRowCount() const {
 }
 
 int ButtonMappingActivity::sectionItemY(const int row) const {
-  return UiLayout::PAGE_HEADER_HEIGHT + row * kRowHeight;
+  return buttonMappingContentTop() + row * kRowHeight;
 }
 
 int ButtonMappingActivity::itemRowAtY(const int tapY) const {
@@ -720,7 +725,7 @@ void ButtonMappingActivity::handleSwipeGridInput() {
 void ButtonMappingActivity::handleMainInput() {
   if (SubPage::closeInput(renderer, mappedInput, onDone_)) return;
 
-  const int bodyTop = UiLayout::PAGE_HEADER_HEIGHT;
+  const int bodyTop = buttonMappingContentTop();
   if (mappedInput.hasTouch()) {
     float tapNx = 0.0f;
     float tapNy = 0.0f;
@@ -890,7 +895,7 @@ void ButtonMappingActivity::renderSwipeGrid() {
 }
 
 void ButtonMappingActivity::renderMain() {
-  const int bodyTop = SubPage::header(renderer, "Button & Gestures");
+  const int bodyTop = SubPage::header(renderer, "Button & Gestures") + kHeaderToListGap;
   const int font = systemFontId();
   const int screenW = renderer.getScreenWidth();
   constexpr int rowCount = kMainRowCount;
@@ -927,7 +932,7 @@ void ButtonMappingActivity::renderMain() {
 
 void ButtonMappingActivity::renderSection() {
   const char* title = section_ == Section::Buttons ? "Buttons" : "Gestures";
-  const int bodyTop = SubPage::header(renderer, title);
+  const int bodyTop = SubPage::header(renderer, title) + kHeaderToListGap;
   const int font = systemFontId();
   const int screenW = renderer.getScreenWidth();
   const int valueRight = screenW - 30;

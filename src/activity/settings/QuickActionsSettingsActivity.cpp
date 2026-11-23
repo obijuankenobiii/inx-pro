@@ -1,6 +1,5 @@
 #include "QuickActionsSettingsActivity.h"
 #include "SettingsListLayout.h"
-#include "system/UiLayout.h"
 
 #include <GfxRenderer.h>
 
@@ -10,6 +9,7 @@
 
 #include "activity/page/SubPage.h"
 #include "activity/page/components/global/Button.h"
+#include "activity/page/navigation/Menu.h"
 #include "ReaderFontSettingsDraw.h"
 #include "images/LibraryFilterRight.h"
 #include "state/ReaderSetting.h"
@@ -23,8 +23,11 @@ constexpr int kSideMargin = 20;
 constexpr int kBottomMargin = 44;
 constexpr int kScrollCaretSize = 40;
 constexpr int kValueColumnRight = 30;
+constexpr int kHeaderToListGap = 10;
 
-int pageBodyTop() { return FREEINK_DEVICE_X4PRO ? 80 : 70; }
+int pageBodyTop() {
+  return navigation::Menu::topPadding + navigation::Menu::iconSize + 20 + kHeaderToListGap;
+}
 
 ButtonBounds scrollCaretBounds(const GfxRenderer& renderer) {
   return {renderer.getScreenWidth() - kSideMargin - kScrollCaretSize,
@@ -176,7 +179,7 @@ void QuickActionsSettingsActivity::render() {
   renderer.clearScreen();
   const int screenW = renderer.getScreenWidth();
   const int screenH = renderer.getScreenHeight();
-  const int bodyTop = SubPage::header(renderer, "Quick Actions");
+  const int bodyTop = SubPage::header(renderer, "Quick Actions") + kHeaderToListGap;
 
   const std::vector<uint8_t> actions = eligibleActions();
   const int total = static_cast<int>(actions.size());

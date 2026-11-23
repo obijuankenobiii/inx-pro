@@ -12,6 +12,7 @@
 #include <utility>
 
 #include "images/LibraryFilterRight.h"
+#include "images/Star.h"
 #include "state/SystemSetting.h"
 #include "system/UiLayout.h"
 #include "system/Fonts.h"
@@ -67,6 +68,21 @@ std::string folderImagePath(const std::string& folder) {
     if (SdMan.exists(path.c_str())) return path;
   }
   return {};
+}
+
+void drawFavoriteBadge(const GfxRenderer& renderer, const int x, const int y, const int width, const int height,
+                       const bool favorite) {
+  if (!favorite) return;
+  constexpr int iconSize = 24;
+  constexpr int badgePadding = 5;
+  constexpr int badgeMargin = 5;
+  constexpr int badgeSize = iconSize + badgePadding * 2;
+  const int badgeX = x + std::max(0, width - badgeSize - badgeMargin);
+  const int badgeY = y + std::max(0, height - badgeSize - badgeMargin);
+  renderer.rectangle.fill(badgeX, badgeY, badgeSize, badgeSize,
+                          static_cast<int>(GfxRenderer::FillTone::Ink), true);
+  renderer.bitmap.icon(Star, badgeX + badgePadding, badgeY + badgePadding, iconSize, iconSize,
+                       BitmapRender::Orientation::None, true);
 }
 
 }
@@ -180,8 +196,13 @@ std::string ThumbnailList::thumbnailPathFor(const LibraryIndex::Book& book) cons
   return metadataImagePath(book.path);
 }
 
-void ThumbnailList::renderThumbnail(const LibraryIndex::Book& book, const int x, const int y) const {
+void ThumbnailList::renderThumbnail(const LibraryIndex::Book& book, const int x, const int y,
+                                    const bool favorite) const {
   const std::string path = thumbnailPathFor(book);
+  const int imageX = x + 2;
+  const int imageY = y + 2;
+  const int imageWidth = thumbnailWidth - 4;
+  const int imageHeight = thumbnailHeight - 4;
   ImageRender::Options options;
   options.cropToFill = true;
   options.asyncDisplayCache = true;
@@ -189,13 +210,13 @@ void ThumbnailList::renderThumbnail(const LibraryIndex::Book& book, const int x,
   options.cacheNamespace = ImageDisplayCacheNamespace::Library;
   options.roundedOutside = SETTINGS.bitmapRoundedCorners != 0 ? BitmapRender::RoundedOutside::PaperOutside
                                                                : BitmapRender::RoundedOutside::None;
-  if (!path.empty() && ImageRender::create(renderer, path).render(x + 2, y + 2, thumbnailWidth - 4,
-                                                                   thumbnailHeight - 4, options)) {
+  if (!path.empty() && ImageRender::create(renderer, path).render(imageX, imageY, imageWidth, imageHeight, options)) {
     if (SETTINGS.bitmapRoundedCorners == 0) {
       renderer.rectangle.render(x, y, thumbnailWidth, thumbnailHeight, true);
     } else {
       renderer.rectangle.render(x, y, thumbnailWidth, thumbnailHeight, true, true);
     }
+    drawFavoriteBadge(renderer, imageX, imageY, imageWidth, imageHeight, favorite);
     return;
   }
 
@@ -206,6 +227,7 @@ void ThumbnailList::renderThumbnail(const LibraryIndex::Book& book, const int x,
   } else {
     renderer.rectangle.render(x, y, thumbnailWidth, thumbnailHeight, true, true);
   }
+  drawFavoriteBadge(renderer, imageX, imageY, imageWidth, imageHeight, favorite);
 }
 
 void ThumbnailList::render() const {
@@ -225,7 +247,8 @@ void ThumbnailList::render() const {
     const int row = index - start;
     const int rowY = top() + row * currentRowHeight;
     const LibraryIndex::Book& book = items[static_cast<size_t>(index)];
-    renderThumbnail(book, sideMargin, rowY + (currentRowHeight - thumbnailHeight) / 2);
+    const bool favorite = isFavorite && isFavorite(book);
+    renderThumbnail(book, sideMargin, rowY + (currentRowHeight - thumbnailHeight) / 2, favorite);
 
     const std::string title = renderer.text.truncate(titleFont, titleFor(book).c_str(), textWidth,
                                                      EpdFontFamily::REGULAR);
