@@ -4,13 +4,18 @@
 
 #include <algorithm>
 
+#include "components/global/Button.h"
 #include "dictionary/DictionaryDefinitionLayout.h"
+#include "dictionary/StarDictLookup.h"
 #include "images/LibraryFilterLeft.h"
 #include "images/LibraryFilterRight.h"
 #include "images/Star.h"
 #include "components/widget/MetadataRating.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
+
+extern void openDictionaryLookupFromDetails(const std::string& word, const std::string& bookPath,
+                                            const std::string& cachePath, std::function<void()> returnToCaller);
 
 namespace {
 
@@ -32,9 +37,10 @@ std::string joinTags(const std::vector<std::string>& tags) {
 BookDetailsActivity::BookDetailsActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
                                          std::string bookPath, std::string cachePath,
                                          std::function<void()> onClose)
-    : SubPage("BookDetails", renderer, mappedInput, std::move(onClose)),
+    : SubPage("BookDetails", renderer, mappedInput, onClose),
       bookPath_(std::move(bookPath)),
-      cachePath_(std::move(cachePath)) {}
+      cachePath_(std::move(cachePath)),
+      closeCallback_(std::move(onClose)) {}
 
 void BookDetailsActivity::onEnter() {
   SubPage::onEnter();
@@ -45,9 +51,15 @@ void BookDetailsActivity::onEnter() {
   addRow("PATH", bookPath_);
   descriptionLines_.clear();
   descriptionPages_.clear();
+  descriptionWordHits_.clear();
   descriptionHtml_.clear();
   descriptionBodyTop_ = kListTop;
   descriptionBottom_ = renderer.getScreenHeight() - kBottomMargin;
+  selectedDescriptionWord_ = -1;
+  lookupButtonX_ = -1;
+  lookupButtonY_ = -1;
+  lookupButtonW_ = 0;
+  lookupButtonH_ = 0;
   metadataLoaded_ = false;
   descriptionLoaded_ = false;
   updateRequired = true;
@@ -97,6 +109,18 @@ void BookDetailsActivity::loadDescription() {
   descriptionLoaded_ = true;
 }
 
+int BookDetailsActivity::descriptionWordAt(const int x, const int y) const {
+  constexpr int hitPadding = 8;
+  for (size_t i = 0; i < descriptionWordHits_.size(); ++i) {
+    const DescriptionWordHit& hit = descriptionWordHits_[i];
+    if (x >= hit.x - hitPadding && x < hit.x + hit.width + hitPadding && y >= hit.y - hitPadding &&
+        y < hit.y + hit.height + hitPadding) {
+      return static_cast<int>(i);
+    }
+  }
+  return -1;
+}
+
 void BookDetailsActivity::makeDescriptionPages() {
   descriptionPages_.clear();
   if (descriptionLines_.empty()) {
@@ -135,15 +159,18 @@ void BookDetailsActivity::movePage(const int direction) {
   if (page_ == kMetadataPage && direction > 0) {
     page_ = kDescriptionPage;
     descriptionPage_ = 0;
+    selectedDescriptionWord_ = -1;
     loadDescription();
   } else if (page_ == kDescriptionPage && direction > 0) {
     loadDescription();
     if (descriptionPage_ + 1 < static_cast<int>(descriptionPages_.size())) {
       ++descriptionPage_;
+      selectedDescriptionWord_ = -1;
     }
   } else if (page_ == kDescriptionPage && direction < 0) {
     if (descriptionPage_ > 0) {
       --descriptionPage_;
+      selectedDescriptionWord_ = -1;
     } else {
       page_ = kMetadataPage;
     }
@@ -159,7 +186,7 @@ void BookDetailsActivity::moveVertical(const int direction) {
 }
 
 void BookDetailsActivity::loop() {
-  if (closeInput()) return;
+  if (closeInput(true, false)) return;
 
   if (!metadataLoaded_) {
     loadMetadata();
@@ -199,6 +226,21 @@ void BookDetailsActivity::loop() {
       constexpr int caretSize = 30;
       const int x = static_cast<int>(tapX * renderer.getScreenWidth());
       const int y = static_cast<int>(tapY * renderer.getScreenHeight());
+      if (x >= lookupButtonX_ && x < lookupButtonX_ + lookupButtonW_ && y >= lookupButtonY_ &&
+          y < lookupButtonY_ + lookupButtonH_ && selectedDescriptionWord_ >= 0 &&
+          selectedDescriptionWord_ < static_cast<int>(descriptionWordHits_.size())) {
+        const std::string word = descriptionWordHits_[static_cast<size_t>(selectedDescriptionWord_)].word;
+        openDictionaryLookupFromDetails(word, bookPath_, cachePath_, closeCallback_);
+        return;
+      }
+      if (mappedInput.lastTouchHeldMs() >= 300) {
+        const int word = descriptionWordAt(x, y);
+        if (word >= 0) {
+          selectedDescriptionWord_ = word;
+          updateRequired = true;
+          return;
+        }
+      }
       const int caretY = renderer.getScreenHeight() - kBottomMargin - caretSize;
       if (y >= caretY - 10 && y < caretY + caretSize + 10) {
         if (x < kSideMargin + caretSize + 20) {
@@ -264,13 +306,59 @@ void BookDetailsActivity::renderMetadata() const {
 
 void BookDetailsActivity::renderDescription() {
   loadDescription();
+  descriptionWordHits_.clear();
+  lookupButtonX_ = -1;
+  lookupButtonY_ = -1;
+  lookupButtonW_ = 0;
+  lookupButtonH_ = 0;
   if (descriptionLines_.empty()) {
+    selectedDescriptionWord_ = -1;
     renderer.text.centered(systemFontId(), (kListTop + renderer.getScreenHeight()) / 2,
                            "No description available");
     return;
   }
   const size_t start = descriptionPages_.empty() ? 0 : descriptionPages_[static_cast<size_t>(descriptionPage_)];
+  const size_t end = descriptionPage_ + 1 < static_cast<int>(descriptionPages_.size())
+                         ? descriptionPages_[static_cast<size_t>(descriptionPage_ + 1)]
+                         : descriptionLines_.size();
+  int wordY = descriptionBodyTop_;
+  for (size_t lineIndex = start; lineIndex < end; ++lineIndex) {
+    const DefinitionStyledLine& line = descriptionLines_[lineIndex];
+    const int lineHeight = renderer.text.getLineHeight(line.fontId);
+    const int gap = lineIndex == start ? 0 : line.extraGapBeforePx;
+    wordY += gap;
+    int wordX = kSideMargin + line.indentPx;
+    const int spaceWidth = renderer.text.getSpaceWidth(line.fontId);
+    for (size_t atomIndex = 0; atomIndex < line.atoms.size(); ++atomIndex) {
+      const DefinitionTextAtom& atom = line.atoms[atomIndex];
+      if (atom.spaceBefore && atomIndex > 0) wordX += spaceWidth;
+      const int wordWidth = renderer.text.getWidth(line.fontId, atom.text.c_str(), atom.style);
+      const std::string word = StarDictLookup::cleanQueryWord(atom.text);
+      if (!word.empty() && wordWidth > 0) {
+        descriptionWordHits_.push_back({word, wordX, wordY, wordWidth, lineHeight});
+      }
+      wordX += wordWidth;
+    }
+    wordY += lineHeight;
+  }
+  if (selectedDescriptionWord_ >= static_cast<int>(descriptionWordHits_.size())) {
+    selectedDescriptionWord_ = -1;
+  }
   renderStyledLines(renderer, descriptionLines_, kSideMargin, descriptionBodyTop_, descriptionBottom_, start);
+  if (selectedDescriptionWord_ >= 0) {
+    const DescriptionWordHit& selected = descriptionWordHits_[static_cast<size_t>(selectedDescriptionWord_)];
+    renderer.ui.fillSparseInkLatticeInRect(selected.x, selected.y, std::max(1, selected.width),
+                                           std::max(3, selected.height), 2);
+    const int font = systemFontId();
+    lookupButtonW_ = Button::width(renderer, "Look up", font);
+    lookupButtonH_ = Button::height;
+    const bool hasNextPage = descriptionPage_ + 1 < static_cast<int>(descriptionPages_.size());
+    const int rightEdge = renderer.getScreenWidth() - kSideMargin - (hasNextPage ? 30 + 12 : 0);
+    lookupButtonX_ = rightEdge - lookupButtonW_;
+    lookupButtonY_ = renderer.getScreenHeight() - kBottomMargin - lookupButtonH_;
+    Button::render(renderer, {lookupButtonX_, lookupButtonY_, lookupButtonW_, lookupButtonH_}, "Look up", true,
+                   font);
+  }
   if (descriptionPages_.size() > 1) {
     const std::string pageLabel = std::to_string(descriptionPage_ + 1) + " / " +
                                   std::to_string(descriptionPages_.size());

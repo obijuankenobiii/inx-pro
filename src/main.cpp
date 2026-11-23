@@ -109,6 +109,8 @@ void openBookDetails(const std::string& bookPath, const std::string& cachePath,
                      const std::string& libraryPath);
 void openDictionaryLookupKeyboard();
 void openDictionaryLookup(const std::string& word);
+void openDictionaryLookupFromDetails(const std::string& word, const std::string& bookPath,
+                                     const std::string& cachePath, std::function<void()> returnToCaller);
 void onGoToFileTransfer();
 void onGoToSettings();
 void onGoToStore();
@@ -440,6 +442,16 @@ void openBookDetails(const std::string& bookPath, const std::string& cachePath,
 
 void openDictionaryLookup(const std::string& word) {
   switchTo<HomeSubPage>(render, input, HomeSubPage::Section::Dictionary, [] { onGoToHome(); }, word);
+}
+
+void openDictionaryLookupFromDetails(const std::string& word, const std::string& bookPath,
+                                     const std::string& cachePath, std::function<void()> returnToCaller) {
+  switchTo<HomeSubPage>(
+      render, input, HomeSubPage::Section::Dictionary,
+      [bookPath, cachePath, returnToCaller] {
+        switchTo<BookDetailsActivity>(render, input, bookPath, cachePath, returnToCaller);
+      },
+      word);
 }
 
 void openDictionaryLookupKeyboard() {

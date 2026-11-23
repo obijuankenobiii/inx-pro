@@ -816,6 +816,7 @@ void ButtonMappingActivity::renderSelector() {
 void ButtonMappingActivity::renderTapGrid() {
   SubPage::header(renderer, tapGridDoubleTap_ ? "Double tap zones" : "Tap zones");
   const int font = systemFontId();
+  constexpr char kUnsetLabel[] = "Tap to set";
   for (int cell = 0; cell < kTapZoneCount; ++cell) {
     const TapGridCellBounds bounds = tapGridCellBounds(renderer, cell);
     if ((cell % ReaderSetting::TAP_ZONE_COLUMNS) != 1) {
@@ -825,18 +826,10 @@ void ButtonMappingActivity::renderTapGrid() {
 
     const uint8_t action = tapGridDoubleTap_ ? READER_SETTINGS.doubleTapZoneActions[cell]
                                              : READER_SETTINGS.tapZoneActions[cell];
-    if (action != SystemSetting::BTN_ACTION_NONE) {
-      const char* label = SystemSetting::readerButtonActionLabel(action);
-      const int rotatedTextHeight = renderer.text.getLineHeight(font);
-      const int rotatedTextWidth = renderer.text.getWidth(font, label);
-      const int rotatedTopInset = renderer.text.getFontTopInset(font);
-      const int rotatedX = bounds.x + (bounds.width - rotatedTextHeight) / 2 - rotatedTopInset;
-
-
-      const int rotatedY = bounds.y + (bounds.height + rotatedTextWidth) / 2;
-      renderer.text.rotated90CW(font, rotatedX, rotatedY, label, true,
-                                EpdFontFamily::REGULAR);
-    }
+    const char* label = action == SystemSetting::BTN_ACTION_NONE ? kUnsetLabel
+                                                                  : SystemSetting::readerButtonActionLabel(action);
+    renderCenteredRotatedLabel(renderer, bounds, font, bounds.x + bounds.width / 2,
+                               bounds.y + bounds.height / 2, label);
   }
 }
 

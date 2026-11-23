@@ -439,7 +439,8 @@ bool writeFullMetadata(FsFile& output, const std::string& path, const BookMetada
 template <typename Visitor>
 bool scanLibrary(const bool includeXtc, const std::function<void(int, int, const char*)>& progress,
                  const std::function<bool()>& shouldCancel, Visitor&& visitor,
-                 const std::function<bool(const char*)>& onBook = {}, const bool includePdf = false) {
+                 const std::function<bool(const char*)>& onBook = {}, const bool includePdf = false,
+                 const std::function<void(int, int, const char*)>& onFailure = {}) {
   int total = 0;
   FsFile root = SdMan.open("/");
   if (root) {
@@ -486,6 +487,10 @@ bool scanLibrary(const bool includeXtc, const std::function<void(int, int, const
             directory.close();
             return false;
           }
+        } else {
+          ++current;
+          if (onFailure) onFailure(current, total, fullPath.c_str());
+          continue;
         }
       } else if (isXtc) {
         Xtc xtc(fullPath, "/.metadata/xtc");
@@ -686,7 +691,10 @@ bool generateSelected(const MetadataIndex::Options& options,
         }
         return true;
       },
-      onBook, static_cast<bool>(onBook));
+      onBook, static_cast<bool>(onBook),
+      [&progress](const int current, const int total, const char* path) {
+        if (progress) progress(current, total, "Failed", path);
+      });
 
   if (allMetadataOpen) {
     if (completed && !(shouldCancel && shouldCancel())) {

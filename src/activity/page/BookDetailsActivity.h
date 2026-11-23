@@ -27,6 +27,14 @@ class BookDetailsActivity final : public SubPage {
     std::string value;
   };
 
+  struct DescriptionWordHit {
+    std::string word;
+    int x = 0;
+    int y = 0;
+    int width = 0;
+    int height = 0;
+  };
+
   static constexpr int kMetadataPage = 0;
   static constexpr int kDescriptionPage = 1;
   static constexpr int kRowHeight = 100;
@@ -35,9 +43,11 @@ class BookDetailsActivity final : public SubPage {
 
   std::string bookPath_;
   std::string cachePath_;
+  std::function<void()> closeCallback_;
   std::vector<InfoRow> rows_;
   std::vector<DefinitionStyledLine> descriptionLines_;
   std::vector<size_t> descriptionPages_;
+  std::vector<DescriptionWordHit> descriptionWordHits_;
   std::string descriptionHtml_;
   bool metadataLoaded_ = false;
   bool descriptionLoaded_ = false;
@@ -46,10 +56,16 @@ class BookDetailsActivity final : public SubPage {
   int metadataScroll_ = 0;
   int descriptionBodyTop_ = kListTop;
   int descriptionBottom_ = 0;
+  int selectedDescriptionWord_ = -1;
+  int lookupButtonX_ = -1;
+  int lookupButtonY_ = -1;
+  int lookupButtonW_ = 0;
+  int lookupButtonH_ = 0;
 
   void loadMetadata();
   void loadDescription();
   void makeDescriptionPages();
+  int descriptionWordAt(int x, int y) const;
   void addRow(const char* label, const std::string& value);
   int visibleMetadataRows() const;
   int maxMetadataScroll() const;

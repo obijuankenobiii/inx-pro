@@ -105,7 +105,7 @@ void SubPage::menu() {
   closeIcon(renderer, renderer.getScreenWidth() - 60, 20, 40);
 }
 
-bool SubPage::closeInput(const bool closeOnSwipeUp) {
+bool SubPage::closeInput(const bool closeOnSwipeUp, const bool closeOnSwipeRight) {
   if (closeOnSwipeUp && mappedInput.hasTouch()) {
     float swipeStartNx = 0.0f;
     float swipeStartNy = 0.0f;
@@ -116,7 +116,7 @@ bool SubPage::closeInput(const bool closeOnSwipeUp) {
     }
   }
 
-  if (mappedInput.hasTouch()) {
+  if (closeOnSwipeRight && mappedInput.hasTouch()) {
     float startX = 0.0f;
     float startY = 0.0f;
     if (mappedInput.wasTouchSwipeRightInScreen(renderer, startX, startY) && startX <= 0.30f) {

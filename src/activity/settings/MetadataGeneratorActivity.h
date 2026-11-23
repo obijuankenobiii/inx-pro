@@ -32,6 +32,11 @@ class MetadataGeneratorActivity final : public Activity {
   void toggleOption(int index);
   bool selectedAnything() const;
 
+  struct ProcessedBook {
+    std::string path;
+    bool failed = false;
+  };
+
   const std::function<void()> goBack;
   TaskHandle_t workerTaskHandle = nullptr;
   SemaphoreHandle_t renderingMutex = nullptr;
@@ -41,10 +46,11 @@ class MetadataGeneratorActivity final : public Activity {
   volatile bool thumbnailPhase = false;
   volatile int processedCount = 0;
   volatile int totalCount = 0;
+  volatile int failedBookCount = 0;
   char currentStage[48] = {0};
   char currentBook[256] = {0};
   char completionSummary[120] = {0};
-  std::vector<std::string> processedBooks;
+  std::vector<ProcessedBook> processedBooks;
   int optionListTop = 0;
   int optionListRows = 0;
   int scrollOffset = 0;

@@ -52,6 +52,7 @@ void MetadataGeneratorActivity::onEnter() {
   updateRequired = true;
   processedCount = 0;
   totalCount = 0;
+  failedBookCount = 0;
   currentStage[0] = '\0';
   currentBook[0] = '\0';
   completionSummary[0] = '\0';
@@ -91,6 +92,7 @@ void MetadataGeneratorActivity::startGeneration() {
   cancelRequested = false;
   processedCount = 0;
   totalCount = 0;
+  failedBookCount = 0;
   currentStage[0] = '\0';
   currentBook[0] = '\0';
   completionSummary[0] = '\0';
@@ -128,8 +130,17 @@ void MetadataGeneratorActivity::workerTaskLoop() {
         if (stage) strlcpy(currentStage, stage, sizeof(currentStage));
         if (book) {
           strlcpy(currentBook, book, sizeof(currentBook));
-          if (!thumbnailPhase && (processedBooks.empty() || processedBooks.back() != book)) {
-            processedBooks.emplace_back(book);
+          if (!thumbnailPhase) {
+            const bool failed = stage && std::strcmp(stage, "Failed") == 0;
+            auto existing = std::find_if(processedBooks.begin(), processedBooks.end(),
+                                         [book](const ProcessedBook& item) { return item.path == book; });
+            if (existing == processedBooks.end()) {
+              processedBooks.push_back({book, failed});
+              if (failed) ++failedBookCount;
+            } else if (failed && !existing->failed) {
+              existing->failed = true;
+              ++failedBookCount;
+            }
           }
         }
         updateRequired = true;
@@ -181,30 +192,39 @@ void MetadataGeneratorActivity::render() {
     const int rowStep = cardHeight + rowGap;
     const int visibleCards = std::max(1, (listBottom - listTop + rowGap) / rowStep);
     int cardRow = 0;
-    auto drawBookCard = [&](const char* bookName) {
+    auto drawBookCard = [&](const ProcessedBook& book) {
       if (cardRow >= visibleCards) return;
       const int cardY = listTop + cardRow * rowStep;
       BaseCarousel::renderShadow(renderer, cardX + 4, cardY + 4, cardWidth, cardHeight,
                                  HomeTheme::CarouselShadowStyle::Gray);
       renderer.rectangle.fill(cardX, cardY, cardWidth, cardHeight, false, rounded);
       renderer.rectangle.render(cardX, cardY, cardWidth, cardHeight, true, rounded);
-      const int maxBookWidth = std::max(1, cardWidth - 2 * kCardPadding);
-      const std::string book = renderer.text.truncate(font, bookName, maxBookWidth, EpdFontFamily::REGULAR);
+      constexpr int statusWidth = 30;
+      const int maxBookWidth = std::max(1, cardWidth - 2 * kCardPadding - (book.failed ? statusWidth : 0));
+      const std::string bookText = renderer.text.truncate(font, book.path.c_str(), maxBookWidth, EpdFontFamily::REGULAR);
       const int bookTextY = cardY + (cardHeight - lineHeight) / 2;
-      renderer.text.render(font, cardX + kCardPadding, bookTextY, book.c_str(), true, EpdFontFamily::REGULAR);
+      renderer.text.render(font, cardX + kCardPadding, bookTextY, bookText.c_str(), true, EpdFontFamily::REGULAR);
+      if (book.failed) {
+        renderer.text.render(font, cardX + cardWidth - kCardPadding - renderer.text.getWidth(font, "X"), bookTextY,
+                             "X", true, EpdFontFamily::BOLD);
+      }
       ++cardRow;
     };
 
     bool skippedCurrent = false;
-    if (currentBook[0]) drawBookCard(currentBook);
+    if (currentBook[0]) {
+      const auto current = std::find_if(processedBooks.begin(), processedBooks.end(),
+                                        [this](const ProcessedBook& item) { return item.path == currentBook; });
+      drawBookCard(current == processedBooks.end() ? ProcessedBook{currentBook, false} : *current);
+    }
     for (auto it = processedBooks.rbegin(); it != processedBooks.rend() && cardRow < visibleCards; ++it) {
-      if (currentBook[0] && !skippedCurrent && *it == currentBook) {
+      if (currentBook[0] && !skippedCurrent && it->path == currentBook) {
         skippedCurrent = true;
         continue;
       }
-      drawBookCard(it->c_str());
+      drawBookCard(*it);
     }
-    if (cardRow == 0) drawBookCard("Preparing...");
+    if (cardRow == 0) drawBookCard({"Preparing...", false});
   };
 
   if (state == READY) {
@@ -267,11 +287,11 @@ void MetadataGeneratorActivity::render() {
     Button::render(renderer, actionBounds(renderer), "Stop", true, font);
     mappedInput.mapLabels("Stop", "", "", "");
   } else {
-    const bool success = state == SUCCESS;
     const bool cancelled = state == CANCELLED;
-    if (success) {
+    if (!cancelled) {
       char completed[64];
-      std::snprintf(completed, sizeof(completed), "Completed %d books", static_cast<int>(processedCount));
+      std::snprintf(completed, sizeof(completed), "Completed %d books, %d failed", static_cast<int>(processedCount),
+                    static_cast<int>(failedBookCount));
       const int progressY = contentTop + rowGap;
       const int barY = progressY + lineHeight + rowGap;
       renderer.text.render(font, kCardPadding, progressY, completed, true, EpdFontFamily::REGULAR);
