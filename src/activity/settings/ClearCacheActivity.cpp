@@ -33,9 +33,9 @@
 #include "util/LibraryIndex.h"
 
 namespace {
-// Custom TTF glyph rendering enters stb_truetype and TextRender's temporary
-// glyph path. The old 4 KB task stack could not hold that call chain and
-// tripped the canary when this page used a system TTF font.
+
+
+
 constexpr uint32_t kDisplayTaskStack = 8192;
 constexpr int kListItemHeight = SettingsListLayout::kRowHeight;
 constexpr int kActionButtonWidth = 180;

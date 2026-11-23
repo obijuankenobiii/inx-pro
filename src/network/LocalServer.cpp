@@ -65,9 +65,9 @@ extern GfxRenderer& render;
 
 namespace {
 
-// WebServer retains parsed request arguments until the next request. Large
-// JSON bodies therefore stay allocated between requests and can fragment the
-// ESP32 heap during a long Wi-Fi session.
+
+
+
 class LocalHttpServer final : public WebServer {
  public:
   explicit LocalHttpServer(const uint16_t port) : WebServer(port) {}
@@ -178,8 +178,8 @@ String addLanguageManagerNavLink(const char* pageHtml, const char* currentUri = 
     }
   }
 
-  // Shared INX web shell. Keep the page-specific HTML/JS below it intact, but
-  // present the same library-style navigation and visual language everywhere.
+
+
   const char* shellStyle = R"rawliteral(
 <style id="inx-web-shell">
 :root{--inx-orange:#22272b;--inx-orange-dark:#000;--inx-ink:#182027;--inx-muted:#7d858b;--inx-line:#e3e5e7;--inx-page:#f5f6f7;--inx-panel:#fff;--inx-soft:#f1f2f3}
@@ -245,10 +245,10 @@ body{background:var(--inx-page)!important;color:var(--inx-ink)!important;font-fa
     active = "/plugins";
   }
 
-  // The document title is not a reliable route identifier (plugin pages can
-  // reuse titles and some pages are served from shared HTML). Prefer the
-  // actual request URI whenever the handler supplied it, so the selected
-  // item stays active on desktop and mobile navigation alike.
+
+
+
+
   if (currentUri != nullptr) {
     const String uri(currentUri);
     if (uri == "/") {
@@ -275,10 +275,10 @@ body{background:var(--inx-page)!important;color:var(--inx-ink)!important;font-fa
     }
   }
 
-  // Plugin pages are served through the same shell, but their page titles are
-  // supplied by the package. Treat the matching plugin route as the active
-  // destination so the shared puzzle/Plugins rail item has the same dark
-  // active state as the core pages.
+
+
+
+
   String activePluginHref = "/plugins";
   String activePluginLabel = "Plugins";
   bool pluginPageActive = active == "/plugins";
@@ -364,8 +364,8 @@ body{background:var(--inx-page)!important;color:var(--inx-ink)!important;font-fa
     page.replace("</html>", rail + "</html>");
   }
 
-  // The EPUB page uses the same toolbar for search and the grid/list control.
-  // It is injected here so plugin pages and the older HTML assets remain compatible.
+
+
   if (page.indexOf("id=file-table") >= 0 && page.indexOf("id=inx-book-toolbar") < 0) {
     const String toolbar = "<div class=inx-book-toolbar id=inx-book-toolbar><input class=inx-book-search id=inx-book-search type=search placeholder=\"Search books\" aria-label=\"Search books\"><button class=inx-view-toggle id=inx-list-view-btn type=button title=List view aria-label=List view>☷</button><button class=inx-view-toggle id=inx-grid-view-btn type=button title=Grid view aria-label=Grid view>▦</button></div>";
     page.replace("<div id=file-table>", toolbar + "<div id=file-table>");
@@ -704,8 +704,8 @@ void LocalServer::stop() {
   INX_SERIAL.printf("[%lu] [WEB] STOP INITIATED - setting running=false first\n", millis());
   running = false;
 
-  // Prevent a close() callback from entering this object while its server is
-  // being torn down.
+
+
   if (wsInstance == this) {
     wsInstance = nullptr;
   }
@@ -838,9 +838,9 @@ void LocalServer::handlePluginsPage() const {
 }
 
 void LocalServer::handleNotFound() const {
-  // Web plugins declare their own routes in manifest.json. Core routes are
-  // registered statically, so resolve manifest-declared plugin paths here
-  // before returning the generic 404 page.
+
+
+
   PluginManager::WebLink plugin;
   if (findWebPluginForUri(server->uri(), plugin)) {
     handlePluginPage();
@@ -864,7 +864,7 @@ void LocalServer::handleStatus() const {
   doc["device"] = BoardConfig::ACTIVE.name;
   doc["displayWidth"] = BoardConfig::ACTIVE.displayWidth;
   doc["displayHeight"] = BoardConfig::ACTIVE.displayHeight;
-  // Portrait UI size: the panels are landscape-native, so width and height swap.
+
   doc["screenWidth"] = BoardConfig::ACTIVE.displayHeight;
   doc["screenHeight"] = BoardConfig::ACTIVE.displayWidth;
 
@@ -1329,7 +1329,7 @@ void LocalServer::handleLibraryIndexData() const {
     document["author"] = entry.author;
 
     const std::string cachePath = epubCachePathForBookPath(entry.path.c_str());
-    const char* coverNames[] = {"cover.jpg", "thumb.jpg", "cover.bmp", "thumb.png", "thumb.bmp"};
+    const char* coverNames[] = {"cover.jpg", "cover.png", "thumb.jpg", "thumb.png", "thumb.bmp", "cover.bmp"};
     for (const char* coverName : coverNames) {
       const std::string coverPath = cachePath + "/" + coverName;
       if (!SdMan.exists(coverPath.c_str())) continue;
@@ -1418,8 +1418,8 @@ void LocalServer::handlePluginApi() const {
     server->send(404, "text/plain", error.c_str());
     return;
   }
-  // Plugin functions own their response format. Keep the host route generic;
-  // download behavior and filenames belong to the plugin's web UI.
+
+
   server->send(200, "text/plain; charset=utf-8", output.c_str());
 }
 
@@ -2151,8 +2151,6 @@ void LocalServer::handleSettingsPage() const {
 void LocalServer::handleSettingsGet() const {
   JsonDocument doc;
   const bool clockAvailable = clockSettingsAvailable();
-  const uint8_t sleepScreen = SETTINGS.sleepScreen == SystemSetting::DATETIME_LEGACY ? SystemSetting::WIDGET
-                                                                                : SETTINGS.sleepScreen;
 
   doc["clockAvailable"] = clockAvailable;
   doc["flickPageTurnAvailable"] =
@@ -2161,11 +2159,6 @@ void LocalServer::handleSettingsGet() const {
 #else
       false;
 #endif
-  doc["sleepScreen"] = sleepScreen;
-  doc["sleepScreenCoverMode"] = SETTINGS.sleepScreenCoverMode;
-  doc["sleepScreenCoverFilter"] = SETTINGS.sleepScreenCoverFilter;
-  doc["sleepImageQuality"] = SETTINGS.sleepImageQuality;
-  doc["sleepCustomBmp"] = SETTINGS.sleepCustomBmp;
   if (clockAvailable) {
     doc["sleepClockStyle"] = SETTINGS.sleepClockStyle;
     doc["sleepClockTimeFormat"] = SETTINGS.sleepClockTimeFormat;
@@ -2181,7 +2174,6 @@ void LocalServer::handleSettingsGet() const {
     option["label"] = systemFontLabels[i];
   }
   doc["systemTextSize"] = SETTINGS.systemTextSize;
-  doc["hideThumbnailTitles"] = SETTINGS.hideThumbnailTitles;
   doc["thumbnailSize"] = SETTINGS.thumbnailSize;
 
   doc["shakePageTurn"] = SETTINGS.shakePageTurn;
@@ -2329,37 +2321,7 @@ void LocalServer::handleSettingsUpdate() const {
     const char* key = kv.key().c_str();
     int value = kv.value().as<int>();
 
-    if (strcmp(key, "sleepScreen") == 0) {
-      uint8_t v = static_cast<uint8_t>(value);
-      if (v == SystemSetting::DATETIME_LEGACY) v = SystemSetting::WIDGET;
-      if (v >= SystemSetting::SLEEP_SCREEN_MODE_COUNT) {
-        v = SystemSetting::LIGHT;
-      }
-      SETTINGS.sleepScreen = v;
-      changed = true;
-    } else if (strcmp(key, "sleepScreenCoverMode") == 0) {
-      SETTINGS.sleepScreenCoverMode = (value >= 0 && value < SystemSetting::SLEEP_SCREEN_COVER_MODE_COUNT)
-                                          ? static_cast<uint8_t>(value)
-                                          : SystemSetting::FIT;
-      changed = true;
-    } else if (strcmp(key, "sleepScreenCoverFilter") == 0) {
-      SETTINGS.sleepScreenCoverFilter = (value >= 0 && value < SystemSetting::SLEEP_SCREEN_COVER_FILTER_COUNT)
-                                            ? static_cast<uint8_t>(value)
-                                            : SystemSetting::NO_FILTER;
-      changed = true;
-    } else if (strcmp(key, "sleepImageQuality") == 0) {
-      SETTINGS.sleepImageQuality = (value >= 0 && value < SystemSetting::SLEEP_IMAGE_QUALITY_COUNT)
-                                       ? static_cast<uint8_t>(value)
-                                       : SystemSetting::SLEEP_IMAGE_LOW;
-      changed = true;
-    } else if (strcmp(key, "sleepCustomBmp") == 0) {
-      if (kv.value().isNull()) {
-        SETTINGS.setSleepCustomBmpFromInput(nullptr);
-      } else {
-        SETTINGS.setSleepCustomBmpFromInput(kv.value().as<const char*>());
-      }
-      changed = true;
-    } else if (clockAvailable && strcmp(key, "sleepClockStyle") == 0) {
+    if (clockAvailable && strcmp(key, "sleepClockStyle") == 0) {
       uint8_t v = static_cast<uint8_t>(value);
       if (v >= SystemSetting::SLEEP_CLOCK_STYLE_COUNT) v = SystemSetting::CLOCK_CENTERED_DATE;
       SETTINGS.sleepClockStyle = v;
@@ -2392,9 +2354,6 @@ void LocalServer::handleSettingsUpdate() const {
       SETTINGS.systemTextSize = (v >= 0 && v < SystemSetting::SYSTEM_TEXT_SIZE_COUNT)
                                     ? static_cast<uint8_t>(v)
                                     : SystemSetting::SYSTEM_TEXT_MEDIUM;
-      changed = true;
-    } else if (strcmp(key, "hideThumbnailTitles") == 0) {
-      SETTINGS.hideThumbnailTitles = value ? 1 : 0;
       changed = true;
     } else if (strcmp(key, "thumbnailSize") == 0) {
       const int v = static_cast<int>(value);

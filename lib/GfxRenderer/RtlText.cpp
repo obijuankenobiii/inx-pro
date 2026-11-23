@@ -66,21 +66,21 @@ uint32_t decodeUtf8(const char* text, size_t length, size_t& offset) {
 }
 
 void appendNormalizedCodepoint(const uint32_t cp, std::vector<uint32_t>& output, bool& changed) {
-  if (cp == 0x00AD) {  // SOFT HYPHEN: layout-only formatting marker.
+  if (cp == 0x00AD) {
     changed = true;
     return;
   }
 
-  // Unicode alphabetic presentation ligatures. They are common in EPUB text,
-  // but are not guaranteed to exist in the selected bold/fallback font.
+
+
   static constexpr uint32_t kLigatureExpansions[][4] = {
-      {'f', 'f', 0, 0},       // U+FB00 LATIN SMALL LIGATURE FF
-      {'f', 'i', 0, 0},       // U+FB01 LATIN SMALL LIGATURE FI
-      {'f', 'l', 0, 0},       // U+FB02 LATIN SMALL LIGATURE FL
-      {'f', 'f', 'i', 0},      // U+FB03 LATIN SMALL LIGATURE FFI
-      {'f', 'f', 'l', 0},      // U+FB04 LATIN SMALL LIGATURE FFL
-      {'s', 't', 0, 0},       // U+FB05 LATIN SMALL LIGATURE LONG S T
-      {'s', 't', 0, 0},       // U+FB06 LATIN SMALL LIGATURE ST
+      {'f', 'f', 0, 0},
+      {'f', 'i', 0, 0},
+      {'f', 'l', 0, 0},
+      {'f', 'f', 'i', 0},
+      {'f', 'f', 'l', 0},
+      {'s', 't', 0, 0},
+      {'s', 't', 0, 0},
   };
   if (cp >= 0xFB00 && cp <= 0xFB06) {
     const uint32_t* expansion = kLigatureExpansions[cp - 0xFB00];
@@ -177,18 +177,18 @@ std::vector<uint32_t> shapeArabic(const std::vector<uint32_t>& input, const RtlT
       continue;
     }
 
-    // Lam + alef is a mandatory Arabic presentation-form ligature. CrossPoint
-    // consumes the alef during shaping so measurement and drawing agree. Keep
-    // the same adjacency rule here: a mark between the two letters defeats
-    // the ligature, but transparent marks still participate in joining.
+
+
+
+
     if (cp == 0x0644 && i + 1 < input.size()) {
       if (const auto* lamAlef = lamAlefFor(input[i + 1])) {
         const uint32_t ligature = previousJoinsForward ? lamAlef->final : lamAlef->isolated;
-        // Shape before font fallback is resolved.  The normal reader font is
-        // often Montserrat while Arabic is supplied by a language font; if
-        // shaping is gated on the primary font's coverage, the base Arabic
-        // codepoint reaches the fallback one character at a time and loses
-        // its joining form.
+
+
+
+
+
         output.push_back(ligature);
         ++i;
         previousJoinsForward = false;
@@ -212,10 +212,10 @@ std::vector<uint32_t> shapeArabic(const std::vector<uint32_t>& input, const RtlT
     if (const uint32_t shaped = arabPresentation(cp, form); shaped != 0) {
       output.push_back(shaped);
     } else {
-      // Fonts without Arabic presentation forms still get the original base
-      // codepoint instead of a replacement box. This matches CrossPoint's
-      // coverage guard while letting the normal font fallback path decide how
-      // that base glyph is supplied.
+
+
+
+
       output.push_back(cp);
     }
     previousJoinsForward = joinType == freeink::book::kJoinD;
@@ -239,14 +239,14 @@ uint32_t mirrored(const uint32_t cp) {
   }
 }
 
-}  // namespace
+}
 
 namespace RtlText {
 
 bool isTransparentMark(const uint32_t codepoint) {
-  // This mirrors the NSM ranges CrossPoint classifies as transparent for
-  // Arabic joining. The explicit ranges avoid bringing a second bidi table
-  // into this small renderer helper.
+
+
+
   return (codepoint >= 0x0591 && codepoint <= 0x05C7 && codepoint != 0x05BE &&
           codepoint != 0x05C0 && codepoint != 0x05C3) ||
          isTransparentArabicMark(codepoint);
@@ -411,4 +411,4 @@ const char* prepareForRender(const char* text, std::string& outputStorage,
   return outputStorage.c_str();
 }
 
-}  // namespace RtlText
+}

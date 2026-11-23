@@ -7,12 +7,14 @@
 
 #include <Arduino.h>
 #include <Bitmap.h>
+#include <BoardConfig.h>
 #include <Epub.h>
 #include <Epub/Page.h>
 #include <Epub/Section.h>
 #include <GfxRenderer.h>
 #include <HalDisplay.h>
 #include <ImageRender.h>
+#include <ImageDisplayCache.h>
 #include <PngRender.h>
 #include <SDCardManager.h>
 #include <Txt.h>
@@ -49,14 +51,13 @@ bool isSupportedSleepImageFile(const std::string& filename) {
 }
 
 bool sleepTwoBitEnabled() {
-  return SETTINGS.sleepImageQuality != SystemSetting::SLEEP_IMAGE_LOW &&
-         SETTINGS.sleepScreenCoverFilter == SystemSetting::SLEEP_SCREEN_COVER_FILTER::NO_FILTER;
+  return SETTINGS.sleepImageQuality != SystemSetting::SLEEP_IMAGE_LOW;
 }
 
-// INX_GRAY_OVERLAY boards (T5 S3) draw grey as an overlay on the last B/W push, and black
-// comes only from that push. The quality path skips it, so black pixels stayed white and a
-// cover came out nearly blank. The overlay driver ignores the quality flag anyway, so High
-// renders as Medium there.
+
+
+
+
 #ifndef INX_GRAY_OVERLAY
 #define INX_GRAY_OVERLAY 0
 #endif
@@ -79,18 +80,39 @@ ImageRender::Options sleepImageOptions(const bool allowQuality = true) {
   return options;
 }
 
+bool hasSleepImageDisplayCache(GfxRenderer& renderer, const std::string& imagePath,
+                               const ImageRender::Options& options) {
+  const int width = renderer.getScreenWidth();
+  const int height = renderer.getScreenHeight();
+  const ImageRender image = ImageRender::create(renderer, imagePath);
+
+
+
+  if (options.mode == ImageRenderMode::TwoBit) {
+    return image.hasCachedGrayscale(0, 0, width, height, options, options.quality);
+  }
+
+
+
+  ImageDisplayCacheOptions cacheOptions;
+  cacheOptions.cropToFill = options.cropToFill;
+  cacheOptions.mode = options.mode;
+  cacheOptions.renderPlane = static_cast<uint8_t>(renderer.getRenderMode());
+  cacheOptions.roundedOutside = options.roundedOutside;
+  cacheOptions.quality = options.quality;
+  return options.useDisplayCache &&
+         ImageDisplayCache::hasCached(renderer, imagePath, 0, 0, width, height, cacheOptions);
+}
+
 void prepareSleepImageBuffer(GfxRenderer& renderer) {
-  // The display driver uses separate active and write buffers. Seed the write
-  // buffer from what is actually visible before clearing it, otherwise a
-  // sleep image/cache refresh can diff against the previous page's buffer.
   renderer.syncWriteBufferFromActive();
   renderer.clearScreen(0xFF);
 }
 
 void runSleepImageTwoBitPasses(GfxRenderer& renderer, const std::string& imagePath,
                                const ImageRender::Options& baseOptions, const bool allowQuality = true) {
-  // displayGrayscale() intentionally clears the screen for PNG's one-bit pass. Do not
-  // run that pass for a transparent overlay or it would erase the content beneath it.
+
+
   if (!sleepTwoBitEnabled() || baseOptions.preserveTransparency) {
     return;
   }
@@ -106,10 +128,10 @@ void runSleepImageTwoBitPasses(GfxRenderer& renderer, const std::string& imagePa
       .displayGrayscale(0, 0, renderer.getScreenWidth(), renderer.getScreenHeight(), options, quality);
 }
 
-// Transparent PNG sleep overlays use the dedicated CrossPoint sequence. The
-// shared ImageRender grayscale path is intentionally not used here: the panel
-// must retain the B/W screen as its base while the PNG is uploaded a second
-// time into the two grayscale planes.
+
+
+
+
 bool renderTransparentPngSleepScreen(GfxRenderer& renderer, const std::string& imagePath) {
   const int screenWidth = renderer.getScreenWidth();
   const int screenHeight = renderer.getScreenHeight();
@@ -117,10 +139,10 @@ bool renderTransparentPngSleepScreen(GfxRenderer& renderer, const std::string& i
   PngRender png(renderer);
 
   renderer.syncWriteBufferFromActive();
-  // Seed the transparent overlay in the normal B/W framebuffer using the
-  // image's two-bit quantizer.  Do not use ImageRenderMode::OneBit here:
-  // transparent sleep images must enter the same grayscale pipeline as the
-  // later LSB/MSB passes.
+
+
+
+
   renderer.setRenderMode(GfxRenderer::BW);
   if (!png.fromPath(imagePath, 0, 0, screenWidth, screenHeight, cropToFill, ImageRenderMode::TwoBit, 0.5f,
                    nullptr, true)) {
@@ -173,6 +195,9 @@ std::string pathForFixedSleepBmp() {
   if (strcmp(SETTINGS.sleepCustomBmp, "/sleep.jpg") == 0) return SdMan.exists("/sleep.jpg") ? "/sleep.jpg" : "";
   if (strcmp(SETTINGS.sleepCustomBmp, "/sleep.jpeg") == 0) return SdMan.exists("/sleep.jpeg") ? "/sleep.jpeg" : "";
   if (strcmp(SETTINGS.sleepCustomBmp, "/sleep.png") == 0) return SdMan.exists("/sleep.png") ? "/sleep.png" : "";
+  if (strncmp(SETTINGS.sleepCustomBmp, "/sleep/", 7) == 0) {
+    return SdMan.exists(SETTINGS.sleepCustomBmp) ? SETTINGS.sleepCustomBmp : "";
+  }
   const std::string path = std::string("/sleep/") + SETTINGS.sleepCustomBmp;
   if (SdMan.exists(path.c_str())) {
     return path;
@@ -319,11 +344,24 @@ std::string resolveLastReadCoverPathForSleep(const std::string& path) {
     if (book.load()) {
       const bool cropped = false;
       const std::string coverJpegPath = book.getCoverJpegPath(cropped);
+      const std::string coverPngPath = book.getCoverPngPath(cropped);
       const std::string coverBmpPath = book.getCoverBmpPath(cropped);
-      coverPath = SdMan.exists(coverJpegPath.c_str()) ? coverJpegPath : coverBmpPath;
+      const bool sourceIsPng = StringUtils::checkFileExtension(book.getCoverItemHref(), ".png");
+      coverPath = sourceIsPng && SdMan.exists(coverPngPath.c_str()) ? coverPngPath
+                 : SdMan.exists(coverJpegPath.c_str()) ? coverJpegPath
+                 : SdMan.exists(coverPngPath.c_str()) ? coverPngPath
+                                                      : coverBmpPath;
+      if (sourceIsPng && !SdMan.exists(coverPngPath.c_str())) {
+        SdMan.remove(coverBmpPath.c_str());
+        book.generateCoverBmp(cropped);
+        coverPath = coverPngPath;
+      }
       if (!SdMan.exists(coverPath.c_str())) {
         book.generateCoverBmp(cropped);
-        coverPath = SdMan.exists(coverJpegPath.c_str()) ? coverJpegPath : coverBmpPath;
+        coverPath = sourceIsPng && SdMan.exists(coverPngPath.c_str()) ? coverPngPath
+                   : SdMan.exists(coverJpegPath.c_str()) ? coverJpegPath
+                   : SdMan.exists(coverPngPath.c_str()) ? coverPngPath
+                                                        : coverBmpPath;
       }
       if (!SdMan.exists(coverPath.c_str())) {
         coverPath.clear();
@@ -365,12 +403,21 @@ std::string resolveLastReadCoverPathForSleep(const std::string& path) {
 void SleepActivity::onEnter() {
   Activity::onEnter();
 
-  const bool renderSleepImage = SETTINGS.sleepScreen == SystemSetting::SLEEP_SCREEN_MODE::CUSTOM ||
-                                SETTINGS.sleepScreen == SystemSetting::SLEEP_SCREEN_MODE::COVER;
-  // if (renderSleepImage) {
-  //   prepareSleepImageBuffer(renderer);
-  //   renderer.displayBuffer(HalDisplay::FULL_REFRESH);
-  // }
+  const uint8_t themeSleepMode = HomeTheme::sleep().sleepScreenMode;
+  if (themeSleepMode == SystemSetting::CUSTOM || themeSleepMode == SystemSetting::COVER ||
+      themeSleepMode == SystemSetting::TRANSPARENT) {
+    SETTINGS.sleepScreen = themeSleepMode;
+    SETTINGS.setSleepCustomBmpFromInput(HomeTheme::sleep().sleepCustomBmp);
+    SETTINGS.sleepImageQuality = HomeTheme::sleep().sleepImageQuality;
+  }
+
+  const bool renderSleepImage = BoardConfig::ACTIVE.displayController == BoardConfig::DisplayController::UC8179 &&
+                                (SETTINGS.sleepScreen == SystemSetting::SLEEP_SCREEN_MODE::CUSTOM ||
+                                 SETTINGS.sleepScreen == SystemSetting::SLEEP_SCREEN_MODE::COVER);
+  if (renderSleepImage) {
+    prepareSleepImageBuffer(renderer);
+    renderer.displayBuffer();
+  }
 
   switch (SETTINGS.sleepScreen) {
     case SystemSetting::SLEEP_SCREEN_MODE::TRANSPARENT:
@@ -503,11 +550,11 @@ void SleepActivity::renderCoverSleepScreen() const {
   if (!coverPath.empty() && isSleepImagePathRaster(coverPath)) {
     prepareSleepImageBuffer(renderer);
     ImageRender::Options options = sleepImageOptions();
-    if (ImageRender::create(renderer, coverPath)
-            .render(0, 0, renderer.getScreenWidth(), renderer.getScreenHeight(), options)) {
-      if (SETTINGS.sleepScreenCoverFilter == SystemSetting::SLEEP_SCREEN_COVER_FILTER::INVERTED_BLACK_AND_WHITE) {
-        renderer.invertScreen();
-      }
+    const ImageRender image = ImageRender::create(renderer, coverPath);
+    if (!hasSleepImageDisplayCache(renderer, coverPath, options)) {
+      ScreenComponents::drawLoadingPopup(renderer);
+    }
+    if (image.render(0, 0, renderer.getScreenWidth(), renderer.getScreenHeight(), options)) {
       if (!sleepImageQualityEnabled()) {
         renderer.displayBuffer();
       }
@@ -561,9 +608,6 @@ void SleepActivity::renderFill(const Bitmap& bitmap) const {
   constexpr bool kCoverFill = true;
   renderer.bitmap.sleepScreen(bitmap, x, y, pageWidth, pageHeight, cropX, cropY, kCoverFill, sleepImageRenderMode());
 
-  if (SETTINGS.sleepScreenCoverFilter == SystemSetting::SLEEP_SCREEN_COVER_FILTER::INVERTED_BLACK_AND_WHITE) {
-    renderer.invertScreen();
-  }
 
   renderer.displayBuffer();
 
@@ -637,9 +681,6 @@ void SleepActivity::renderBitmapSleepScreen(const Bitmap& bitmap, const bool pre
 
   renderer.bitmap.sleepScreen(bitmap, x, y, pageWidth, pageHeight, cropX, cropY, coverFill, sleepImageRenderMode());
 
-  if (SETTINGS.sleepScreenCoverFilter == SystemSetting::SLEEP_SCREEN_COVER_FILTER::INVERTED_BLACK_AND_WHITE) {
-    renderer.invertScreen();
-  }
 
   renderer.displayBuffer();
 

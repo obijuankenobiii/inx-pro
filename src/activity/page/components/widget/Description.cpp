@@ -201,7 +201,7 @@ std::vector<DescriptionWidgetLine> wrapDescription(const GfxRenderer& renderer, 
   return lines;
 }
 
-}  // namespace
+}
 
 void Description::ensureLines(const int recentIndex, const int width, const int font, const bool preview) const {
   const auto& books = RECENT_BOOKS.getBooks();

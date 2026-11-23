@@ -57,7 +57,7 @@ void gesture(int width, int height, float dx, float dy, bool expectTap, bool exp
 
   input.pressed = false;
   input.duration = duration;
-  // Simulate the backend's permissive tap policy below 60px.
+
   input.swipe = backendEligible && !returnToStart &&
                 (std::fabs(dx) >= 60 || std::fabs(dy) >= 60) && duration <= 700;
   input.tap = backendEligible && (returnToStart || (std::fabs(dx) < 60 && std::fabs(dy) < 60));
@@ -75,7 +75,7 @@ void gesture(int width, int height, float dx, float dy, bool expectTap, bool exp
   assert(!classifier.wasTap(sx, sy));
   assert(!classifier.wasSwipe(sx, sy, ex, ey));
 
-  // A new tap after a swipe must still work.
+
   input = {};
   input.down = input.pressed = true;
   classifier.update(input, width, height);
@@ -91,7 +91,7 @@ int main() {
       gesture(width, height, 0, 0, true, false);
       gesture(width, height, 18, -18, true, false);
       gesture(width, height, -19, 0, true, false);
-      // Both native axes cover horizontal swipes in rotated UI orientations.
+
       for (const float distance : {-160.f, -59.f, -40.f, -28.f, -20.f, 20.f, 28.f, 40.f, 59.f, 160.f}) {
         gesture(width, height, distance, 0, false, true);
         gesture(width, height, 0, distance, false, true);
@@ -101,7 +101,7 @@ int main() {
       }
     }
   }
-  // If press/move/release were sampled together, use the backend swipe endpoints.
+
   TouchGestureClassifier classifier;
   TouchInput input;
   input.x = 0.2f;

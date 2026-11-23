@@ -36,15 +36,15 @@ void IRAM_ATTR onUsbSerialJtagReset(void* context) {
   }
   if (higherPriorityTaskWoken == pdTRUE) portYIELD_FROM_ISR();
 }
-}  // namespace
+}
 
 void handoffUsbOtgToSerialJtag() {
-  // Serial/JTAG was active before USB transfer claimed the shared PHY. Release
-  // its old ISR before the temporary BUS_RESET listener below owns it.
+
+
   Serial.end();
 
-  // Match Arduino's USB-OTG to CDC/JTAG transition, then force a
-  // host-visible disconnect/reconnect so esptool can find the port again.
+
+
   (void)deinit_usb_hal();
   periph_ll_reset(PERIPH_USB_MODULE);
   periph_ll_disable_clk_set_rst(PERIPH_USB_MODULE);

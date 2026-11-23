@@ -190,6 +190,7 @@ void EpubImageViewerUi::render(EpubActivity& activity) {
   options.fastQuality = true;
   options.useDisplayCache = true;
   options.asyncDisplayCache = true;
+  options.cacheNamespace = ImageDisplayCacheNamespace::Book;
 
   if (options.mode == ImageRenderMode::OneBit && rasterCache && fitWidth > 0 && fitHeight > 0 &&
       renderCachedZoom(activity, x, y, width, height)) {
@@ -415,10 +416,10 @@ bool EpubImageViewerUi::renderCachedGrayscaleZoom(EpubActivity& activity, const 
   const int visibleWidth = right - left;
   const size_t sourceRowBytes = (static_cast<size_t>(fitWidth) + 7u) / 8u;
   std::vector<uint8_t> scaledRow((static_cast<size_t>(visibleWidth) + 7u) / 8u, 0);
-  // Picco's partial waveform is safe for the initial source render, but a
-  // zoomed cache can extend beyond the panel and has a clipped logical
-  // window. Use the full HQ framebuffer path here so the cached pixels are
-  // transferred with the controller's normal full-frame baseline handling.
+
+
+
+
   const bool useWindowedQuality = false;
   const GfxRenderer::DisplayRegion window{x, y, width, height};
   const bool wasImageRendering = activity.renderer.isImageRendering();

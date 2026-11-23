@@ -6,9 +6,9 @@ namespace freeink {
 class FreeInkDisplay;
 }
 
-// Project-owned SSD1677 adapter. The vendored FreeInkDisplay API intentionally
-// remains unchanged; Sticky and Murphy use this class for their windowed
-// quality-image path.
+
+
+
 class Ssd1677WindowedGray {
  public:
   explicit Ssd1677WindowedGray(freeink::FreeInkDisplay& display, uint16_t railSettleMs = 0);

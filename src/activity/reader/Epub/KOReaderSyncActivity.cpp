@@ -27,9 +27,9 @@
 
 namespace {
 
-// KOReader's display task renders SD-backed fonts.  A 4096-byte task stack is
-// not enough for the TextRender -> ExternalFont -> SDMMC call chain, which can
-// trip the stack canary as soon as the sync screen draws its header.
+
+
+
 constexpr uint32_t kDisplayTaskStack = 8192;
 
 ButtonBounds startButtonBounds(const GfxRenderer& renderer, const int font) {

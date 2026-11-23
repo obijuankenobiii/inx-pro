@@ -1293,8 +1293,8 @@ bool JpegRender::render(FsFile& jpegFile, int x, int y, int targetWidth, int tar
   const bool haveHeaderDimensions = haveHeader && sourceWidth > 0 && sourceHeight > 0;
   const uint32_t tAfterHeaderScan = millis();
   constexpr size_t kJpegDecodeBufferSize = 16 * 1024;
-  // picojpeg reduce mode keeps one DC sample per 8x8 block. Use it only when
-  // the resulting 1/8 image still covers the requested output resolution.
+
+
   constexpr int kPicoJpegReduceFactor = 8;
   const bool useReducedDecoder = haveHeaderDimensions &&
                                  sourceWidth >= targetWidth * kPicoJpegReduceFactor &&
@@ -1424,8 +1424,8 @@ bool JpegRender::render(FsFile& jpegFile, int x, int y, int targetWidth, int tar
     return false;
   }
 
-  // Keep the HQ tone and error diffusion identical for both waveform choices.
-  // fastQuality is a display-waveform selection only.
+
+
   const bool qualityTone = quality;
 
   int currentOutY = 0;

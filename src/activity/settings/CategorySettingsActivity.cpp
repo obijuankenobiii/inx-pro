@@ -22,13 +22,15 @@
 #include <string>
 
 #include "CalibreSettingsActivity.h"
+#if FREEINK_CAP_BLE_HID_HOST
+#include "BluetoothActivity.h"
+#endif
 #include "ClearCacheActivity.h"
 #include "ClockStylePickerActivity.h"
 #include "LanguageManagerActivity.h"
 #include "TimeSyncActivity.h"
 #include "activity/page/components/global/PopUp.h"
 #include "ReaderFontSettingsDraw.h"
-#include "SleepImagePickerActivity.h"
 #include "MetadataGeneratorActivity.h"
 #include "ThemePickerActivity.h"
 #include "images/Close.h"
@@ -487,14 +489,16 @@ void CategorySettingsActivity::setupMenu() {
               }));
               return;
             }
-            if (strcmp(settingPtr->name, "Choose sleep image") == 0) {
+#if FREEINK_CAP_BLE_HID_HOST
+            if (strcmp(settingPtr->name, "Bluetooth") == 0) {
               exitActivity();
-              enterNewActivity(new SleepImagePickerActivity(renderer, mappedInput, [this] {
+              enterNewActivity(new BluetoothActivity(renderer, mappedInput, [this] {
                 exitActivity();
                 updateRequired = true;
               }));
               return;
             }
+#endif
             if (strcmp(settingPtr->name, "Language") == 0) {
               exitActivity();
               enterNewActivity(new LanguageManagerActivity(renderer, mappedInput, [this] {

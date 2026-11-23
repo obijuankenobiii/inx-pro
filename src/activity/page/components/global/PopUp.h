@@ -17,8 +17,8 @@ struct PopUpBounds {
 
 class PopUp {
  public:
-  // Keep one additional option visible in all selector lists, including
-  // button mappings and other non-gesture settings.
+
+
   static constexpr int maxRows = 7;
 
   static PopUpBounds bounds(const GfxRenderer& renderer, int count, int contentTop = 0);

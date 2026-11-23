@@ -11,6 +11,7 @@
 #include <cstring>
 
 #include "util/LibraryIndex.h"
+#include "util/SdIoMutex.h"
 
 namespace {
 constexpr char kIndexPath[] = "/.metadata/library/authors.idx";
@@ -159,6 +160,7 @@ bool AuthorIndex::load(std::vector<Entry>& entries) {
 
 bool AuthorIndex::generate(const std::function<void(int, int, const char*)>& progress,
                            const std::function<bool()>& shouldCancel) {
+  SdIoMutex::Lock ioLock;
   if (!SdMan.exists("/.metadata")) SdMan.mkdir("/.metadata");
   if (!SdMan.exists("/.metadata/library")) SdMan.mkdir("/.metadata/library");
 

@@ -19,11 +19,11 @@ static const uint8_t font_preview_inter_14_regularBitmaps[108] = {
 };
 
 static const EpdGlyph font_preview_inter_14_regularGlyphs[] = {
-    { 4, 21, 8, 2, 21, 11, 0 }, // I
-    { 15, 16, 17, 1, 16, 30, 11 }, // e
-    { 13, 16, 17, 2, 16, 26, 41 }, // n
-    { 9, 16, 11, 2, 16, 18, 67 }, // r
-    { 9, 20, 10, 0, 20, 23, 85 }, // t
+    { 4, 21, 8, 2, 21, 11, 0 },
+    { 15, 16, 17, 1, 16, 30, 11 },
+    { 13, 16, 17, 2, 16, 26, 41 },
+    { 9, 16, 11, 2, 16, 18, 67 },
+    { 9, 20, 10, 0, 20, 23, 85 },
 };
 
 static const EpdUnicodeInterval font_preview_inter_14_regularIntervals[] = {

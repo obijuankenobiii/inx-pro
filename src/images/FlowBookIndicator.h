@@ -2,8 +2,8 @@
 
 #include <cstdint>
 
-// 32x32 one-bit/dithered version of the supplied open-book indicator.
-// The checkerboard on the right page preserves the reference image's gray tone.
+
+
 static const uint8_t FlowBookIndicator[] = {
 0xff,0xff,0xff,0xff
 ,0xff,0xff,0xff,0xff

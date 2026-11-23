@@ -16,4 +16,4 @@ class VerticalBookshelf final {
   static void preview(GfxRenderer& renderer, int x, int y, int width, int height);
 };
 
-}  // namespace widget::verticalbookshelf
+}

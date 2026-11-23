@@ -29,7 +29,7 @@ class SubPage : public UiPage {
 
  protected:
   void menu() override;
-  bool closeInput(bool closeOnSwipeUp = true);
+  bool closeInput(bool closeOnSwipeUp = true, bool closeOnSwipeRight = true);
   void dismiss();
 
  private:

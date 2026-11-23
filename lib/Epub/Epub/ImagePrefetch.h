@@ -13,6 +13,7 @@ namespace EpubImagePrefetch {
 
 /** Serializes SdFat operations shared by the parser, renderer, and caches. */
 void lockIo();
+bool tryLockIo();
 void unlockIo();
 
 class IoLock final {

@@ -7,6 +7,7 @@
 
 #include <Bitmap.h>
 #include <BitmapRender.h>
+#include "ImageDisplayCache.h"
 #include <ImageRenderMode.h>
 
 #include <functional>
@@ -31,6 +32,7 @@ class ImageRender {
     bool preserveTransparency = false;
     float cropAnchorX = 0.5f;
     float cropAnchorY = 0.5f;
+    ImageDisplayCacheNamespace cacheNamespace = ImageDisplayCacheNamespace::Default;
   };
 
   static ImageRender create(GfxRenderer& renderer, const std::string& path);

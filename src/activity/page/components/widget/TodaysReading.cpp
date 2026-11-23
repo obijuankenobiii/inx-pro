@@ -9,6 +9,7 @@
 
 #include "state/ReadingGoal.h"
 #include "state/RecentBooks.h"
+#include "images/LibraryFilterRight.h"
 #include "system/Fonts.h"
 
 namespace {
@@ -223,17 +224,21 @@ void renderReadingDuration(const GfxRenderer& renderer, const int fontId, const 
 
 }
 
-void TodaysReading::render(const int x, const int y, const int width, const int height, const bool compact) const {
-  renderContent(x, y, width, height, false, compact);
+void TodaysReading::render(const int x, const int y, const int width, const int height, const bool compact,
+                           const bool compact20, const bool compact30) const {
+  renderContent(x, y, width, height, false, compact, compact20, compact30);
 }
 
-void TodaysReading::preview(const int x, const int y, const int width, const int height, const bool compact) const {
-  renderContent(x, y, width, height, true, compact);
+void TodaysReading::preview(const int x, const int y, const int width, const int height, const bool compact,
+                            const bool compact20, const bool compact30) const {
+  renderContent(x, y, width, height, true, compact, compact20, compact30);
 }
 
 bool TodaysReading::buttonHitTest(const int tapX, const int tapY, const int areaX, const int areaY,
-                                  const int areaWidth, const int areaHeight, const bool compact) const {
+                                  const int areaWidth, const int areaHeight, const bool compact,
+                                  const bool compact20) const {
   if (areaWidth <= 0 || areaHeight <= 0) return false;
+  if (compact20) return false;
   if (compact) {
     constexpr int inset = 20;
     const int horizontalInset = std::min(inset, areaWidth / 2);
@@ -243,7 +248,7 @@ bool TodaysReading::buttonHitTest(const int tapX, const int tapY, const int area
     const int contentWidth = std::max(1, areaWidth - horizontalInset * 2);
     const int contentHeight = std::max(1, areaHeight - verticalInset * 2);
     const int leftWidth = std::max(1, contentWidth * 44 / 100);
-    const int detailX = contentX + leftWidth + 16;
+    const int detailX = contentX + leftWidth + 6;
     const int detailWidth = std::max(1, contentX + contentWidth - detailX);
     const int buttonHeight = readingButtonHeight(renderer_);
     const int buttonY = contentY + contentHeight - buttonHeight;
@@ -259,7 +264,7 @@ bool TodaysReading::buttonHitTest(const int tapX, const int tapY, const int area
 }
 
 void TodaysReading::renderContent(const int x, const int y, const int width, const int height, const bool sample,
-                                  const bool compact) const {
+                                  const bool compact, const bool compact20, const bool compact30) const {
   if (width <= 0 || height <= 0) return;
   renderer_.rectangle.fill(x, y, width, height, false);
 
@@ -285,9 +290,9 @@ void TodaysReading::renderContent(const int x, const int y, const int width, con
   const int buttonHeight = readingButtonHeight(renderer_);
   const int buttonY = designY + designHeight - buttonHeight - 5;
   const int gaugeTop = designY + 8;
-  const int gaugeBottomLimit = buttonY - 40;
-  const int availableGaugeRadius = std::max(20, std::min(width / 2 - 12, gaugeBottomLimit - gaugeTop));
-  const int gaugeRadius = std::max(20, availableGaugeRadius);
+  const int gaugeBottomLimit = buttonY - 34;
+  const int availableGaugeRadius = std::max(20, std::min(width / 2 - 8, gaugeBottomLimit - gaugeTop));
+  const int gaugeRadius = std::max(20, availableGaugeRadius + 10);
   const int gaugeBaseY = gaugeTop + availableGaugeRadius;
   const int gaugeCenterX = x + width / 2;
 
@@ -312,12 +317,17 @@ void TodaysReading::renderContent(const int x, const int y, const int width, con
     const int contentY = y + verticalInset;
     const int contentWidth = std::max(1, width - horizontalInset * 2);
     const int contentHeight = std::max(1, height - verticalInset * 2);
-    const int leftWidth = std::max(1, contentWidth * 44 / 100);
-    const int detailX = contentX + leftWidth + 16;
-    const int detailWidth = std::max(1, contentX + contentWidth - detailX);
-    const int centerX = contentX + leftWidth / 2;
+    const int leftWidth = std::max(1, contentWidth * (compact20 ? 32 : 44) / 100);
+    const int detailX = contentX + leftWidth + 6;
+    constexpr int caretSize = 30;
+    constexpr int caretGap = 8;
+    const int detailWidth = std::max(1, contentX + contentWidth - detailX - (compact20 ? caretSize + caretGap : 0));
+    const int baseOuterRadius = compact20
+                                    ? std::max(20, std::min(leftWidth / 2 - 4, contentHeight / 2 + 10))
+                                    : std::max(20, std::min(leftWidth / 2 + 10, contentHeight / 2 + 10));
+    const int outerRadius = compact30 ? std::max(20, baseOuterRadius - 10) : baseOuterRadius;
+    const int centerX = compact20 ? contentX + outerRadius + 4 : contentX + leftWidth / 2;
     const int centerY = contentY + contentHeight / 2;
-    const int outerRadius = std::max(20, std::min(leftWidth / 2 - 4, contentHeight / 2 - 4));
     drawReadingGauge(renderer_, centerX, centerY, outerRadius, std::max(8, outerRadius / 8), progress, true);
 
     const int compactTimeFont = systemFontIdForPointSize(18);
@@ -328,8 +338,8 @@ void TodaysReading::renderContent(const int x, const int y, const int width, con
     const int compactGoalFont = systemFontIdForPointSize(10);
     const int compactTitleLine = renderer_.text.getLineHeight(compactTitleFont);
     const int compactGoalLine = renderer_.text.getLineHeight(compactGoalFont);
-    const int detailButtonHeight = readingButtonHeight(renderer_);
-    const int detailStackHeight = compactTitleLine + 8 + compactGoalLine + 12 + detailButtonHeight;
+    const int detailButtonHeight = compact20 ? 0 : readingButtonHeight(renderer_);
+    const int detailStackHeight = compactTitleLine + 8 + compactGoalLine + (compact20 ? 0 : 12 + detailButtonHeight);
     const int detailTop = contentY + std::max(0, (contentHeight - detailStackHeight) / 2);
     renderer_.text.render(compactTitleFont, detailX, detailTop, "Today's Reading", true, EpdFontFamily::BOLD);
     const int goalY = detailTop + compactTitleLine + 8;
@@ -337,9 +347,17 @@ void TodaysReading::renderContent(const int x, const int y, const int width, con
     renderer_.text.renderGray(compactGoalFont, detailX, goalY, goalDisplay.c_str(), true,
                               EpdFontFamily::REGULAR);
 
-    const std::string bookTitle = sample ? std::string{} : recentBookTitle();
-    const int buttonY = contentY + contentHeight - detailButtonHeight;
-    drawReadingButton(renderer_, detailX, buttonY, detailWidth, detailButtonHeight, bookTitle);
+    if (compact20) {
+      const int caretX = x + width - horizontalInset - caretSize;
+      const int caretY = contentY + (contentHeight - caretSize) / 2;
+      renderer_.bitmap.iconScaled(LibraryFilterRight, caretX, caretY, 32, 30, caretSize, caretSize);
+    }
+
+    if (!compact20) {
+      const std::string bookTitle = sample ? std::string{} : recentBookTitle();
+      const int buttonY = contentY + contentHeight - detailButtonHeight;
+      drawReadingButton(renderer_, detailX, buttonY, detailWidth, detailButtonHeight, bookTitle);
+    }
     renderedKey_ = static_cast<uint64_t>(status.dateKey) * 100000ULL +
                    static_cast<uint64_t>(status.readingTimeMs / 60000ULL) * 10ULL + status.goalMinutes;
     return;

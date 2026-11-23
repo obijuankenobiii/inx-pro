@@ -24,7 +24,7 @@ constexpr int LIST_ITEM_HEIGHT = SettingsListLayout::kRowHeight;
 namespace {
 constexpr uint32_t kDisplayTaskStack = 8192;
 constexpr int MENU_ITEMS = 6;
-const char* menuNames[MENU_ITEMS] = {"Username", "Password", "Sync Server URL", "Document Matching", "Sign Up",
+const char* menuNames[MENU_ITEMS] = {"Username", "Password", "Sync Server URL", "Matching", "Sign Up",
                                      "Authenticate"};
 }
 
@@ -219,7 +219,7 @@ void KOReaderSettingsActivity::render() {
       } else if (i == 3) {
         status = KOREADER_STORE.getMatchMethod() == DocumentMatchMethod::FILENAME ? "Filename" : "Binary";
       } else if (i == 4 || i == 5) {
-        status = KOREADER_STORE.hasCredentials() ? "" : "Set credentials first";
+        status = KOREADER_STORE.hasCredentials() ? "" : "No credentials";
       }
 
       if (strlen(status) > 0) {

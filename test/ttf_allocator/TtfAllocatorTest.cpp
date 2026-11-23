@@ -1,7 +1,7 @@
-// Host regression test of the ESP32 allocation hooks with real stb glyphs.
-// clang++ -std=c++17 -DARDUINO_ARCH_ESP32 -Isrc -Itest/ttf_allocator/include \
-//   test/ttf_allocator/TtfAllocatorTest.cpp -o /tmp/ttf-allocator-test
-// /tmp/ttf-allocator-test /path/to/font.ttf
+
+
+
+
 #include "system/TtfAllocator.h"
 
 #define STBTT_STATIC
@@ -77,7 +77,7 @@ int main(int argc, char** argv) {
     }
   }
   assert(rendered > 300 && allocationCount > 1000 && allocatedEdgePool);
-  // With no PSRAM, do not silently fall back to the internal heap.
+
   psramAvailable = false;
   assert(inx::ttf::allocate(1024) == nullptr);
   assert(allocations.empty());

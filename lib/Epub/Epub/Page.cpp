@@ -419,27 +419,27 @@ std::unique_ptr<PageHeader> PageHeader::deserialize(FsFile& file) {
  */
 void PageDropCap::render(GfxRenderer& renderer, const int fontId, const int xOffset, const int yOffset,
                          ImageRenderMode) {
-  // Cached pages retain the proportional drop-cap font ID, but the font itself
-  // may have been unloaded when the book was closed. Rebind it before measuring
-  // or drawing; otherwise TextRender silently has no family and the drop cap is blank.
+
+
+
   const int renderDropCapFontId = FontManager::ensureFontReady(dropCapFontId, renderer) ? dropCapFontId : fontId;
   const uint8_t* p = reinterpret_cast<const uint8_t*>(text.c_str());
   const uint32_t dropCp = utf8NextCodepoint(&p);
-  // Use the first line's actual glyph metrics as the vertical reference. The
-  // old fixed -2px nudge made the drop-cap drift relative to the first line
-  // between font families and sizes.
+
+
+
   int alignY = yPos + yOffset;
   if (inlineFirstLine) {
-    // Page::render() places normal body text at y - bodyTopInset before
-    // TextRender adds the body's ascender. Use that same baseline here;
-    // otherwise an inline enlarged first letter sits below its sentence.
+
+
+
     const int bodyTopInset = renderer.text.getFontTopInset(fontId, EpdFontFamily::REGULAR);
     const int bodyBaseline = yPos + yOffset - bodyTopInset + renderer.text.getFontAscenderSize(fontId);
     alignY = bodyBaseline - renderer.text.getFontAscenderSize(renderDropCapFontId);
   } else {
-    // Page::render() passes body text through `y - bodyTopInset`, so the
-    // body glyph's top is already at yPos.  Do not add bodyTopInset here:
-    // doing so shifts every multiline drop cap down by that inset.
+
+
+
     const int dropInset = renderer.text.getGlyphTopInset(renderDropCapFontId, dropCp, style);
     alignY += -dropInset + PageDropCap::VERTICAL_ADJUSTMENT;
   }
@@ -567,6 +567,7 @@ void PageImage::renderImage(GfxRenderer& renderer, const int fontId, const int x
   options.quality = quality;
   options.fastQuality = quality;
   options.asyncDisplayCache = true;
+  options.cacheNamespace = ImageDisplayCacheNamespace::Book;
   const ImageRender image = ImageRender::create(renderer, cachePath);
 
   if (quality) {
@@ -1186,9 +1187,9 @@ void Page::render(GfxRenderer& renderer, const int fontId, const int headerFontI
     } else if (tag == TAG_PageHeader) {
       const auto* header = static_cast<const PageHeader*>(element.get());
       int feId = header->getHeaderFontId() > 0 ? header->getHeaderFontId() : headerFontId;
-      // Page::render() draws the TextBlock directly, so PageHeader::render()
-      // cannot repair a cached outline font by itself after reopening a book.
-      // Rebind it here before layout-dependent rendering and fall back safely.
+
+
+
       if (!FontManager::ensureFontReady(feId, renderer)) {
         feId = FontManager::ensureFontReady(headerFontId, renderer) ? headerFontId : fontId;
       }
@@ -1342,30 +1343,39 @@ std::unique_ptr<Page> Page::deserialize(FsFile& file) {
   auto page = std::unique_ptr<Page>(new Page());
   uint16_t count;
   serialization::readPod(file, count);
+
+
+
+  if (count == 0) return nullptr;
   for (uint16_t i = 0; i < count; i++) {
     uint8_t tag;
     serialization::readPod(file, tag);
+    std::unique_ptr<PageElement> element;
     if (tag == TAG_PageLine) {
-      page->elements.push_back(PageLine::deserialize(file));
+      element = PageLine::deserialize(file);
     } else if (tag == TAG_PageSmallCaps) {
-      page->elements.push_back(PageSmallCaps::deserialize(file));
+      element = PageSmallCaps::deserialize(file);
     } else if (tag == TAG_PageHeader) {
-      page->elements.push_back(PageHeader::deserialize(file));
+      element = PageHeader::deserialize(file);
     } else if (tag == TAG_PageImage) {
-      page->elements.push_back(PageImage::deserialize(file));
+      element = PageImage::deserialize(file);
     } else if (tag == TAG_PageDropCap) {
-      page->elements.push_back(PageDropCap::deserialize(file));
+      element = PageDropCap::deserialize(file);
     } else if (tag == TAG_PageTable) {
-      page->elements.push_back(PageTable::deserialize(file));
+      element = PageTable::deserialize(file);
     } else if (tag == TAG_PageHorizontalRule) {
-      page->elements.push_back(PageHorizontalRule::deserialize(file));
+      element = PageHorizontalRule::deserialize(file);
     } else if (tag == TAG_PageCssBorderLine) {
-      page->elements.push_back(PageCssBorderLine::deserialize(file));
+      element = PageCssBorderLine::deserialize(file);
     } else if (tag == TAG_PageCssBorderBox) {
-      page->elements.push_back(PageCssBorderBox::deserialize(file));
+      element = PageCssBorderBox::deserialize(file);
     } else if (tag == TAG_PageListMarker) {
-      page->elements.push_back(PageListMarker::deserialize(file));
+      element = PageListMarker::deserialize(file);
+    } else {
+      return nullptr;
     }
+    if (!element) return nullptr;
+    page->elements.push_back(std::move(element));
   }
   return page;
 }

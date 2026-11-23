@@ -42,8 +42,8 @@ constexpr int lightIndicatorWidth = 96;
 constexpr int lightIndicatorHeight = 6;
 constexpr int lightIndicatorBottomMargin = 20;
 
-// Single-channel boards (the T5 S3) have no colour temperature to set, so the drawer ends
-// below the brightness slider, with the same bottom gap.
+
+
 bool hasTemperatureSlider() { return frontlight.hasColorTemperature(); }
 int lightDrawerHeight() { return hasTemperatureSlider() ? 380 : 240; }
 
@@ -149,8 +149,8 @@ void LightDrawer::refreshAfterSliderChange() const {
  * Stores the page frame for the duration of the drawer.
  */
 void LightDrawer::storeDrawerFrame() const {
-  // The page may have been displayed asynchronously. Pull the displayed frame into the
-  // writable buffer before taking the snapshot used by the drawer-only render.
+
+
   drawerRenderer.syncWriteBufferFromActive();
   drawerRenderer.freeBwBufferChunks();
   drawerFrameStored = drawerRenderer.storeBwBuffer();
@@ -186,12 +186,12 @@ bool LightDrawer::restoreStoredFrameForRender() const {
 void LightDrawer::renderSliderRowLive() const {
   if (!open || !frontlight.present()) return;
 
-  // A FAST refresh on this panel is a ~460 ms full-screen DRF, and displayBufferAsync()
-  // drains a pending one before starting the next. Calling it every time the value moves
-  // therefore parks the whole input loop in that drain, so the frontlight itself only
-  // tracks the finger twice a second. Skip instead: the drag keeps sampling touch and
-  // driving the light live, and the knob repaints from the newest value once the panel
-  // frees up.
+
+
+
+
+
+
   if (drawerRenderer.isRefreshBusy()) {
     sliderRepaintPending = true;
     return;
@@ -202,13 +202,13 @@ void LightDrawer::renderSliderRowLive() const {
   const int trackY = brightness ? lightBrightnessY : lightTemperatureY;
   const int value = brightness ? frontlight.brightness() : frontlight.colorTemperature();
 
-  // The stored frame is the page beneath the drawer, not the drawer itself. Pull the
-  // currently displayed drawer frame before replacing only this slider row.
+
+
   drawerRenderer.syncWriteBufferFromActive();
 
-  // Rebuild the row rather than trusting whatever the restore brought back: paper over any
-  // knob still in the frame, carets and both track bars behind where it sat, then the knob
-  // at its new position. Cheap next to the refresh, and it cannot leave a stuck throbber.
+
+
+
   clearLightSliderRow(drawerRenderer, trackY);
   drawLightTrackBody(drawerRenderer, trackY, value);
 
@@ -267,10 +267,10 @@ LightDrawer::Action LightDrawer::handleInput(MappedInputManager& input, const bo
           sliderRepaintPending = true;
         }
       }
-      // Match the working in-book Picco drawer: update the frontlight hardware
-      // during the drag, but do not start an e-paper refresh for every sample.
-      // The display is refreshed once after release. X4 Pro/Murphy retain their
-      // existing live slider repaint behavior.
+
+
+
+
 #if !FREEINK_DEVICE_PICCO
       if (sliderRepaintPending) renderSliderRowLive();
 #endif
@@ -293,9 +293,9 @@ LightDrawer::Action LightDrawer::handleInput(MappedInputManager& input, const bo
     if (input.wasTouchPressedInScreen(drawerRenderer, nx, ny)) {
       const int x = static_cast<int>(nx * drawerRenderer.getScreenWidth());
       const int y = static_cast<int>(ny * drawerRenderer.getScreenHeight());
-      // A press on a caret is a step, handled on release by handleTap(). The caret touch
-      // boxes overlap the track's ends, and starting a drag there would jump the value to
-      // the clamped track end: 100% from the right caret, 0% from the left.
+
+
+
       const bool onCaret = isInCaret(x, y, lightBrightnessY, false) || isInCaret(x, y, lightBrightnessY, true) ||
                            isInCaret(x, y, lightTemperatureY, false) || isInCaret(x, y, lightTemperatureY, true);
       const bool inBrightnessTrack = !onCaret && y >= lightBrightnessY - 24 && y <= lightBrightnessY + 24 &&
@@ -308,8 +308,8 @@ LightDrawer::Action LightDrawer::handleInput(MappedInputManager& input, const bo
         sliderControl = inBrightnessTrack ? 0 : 1;
         sliderDragging = true;
         sliderDragChanged = false;
-        // The drawer frame was captured when the drawer opened; keep it intact so
-        // closing the drawer can restore the page without repainting its content.
+
+
         const int value = lightValueFromTrack(x, sliderControl == 0);
         const int current = sliderControl == 0 ? frontlight.brightness() : frontlight.colorTemperature();
         if (value != current) {
@@ -320,8 +320,8 @@ LightDrawer::Action LightDrawer::handleInput(MappedInputManager& input, const bo
           }
           sliderDragChanged = true;
         }
-        // Picco follows the in-book drawer and waits until release for the
-        // single e-paper refresh. Other devices keep their live knob repaint.
+
+
 #if !FREEINK_DEVICE_PICCO
         renderSliderRowLive();
 #endif
@@ -370,9 +370,9 @@ LightDrawer::Action LightDrawer::handleTap(const int tapX, const int tapY) const
 
   if (tapX >= darkModeButtonX && tapX < darkModeButtonX + lightButtonSize && tapY >= lightButtonY &&
       tapY < lightButtonY + lightButtonSize) {
-    // The saved frame is the page that will be restored when the drawer closes.
-    // Rebuild it in the new mode instead of discarding it; otherwise the drawer
-    // can get stuck over the old page frame after a dark-mode toggle.
+
+
+
     drawerRenderer.setDarkMode(!drawerRenderer.isDarkMode());
     if (drawerFrameStored) {
       if (drawerRenderer.copyStoredBwToFramebuffer()) {

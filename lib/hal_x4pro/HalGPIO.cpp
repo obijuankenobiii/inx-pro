@@ -66,9 +66,9 @@ void HalGPIO::serviceTouchGestures() {
     }
   }
 
-  // Publish the swipe only on the touch-controller release edge. If it is
-  // latched while the finger is still down, a page rendered during the drag
-  // can consume the release as a second tap.
+
+
+
   if (!inputMgr.hasTouch() || !inputMgr.wasTouchReleased()) return;
 
   float sx = 0.0f, sy = 0.0f, ex = 0.0f, ey = 0.0f;
@@ -94,14 +94,14 @@ void HalGPIO::serviceTouchGestures() {
 
 void HalGPIO::update() {
   if (touchSwipeLatchedDuringDisplay) {
-    // Preserve the swipe detected by the BUSY-wait poll for the first normal
-    // input cycle after the waveform completes.
+
+
     touchSwipeLatchedDuringDisplay = false;
     return;
   }
-  // Start a fresh query window. The previous release may have been inspected
-  // by more than one activity, but all callers in that previous frame must
-  // see the same suppressed result.
+
+
+
   postSwipeTapBlockedThisFrame = false;
   inputMgr.update();
   const auto& touch = BoardConfig::ACTIVE.touch;
@@ -148,11 +148,11 @@ bool HalGPIO::wasTouchTap(float& nx, float& ny) const {
   if (postSwipeTapBlockedThisFrame) return false;
   const bool tapped = touchGesture.wasTap(nx, ny);
   if (tapped) {
-    // X4 Pro can spend more than a second in the panel BUSY waveform after a
-    // swipe. The controller may then report one short duplicate contact,
-    // followed by a second release from the same stale contact. Suppress the
-    // first one during the long waveform window, but keep the follow-up guard
-    // short so normal taps remain responsive.
+
+
+
+
+
     constexpr unsigned long kPostSwipeTapWindowMs = 3000;
     constexpr unsigned long kPostSwipeTapMaxHoldMs = 300;
     constexpr unsigned long kPostSwipeDuplicateWindowMs = 500;
@@ -164,10 +164,10 @@ bool HalGPIO::wasTouchTap(float& nx, float& ny) const {
     const bool sameSwipeStart = std::fabs(nx - touchSwipeStartNx) <= kPostSwipeSamePointTolerance &&
                                 std::fabs(ny - touchSwipeStartNy) <= kPostSwipeSamePointTolerance;
     if (shortTap) {
-      // A genuine follow-up tap may be anywhere on the page (for example on
-      // a sidebar item). Only suppress a short contact that returns to the
-      // swipe's original point, which is how the X4 Pro's stale swipe tail
-      // presents itself.
+
+
+
+
       if (suppressPostSwipeTap && elapsed <= kPostSwipeTapWindowMs && sameSwipeStart) {
         suppressPostSwipeTap = false;
         postSwipeDuplicateBlockedUntilMs = now + kPostSwipeDuplicateWindowMs;
@@ -230,8 +230,8 @@ void HalGPIO::ignoreCurrentTouchUntilRelease() {
 
 void HalGPIO::discardTouchSwipe() {
   touchSwipeDirection = TouchSwipe::None;
-  // Keep the post-swipe tap guard. Activities call this immediately after
-  // consuming the swipe, while duplicate contacts may still be pending.
+
+
   touchPressedEvents = 0;
   touchReleasedEvents = 0;
 }
@@ -246,7 +246,7 @@ HalGPIO::MotionGesture HalGPIO::readMotionGesture(const uint8_t orientation, con
 
 void HalGPIO::startDeepSleep() {
   const auto& power = BoardConfig::ACTIVE.power;
-  // Keep the battery and peripheral rails latched while deep sleep isolates GPIOs.
+
   for (const int8_t pin : {power.latch0, power.latch1}) {
     if (pin < 0) continue;
     const auto gpioPin = static_cast<gpio_num_t>(pin);
@@ -255,7 +255,7 @@ void HalGPIO::startDeepSleep() {
     digitalWrite(pin, HIGH);
     gpio_hold_en(gpioPin);
   }
-  // The caller has already put the panel to sleep and shut down mounted storage.
+
   freeink::PowerManager::powerDownRailsForSleep();
   freeink::PowerManager::deepSleepUntilPowerButton();
 }

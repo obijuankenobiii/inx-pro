@@ -7,6 +7,10 @@
 #include "activity/settings/BaseDescriptionActivity.h"
 #include "activity/settings/BaseStatisticsActivity.h"
 #include "activity/settings/BaseStreaksActivity.h"
+#include "activity/settings/SleepImagePickerActivity.h"
+#include "activity/settings/SleepWallpaperActivity.h"
+#include "activity/settings/ShortcutSettingsActivity.h"
+#include "activity/settings/ImageSettingsActivity.h"
 #include "activity/page/components/widget/Calendar.h"
 #include "activity/page/components/widget/Carousel.h"
 #include "activity/page/components/widget/Clock.h"
@@ -15,9 +19,9 @@
 #include "activity/page/components/widget/Flow.h"
 #include "activity/page/components/widget/verticalbookshelf/VerticalBookshelf.h"
 #include "activity/page/components/widget/Shortcut.h"
-#include "activity/page/components/widget/ShortcutList.h"
 #include "activity/page/components/widget/Temperature.h"
 #include "activity/page/components/widget/Humidity.h"
+#include "activity/page/components/widget/ImageWidget.h"
 #include "activity/page/components/widget/TodaysReading.h"
 #include "activity/page/components/widget/Favorites.h"
 #include "activity/page/components/widget/Heatmap.h"
@@ -25,6 +29,7 @@
 #include "activity/page/components/widget/Description.h"
 #include "activity/page/components/widget/WeeklyStatistics.h"
 #include "activity/page/components/widget/Streaks.h"
+#include "activity/page/components/home/HomeWidgetLayout.h"
 #include "state/HomeTheme.h"
 
 class ThemePickerActivity final : public ActivityWithSubactivity {
@@ -32,10 +37,11 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
   ThemePickerActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, std::function<void()> onBack,
                       bool openSleepTheme = false)
       : ActivityWithSubactivity("ThemePicker", renderer, mappedInput), carousel_(renderer), shortcut_(renderer),
-        shortcutList_(renderer), clock_(renderer), calendar_(renderer), recent_(renderer), temperature_(renderer),
+        clock_(renderer), calendar_(renderer), recent_(renderer), temperature_(renderer),
         humidity_(renderer), todaysReading_(renderer),
         favorites_(renderer), heatmap_(renderer), library_(renderer), description_(renderer), recentGrid_(renderer),
-        flow_(renderer), weeklyStatistics_(renderer), streaks_(renderer),
+        flow_(renderer), weeklyStatistics_(renderer), streaks_(renderer), imageWidget_(renderer),
+        homeWidgetLayout_(renderer),
         onBack_(std::move(onBack)), openSleepTheme_(openSleepTheme) {}
 
   void onEnter() override;
@@ -72,6 +78,17 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
   HomeTheme::CarouselShadowStyle carouselShadowStyles_[4] = {};
   HomeTheme::HeatmapView heatmapViews_[4] = {};
   char libraryFolders_[4][3][128] = {};
+  char imagePaths_[4][128] = {};
+  uint8_t imageCropToFill_[4] = {};
+  uint8_t imagePadding_[4] = {};
+  uint8_t imageCropAnchorX_[4] = {};
+  uint8_t imageCropAnchorY_[4] = {};
+  uint8_t shortcutItems_[HomeTheme::kShortcutSlotCount] = {
+      static_cast<uint8_t>(HomeTheme::ShortcutItem::Bookmarks),
+      static_cast<uint8_t>(HomeTheme::ShortcutItem::Highlights),
+      static_cast<uint8_t>(HomeTheme::ShortcutItem::Favorites),
+      static_cast<uint8_t>(HomeTheme::ShortcutItem::Statistics),
+  };
   bool editingExisting_ = false;
   bool creatingTheme_ = false;
   bool editingSleep_ = false;
@@ -79,7 +96,9 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
   bool openSleepTheme_ = false;
   bool widgetPopup_ = false;
   bool borderPopup_ = false;
+  bool ratioPopup_ = false;
   bool themeActionPopup_ = false;
+  bool sleepFixedOptionPopup_ = false;
   bool carouselSettingsFinished_ = false;
   bool heatmapSettingsFinished_ = false;
   bool temperatureSettingsFinished_ = false;
@@ -87,13 +106,20 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
   bool descriptionSettingsFinished_ = false;
   bool statisticsSettingsFinished_ = false;
   bool streaksSettingsFinished_ = false;
+  bool imageSettingsFinished_ = false;
+  bool shortcutSettingsFinished_ = false;
+  bool sleepWallpaperSettingsFinished_ = false;
+  bool sleepWallpaperSettingsBookCover_ = false;
+  bool sleepWallpaperSettingsFixedOption_ = false;
+  uint8_t sleepScreenMode_ = 0;
   int popupSelected_ = 0;
   int widgetPopupScroll_ = 0;
   int borderPopupSelected_ = 0;
+  int ratioPopupSelected_ = 0;
   int themeActionSelected_ = 0;
+  int sleepFixedOption_ = 0;
   Carousel carousel_;
   Shortcut shortcut_;
-  ShortcutList shortcutList_;
   Clock clock_;
   Calendar calendar_;
   Recent recent_;
@@ -109,6 +135,8 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
   Description description_;
   WeeklyStatistics weeklyStatistics_;
   Streaks streaks_;
+  ImageWidget imageWidget_;
+  HomeWidgetLayout homeWidgetLayout_;
   std::function<void()> onBack_;
 
   void render();
@@ -120,15 +148,20 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
   void renderWidgetPreview(HomeTheme::Widget widget, int x, int y, int width, int height, bool background,
                            HomeTheme::CarouselStyle style, bool showLabel, HomeTheme::CarouselLabelColor labelColor,
                            HomeTheme::CarouselShadowStyle shadowStyle, HomeTheme::HeatmapView heatmapView,
-                           const char (*libraryFolders)[128], bool descriptionShowTitle, bool descriptionShowAuthor,
+                           const char (*libraryFolders)[128], const char* imagePath, bool imageCropToFill,
+                           bool imagePadding, float imageCropAnchorX, float imageCropAnchorY,
+                           bool descriptionShowTitle,
+                           bool descriptionShowAuthor,
                            bool descriptionShowProgress, bool descriptionShowRating,
                            bool recentShowTitle, bool recentShowAuthor,
                            bool recentShowProgress, bool recentShowRating, bool carouselShowProgress,
-                           bool carouselFullHeight, bool statisticsSummary, bool streakCompact,
-                           bool stackedHeatmapPreview = false, bool showEmptyAddLabel = false);
+                           bool carouselFullHeight, bool statisticsSummary, bool streakCompact, bool compact20,
+                           bool sideBySideStats,
+                           bool stackedHeatmapPreview = false, bool showEmptyAddLabel = false,
+                           int layoutSlot = -1);
   void renderDividerBorder(HomeTheme::Border border, int x, int y, int width);
   void renderBorder(HomeTheme::Border border, int x, int y, int width, int height);
-  void handleTouch(int x, int y);
+  void handleTouch(int x, int y, bool longPress = false);
   void beginNewTheme();
   void beginEditTheme();
   void initializeNewThemeEditor();
@@ -143,11 +176,20 @@ class ThemePickerActivity final : public ActivityWithSubactivity {
   void openWidgetPopup(int slot);
   void renderWidgetPopup();
   void openBorderPopup(int slot);
+  void openRatioPopup(int slot);
+  void renderRatioPopup();
+  void applyRatioSelection(int ratio);
   void openCarouselSettings(int slot);
   void openHeatmapSettings(int slot);
   void openTemperatureSettings(int slot);
   void openLibrarySettings(int slot);
   void openDescriptionSettings(int slot);
+  void openImageSettings(int slot);
+  void openShortcutSettings();
+  void openSleepWallpaperSettings(bool bookCover = false, bool fixedOption = false);
+  void saveSleepSpecialTheme(const char* name, uint8_t mode);
+  void activateSleepTheme(int index);
+  void applySelectedSleepScreenMode();
   void openStatisticsSettings(int slot);
   void openStreaksSettings(int slot);
   void renderBorderPopup();

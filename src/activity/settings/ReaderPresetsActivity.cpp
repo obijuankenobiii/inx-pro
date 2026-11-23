@@ -34,7 +34,7 @@ namespace {
 constexpr int kRowValueRightInset = 30;
 constexpr int kNavigationRightInset = 24;
 constexpr int kEmbeddedListTopExtra = 30;
-constexpr int kPresetVisibleCount = 7;  // Six requested rows plus one additional row using the spare space.
+constexpr int kPresetVisibleCount = 7;
 constexpr int kPresetListGap = 20;
 constexpr const char* kAddPresetButtonLabel = "New preset +";
 
@@ -155,8 +155,8 @@ void ReaderPresetsActivity::onEnter() {
   const int screenH = renderer.getScreenHeight();
   const int listTop = navigation::Menu::height + 20 + UiPage::LIST_ITEM_HEIGHT + 10 + kEmbeddedListTopExtra;
   const int contentBottom = screenH - navigation::Menu::bottomInset() - 10;
-  // Keep the main Reader page on the same fixed row height as the other
-  // settings pages. The Add/Edit preset editor owns its own compact sizing.
+
+
   listItemHeight_ = kListItemHeight;
   if (!presetsOnly_) {
     const int rows = rowCount();
@@ -177,7 +177,7 @@ void ReaderPresetsActivity::onEnter() {
 
 void ReaderPresetsActivity::onExit() { exitActivity(); }
 
-constexpr int kSystemFixedRowCount = 4;
+constexpr int kSystemFixedRowCount = 5;
 
 bool ReaderPresetsActivity::isSystemSettingRow(const int row) const {
   if (presetsOnly_) return false;
@@ -195,6 +195,8 @@ void ReaderPresetsActivity::changeSystemSetting(const int row, const int delta) 
   const int systemLocalRow = systemSettingLocalRow(row - systemHeaderRow());
   if (systemLocalRow == 1) {
     READER_SETTINGS.textAntiAliasing = !READER_SETTINGS.textAntiAliasing;
+  } else if (systemLocalRow == 5) {
+    READER_SETTINGS.seamlessChapters = !READER_SETTINGS.seamlessChapters;
   }
   READER_SETTINGS.saveToFile();
 }
@@ -248,8 +250,8 @@ void ReaderPresetsActivity::render() {
   for (int i = 0; i < itemsPerPage_ && (i + scrollOffset_) < rows; i++) {
     const int rowIndex = i + scrollOffset_;
     const int itemY = (presetsOnly_ ? presetListTop : listTop) + i * listItemHeight_;
-    // Reader settings are touch-activated; rows do not have a persistent
-    // hardware-selection state or inverted active-row appearance.
+
+
     constexpr bool isSelected = false;
     const bool hasNextItem = i + 1 < itemsPerPage_ && rowIndex + 1 < rows;
     const int textY = itemY + (listItemHeight_ - renderer.text.getLineHeight(systemFontId())) / 2;
@@ -275,6 +277,9 @@ void ReaderPresetsActivity::render() {
         label = "Daily Reading Goal";
         value = dailyReadingGoalLabel();
         isToggle = false;
+      } else if (systemLocalRow == 5) {
+        label = "Seamless chapters";
+        toggleChecked = READER_SETTINGS.seamlessChapters != 0;
       }
       renderer.text.render(systemFontId(), 20, textY, label, isSelected ? 0 : 1);
       if (isToggle) {
@@ -399,7 +404,7 @@ void ReaderPresetsActivity::openGenericSelector(std::string title, std::vector<s
 
 void ReaderPresetsActivity::openSelectorForRow(const int row) {
   const int systemLocalRow = isSystemSettingRow(row) ? systemSettingLocalRow(row) : -1;
-  if (systemLocalRow == 1) return;
+  if (systemLocalRow == 1 || systemLocalRow == 5) return;
   if (systemLocalRow == 2) {
     std::vector<std::string> options = {"1 page", "5 pages", "10 pages", "15 pages", "30 pages", "Off"};
     const int idx = READER_SETTINGS.refreshFrequency < options.size() ? READER_SETTINGS.refreshFrequency : 5;
@@ -535,8 +540,8 @@ void ReaderPresetsActivity::renderActionSelectorOverlay() {
 }
 
 void ReaderPresetsActivity::openEditor(int presetIndex) {
-  // The edit action is opened from a touch-driven overlay. Clear the overlay's
-  // consumed edges before the new editor starts receiving input.
+
+
   mappedInput.discardPendingButtonEdges();
   mappedInput.discardPendingTouchTap();
   mappedInput.discardPendingSwipe();
@@ -570,7 +575,7 @@ void ReaderPresetsActivity::activateSelectedRow() {
   }
   if (isSystemSettingRow(selectedRow_)) {
     const int systemLocalRow = systemSettingLocalRow(selectedRow_);
-    if (systemLocalRow == 1) {
+    if (systemLocalRow == 1 || systemLocalRow == 5) {
       changeSystemSetting(selectedRow_, 0);
       selectedRow_ = -1;
       render();
@@ -657,8 +662,8 @@ void ReaderPresetsActivity::handleListInput() {
 
   float swipeStartNx = 0.0f;
   float swipeStartNy = 0.0f;
-  // A swipe-up from the bottom edge is the page-close gesture. Keep the
-  // start-band guard so ordinary swipes in the list remain pagination.
+
+
   if (mappedInput.wasTouchSwipeUpInScreen(renderer, swipeStartNx, swipeStartNy) && swipeStartNy >= 0.95f) {
     if (onHardwareBack_) {
       onHardwareBack_();

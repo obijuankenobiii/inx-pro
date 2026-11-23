@@ -20,6 +20,7 @@
 #include "state/ReaderPreset.h"
 #include "state/ReaderSetting.h"
 #include "system/FontManager.h"
+#include "system/FontPreviews.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
 #include "util/StringUtils.h"
@@ -32,9 +33,9 @@
 #endif
 
 namespace {
-// Rendering the font list can traverse preview glyphs, build several strings,
-// and enter the renderer's text path. Four kilobytes is not enough on ESP32-S3
-// and trips the stack canary before the download even starts.
+
+
+
 constexpr uint32_t kDisplayTaskStack = 8192;
 constexpr uint32_t kInstallTaskStack = 8192;
 constexpr int kBottomMargin = 44;
@@ -50,8 +51,8 @@ constexpr int kTransferCardPadding = 20;
 constexpr int kTransferCardGap = 12;
 constexpr int kTransferPanelButtonGap = 20;
 constexpr int kTransferTextGap = 20;
-// Only a swipe that starts at the physical bottom edge closes this page.  A
-// normal upward swipe in the font list remains a list-page navigation gesture.
+
+
 constexpr float kBottomEdgeSwipeStartNy = 0.95f;
 
 uint8_t fontFamilySlotForLabel(const std::vector<std::string>& labels, const std::string& label) {
@@ -238,7 +239,7 @@ void FontManagerActivity::loadPackages() {
 }
 
 int FontManagerActivity::visibleRowCount(const int bodyTop) const {
-  // The lower paginator/caret area still leaves room for one additional row.
+
   return std::max(1, (renderer.getScreenHeight() - kBottomMargin - bodyTop) / kRowHeight + 1);
 }
 
@@ -579,9 +580,9 @@ void FontManagerActivity::onWifiSelectionComplete(const bool connected) {
 
 
 void FontManagerActivity::render() {
-  // WifiSelectionActivity leaves the X4 Pro renderer after an async refresh.
-  // Re-seed the writable framebuffer from the frame actually on the panel
-  // before replacing it with the Font Manager screen.
+
+
+
   renderer.syncWriteBufferFromActive();
   renderer.clearScreen();
   const int bodyTop = SubPage::header(renderer, "Download", "Font");
@@ -624,8 +625,14 @@ void FontManagerActivity::render() {
     renderer.rectangle.render(cardX, cardY, cardWidth, cardHeight, true, rounded);
     const int contentX = cardX + kTransferCardPadding;
     renderer.text.render(font, contentX, headerY, "Font download", true, EpdFontFamily::BOLD);
-    const std::string displayName = renderer.text.truncate(font, packageName.c_str(), cardWidth - 2 * kTransferCardPadding);
-    renderer.text.render(font, contentX, nameY, displayName.c_str(), true);
+    const int packagePreviewFont = packageIndex >= 0 && packageIndex < static_cast<int>(packages_.size())
+                                       ? FontPreviews::fontIdForFamily(
+                                             packages_[static_cast<size_t>(packageIndex)].installFamily)
+                                       : -1;
+    const int nameFont = packagePreviewFont >= 0 ? packagePreviewFont : font;
+    const std::string displayName = renderer.text.truncate(nameFont, packageName.c_str(),
+                                                            cardWidth - 2 * kTransferCardPadding);
+    renderer.text.render(nameFont, contentX, nameY, displayName.c_str(), true);
     renderer.text.render(font, contentX, firstRowY, "Download", true);
     char percentText[8];
     std::snprintf(percentText, sizeof(percentText), "%d%%", percent);
@@ -676,10 +683,9 @@ void FontManagerActivity::render() {
                                    ? screenW - (kSideMargin * 2) - percentWidth - 20
                                    : screenW - (kSideMargin * 2) - kActionIconSize - 20;
       const std::string displayName = displayFontName(packages_[static_cast<size_t>(packageIndex)].name);
-      // Keep the Store download list on the configured system font. Package
-      // names used to switch to a preview font here, which made this page
-      // ignore Settings -> Display -> System Font.
-      const int nameFont = font;
+      const int previewFont =
+          FontPreviews::fontIdForFamily(packages_[static_cast<size_t>(packageIndex)].installFamily);
+      const int nameFont = previewFont >= 0 ? previewFont : font;
       const int textY = y + (kRowHeight - renderer.text.getLineHeight(nameFont)) / 2;
       const std::string packageName = renderer.text.truncate(nameFont, displayName.c_str(), maxNameWidth,
                                                               EpdFontFamily::REGULAR);
@@ -756,8 +762,8 @@ void FontManagerActivity::loop() {
       const int maxScroll = std::max(0, visiblePackageCount() - visibleRows);
       const int pageCount = std::max(1, (visiblePackageCount() + visibleRows - 1) / visibleRows);
       const int pageStep = std::max(1, visibleRows - 1);
-      // A touch scroll is navigation, not a new row selection. Do not let a
-      // previously button-selected row pull the list back onto its old page.
+
+
       selectedVisible_ = false;
       if (swipeUp) {
         paginatorPage_ = std::min(pageCount - 1, paginatorPage_ + 1);

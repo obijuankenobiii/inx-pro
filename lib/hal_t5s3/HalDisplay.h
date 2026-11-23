@@ -47,8 +47,8 @@ class HalDisplay {
                  bool fromProgmem = false) const;
 
   void displayBuffer(RefreshMode mode = RefreshMode::FAST_REFRESH);
-  // The raw T5 S3 panel has no controller RAM window. Keep the shared HAL
-  // interface available, but fall back to its normal full-frame waveform.
+
+
   void displayWindow(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
                      RefreshMode mode = RefreshMode::FAST_REFRESH);
   void displayBufferAsync(RefreshMode mode = RefreshMode::FAST_REFRESH);

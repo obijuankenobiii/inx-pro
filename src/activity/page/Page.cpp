@@ -71,9 +71,9 @@ bool UiPage::menuInput() {
     }
   }
 
-  // A board can expose a touch controller even when the current input frame
-  // contains no touch event. Do not let that capability check swallow the
-  // physical navigation buttons used by the hidden menu.
+
+
+
   const navigation::Menu::Action action = navigation::Menu::handleInput(mappedInput);
   if (action == navigation::Menu::Action::None) return false;
   routeMenuAction(action);
@@ -98,6 +98,8 @@ void UiPage::renderPage() {
   render();
   updateRequired = false;
 }
+
+void UiPage::renderPageToBackBuffer() { render(false); }
 
 bool UiPage::storeOverlayFrame() {
   renderer.syncWriteBufferFromActive();
@@ -125,8 +127,8 @@ void UiPage::discardOverlayFrame() {
 bool UiPage::routeMenuAction(const navigation::Menu::Action action) {
   switch (action) {
     case navigation::Menu::Action::Opened:
-      // Capture the underlying page only on the initial open. Selection
-      // changes while the drawer is already open also return Opened.
+
+
       if (!overlayFrameStored_) storeOverlayFrame();
       updateRequired = true;
       break;
@@ -185,7 +187,7 @@ bool UiPage::menuAction(const navigation::Menu::Action action) {
   return false;
 }
 
-void UiPage::render() {
+void UiPage::render(const bool present) {
   renderer.setRenderMode(GfxRenderer::BW);
   bool restored = false;
   if (overlayFrameStored_ && (overlayFrameActive_ || overlayFrameRestorePending_)) {
@@ -205,7 +207,7 @@ void UiPage::render() {
   }
 
   menu();
-  renderer.displayBufferAsync();
+  if (present) renderer.displayBufferAsync();
 }
 
 int UiPage::contentBottomY(const GfxRenderer& renderer) {

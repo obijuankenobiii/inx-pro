@@ -25,14 +25,27 @@ class ChapterHtmlSlimParser;
  */
 class Section {
  public:
+  static void* operator new(std::size_t size) { return epubPsramObjectAllocate(size); }
+  static void operator delete(void* pointer) noexcept { epubPsramObjectFree(pointer); }
+
  private:
   std::shared_ptr<Epub> epub;
   const int spineIndex;
   GfxRenderer& renderer;
   std::string filePath;
+  std::string progressiveFilePath_;
   FsFile file;
   uint32_t lutOffset = 0;
   std::vector<uint32_t> pageOffsets;
+  std::unique_ptr<ChapterHtmlSlimParser> progressiveParser_;
+  using ProgressiveXmlBuffer = std::vector<uint8_t, EpubPsramAllocator<uint8_t>>;
+  std::unique_ptr<ProgressiveXmlBuffer> progressiveXml_;
+  std::string progressiveSourcePath_;
+  size_t progressiveXmlOffset_ = 0;
+  std::vector<uint32_t> progressivePageOffsets_;
+  uint32_t progressiveBytesRead_ = 0;
+  bool progressiveActive_ = false;
+  bool progressiveWriteFailed_ = false;
 
   struct CachedPage {
     int pageIndex = -1;
@@ -134,6 +147,16 @@ class Section {
                          bool warmImageDisplayCache = false,
                          ImageRenderMode warmImageRenderMode = ImageRenderMode::OneBit, bool warmImageQuality = false,
                          int warmImageYOffset = 0);
+
+  /** Starts a cooperative background build without blocking the active reader page. */
+  bool beginProgressiveSectionFile(int fontId, int headerFontId, int maxFontId, float lineCompression,
+                                   float wordSpacing, bool extraParagraphSpacing, uint8_t paragraphAlignment,
+                                   uint16_t viewportWidth, uint16_t viewportHeight, bool hyphenationEnabled,
+                                   bool respectCssParagraphIndent, bool bionicReadingEnabled, bool skipImages = false);
+  /** Advances the background build for at most budgetMs. */
+  bool pumpProgressive(uint32_t budgetMs = 1);
+  bool progressiveActive() const { return progressiveActive_; }
+  bool progressiveSourceReady() const { return progressiveXml_ != nullptr; }
 
   /**
    * Loads a specific page from the section file.

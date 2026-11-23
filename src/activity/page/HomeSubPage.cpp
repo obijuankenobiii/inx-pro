@@ -239,8 +239,8 @@ void HomeSubPage::loop() {
     return;
   }
 
-  // Home widget subpages have nested list/detail/lookup states, so handle the
-  // activity-level swipe before dispatching to one of those states.
+
+
   if (mappedInput.hasTouch() && mappedInput.wasTouchSwipeUp()) {
     dismiss();
     return;
@@ -859,7 +859,8 @@ void HomeSubPage::dictionaryContent(const Row& row) {
   const int width = renderer.getScreenWidth() - left * 2;
 
   if (dictionarySelected_ != selected) {
-    dictionaryLines_ = layoutDefinitionBlocks(renderer, parseHtmlToBlocks(SAVED_WORDS.definitionAt(row.dictionaryIndex)), width);
+    dictionaryLines_ = layoutDefinitionBlocks(renderer, parseHtmlToBlocks(SAVED_WORDS.definitionAt(row.dictionaryIndex)), width,
+                                              systemFontIdForPointSize(13));
     dictionarySelected_ = selected;
   }
   renderStyledLines(renderer, dictionaryLines_, left, top, renderer.getScreenHeight() - bottom);
@@ -894,7 +895,7 @@ void HomeSubPage::performDictionaryLookup() {
     lookupDefinition_ += " \xE2\x80\xA6";
   }
   lookupLines_ = layoutDefinitionBlocks(renderer, parseHtmlToBlocks(lookupDefinition_),
-                                         renderer.getScreenWidth() - 40);
+                                         renderer.getScreenWidth() - 40, systemFontIdForPointSize(13));
   lookupShowing_ = true;
   updateRequired = true;
 }
@@ -918,10 +919,13 @@ void HomeSubPage::closeDictionaryLookup() {
 }
 
 void HomeSubPage::saveDictionaryLookup() {
-  if (!lookupHasDefinition_ || lookupAlreadySaved_ || lookupWord_.empty()) {
-    return;
-  }
-  if (SAVED_WORDS.add(lookupWord_, lookupDefinition_)) {
+  if (!lookupHasDefinition_ || lookupWord_.empty()) return;
+  if (lookupAlreadySaved_) {
+    if (SAVED_WORDS.remove(lookupWord_)) {
+      lookupAlreadySaved_ = false;
+      updateRequired = true;
+    }
+  } else if (SAVED_WORDS.add(lookupWord_, lookupDefinition_)) {
     lookupAlreadySaved_ = true;
     updateRequired = true;
   }
@@ -978,7 +982,7 @@ void HomeSubPage::lookupContent() {
     renderer.text.centered(systemFontId(), renderer.getScreenHeight() / 2, "Looking up...", true);
     return;
   }
-  const char* saveLabel = lookupAlreadySaved_ ? "Saved" : "Save";
+  const char* saveLabel = lookupAlreadySaved_ ? "Unsave" : "Save";
   const int saveW = Button::width(renderer, saveLabel, buttonFont);
   const int buttonH = Button::height;
   const int saveY = definitionBottom - buttonH;

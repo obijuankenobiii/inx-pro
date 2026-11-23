@@ -23,6 +23,9 @@ class HalDisplay {
 
   void begin();
 
+
+  void serviceIdle();
+
   static constexpr uint16_t DISPLAY_WIDTH = EInkDisplay::DISPLAY_WIDTH;
   static constexpr uint16_t DISPLAY_HEIGHT = EInkDisplay::DISPLAY_HEIGHT;
   static constexpr uint16_t DISPLAY_WIDTH_BYTES = DISPLAY_WIDTH / 8;
@@ -69,8 +72,9 @@ class HalDisplay {
  private:
   EInkDisplay display;
   Ssd1677WindowedGray windowedGray;
-  // The Murphy panel is parked after each normal refresh. The first update
-  // after boot/wake must therefore rewrite both controller RAM planes before
-  // differential refreshes are allowed again.
+
+
+
   bool needsWakeCleanRefresh = true;
+  unsigned long asyncRefreshStartedAt = 0;
 };

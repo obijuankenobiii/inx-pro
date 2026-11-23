@@ -160,9 +160,9 @@ std::vector<DefinitionStyledLine> wrapAtomsToWidth(const GfxRenderer& renderer,
   return lines;
 }
 
-int fontIdForBlock(const DefinitionBlock& block) {
+int fontIdForBlock(const DefinitionBlock& block, const int paragraphFontId) {
   if (block.kind != DefinitionBlockKind::Heading) {
-    return systemFontIdForPointSize(10);
+    return paragraphFontId > 0 ? paragraphFontId : systemFontIdForPointSize(10);
   }
   if (block.headingLevel <= 1) {
     return systemFontIdForPointSize(16);
@@ -298,14 +298,14 @@ std::vector<DefinitionBlock> parseHtmlToBlocks(const std::string& html) {
 
 std::vector<DefinitionStyledLine> layoutDefinitionBlocks(const GfxRenderer& renderer,
                                                          const std::vector<DefinitionBlock>& blocks,
-                                                         const int maxWidth) {
+                                                         const int maxWidth, const int paragraphFontId) {
   constexpr int kListIndentPx = 14;
   constexpr int kBlockGapPx = 4;
 
   std::vector<DefinitionStyledLine> styledLines;
   for (size_t bi = 0; bi < blocks.size(); ++bi) {
     const DefinitionBlock& block = blocks[bi];
-    const int fontId = fontIdForBlock(block);
+    const int fontId = fontIdForBlock(block, paragraphFontId);
     const int indent = block.kind == DefinitionBlockKind::ListItem ? kListIndentPx : 0;
 
     auto atoms = tokenizeBlock(block);

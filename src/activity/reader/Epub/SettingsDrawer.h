@@ -50,6 +50,12 @@ class SettingsDrawer {
    */
   void hide();
 
+  /** Restore the reader frame captured when the standalone drawer was opened. */
+  bool restoreStoredFrame();
+
+  /** Discard the captured reader frame before a full page rebuild. */
+  void discardStoredFrame();
+
   /**
    * @brief Renders the settings drawer
    */
@@ -120,12 +126,12 @@ class SettingsDrawer {
    * @brief Types of setting groups for organization
    */
   enum class GroupType {
-    FONT,            ///< Font-related settings
-    LAYOUT,          ///< Layout and spacing settings
-    IMAGE,           ///< Book bitmap appearance (global reader image options)
-    CONTROLS,        ///< System and control settings
-    STATUS_BAR,      ///< Status bar configuration
-    STATUS_BAR_FULL  ///< Full-width status bar configuration (stacked below the main bar)
+    FONT,
+    LAYOUT,
+    IMAGE,
+    CONTROLS,
+    STATUS_BAR,
+    STATUS_BAR_FULL
   };
   static constexpr size_t kGroupCount = 6;
   static constexpr size_t groupIndex(const GroupType group) { return static_cast<size_t>(group); }
@@ -137,41 +143,41 @@ class SettingsDrawer {
    */
   enum class MenuItem {
 
-    Separator,               ///< Generic separator for Font, Layout, Controls groups
-    StatusBarSeparator,      ///< Special separator for Status Bar group
-    StatusBarFullSeparator,  ///< Special separator for the Full-width Status Bar group
-    PresetPicker,            ///< Per-book: pick and immediately apply a saved preset
+    Separator,
+    StatusBarSeparator,
+    StatusBarFullSeparator,
+    PresetPicker,
 
-    FontFamily,  ///< Font style selection
-    FontSize,    ///< Font size selection
+    FontFamily,
+    FontSize,
 
-    LineHeight,             ///< Line height (% of natural, 10-200)
-    TextSpace,              ///< Word spacing (% of natural, 10-200)
-    Alignment,              ///< Paragraph alignment
-    ExtraParagraphSpacing,  ///< Additional spacing between paragraphs
-    ParagraphCssIndent,     ///< CSS `text-indent` on/off (labeled "Indent" in UI)
-    Margins,                ///< Independent top/left/right/bottom margins
-    ReadingOrientation,     ///< Screen orientation
+    LineHeight,
+    TextSpace,
+    Alignment,
+    ExtraParagraphSpacing,
+    ParagraphCssIndent,
+    Margins,
+    ReadingOrientation,
 
-    Hyphenation,        ///< Hyphenation toggle
-    BionicReading,      ///< Bionic Reading toggle
-    DarkMode,           ///< Per-book dark mode toggle
-    ReadingGuideLines,  ///< Reading-guide overlay style: Off / Grid (vertical thirds) / Notebook (ruled lines)
-    AntiAliasing,       ///< Text anti-aliasing toggle
-    RefreshRate,        ///< Display refresh frequency
-    ReaderPowerButton,  ///< Reader short power button behavior
-    ChapterSkip,        ///< Long-press chapter skip toggle
-    NavigationLock,     ///< Navigation lock setting
+    Hyphenation,
+    BionicReading,
+    DarkMode,
+    ReadingGuideLines,
+    AntiAliasing,
+    RefreshRate,
+    ReaderPowerButton,
+    ChapterSkip,
+    NavigationLock,
 
-    StatusBarLeft,    ///< Left status bar section content
-    StatusBarMiddle,  ///< Middle status bar section content
-    StatusBarRight,   ///< Right status bar section content
+    StatusBarLeft,
+    StatusBarMiddle,
+    StatusBarRight,
 
     /** The Full bar is a single full-width loading/progress bar (see StatusBar::kFullBarStyles),
      *  not 3 independent text sections like the main bar - one row, not three. */
     StatusBarFullStyle,
 
-    ReaderImageGrayscale,     ///< Global: EPUB image grayscale pass
+    ReaderImageGrayscale,
     PageAutoTurn
   };
 
@@ -180,34 +186,35 @@ class SettingsDrawer {
    * @brief Represents a single menu item in the settings drawer
    */
   struct MenuEntry {
-    MenuItem item;                                                 ///< Type of menu item
-    GroupType group;                                               ///< Group this item belongs to
-    const char* name;                                              ///< Display name
-    std::function<const char*(const BookSettings&)> getValueText;  ///< Gets current value as text
-    std::function<void(BookSettings&, int)> change;                ///< Applies delta change to setting
+    MenuItem item;
+    GroupType group;
+    const char* name;
+    std::function<const char*(const BookSettings&)> getValueText;
+    std::function<void(BookSettings&, int)> change;
   };
 
-  GfxRenderer& renderer;                    ///< Graphics renderer reference
-  BookSettings& settings;                   ///< Book settings reference
-  std::function<void()> onSettingsChanged;  ///< Settings change callback
+  GfxRenderer& renderer;
+  BookSettings& settings;
+  std::function<void()> onSettingsChanged;
   std::function<void(bool)> onTouchEnabledChanged_;
 
-  bool embedded_ = false;                       ///< Render within a fixed sub-region (preset editor)
-  std::function<void()> onEmbeddedInvalidate_;  ///< Host push callback used instead of displayBuffer when embedded
-  bool visible = false;    ///< Drawer visibility state
-  bool dismissed = false;  ///< Drawer dismissed state
-  int selectedIndex = 0;   ///< Currently selected menu index
-  int drawerHeight;        ///< Height of the drawer
-  int drawerY;             ///< Y-coordinate of drawer top
-  int drawerX = 0;         ///< Left edge (right half in landscape)
-  int drawerWidth = 0;     ///< Panel width
-  int itemHeight = 60;     ///< Height of each menu item
-  int itemsPerPage;        ///< Number of items visible per page
-  int scrollOffset = 0;    ///< Current scroll position
-  uint32_t lastInputTime;  ///< Last input timestamp for debouncing
+  bool embedded_ = false;
+  std::function<void()> onEmbeddedInvalidate_;
+  bool visible = false;
+  bool dismissed = false;
+  bool storedFrame_ = false;
+  int selectedIndex = 0;
+  int drawerHeight;
+  int drawerY;
+  int drawerX = 0;
+  int drawerWidth = 0;
+  int itemHeight = 60;
+  int itemsPerPage;
+  int scrollOffset = 0;
+  uint32_t lastInputTime;
 
-  bool settingsUpdated = false;  ///< Flag indicating settings were changed
-  bool touchEnabled_ = true;     ///< In-book touch actions; vertical swipes remain available when false.
+  bool settingsUpdated = false;
+  bool touchEnabled_ = true;
 
   bool selectorOpen_ = false;
   int selectorMenuIndex_ = -1;
@@ -223,9 +230,9 @@ class SettingsDrawer {
   int marginEditorSelected_ = 0;
   uint32_t suppressBackReleaseUntil_ = 0;
 
-  std::array<bool, kGroupCount> groupExpanded_{};  ///< Expansion state for each group, no heap nodes.
-  GroupType selectedGroup_ = GroupType::FONT;      ///< Active tab while editing a reader preset.
-  std::vector<MenuEntry> menuItems;                ///< Current menu items
+  std::array<bool, kGroupCount> groupExpanded_{};
+  GroupType selectedGroup_ = GroupType::FONT;
+  std::vector<MenuEntry> menuItems;
   bool frontlightDragging_ = false;
   bool frontlightDragChanged_ = false;
   bool frontlightCaretPressed_ = false;

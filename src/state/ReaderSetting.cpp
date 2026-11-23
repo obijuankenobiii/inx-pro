@@ -30,9 +30,23 @@ void readAndValidate(FsFile& file, uint8_t& member, uint8_t maxValue);
 ReaderSetting ReaderSetting::instance;
 
 namespace {
-constexpr uint8_t READER_SETTINGS_FILE_VERSION = 2;
+constexpr uint8_t READER_SETTINGS_FILE_VERSION = 9;
 constexpr uint8_t READER_SETTINGS_LEGACY_VERSION = 1;
-constexpr uint8_t READER_SETTINGS_COUNT = 38;
+constexpr uint8_t READER_SETTINGS_VERSION_2 = 2;
+constexpr uint8_t READER_SETTINGS_VERSION_2_COUNT = 38;
+constexpr uint8_t READER_SETTINGS_VERSION_3 = 3;
+constexpr uint8_t READER_SETTINGS_VERSION_3_COUNT = 50;
+constexpr uint8_t READER_SETTINGS_VERSION_4 = 4;
+constexpr uint8_t READER_SETTINGS_VERSION_4_COUNT = 62;
+constexpr uint8_t READER_SETTINGS_VERSION_5 = 5;
+constexpr uint8_t READER_SETTINGS_VERSION_5_COUNT = 80;
+constexpr uint8_t READER_SETTINGS_VERSION_6 = 6;
+constexpr uint8_t READER_SETTINGS_VERSION_6_COUNT = 98;
+constexpr uint8_t READER_SETTINGS_VERSION_7 = 7;
+constexpr uint8_t READER_SETTINGS_VERSION_7_COUNT = 74;
+constexpr uint8_t READER_SETTINGS_VERSION_8 = 8;
+constexpr uint8_t READER_SETTINGS_VERSION_8_COUNT = 75;
+constexpr uint8_t READER_SETTINGS_COUNT = 76;
 constexpr uint8_t READER_SETTINGS_LEGACY_COUNT = 35;
 constexpr char READER_SETTINGS_FILE[] = "/.system/reader_settings.bin";
 constexpr char READER_FONT_FAMILY_FILE[] = "/.system/reader_font_family.txt";
@@ -157,6 +171,14 @@ uint32_t readerSettingsHash(const ReaderSetting& settings, const uint8_t fontFam
   hashPod(hash, settings.disableLightControl);
   hashPod(hash, settings.doubleTapAction);
   hashString(hash, settings.defaultLanguageCode);
+  for (int i = 0; i < ReaderSetting::TAP_ZONE_STORAGE_COUNT; ++i) hashPod(hash, settings.tapZoneActions[i]);
+  for (int i = 0; i < ReaderSetting::TAP_ZONE_STORAGE_COUNT; ++i) hashPod(hash, settings.doubleTapZoneActions[i]);
+  for (int i = 0; i < ReaderSetting::SWIPE_ZONE_COUNT; ++i) hashPod(hash, settings.swipeUpZoneActions[i]);
+  for (int i = 0; i < ReaderSetting::SWIPE_ZONE_COUNT; ++i) hashPod(hash, settings.swipeDownZoneActions[i]);
+  for (int i = 0; i < ReaderSetting::SWIPE_ZONE_COUNT; ++i) hashPod(hash, settings.swipeLeftZoneActions[i]);
+  for (int i = 0; i < ReaderSetting::SWIPE_ZONE_COUNT; ++i) hashPod(hash, settings.swipeRightZoneActions[i]);
+  hashPod(hash, settings.disableHighlight);
+  hashPod(hash, settings.seamlessChapters);
   return hash;
 }
 }
@@ -241,6 +263,20 @@ bool ReaderSetting::saveToFile() const {
   serialization::writePod(outputFile, disableLightControl);
   serialization::writePod(outputFile, doubleTapAction);
   serialization::writeString(outputFile, std::string(defaultLanguageCode));
+  for (int i = 0; i < ReaderSetting::TAP_ZONE_STORAGE_COUNT; ++i) serialization::writePod(outputFile, tapZoneActions[i]);
+  for (int i = 0; i < ReaderSetting::TAP_ZONE_STORAGE_COUNT; ++i) {
+    serialization::writePod(outputFile, doubleTapZoneActions[i]);
+  }
+  for (int i = 0; i < ReaderSetting::SWIPE_ZONE_COUNT; ++i) serialization::writePod(outputFile, swipeUpZoneActions[i]);
+  for (int i = 0; i < ReaderSetting::SWIPE_ZONE_COUNT; ++i) {
+    serialization::writePod(outputFile, swipeDownZoneActions[i]);
+  }
+  for (int i = 0; i < ReaderSetting::SWIPE_ZONE_COUNT; ++i) serialization::writePod(outputFile, swipeLeftZoneActions[i]);
+  for (int i = 0; i < ReaderSetting::SWIPE_ZONE_COUNT; ++i) {
+    serialization::writePod(outputFile, swipeRightZoneActions[i]);
+  }
+  serialization::writePod(outputFile, disableHighlight);
+  serialization::writePod(outputFile, seamlessChapters);
 
   outputFile.close();
 
@@ -274,8 +310,22 @@ bool ReaderSetting::loadFromFile() {
 
   uint8_t fileSettingsCount = 0;
   serialization::readPod(inputFile, fileSettingsCount);
-  const uint8_t expectedSettingsCount = version == READER_SETTINGS_LEGACY_VERSION ? READER_SETTINGS_LEGACY_COUNT
-                                                                                    : READER_SETTINGS_COUNT;
+  const uint8_t expectedSettingsCount = version == READER_SETTINGS_LEGACY_VERSION
+                                            ? READER_SETTINGS_LEGACY_COUNT
+                                            : (version == READER_SETTINGS_VERSION_2 ? READER_SETTINGS_VERSION_2_COUNT
+                                                                                     : (version == READER_SETTINGS_VERSION_3
+                                                                                            ? READER_SETTINGS_VERSION_3_COUNT
+                                                                                            : (version == READER_SETTINGS_VERSION_4
+                                                                                                   ? READER_SETTINGS_VERSION_4_COUNT
+                                                                                                   : (version == READER_SETTINGS_VERSION_5
+                                                                                                          ? READER_SETTINGS_VERSION_5_COUNT
+                                                                                                          : (version == READER_SETTINGS_VERSION_6
+                                                                                                                 ? READER_SETTINGS_VERSION_6_COUNT
+                                                                                                                 : (version == READER_SETTINGS_VERSION_7
+                                                                                                                        ? READER_SETTINGS_VERSION_7_COUNT
+                                                                                                                        : (version == READER_SETTINGS_VERSION_8
+                                                                                                                               ? READER_SETTINGS_VERSION_8_COUNT
+                                                                                                                               : READER_SETTINGS_COUNT)))))));
   if (fileSettingsCount != expectedSettingsCount) {
     INX_SERIAL.printf("[%lu] [CPR] Deserialization failed: Expected %u settings, found %u\n", millis(),
                       expectedSettingsCount, fileSettingsCount);
@@ -285,6 +335,9 @@ bool ReaderSetting::loadFromFile() {
     return false;
   }
   uint8_t settingsRead = 0;
+
+  disableHighlight = 0;
+  seamlessChapters = 1;
 
   do {
     readAndValidate(inputFile, statusBar, SystemSetting::STATUS_BAR_MODE_COUNT);
@@ -340,9 +393,9 @@ bool ReaderSetting::loadFromFile() {
         fontSize = static_cast<uint8_t>(FontManager::pointSizeForLegacyReaderSize(fontSize));
       }
     } else if (fontSize >= SystemSetting::FONT_SIZE_COUNT) {
-      // A settings file written while an outline family was selected can be
-      // reopened after that family is removed or replaced by a legacy .bin
-      // family. Convert the stored point size back to the legacy index.
+
+
+
       fontSize = FontManager::legacyReaderSizeForPointSize(fontSize);
     }
 #else
@@ -378,7 +431,7 @@ bool ReaderSetting::loadFromFile() {
     serialization::readPod(inputFile, marginTop);
     if (++settingsRead >= fileSettingsCount) break;
 
-    if (version >= READER_SETTINGS_FILE_VERSION) {
+    if (version >= READER_SETTINGS_VERSION_2) {
       serialization::readPod(inputFile, marginLeft);
       if (++settingsRead >= fileSettingsCount) break;
       serialization::readPod(inputFile, marginRight);
@@ -459,6 +512,94 @@ bool ReaderSetting::loadFromFile() {
       }
       ++settingsRead;
     }
+    for (int i = 0; i < ReaderSetting::TAP_ZONE_STORAGE_COUNT; ++i) {
+      if (settingsRead >= fileSettingsCount) break;
+      readAndValidate(inputFile, tapZoneActions[i], SystemSetting::READER_BUTTON_ACTION_COUNT);
+      ++settingsRead;
+    }
+    for (int i = 0; i < ReaderSetting::TAP_ZONE_STORAGE_COUNT; ++i) {
+      if (settingsRead >= fileSettingsCount) break;
+      readAndValidate(inputFile, doubleTapZoneActions[i], SystemSetting::READER_BUTTON_ACTION_COUNT);
+      ++settingsRead;
+    }
+    if (version == READER_SETTINGS_VERSION_6) {
+
+
+
+      uint8_t legacyUp[9] = {};
+      uint8_t legacyDown[9] = {};
+      uint8_t legacyLeft[9] = {};
+      uint8_t legacyRight[9] = {};
+      for (int i = 0; i < 9; ++i) {
+        readAndValidate(inputFile, legacyUp[i], SystemSetting::READER_BUTTON_ACTION_COUNT);
+        ++settingsRead;
+      }
+      for (int i = 0; i < 9; ++i) {
+        readAndValidate(inputFile, legacyDown[i], SystemSetting::READER_BUTTON_ACTION_COUNT);
+        ++settingsRead;
+      }
+      for (int i = 0; i < 9; ++i) {
+        readAndValidate(inputFile, legacyLeft[i], SystemSetting::READER_BUTTON_ACTION_COUNT);
+        ++settingsRead;
+      }
+      for (int i = 0; i < 9; ++i) {
+        readAndValidate(inputFile, legacyRight[i], SystemSetting::READER_BUTTON_ACTION_COUNT);
+        ++settingsRead;
+      }
+      for (int column = 0; column < ReaderSetting::SWIPE_ZONE_COLUMNS; ++column) {
+        for (int row = 0; row < 3; ++row) {
+          const int legacyIndex = row * ReaderSetting::SWIPE_ZONE_COLUMNS + column;
+          if (swipeUpZoneActions[column] == SystemSetting::BTN_ACTION_NONE &&
+              legacyUp[legacyIndex] != SystemSetting::BTN_ACTION_NONE) {
+            swipeUpZoneActions[column] = legacyUp[legacyIndex];
+          }
+          if (swipeDownZoneActions[column] == SystemSetting::BTN_ACTION_NONE &&
+              legacyDown[legacyIndex] != SystemSetting::BTN_ACTION_NONE) {
+            swipeDownZoneActions[column] = legacyDown[legacyIndex];
+          }
+          if (swipeLeftZoneActions[column] == SystemSetting::BTN_ACTION_NONE &&
+              legacyLeft[legacyIndex] != SystemSetting::BTN_ACTION_NONE) {
+            swipeLeftZoneActions[column] = legacyLeft[legacyIndex];
+          }
+          if (swipeRightZoneActions[column] == SystemSetting::BTN_ACTION_NONE &&
+              legacyRight[legacyIndex] != SystemSetting::BTN_ACTION_NONE) {
+            swipeRightZoneActions[column] = legacyRight[legacyIndex];
+          }
+        }
+      }
+    } else {
+      for (int i = 0; i < ReaderSetting::SWIPE_ZONE_COUNT; ++i) {
+        if (settingsRead >= fileSettingsCount) break;
+        readAndValidate(inputFile, swipeUpZoneActions[i], SystemSetting::READER_BUTTON_ACTION_COUNT);
+        ++settingsRead;
+      }
+      for (int i = 0; i < ReaderSetting::SWIPE_ZONE_COUNT; ++i) {
+        if (settingsRead >= fileSettingsCount) break;
+        readAndValidate(inputFile, swipeDownZoneActions[i], SystemSetting::READER_BUTTON_ACTION_COUNT);
+        ++settingsRead;
+      }
+      for (int i = 0; i < ReaderSetting::SWIPE_ZONE_COUNT; ++i) {
+        if (settingsRead >= fileSettingsCount) break;
+        readAndValidate(inputFile, swipeLeftZoneActions[i], SystemSetting::READER_BUTTON_ACTION_COUNT);
+        ++settingsRead;
+      }
+      for (int i = 0; i < ReaderSetting::SWIPE_ZONE_COUNT; ++i) {
+        if (settingsRead >= fileSettingsCount) break;
+        readAndValidate(inputFile, swipeRightZoneActions[i], SystemSetting::READER_BUTTON_ACTION_COUNT);
+        ++settingsRead;
+      }
+    }
+
+    if (settingsRead < fileSettingsCount) {
+      serialization::readPod(inputFile, disableHighlight);
+      if (disableHighlight > 1) disableHighlight = 0;
+      ++settingsRead;
+    }
+    if (settingsRead < fileSettingsCount) {
+      serialization::readPod(inputFile, seamlessChapters);
+      if (seamlessChapters > 1) seamlessChapters = 1;
+      ++settingsRead;
+    }
 
   } while (false);
 
@@ -495,8 +636,56 @@ bool ReaderSetting::loadFromFile() {
 
   if (pageTurnMode > PAGE_TURN_TAP) pageTurnMode = PAGE_TURN_TAP;
   if (disableLightControl > 1) disableLightControl = 0;
+  if (disableHighlight > 1) disableHighlight = 0;
+  if (seamlessChapters > 1) seamlessChapters = 1;
   if (doubleTapAction >= SystemSetting::READER_BUTTON_ACTION_COUNT) {
     doubleTapAction = SystemSetting::BTN_ACTION_NONE;
+  }
+  for (int i = 0; i < ReaderSetting::TAP_ZONE_STORAGE_COUNT; ++i) {
+    if (tapZoneActions[i] >= SystemSetting::READER_BUTTON_ACTION_COUNT) {
+      tapZoneActions[i] = SystemSetting::BTN_ACTION_NONE;
+    }
+    if (doubleTapZoneActions[i] >= SystemSetting::READER_BUTTON_ACTION_COUNT) {
+      doubleTapZoneActions[i] = SystemSetting::BTN_ACTION_NONE;
+    }
+  }
+
+
+
+  for (int column = 0; column < ReaderSetting::TAP_ZONE_COLUMNS; ++column) {
+    uint8_t tapAction = SystemSetting::BTN_ACTION_NONE;
+    uint8_t doubleTapActionForColumn = SystemSetting::BTN_ACTION_NONE;
+    for (int row = 0; row < 4; ++row) {
+      const int legacyIndex = row * ReaderSetting::TAP_ZONE_COLUMNS + column;
+      if (tapAction == SystemSetting::BTN_ACTION_NONE &&
+          tapZoneActions[legacyIndex] != SystemSetting::BTN_ACTION_NONE) {
+        tapAction = tapZoneActions[legacyIndex];
+      }
+      if (doubleTapActionForColumn == SystemSetting::BTN_ACTION_NONE &&
+          doubleTapZoneActions[legacyIndex] != SystemSetting::BTN_ACTION_NONE) {
+        doubleTapActionForColumn = doubleTapZoneActions[legacyIndex];
+      }
+    }
+    tapZoneActions[column] = tapAction;
+    doubleTapZoneActions[column] = doubleTapActionForColumn;
+  }
+  for (int i = ReaderSetting::TAP_ZONE_COLUMNS; i < ReaderSetting::TAP_ZONE_STORAGE_COUNT; ++i) {
+    tapZoneActions[i] = SystemSetting::BTN_ACTION_NONE;
+    doubleTapZoneActions[i] = SystemSetting::BTN_ACTION_NONE;
+  }
+  for (int i = 0; i < ReaderSetting::SWIPE_ZONE_COUNT; ++i) {
+    if (swipeUpZoneActions[i] >= SystemSetting::READER_BUTTON_ACTION_COUNT) {
+      swipeUpZoneActions[i] = SystemSetting::BTN_ACTION_NONE;
+    }
+    if (swipeDownZoneActions[i] >= SystemSetting::READER_BUTTON_ACTION_COUNT) {
+      swipeDownZoneActions[i] = SystemSetting::BTN_ACTION_NONE;
+    }
+    if (swipeLeftZoneActions[i] >= SystemSetting::READER_BUTTON_ACTION_COUNT) {
+      swipeLeftZoneActions[i] = SystemSetting::BTN_ACTION_NONE;
+    }
+    if (swipeRightZoneActions[i] >= SystemSetting::READER_BUTTON_ACTION_COUNT) {
+      swipeRightZoneActions[i] = SystemSetting::BTN_ACTION_NONE;
+    }
   }
 
   marginTop = std::min<uint8_t>(marginTop, 80);

@@ -35,17 +35,17 @@ freeink::Imu& imu() {
   static freeink::Imu value;
   return value;
 }
-}  // namespace
+}
 
 void HalGPIO::begin() {
   INX_SERIAL.begin(115200);
   INX_SERIAL.printf("[PICCO][BOOT] reset_reason=%d\n", static_cast<int>(esp_reset_reason()));
   BoardConfig::holdPowerRails();
   if (BoardConfig::ACTIVE.batteryAdc >= 0) pinMode(BoardConfig::ACTIVE.batteryAdc, INPUT);
-  // Picco uses polled buttons. InputManager may report that the boot-time
-  // power-button ISR service is absent while clearing its wake handler; do not
-  // install the service here because ESP32-S3 performs that registration on
-  // ipc0 and can overflow the tiny IPC task stack during early boot.
+
+
+
+
   inputMgr.begin();
   nextTouchRetryMs = millis() + 1000;
   INX_SERIAL.printf("[PICCO] input ready touch=%d ranges=x:%u..%u y:%u..%u\n", inputMgr.hasTouch() ? 1 : 0,
@@ -54,8 +54,8 @@ void HalGPIO::begin() {
 }
 
 void HalGPIO::restoreTouchBusSettings() {
-  // Arduino Wire.begin() reuses an already-started master bus. The frontlight
-  // changes only its timeout; retain that bus and every initialized peripheral.
+
+
   Wire.setTimeOut(10);
   auto& config = BoardConfig::ACTIVE.batteryGauge;
   const uint8_t expectedAddress = config.chargerAddr;
@@ -81,9 +81,9 @@ void HalGPIO::serviceTouchGestures() {
     if (!inputMgr.isTouchPressed()) suppressTouchUntilRelease = false;
     return;
   }
-  // Publish a Picco gesture only on the controller's release edge. Keeping
-  // the latch out of the held-contact updates prevents a swipe from being
-  // reinterpreted as a tap by a page that is rendered during the drag.
+
+
+
   if (!inputMgr.hasTouch() || !inputMgr.wasTouchReleased()) return;
 
   float sx = 0.0f, sy = 0.0f, ex = 0.0f, ey = 0.0f;
@@ -99,11 +99,11 @@ void HalGPIO::serviceTouchGestures() {
   } else {
     touchSwipeDirection = dx < 0.0f ? TouchSwipe::Left : TouchSwipe::Right;
   }
-  // Picco's digitizer is rotated relative to the portrait UI. A portrait
-  // top/bottom swipe is therefore horizontal in the native frame; converting
-  // every native edge swipe into a synthetic Back press would preempt the
-  // mapped drawer gestures in UiPage::menuInput(). Keep the mapped swipe as
-  // the single source of truth for touch navigation.
+
+
+
+
+
   LOG_INF("INPUT", "Picco swipe raw=%s start=%.3f,%.3f end=%.3f,%.3f", touchSwipeDirection == TouchSwipe::Up ? "up" :
                                                                               touchSwipeDirection == TouchSwipe::Down ? "down" :
                                                                               touchSwipeDirection == TouchSwipe::Left ? "left" : "right",
@@ -143,7 +143,7 @@ void HalGPIO::update() {
     float ny = 0.0f;
     if (touchPressed && inputMgr.wasTouchPressedAt(nx, ny)) {
       const auto point = inputMgr.getTouchPoint();
-      // Picco's app orientation is portrait: screen=(1-nativeY,nativeX).
+
       const float screenNx = 1.0f - ny;
       const float screenNy = nx;
       const auto& touch = BoardConfig::ACTIVE.touch;
@@ -281,8 +281,8 @@ void HalGPIO::startDeepSleep(const bool wakeOnToggle) {
       pinMode(powerPin, INPUT_PULLUP);
       wakeMask |= 1ULL << powerPin;
     }
-    // Picco's power button and slide switch are both active-low. Wake from
-    // either one so switching Power back on can boot the device.
+
+
     freeink::PowerManager::armWakeOnPins(wakeMask, true);
     INX_SERIAL.printf("[PICCO][POWER-SWITCH] deep sleep wake mask=0x%llX\n",
                       static_cast<unsigned long long>(wakeMask));
@@ -297,9 +297,9 @@ void HalGPIO::pollBattery() const {
   static const BatteryMonitor battery;
   const auto sample = battery.readStatus();
   if (!sample.externalPowerKnown && !chargerProbeLogged) {
-    // An empty write probes the address without modifying charger registers.
-    // Wire maps a missing ACK to 2, distinguishing it from a failed register
-    // read/driver state. Run once, never reset the bus in response to a failure.
+
+
+
     const auto& config = BoardConfig::ACTIVE.batteryGauge;
     Wire.beginTransmission(config.chargerAddr);
     const uint8_t probe = Wire.endTransmission();
@@ -311,8 +311,8 @@ void HalGPIO::pollBattery() const {
     chargerProbeLogged = true;
   }
   batteryState.update(sample, batteryPoll.elapsed(now));
-  // Log once on startup, charger-state changes, or every 30 seconds. Include
-  // validity flags: an unread charger is different from a disconnected cable.
+
+
   if (!batteryPoll.sampled() || sample.chargerStatus != batteryLastLoggedCharger || now - batteryLastLogMs >= 30000) {
     LOG_INF("PICCO-PWR", "mv=%u mv_ok=%d raw_pct=%u pct=%u reg08=%d usb=%d usb_ok=%d "
                          "charging=%d charge_ok=%d full=%d full_ok=%d",

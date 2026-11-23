@@ -13,6 +13,7 @@
 #include <cstdint>
 
 #include "system/MappedInputManager.h"
+#include "state/SystemSetting.h"
 
 class EpubActivity;
 
@@ -22,6 +23,9 @@ class ReaderButtonBindings {
 
   /** Call once per loop after any chord-entry/active-overlay checks. Returns true if an action fired. */
   bool handleInput(EpubActivity& act);
+
+  /** Dispatches a configured vertical swipe-zone action, if one is assigned. */
+  bool handleTouchSwipe(EpubActivity& act);
 
   /** Fires a single READER_BUTTON_ACTION immediately, bypassing press-state tracking. Public so
    *  EpubActivity's Power button (short-press only, no long-press pairing so it doesn't need
@@ -45,7 +49,8 @@ class ReaderButtonBindings {
   PressState upState_;
   PressState downState_;
   bool pendingDoubleTap_ = false;
-  bool pendingDoubleTapForward_ = false;
+  uint8_t pendingDoubleTapAction_ = SystemSetting::BTN_ACTION_NONE;
+  uint8_t pendingDoubleTapZone_ = 0;
   unsigned long pendingDoubleTapAtMs_ = 0;
   static constexpr unsigned long kLongPressMs = 700;
   static constexpr unsigned long kDoubleTapWindowMs = 400;

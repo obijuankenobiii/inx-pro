@@ -106,18 +106,27 @@ bool ImageRender::render(int x, int y, int width, int height, const Options& opt
 
 bool ImageRender::renderDisplayCacheOnly(int x, int y, int width, int height, const Options& options) const {
   ImageRenderScope imageScope(renderer_);
+  Options effectiveOptions = options;
+  if (format_ == Format::Png) {
+
+
+
+    effectiveOptions.quality = effectiveOptions.mode == ImageRenderMode::TwoBit;
+    effectiveOptions.fastQuality = false;
+  }
   ImageDisplayCacheOptions cacheOptions;
-  cacheOptions.cropToFill = options.cropToFill;
-  cacheOptions.cropAnchor = cacheCropAnchor(options.cropAnchorX);
-  cacheOptions.cropAnchorY = cacheCropAnchor(options.cropAnchorY);
-  cacheOptions.mode = options.mode;
+  cacheOptions.cropToFill = effectiveOptions.cropToFill;
+  cacheOptions.cropAnchor = cacheCropAnchor(effectiveOptions.cropAnchorX);
+  cacheOptions.cropAnchorY = cacheCropAnchor(effectiveOptions.cropAnchorY);
+  cacheOptions.mode = effectiveOptions.mode;
   cacheOptions.renderPlane = static_cast<uint8_t>(renderer_.getRenderMode());
-  cacheOptions.roundedOutside = options.roundedOutside;
-  cacheOptions.quality = options.quality;
+  cacheOptions.roundedOutside = effectiveOptions.roundedOutside;
+  cacheOptions.quality = effectiveOptions.quality;
+  cacheOptions.cacheNamespace = effectiveOptions.cacheNamespace;
   const bool canUseDisplayCache =
-      options.useDisplayCache &&
-      ((options.mode == ImageRenderMode::OneBit && renderer_.getRenderMode() == GfxRenderer::BW) ||
-       options.mode == ImageRenderMode::TwoBit);
+      effectiveOptions.useDisplayCache &&
+      ((effectiveOptions.mode == ImageRenderMode::OneBit && renderer_.getRenderMode() == GfxRenderer::BW) ||
+       effectiveOptions.mode == ImageRenderMode::TwoBit);
   if (!canUseDisplayCache) {
     return false;
   }
@@ -126,18 +135,24 @@ bool ImageRender::renderDisplayCacheOnly(int x, int y, int width, int height, co
 
 bool ImageRender::preloadDisplayCache(int x, int y, int width, int height, const Options& options) const {
   ImageRenderScope imageScope(renderer_);
+  Options effectiveOptions = options;
+  if (format_ == Format::Png) {
+    effectiveOptions.quality = effectiveOptions.mode == ImageRenderMode::TwoBit;
+    effectiveOptions.fastQuality = false;
+  }
   ImageDisplayCacheOptions cacheOptions;
-  cacheOptions.cropToFill = options.cropToFill;
-  cacheOptions.cropAnchor = cacheCropAnchor(options.cropAnchorX);
-  cacheOptions.cropAnchorY = cacheCropAnchor(options.cropAnchorY);
-  cacheOptions.mode = options.mode;
+  cacheOptions.cropToFill = effectiveOptions.cropToFill;
+  cacheOptions.cropAnchor = cacheCropAnchor(effectiveOptions.cropAnchorX);
+  cacheOptions.cropAnchorY = cacheCropAnchor(effectiveOptions.cropAnchorY);
+  cacheOptions.mode = effectiveOptions.mode;
   cacheOptions.renderPlane = static_cast<uint8_t>(renderer_.getRenderMode());
-  cacheOptions.roundedOutside = options.roundedOutside;
-  cacheOptions.quality = options.quality;
+  cacheOptions.roundedOutside = effectiveOptions.roundedOutside;
+  cacheOptions.quality = effectiveOptions.quality;
+  cacheOptions.cacheNamespace = effectiveOptions.cacheNamespace;
   const bool canUseDisplayCache =
-      options.useDisplayCache &&
-      ((options.mode == ImageRenderMode::OneBit && renderer_.getRenderMode() == GfxRenderer::BW) ||
-       options.mode == ImageRenderMode::TwoBit);
+      effectiveOptions.useDisplayCache &&
+      ((effectiveOptions.mode == ImageRenderMode::OneBit && renderer_.getRenderMode() == GfxRenderer::BW) ||
+       effectiveOptions.mode == ImageRenderMode::TwoBit);
   return canUseDisplayCache &&
          ImageDisplayCache::preloadIfAvailable(renderer_, path_, x, y, width, height, cacheOptions);
 }
@@ -147,18 +162,20 @@ bool ImageRender::render(int x, int y, int width, int height, const Options& opt
   ImageRenderScope imageScope(renderer_);
   Options effectiveOptions = options;
   if (format_ == Format::Png) {
-    effectiveOptions.mode = ImageRenderMode::OneBit;
-    effectiveOptions.quality = false;
+
+
+
+    effectiveOptions.quality = effectiveOptions.mode == ImageRenderMode::TwoBit;
     effectiveOptions.fastQuality = false;
     if (!effectiveOptions.preserveTransparency && renderer_.getRenderMode() != GfxRenderer::BW) {
       renderer_.rectangle.fill(x, y, width, height, false);
     }
   }
 
-  // BW image renderers write ink pixels but do not overwrite white pixels. In
-  // dark mode the page background is black, so seed only the image rectangle
-  // with white before rendering; otherwise white image pixels are captured as
-  // black and the resulting display-cache entry is unusable.
+
+
+
+
   if (renderer_.isDarkMode() && renderer_.getRenderMode() == GfxRenderer::BW &&
       !effectiveOptions.preserveTransparency) {
     renderer_.rectangle.fill(x, y, width, height, false);
@@ -171,6 +188,7 @@ bool ImageRender::render(int x, int y, int width, int height, const Options& opt
   cacheOptions.renderPlane = static_cast<uint8_t>(renderer_.getRenderMode());
   cacheOptions.roundedOutside = effectiveOptions.roundedOutside;
   cacheOptions.quality = effectiveOptions.quality;
+  cacheOptions.cacheNamespace = effectiveOptions.cacheNamespace;
   const bool canUseDisplayCache =
       effectiveOptions.useDisplayCache &&
       ((effectiveOptions.mode == ImageRenderMode::OneBit && renderer_.getRenderMode() == GfxRenderer::BW) ||
@@ -182,9 +200,9 @@ bool ImageRender::render(int x, int y, int width, int height, const Options& opt
     }
   }
 
-  // Let the first Home frame reach the panel without blocking on SD image
-  // decoding. The caller can render its normal placeholder and warm the cache
-  // on the following idle frame.
+
+
+
   if (renderer_.shouldDeferImageDecode()) return false;
 
   bool ok = false;
@@ -211,7 +229,7 @@ bool ImageRender::render(int x, int y, int width, int height, const Options& opt
       PngRender png(renderer_);
       ok = png.fromPath(path_, x, y, width, height, effectiveOptions.cropToFill, effectiveOptions.mode,
                         effectiveOptions.cropAnchorX, jpegCapture, effectiveOptions.preserveTransparency,
-                        effectiveOptions.cropAnchorY);
+                        effectiveOptions.cropAnchorY, effectiveOptions.quality);
     } else {
       FsFile file;
       if (!SdMan.openFileForRead("EHP", path_, file)) {
@@ -260,7 +278,7 @@ bool ImageRender::displayCachedTwoBit(int x, int y, int width, int height, const
   if (!options.useDisplayCache) {
     return false;
   }
-  const bool effectiveQuality = quality && format_ != Format::Png;
+  const bool effectiveQuality = quality;
   ImageDisplayCacheOptions cacheOptions;
   cacheOptions.cropToFill = options.cropToFill;
   cacheOptions.cropAnchor = cacheCropAnchor(options.cropAnchorX);
@@ -268,6 +286,7 @@ bool ImageRender::displayCachedTwoBit(int x, int y, int width, int height, const
   cacheOptions.mode = ImageRenderMode::TwoBit;
   cacheOptions.roundedOutside = options.roundedOutside;
   cacheOptions.quality = effectiveQuality;
+  cacheOptions.cacheNamespace = options.cacheNamespace;
   const bool hit = ImageDisplayCache::displayTwoBitIfAvailable(renderer_, path_, x, y, width, height, cacheOptions,
                                                                effectiveQuality, options.fastQuality);
   return hit;
@@ -278,7 +297,7 @@ bool ImageRender::hasCachedTwoBit(int x, int y, int width, int height, const Opt
   if (!options.useDisplayCache) {
     return false;
   }
-  const bool effectiveQuality = quality && format_ != Format::Png;
+  const bool effectiveQuality = quality;
   ImageDisplayCacheOptions cacheOptions;
   cacheOptions.cropToFill = options.cropToFill;
   cacheOptions.cropAnchor = cacheCropAnchor(options.cropAnchorX);
@@ -286,6 +305,7 @@ bool ImageRender::hasCachedTwoBit(int x, int y, int width, int height, const Opt
   cacheOptions.mode = ImageRenderMode::TwoBit;
   cacheOptions.roundedOutside = options.roundedOutside;
   cacheOptions.quality = effectiveQuality;
+  cacheOptions.cacheNamespace = options.cacheNamespace;
   return ImageDisplayCache::hasCachedTwoBit(renderer_, path_, x, y, width, height, cacheOptions, effectiveQuality);
 }
 
@@ -294,13 +314,14 @@ bool ImageRender::hasCachedGrayscale(int x, int y, int width, int height, const 
   if (!options.useDisplayCache) {
     return false;
   }
-  const bool effectiveQuality = quality && format_ != Format::Png;
+  const bool effectiveQuality = quality;
   ImageDisplayCacheOptions cacheOptions;
   cacheOptions.cropToFill = options.cropToFill;
   cacheOptions.cropAnchor = cacheCropAnchor(options.cropAnchorX);
   cacheOptions.cropAnchorY = cacheCropAnchor(options.cropAnchorY);
   cacheOptions.roundedOutside = options.roundedOutside;
   cacheOptions.quality = effectiveQuality;
+  cacheOptions.cacheNamespace = options.cacheNamespace;
   return ImageDisplayCache::hasCombinedTwoBit(renderer_, path_, x, y, width, height, cacheOptions);
 }
 
@@ -323,8 +344,8 @@ bool ImageRender::displayGrayscale(int x, int y, int width, int height, const Op
   }
 
   const bool effectiveQuality = quality && format_ != Format::Png;
-  // An overlay may draw outside the image rectangle (for example image-viewer
-  // controls), so keep the existing full-frame path whenever one is present.
+
+
   const bool useWindowedQuality = effectiveQuality && renderer_.supportsWindowedQuality() &&
                                   (!overlay || options.allowWindowedQualityWithOverlay);
   const GfxRenderer::DisplayRegion imageRegion{x, y, width, height};
@@ -339,6 +360,7 @@ bool ImageRender::displayGrayscale(int x, int y, int width, int height, const Op
   combinedCacheOptions.cropAnchorY = cacheCropAnchor(opt.cropAnchorY);
   combinedCacheOptions.roundedOutside = opt.roundedOutside;
   combinedCacheOptions.quality = effectiveQuality;
+  combinedCacheOptions.cacheNamespace = opt.cacheNamespace;
 
   if (options.useDisplayCache &&
       ImageDisplayCache::renderCombinedTwoBit(renderer_, path_, x, y, width, height, combinedCacheOptions,

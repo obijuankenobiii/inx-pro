@@ -35,7 +35,7 @@ constexpr uint8_t kMasterActivation = 0x20;
 const char* boardName() {
   return BoardConfig::ACTIVE.board == BoardConfig::Board::Sticky ? "sticky" : "murphy_m4";
 }
-}  // namespace
+}
 
 using EInkDisplay = freeink::FreeInkDisplay;
 
@@ -102,9 +102,9 @@ void Ssd1677WindowedGray::setRamArea(const uint16_t x, const uint16_t yIn, const
 }
 
 void Ssd1677WindowedGray::setUpdateControl1(const uint8_t first, const uint8_t second) {
-  // SSD1677 command 0x21 is a two-byte register. Sending only the first byte
-  // leaves the next command byte in the register and turns the activation into
-  // a full/invalid update on some panel batches (notably Murphy and Sticky).
+
+
+
   _display._bus.cmd(kUpdateControl1);
   _display._bus.data(first);
   _display._bus.data(second);
@@ -116,10 +116,10 @@ void Ssd1677WindowedGray::writeRam(const uint8_t command, const uint8_t* data, c
 }
 
 void Ssd1677WindowedGray::writePlaneWindow(const uint8_t command, const uint8_t* plane) {
-  // Match the working X4Pro order: stage the complete grayscale plane first,
-  // then constrain only the following waveform with the requested window.
-  // SSD1677 quality waveforms can consume RAM outside the write rectangle;
-  // sending only window bytes leaves the rest stale and produces a black panel.
+
+
+
+
   setRamArea(0, 0, _display.getDisplayWidth(), _display.getDisplayHeight());
   writeRam(command, plane, _display.getBufferSize());
   SSD1677_PROJECT_WINDOW_LOG(
@@ -177,20 +177,20 @@ bool Ssd1677WindowedGray::displayWindow(const uint16_t x, const uint16_t y, cons
   }
 
   loadLut(lut);
-  // C7 is the SSD1677 full-refresh sequence; it ignores the requested
-  // window for the waveform and was the reason the whole panel flashed.
-  // Power the rails separately, then run the externally loaded LUT with the
-  // custom fast/window sequence 0x0C.
+
+
+
+
   _display._bus.cmd(kUpdateControl2);
-  _display._bus.data(0xC0);  // CLOCK_ON | ANALOG_ON, no display start
+  _display._bus.data(0xC0);
   _display._bus.cmd(kMasterActivation);
   _display._bus.waitBusy("project_gray_power_on");
 
-  // Re-assert the window immediately before the only display-start command.
+
   setRamArea(_windowX, _windowY, _windowW, _windowH);
   setUpdateControl1(0x00, 0x00);
   if (_railSettleMs != 0) delay(_railSettleMs);
-  const uint8_t ctrl2 = 0x0C;  // MODE_SELECT | DISPLAY_START, external LUT
+  const uint8_t ctrl2 = 0x0C;
   _display._bus.cmd(kUpdateControl2);
   _display._bus.data(ctrl2);
   _display._bus.cmd(kMasterActivation);

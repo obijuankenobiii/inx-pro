@@ -157,7 +157,7 @@ Grid::Grid(GfxRenderer& renderer, MappedInputManager& mappedInput,
 
 void Grid::reset() { page = 0; }
 
-int Grid::top() const { return navigation::Menu::height; }
+int Grid::top() const { return navigation::Menu::height - 10; }
 
 int Grid::visibleHeight() const {
   const int bottomInset = SETTINGS.hiddenMenu != 0 ? UiLayout::LIBRARY_BOTTOM_BAR_HEIGHT : navigation::Menu::bottomInset();
@@ -204,7 +204,7 @@ int Grid::itemAt(const int x, const int y) const {
 
 bool Grid::handleInput() {
   if (mappedInput.wasTouchSwipeUp()) {
-    if (page + 1 < pageCount()) ++page;
+    page = page + 1 < pageCount() ? page + 1 : 0;
     return true;
   }
   if (mappedInput.wasTouchSwipeDown()) {

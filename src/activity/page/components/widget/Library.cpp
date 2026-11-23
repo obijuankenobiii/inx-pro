@@ -31,7 +31,7 @@ std::string cacheDirectory(const std::string& bookPath) {
   const bool xtc = lower.size() >= 4 && lower.substr(lower.size() - 4) == ".xtc";
   const char* roots[] = {xtc ? "/.metadata/xtc" : "/.metadata/epub",
                          xtc ? "/.metadata/epub" : "/.metadata/xtc"};
-  const char* names[] = {"thumb.jpg", "thumb.png", "thumb.bmp"};
+  const char* names[] = {"thumb.jpg", "thumb.png", "thumb.bmp", "cover.jpg", "cover.png", "cover.bmp"};
   const std::string hash = std::to_string(std::hash<std::string>{}(bookPath));
   for (const char* root : roots) {
     const std::string directory = std::string(root) + "/" + hash;
@@ -44,7 +44,7 @@ std::string cacheDirectory(const std::string& bookPath) {
 
 std::string imagePath(const std::string& directory) {
   if (directory.empty()) return {};
-  for (const char* name : {"thumb.jpg", "thumb.png", "thumb.bmp"}) {
+  for (const char* name : {"thumb.jpg", "thumb.png", "thumb.bmp", "cover.jpg", "cover.png", "cover.bmp"}) {
     const std::string path = directory + "/" + name;
     if (SdMan.exists(path.c_str())) return path;
   }
@@ -68,6 +68,7 @@ bool renderCover(GfxRenderer& renderer, const std::string& path, const int x, co
   options.cropAnchorX = 0.5f;
   options.useDisplayCache = true;
   options.asyncDisplayCache = true;
+  options.cacheNamespace = ImageDisplayCacheNamespace::Widgets;
   options.roundedOutside = rounded ? BitmapRender::RoundedOutside::PaperOutside
                                    : BitmapRender::RoundedOutside::None;
   if (!ImageRender::create(renderer, path).render(x, y, width, height, options)) return false;
@@ -85,6 +86,7 @@ bool renderCoverSlice(GfxRenderer& renderer, const std::string& path, const int 
   options.cropAnchorX = 0.0f;
   options.useDisplayCache = true;
   options.asyncDisplayCache = true;
+  options.cacheNamespace = ImageDisplayCacheNamespace::Widgets;
   options.roundedOutside = rounded ? BitmapRender::RoundedOutside::PaperOutside
                                    : BitmapRender::RoundedOutside::None;
   if (!ImageRender::create(renderer, path).render(x, y, width, height, options)) return false;
@@ -176,7 +178,7 @@ std::vector<LibraryWidget::Folder> LibraryWidget::folders() {
 }
 
 std::string LibraryWidget::folderImagePath(const std::string& folder) const {
-  for (const char* name : {"thumb.jpg", "thumb.png", "thumb.bmp"}) {
+  for (const char* name : {"thumb.jpg", "thumb.png", "thumb.bmp", "cover.jpg", "cover.png", "cover.bmp"}) {
     const std::string path = (folder == "/" ? std::string() : folder) + "/" + name;
     if (SdMan.exists(path.c_str())) return path;
   }

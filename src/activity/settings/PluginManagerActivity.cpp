@@ -32,7 +32,7 @@ const uint8_t* packageIcon(const PluginManager::Package& package) {
   return package.id == "xtc-converter" ? XtcConverter : Anki;
 }
 
-}  // namespace
+}
 
 void PluginManagerActivity::onEnter() {
   ActivityWithSubactivity::onEnter();
@@ -202,7 +202,7 @@ void PluginManagerActivity::displayTaskTrampoline(void* param) {
 void PluginManagerActivity::render() {
   renderer.clearScreen();
   const int top = SubPage::header(renderer, "Download", "Plugin");
-  const int screenW = renderer.getScreenWidth();  
+  const int screenW = renderer.getScreenWidth();
   const int screenH = renderer.getScreenHeight();
   const int font = systemFontId();
   if (state_ == State::Downloading) {

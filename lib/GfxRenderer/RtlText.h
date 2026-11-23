@@ -47,4 +47,4 @@ void splitBionicWord(const std::string& text, bool enabled, std::string& prefix,
 const char* prepareForRender(const char* text, std::string& outputStorage,
                              GlyphCoverage coverage = nullptr, void* coverageContext = nullptr);
 
-}  // namespace RtlText
+}

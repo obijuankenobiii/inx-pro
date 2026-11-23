@@ -18,12 +18,12 @@
  */
 class UiPage : public Activity, public navigation::Menu {
  public:
-  static constexpr int LIST_ITEM_HEIGHT = UiLayout::LIST_ITEM_HEIGHT;      ///< one row in any settings/menu list
-  static constexpr int HEADER_HEIGHT = UiLayout::HEADER_HEIGHT;         ///< in-page header band
-  static constexpr int PAGE_HEADER_HEIGHT = UiLayout::PAGE_HEADER_HEIGHT;    ///< taller header used by drawer pages
-  static constexpr int TAB_BAR_HEIGHT = UiLayout::TAB_BAR_HEIGHT;        ///< bottom navigation strip
-  static constexpr int CONTENT_TOP = UiLayout::CONTENT_TOP;           ///< first usable y below the status row
-  static constexpr int CONTENT_BOTTOM_PADDING = UiLayout::CONTENT_BOTTOM_PADDING; ///< gap between content and the tab bar
+  static constexpr int LIST_ITEM_HEIGHT = UiLayout::LIST_ITEM_HEIGHT;
+  static constexpr int HEADER_HEIGHT = UiLayout::HEADER_HEIGHT;
+  static constexpr int PAGE_HEADER_HEIGHT = UiLayout::PAGE_HEADER_HEIGHT;
+  static constexpr int TAB_BAR_HEIGHT = UiLayout::TAB_BAR_HEIGHT;
+  static constexpr int CONTENT_TOP = UiLayout::CONTENT_TOP;
+  static constexpr int CONTENT_BOTTOM_PADDING = UiLayout::CONTENT_BOTTOM_PADDING;
   static constexpr int LIST_BOTTOM_PADDING = UiLayout::LIST_BOTTOM_PADDING;
 
   /** Last usable y for page content, i.e. just above the bottom tab bar. */
@@ -49,6 +49,8 @@ class UiPage : public Activity, public navigation::Menu {
   bool menuInput();
   /** Renders the page when its content or menu state changed. */
   void renderPage();
+  /** Composes the page into the write framebuffer without starting a refresh. */
+  void renderPageToBackBuffer();
   /** Captures the current page before opening a lightweight overlay drawer. */
   bool storeOverlayFrame();
   /** Marks the overlay frame for restoration when the drawer closes. */
@@ -59,7 +61,7 @@ class UiPage : public Activity, public navigation::Menu {
   bool routeMenuAction(navigation::Menu::Action action);
 
  private:
-  void render();
+  void render(bool present = true);
   bool overlayFrameStored_ = false;
   bool overlayFrameActive_ = false;
   bool overlayFrameRestorePending_ = false;

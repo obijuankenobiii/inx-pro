@@ -71,7 +71,7 @@ class KeyboardEntryActivity : public Activity {
   TaskHandle_t displayTaskHandle = nullptr;
   SemaphoreHandle_t renderingMutex = nullptr;
   bool updateRequired = false;
-  mutable unsigned long renderEnteredAt_ = 0;  ///< draw-vs-refresh timing split
+  mutable unsigned long renderEnteredAt_ = 0;
 
   int selectedRow = 0;
   int selectedCol = 0;

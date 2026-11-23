@@ -55,9 +55,9 @@ bool formatMenuClock(char* out, const size_t outSize) {
 }
 
 int menuStatusTextTop(const GfxRenderer& renderer, const int top, const int font) {
-  // Keep clock text on the same line box as the percentage next to the
-  // battery. This is important for external TTFs, whose ascender and line
-  // height differ from the embedded Montserrat metrics.
+
+
+
   return top + ScreenComponents::BATTERY_ICON_TOP_OFFSET +
          (ScreenComponents::BATTERY_ICON_HEIGHT - renderer.text.getLineHeight(font)) / 2;
 }
@@ -75,14 +75,16 @@ void ScreenComponents::drawBattery(const GfxRenderer& renderer, const int left, 
 #endif
   const int font = systemFontIdForPointSize(8);
   const auto percentageText = showPercentage ? std::to_string(percentage) + "%" : "";
-  // Align the font's line box to the battery artwork. External TTFs often have
-  // a taller ascender/line height than the built-in bitmap font, so using the
-  // header's raw top coordinate leaves the percentage visibly off-center.
+
+
+
   const int textY = top + BATTERY_ICON_TOP_OFFSET +
                     (BATTERY_ICON_HEIGHT - renderer.text.getLineHeight(font)) / 2;
   renderer.text.render(font, left + BATTERY_ICON_WIDTH + BATTERY_TEXT_GAP, textY, percentageText.c_str());
 
-  renderer.bitmap.icon(BatteryIcon, left, top + BATTERY_ICON_TOP_OFFSET, BATTERY_ICON_WIDTH, BATTERY_ICON_HEIGHT);
+  if (!charging) {
+    renderer.bitmap.icon(BatteryIcon, left, top + BATTERY_ICON_TOP_OFFSET, BATTERY_ICON_WIDTH, BATTERY_ICON_HEIGHT);
+  }
 
   const int bars = percentage >= 75 ? 4 : percentage >= 50 ? 3 : percentage >= 25 ? 2 : 1;
   constexpr int barHeight = 6;
@@ -95,8 +97,7 @@ void ScreenComponents::drawBattery(const GfxRenderer& renderer, const int left, 
   if (charging) {
     constexpr int chargingIconW = 40;
     constexpr int chargingIconH = 40;
-    constexpr int chargingIconGap = 30;
-    renderer.bitmap.icon(Charging, left - chargingIconGap,
+    renderer.bitmap.icon(Charging, left + (BATTERY_ICON_WIDTH - chargingIconW) / 2,
                          top + BATTERY_ICON_TOP_OFFSET + (BATTERY_ICON_HEIGHT - chargingIconH) / 2,
                          chargingIconW, chargingIconH, BitmapRender::Orientation::None);
   }
@@ -163,8 +164,8 @@ void ScreenComponents::drawWhiteOverlay(const GfxRenderer& renderer, const int s
   const int firstY = std::max(0, std::min(startY, height));
   const bool whitePixel = renderer.isDarkMode() && !renderer.isImageRendering();
 
-  // The display is 1-bit, so a paper-colored checkerboard creates a white
-  // scrim over the existing framebuffer while preserving the page underneath.
+
+
   for (int y = firstY; y < height; ++y) {
     for (int x = 0; x < width; ++x) {
       if ((x & 1) == (y & 1)) {
@@ -194,6 +195,47 @@ ScreenComponents::PopupLayout ScreenComponents::drawPopup(const GfxRenderer& ren
   renderer.text.render(systemFontId(), textX, textY, message, false);
   renderer.displayBuffer();
   return {x, y, w, h};
+}
+
+ScreenComponents::PopupLayout ScreenComponents::drawLoadingPopup(const GfxRenderer& renderer) {
+  constexpr int panelWidth = 128;
+  constexpr int panelHeight = 76;
+  constexpr int borderWidth = 2;
+  constexpr int dotRadius = 10;
+  constexpr int dotGap = 10;
+
+  renderer.syncWriteBufferFromActive();
+
+  const int x = (renderer.getScreenWidth() - panelWidth) / 2;
+  const int y = std::max(0, (renderer.getScreenHeight() - panelHeight) / 2);
+
+
+
+
+  renderer.rectangle.fill(x, y, panelWidth, panelHeight, true);
+  renderer.rectangle.fill(x + borderWidth, y + borderWidth, panelWidth - borderWidth * 2,
+                          panelHeight - borderWidth * 2, false);
+
+  const int centerX = x + panelWidth / 2;
+  const int centerY = y + panelHeight / 2;
+  const int centerOffset = dotRadius * 2 + dotGap;
+  const int dotXs[] = {centerX - centerOffset, centerX, centerX + centerOffset};
+
+
+
+  renderer.circle.render(dotXs[0], centerY, dotRadius, true);
+  renderer.circle.render(dotXs[0], centerY, dotRadius - 2, false);
+  for (int dy = -dotRadius; dy <= dotRadius; ++dy) {
+    for (int dx = -dotRadius; dx <= dotRadius; ++dx) {
+      if (dx * dx + dy * dy <= dotRadius * dotRadius) {
+        renderer.drawPixel(dotXs[1] + dx, centerY + dy, ((dx + dy) & 1) == 0);
+      }
+    }
+  }
+  renderer.circle.render(dotXs[2], centerY, dotRadius, true);
+
+  renderer.displayBuffer();
+  return {x, y, panelWidth, panelHeight};
 }
 
 void ScreenComponents::fillPopupProgress(const GfxRenderer& renderer, const PopupLayout& layout, const int progress) {

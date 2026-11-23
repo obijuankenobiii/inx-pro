@@ -42,6 +42,7 @@ void setRoundedOptions(ImageRender::Options& options) {
   options.cropToFill = false;
   options.useDisplayCache = true;
   options.asyncDisplayCache = true;
+  options.cacheNamespace = ImageDisplayCacheNamespace::Widgets;
   if (SETTINGS.bitmapRoundedCorners == 0) {
     options.roundedOutside = BitmapRender::RoundedOutside::None;
   } else if (SETTINGS.bitmapRoundedCorners == 2) {
@@ -118,7 +119,7 @@ std::string Favorites::thumbnailPath(const std::string& bookPath) const {
   const char* roots[] = {endsWith(lowerPath, ".xtc") || endsWith(lowerPath, ".xtch") ? "/.metadata/xtc"
                                                                                          : "/.metadata/epub",
                          "/.metadata/pdf", "/.metadata/xtc", "/.system"};
-  const char* names[] = {"thumb.jpg", "thumb.png", "thumb.bmp"};
+  const char* names[] = {"thumb.jpg", "thumb.png", "thumb.bmp", "cover.jpg", "cover.png", "cover.bmp"};
   SdIoMutex::Lock ioLock;
   for (const char* root : roots) {
     const std::string directory = std::string(root) + "/" + (std::string(root) == "/.system" ? "txt_" : "") + hash;

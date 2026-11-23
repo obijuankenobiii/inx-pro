@@ -17,6 +17,8 @@
 
 #include "state/SystemSetting.h"
 #include "images/Close.h"
+#include "images/LibraryFilterLeft.h"
+#include "images/LibraryFilterRight.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
 #include "ReaderFontSettingsDraw.h"
@@ -35,6 +37,8 @@ constexpr int THUMB_INSET_Y = 12;
 constexpr int RANDOM_BUTTON_W = 178;
 constexpr int RANDOM_BUTTON_H = 28;
 constexpr int FOOTER_SIDE_PAD = 20;
+constexpr int BOTTOM_BAR_HEIGHT = 70;
+constexpr int BOTTOM_BAR_CELL_WIDTH = 60;
 
 }
 
@@ -48,10 +52,11 @@ void SleepImagePickerActivity::onEnter() {
   freeGridBuffer();
   rebuildRows();
 
-  randomEnabled = SETTINGS.sleepCustomBmp[0] == '\0';
+  randomEnabled = onSelected ? false : SETTINGS.sleepCustomBmp[0] == '\0';
   selectedIndex = 0;
+  const std::string selectedPath = onSelected ? initialPath : std::string(SETTINGS.sleepCustomBmp);
   for (size_t i = 0; i < rows.size(); i++) {
-    if (rows[i].value == SETTINGS.sleepCustomBmp) {
+    if (rows[i].value == selectedPath) {
       selectedIndex = static_cast<int>(i);
       break;
     }
@@ -80,41 +85,48 @@ void SleepImagePickerActivity::displayTaskLoop() {
 void SleepImagePickerActivity::rebuildRows() {
   rows.clear();
 
-  std::vector<Row> folderImages;
-  auto dir = SdMan.open("/sleep");
-  if (dir && dir.isDirectory()) {
-    char name[256];
+  std::function<void(const std::string&)> scanDirectory;
+  scanDirectory = [&](const std::string& directoryPath) {
+    auto dir = SdMan.open(directoryPath.c_str());
+    if (!dir || !dir.isDirectory()) {
+      if (dir) dir.close();
+      return;
+    }
+
+    char name[256] = {};
     while (auto file = dir.openNextFile()) {
       file.getName(name, sizeof(name));
-      std::string filename = name;
-      const bool supported = StringUtils::checkFileExtension(filename, ".bmp") ||
-                             StringUtils::checkFileExtension(filename, ".jpg") ||
-                             StringUtils::checkFileExtension(filename, ".jpeg") ||
-                             StringUtils::checkFileExtension(filename, ".png");
-      if (filename[0] != '.' && supported) {
-        folderImages.push_back({filename, filename, std::string("/sleep/") + filename});
+      const std::string filename = name;
+      if (filename.empty() || filename[0] == '.') {
+        file.close();
+        continue;
+      }
+
+      const std::string path = directoryPath == "/" ? "/" + filename : directoryPath + "/" + filename;
+      if (file.isDirectory()) {
+        file.close();
+        scanDirectory(path);
+      } else if (StringUtils::checkFileExtension(filename, ".bmp") ||
+                 StringUtils::checkFileExtension(filename, ".jpg") ||
+                 StringUtils::checkFileExtension(filename, ".jpeg") ||
+                 StringUtils::checkFileExtension(filename, ".png")) {
+        rows.push_back({path, path, path});
       }
       file.close();
       yield();
     }
     dir.close();
-  }
+  };
 
-  std::sort(folderImages.begin(), folderImages.end(), [](const Row& a, const Row& b) { return a.label < b.label; });
-  rows.insert(rows.end(), folderImages.begin(), folderImages.end());
-
-  if (SdMan.exists("/sleep.bmp")) {
-    rows.push_back({"sleep.bmp (SD root)", "/sleep.bmp", "/sleep.bmp"});
+  const std::string imageRoot = onSelected ? "/widgets" : "/sleep";
+  scanDirectory(imageRoot);
+  if (!onSelected) {
+    if (SdMan.exists("/sleep.bmp")) rows.push_back({"/sleep.bmp", "/sleep.bmp", "/sleep.bmp"});
+    if (SdMan.exists("/sleep.jpg")) rows.push_back({"/sleep.jpg", "/sleep.jpg", "/sleep.jpg"});
+    if (SdMan.exists("/sleep.jpeg")) rows.push_back({"/sleep.jpeg", "/sleep.jpeg", "/sleep.jpeg"});
+    if (SdMan.exists("/sleep.png")) rows.push_back({"/sleep.png", "/sleep.png", "/sleep.png"});
   }
-  if (SdMan.exists("/sleep.jpg")) {
-    rows.push_back({"sleep.jpg (SD root)", "/sleep.jpg", "/sleep.jpg"});
-  }
-  if (SdMan.exists("/sleep.jpeg")) {
-    rows.push_back({"sleep.jpeg (SD root)", "/sleep.jpeg", "/sleep.jpeg"});
-  }
-  if (SdMan.exists("/sleep.png")) {
-    rows.push_back({"sleep.png (SD root)", "/sleep.png", "/sleep.png"});
-  }
+  std::sort(rows.begin(), rows.end(), [](const Row& a, const Row& b) { return a.label < b.label; });
 }
 
 void SleepImagePickerActivity::onExit() {
@@ -157,12 +169,12 @@ void SleepImagePickerActivity::drawPickerChrome(const int pageStart, const int r
                                                 const bool localRandomEnabled, const bool drawCells) {
   const int pageWidth = renderer.getScreenWidth();
   const int pageHeight = renderer.getScreenHeight();
-  renderer.text.render(systemFontIdForPointSize(16), 20, 20, "Choose sleep image", true,
+  renderer.text.render(systemFontIdForPointSize(16), 20, 20, title.c_str(), true,
                        EpdFontFamily::BOLD);
   renderer.bitmap.icon(Close, pageWidth - 60, 20, 40, 40);
 
   const int buttonX = pageWidth - RANDOM_BUTTON_W - FOOTER_SIDE_PAD;
-  const int buttonY = pageHeight - 76;
+  const int buttonY = pageHeight - BOTTOM_BAR_HEIGHT;
   const int gridBottom = buttonY - 14;
   const int gridHeight = std::max(1, gridBottom - GRID_TOP);
   const int cellW = (pageWidth - GRID_MARGIN_X * 2 - GRID_GAP_X) / GRID_COLS;
@@ -189,12 +201,20 @@ void SleepImagePickerActivity::drawPickerChrome(const int pageStart, const int r
     const int emptyW = pageWidth - GRID_MARGIN_X * 2;
     const int emptyH = gridBottom - GRID_TOP;
     renderer.rectangle.render(emptyX, emptyY, emptyW, emptyH, true);
-    const char* msg = "No sleep images";
+    const char* msg = onSelected ? "No widget images" : "No sleep images";
     const int msgFont = systemFontIdForPointSize(12);
     const int msgW = renderer.text.getWidth(msgFont, msg);
     renderer.text.render(msgFont, emptyX + (emptyW - msgW) / 2,
                          emptyY + (emptyH - renderer.text.getLineHeight(msgFont)) / 2, msg, true);
   }
+
+  const int bottomMenuX = std::max(0, pageWidth - BOTTOM_BAR_CELL_WIDTH * 3);
+  renderer.line.render(0, buttonY, pageWidth, buttonY, true, LineRender::Style::Dotted);
+  renderer.line.render(bottomMenuX + BOTTOM_BAR_CELL_WIDTH, buttonY, bottomMenuX + BOTTOM_BAR_CELL_WIDTH, pageHeight, true,
+                       LineRender::Style::Dotted);
+  renderer.line.render(bottomMenuX + BOTTOM_BAR_CELL_WIDTH * 2, buttonY,
+                       bottomMenuX + BOTTOM_BAR_CELL_WIDTH * 2, pageHeight,
+                       true, LineRender::Style::Dotted);
 
   if (hasImages) {
     const int totalPages = std::max(1, (rowCount + GRID_ITEMS - 1) / GRID_ITEMS);
@@ -203,26 +223,28 @@ void SleepImagePickerActivity::drawPickerChrome(const int pageStart, const int r
     std::snprintf(pageText, sizeof(pageText), "%d - %d", currentPage, totalPages);
 
     const int pageFont = systemFontIdForPointSize(12);
-    const int pagePadX = 8;
-    const int pageTextW = renderer.text.getWidth(pageFont, pageText);
     const int pageLineH = renderer.text.getLineHeight(pageFont);
-    const int pageTagH = pageLineH + 6;
-    const int pageTagW = pageTextW + pagePadX * 2;
-    const int pageTagX = FOOTER_SIDE_PAD;
-    const int pageTagY = buttonY + (RANDOM_BUTTON_H - pageTagH) / 2;
-    renderer.rectangle.fill(pageTagX, pageTagY, pageTagW, pageTagH, true, true);
-    renderer.text.render(pageFont, pageTagX + pagePadX, pageTagY + (pageTagH - pageLineH) / 2, pageText, false,
+    renderer.text.render(pageFont, FOOTER_SIDE_PAD,
+                         buttonY + (BOTTOM_BAR_HEIGHT - pageLineH) / 2, pageText, true,
                          EpdFontFamily::REGULAR);
+    if (!allowRandom) {
+      renderer.bitmap.icon(LibraryFilterLeft, bottomMenuX + BOTTOM_BAR_CELL_WIDTH + 14,
+                           buttonY + (BOTTOM_BAR_HEIGHT - 30) / 2, 32, 30);
+      renderer.bitmap.icon(LibraryFilterRight, bottomMenuX + BOTTOM_BAR_CELL_WIDTH * 2 + 14,
+                           buttonY + (BOTTOM_BAR_HEIGHT - 30) / 2, 32, 30);
+    }
   }
 
-  const char* buttonText = "Random";
-  const int buttonTextX = buttonX;
-  const int buttonTextY =
-      buttonY + (RANDOM_BUTTON_H - renderer.text.getLineHeight(systemFontIdForPointSize(12))) / 2;
-  renderer.text.render(systemFontIdForPointSize(12), buttonTextX, buttonTextY, buttonText, true,
-                       EpdFontFamily::BOLD);
-  ReaderFontSettingsDraw::drawToggleCheckbox(renderer, pageWidth - FOOTER_SIDE_PAD, buttonY,
-                                               RANDOM_BUTTON_H, false, localRandomEnabled);
+  if (allowRandom) {
+    const char* buttonText = "Random";
+    const int buttonTextX = buttonX;
+    const int buttonTextY =
+        buttonY + (RANDOM_BUTTON_H - renderer.text.getLineHeight(systemFontIdForPointSize(12))) / 2;
+    renderer.text.render(systemFontIdForPointSize(12), buttonTextX, buttonTextY, buttonText, true,
+                         EpdFontFamily::BOLD);
+    ReaderFontSettingsDraw::drawToggleCheckbox(renderer, pageWidth - FOOTER_SIDE_PAD, buttonY,
+                                                 RANDOM_BUTTON_H, false, localRandomEnabled);
+  }
 
   const auto labels = mappedInput.mapLabels("\xC2\xAB Back", "Select", "Random", "Next");
 }
@@ -230,7 +252,7 @@ void SleepImagePickerActivity::drawPickerChrome(const int pageStart, const int r
 void SleepImagePickerActivity::drawPickerThumbnails(const int pageStart, const int rowCount) {
   const int pageWidth = renderer.getScreenWidth();
   const int pageHeight = renderer.getScreenHeight();
-  const int buttonY = pageHeight - 76;
+  const int buttonY = pageHeight - BOTTOM_BAR_HEIGHT;
   const int gridBottom = buttonY - 14;
   const int gridHeight = std::max(1, gridBottom - GRID_TOP);
   const int cellW = (pageWidth - GRID_MARGIN_X * 2 - GRID_GAP_X) / GRID_COLS;
@@ -285,7 +307,7 @@ void SleepImagePickerActivity::drawSelectionFrame(const int pageStart, const int
   }
   const int pageWidth = renderer.getScreenWidth();
   const int pageHeight = renderer.getScreenHeight();
-  const int buttonY = pageHeight - 76;
+  const int buttonY = pageHeight - BOTTOM_BAR_HEIGHT;
   const int gridBottom = buttonY - 14;
   const int gridHeight = std::max(1, gridBottom - GRID_TOP);
   const int cellW = (pageWidth - GRID_MARGIN_X * 2 - GRID_GAP_X) / GRID_COLS;
@@ -353,12 +375,11 @@ void SleepImagePickerActivity::render() {
   const bool hasImages = rowCount > 0;
   const int pageStart = hasImages ? pageStartForIndex(selectedIndex) : 0;
   const bool lazyFirstPass = hasImages && renderedPageStart != pageStart;
-  const bool pageNeedsHalfRefresh = hasImages && renderedPageStart != pageStart;
 
   if (hasImages && restoreGridBuffer(pageStart)) {
     drawPickerChrome(pageStart, rowCount, hasImages, randomEnabled, false);
     drawSelectionFrame(pageStart, rowCount, selectedIndex);
-    renderer.displayBuffer(pageNeedsHalfRefresh ? HalDisplay::HALF_REFRESH : HalDisplay::FAST_REFRESH);
+    renderer.displayBuffer(HalDisplay::FAST_REFRESH);
     renderedPageStart = pageStart;
     return;
   }
@@ -375,12 +396,18 @@ void SleepImagePickerActivity::render() {
     drawPickerThumbnails(pageStart, rowCount);
     storeGridBuffer(pageStart);
     drawSelectionFrame(pageStart, rowCount, selectedIndex);
-    renderer.displayBuffer(pageNeedsHalfRefresh ? HalDisplay::HALF_REFRESH : HalDisplay::FAST_REFRESH);
+    renderer.displayBuffer(HalDisplay::FAST_REFRESH);
     renderedPageStart = pageStart;
   }
 }
 
 void SleepImagePickerActivity::applySelection() {
+  if (onSelected) {
+    if (selectedIndex < 0 || selectedIndex >= static_cast<int>(rows.size())) return;
+    onSelected(rows[static_cast<size_t>(selectedIndex)].value);
+    onBack();
+    return;
+  }
   if (randomEnabled) {
     SETTINGS.setSleepCustomBmpFromInput("");
     SETTINGS.saveToFile();
@@ -439,8 +466,20 @@ void SleepImagePickerActivity::loop() {
   }
 
   if (mappedInput.hasTouch()) {
-    if (mappedInput.wasTouchSwipeUp()) {
+    float swipeStartNx = 0.0f;
+    float swipeStartNy = 0.0f;
+    const bool swipeUp = mappedInput.wasTouchSwipeUpInScreen(renderer, swipeStartNx, swipeStartNy);
+    const bool swipeDown = !swipeUp && mappedInput.wasTouchSwipeDownInScreen(renderer, swipeStartNx, swipeStartNy);
+    if (swipeUp && swipeStartNy >= 0.95f) {
       onBack();
+      return;
+    }
+    if (swipeUp) {
+      paginate(1);
+      return;
+    }
+    if (swipeDown) {
+      paginate(-1);
       return;
     }
     if (mappedInput.wasTouchSwipeRight()) {
@@ -464,9 +503,18 @@ void SleepImagePickerActivity::loop() {
         onBack();
         return;
       }
-      const int buttonY = screenHeight - 76;
+      const int buttonY = screenHeight - BOTTOM_BAR_HEIGHT;
+      const int bottomMenuX = std::max(0, screenWidth - BOTTOM_BAR_CELL_WIDTH * 3);
+      if (!allowRandom && tapY >= buttonY && tapY < screenHeight) {
+        if (tapX >= bottomMenuX + BOTTOM_BAR_CELL_WIDTH && tapX < bottomMenuX + BOTTOM_BAR_CELL_WIDTH * 2) {
+          paginate(-1);
+        } else if (tapX >= bottomMenuX + BOTTOM_BAR_CELL_WIDTH * 2 && tapX < bottomMenuX + BOTTOM_BAR_CELL_WIDTH * 3) {
+          paginate(1);
+        }
+        return;
+      }
       const int buttonX = screenWidth - RANDOM_BUTTON_W - FOOTER_SIDE_PAD;
-      if (tapX >= buttonX && tapX < buttonX + RANDOM_BUTTON_W && tapY >= buttonY &&
+      if (allowRandom && tapX >= buttonX && tapX < buttonX + RANDOM_BUTTON_W && tapY >= buttonY &&
           tapY < buttonY + RANDOM_BUTTON_H) {
         randomEnabled = !randomEnabled;
         SETTINGS.setSleepCustomBmpFromInput(
@@ -515,7 +563,7 @@ void SleepImagePickerActivity::loop() {
 
   bool needRedraw = false;
 
-  const bool randomPressed = mappedInput.wasPressed(MappedInputManager::Button::Left);
+  const bool randomPressed = allowRandom && mappedInput.wasPressed(MappedInputManager::Button::Left);
   const bool upPressed = mappedInput.wasPressed(MappedInputManager::Button::Up);
   const bool downPressed = mappedInput.wasPressed(MappedInputManager::Button::Down);
   const bool nextPressed = mappedInput.wasPressed(MappedInputManager::Button::Right);

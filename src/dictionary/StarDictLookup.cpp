@@ -103,8 +103,8 @@ bool isWordCodepoint(const uint32_t codepoint) {
   if (codepoint < 0x80) {
     return std::isalnum(static_cast<unsigned char>(codepoint)) || codepoint == '\'' || codepoint == '-';
   }
-  // Classify decoded codepoints, not the individual bytes of a UTF-8 sequence. Keep non-ASCII
-  // letters, combining marks, and script-specific joiners; trim common Unicode punctuation.
+
+
   return !isUnicodePunctuation(codepoint);
 }
 
@@ -510,8 +510,8 @@ bool StarDictLookup::lookup(const std::string& queryWord, std::string& outDefini
   std::vector<std::string> candidates = {cleaned, lowerCleaned, toTitleCaseCopy(cleaned)};
   std::vector<std::string> foldedCandidates = {lowerCleaned};
   if (cleaned != lowerCleaned) {
-    // ASCII-only folding leaves non-ASCII scripts unchanged. Keep the original spelling so
-    // uppercase or accented entries can still be found by the linear fallback.
+
+
     foldedCandidates.push_back(cleaned);
   }
   for (const std::string& stem : stemCandidates(lowerCleaned)) {

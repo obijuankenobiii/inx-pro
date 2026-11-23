@@ -109,6 +109,8 @@ class MappedInputManager {
   bool consumeHeaderBackTap(const GfxRenderer& renderer) const;
   /** Injects one Back press/release edge for a touch-driven header action. */
   void injectButtonEdge(Button button) const;
+  /** Consumes only a synthetic press edge; does not read the corresponding GPIO button. */
+  bool consumeInjectedPressed(Button button) const;
   /** Clears synthetic button edges when the current activity is being replaced. */
   void discardPendingButtonEdges() const {
     injectedPressedButton_ = -1;

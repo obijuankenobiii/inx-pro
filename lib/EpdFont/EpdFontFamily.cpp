@@ -6,8 +6,8 @@
 #include "EpdFontFamily.h"
 
 void EpdFontFamily::setData(Style style, const EpdFontData* data) {
-  // Select the exact style: getFont() falls back to regular and would replace
-  // the regular face when attaching a not-yet-loaded bold/italic style.
+
+
   EpdFont* target = const_cast<EpdFont*>(style == BOLD ? bold : style == ITALIC ? italic :
                                        style == BOLD_ITALIC ? boldItalic : regular);
 

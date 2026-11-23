@@ -343,9 +343,8 @@ void EpubFootnoteBody::drawUiOverlay(EpubActivity& act) {
   if (!mode_) {
     return;
   }
-  act.renderer.clearScreen(0xFF);
   drawBodyPanel(act);
-  act.renderer.displayBuffer(HalDisplay::HALF_REFRESH);
+  act.renderer.displayBuffer();
 }
 
 void EpubFootnoteBody::handleInput(EpubActivity& act) {

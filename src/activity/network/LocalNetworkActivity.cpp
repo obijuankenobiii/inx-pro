@@ -103,9 +103,9 @@ void LocalNetworkActivity::onEnter() {
 void LocalNetworkActivity::onExit() {
   wifiSelectionResultPending = false;
 
-  // Stop the parent renderer before destroying the Wi-Fi child. The child has
-  // its own renderer task, so tearing it down while this task is drawing can
-  // race through the shared framebuffer and display driver.
+
+
+
   if (renderingMutex) {
     xSemaphoreTake(renderingMutex, portMAX_DELAY);
     updateRequired = false;
@@ -131,9 +131,9 @@ void LocalNetworkActivity::onExit() {
  * @param connected True if WiFi connection successful
  */
 void LocalNetworkActivity::onWifiSelectionComplete(const bool connected) {
-  // The callback is invoked from inside WifiSelectionActivity::loop(). Defer
-  // destroying that child until its loop has returned to avoid freeing the
-  // object while it is still unwinding its connection-success path.
+
+
+
   wifiSelectionConnected = connected;
   wifiSelectionResultPending = true;
   INX_SERIAL.printf("[%lu] [LOCALNET] WiFi selection result queued connected=%d\n", millis(), connected);
@@ -201,8 +201,8 @@ void LocalNetworkActivity::loop() {
 
       startWebServer();
 
-      // Keep WifiSelectionActivity alive so its connected card remains on
-      // screen. The parent still owns and services the local server below.
+
+
       if (subActivity && state == LocalNetworkState::SERVER_RUNNING) {
         serviceWebServer();
         return;
@@ -265,8 +265,8 @@ void LocalNetworkActivity::serviceWebServer() {
 
   esp_task_wdt_reset();
 
-  // Keep the web service responsive without monopolizing loopTask. A large
-  // burst here can starve IDLE0 on CPU 0 and trip the task watchdog.
+
+
   constexpr int MAX_ITERATIONS = 8;
   for (int i = 0; i < MAX_ITERATIONS && webServer->isRunning(); i++) {
     webServer->handleClient();
@@ -285,8 +285,8 @@ void LocalNetworkActivity::serviceWebServer() {
  */
 void LocalNetworkActivity::displayTaskLoop() {
   while (true) {
-    // The Wi-Fi child owns rendering while it is active. Rendering the parent
-    // at the same time races the child's display task on the shared framebuffer.
+
+
     if (state != LocalNetworkState::WIFI_SELECTION && !subActivity && updateRequired && renderingMutex) {
       updateRequired = false;
       xSemaphoreTake(renderingMutex, portMAX_DELAY);

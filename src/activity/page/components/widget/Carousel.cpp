@@ -68,6 +68,7 @@ void renderCover(GfxRenderer& renderer, const RecentBook& book, const int x, con
     options.cropAnchorX = cropAnchorX;
     options.useDisplayCache = true;
     options.asyncDisplayCache = true;
+    options.cacheNamespace = ImageDisplayCacheNamespace::Widgets;
     if (SETTINGS.bitmapRoundedCorners == 0) {
       options.roundedOutside = BitmapRender::RoundedOutside::None;
     } else if (SETTINGS.bitmapRoundedCorners == 2) {
@@ -126,6 +127,7 @@ void preloadCover(GfxRenderer& renderer, const RecentBook& book, const int x, co
   options.cropToFill = cropToFill;
   options.cropAnchorX = cropAnchorX;
   options.useDisplayCache = true;
+  options.cacheNamespace = ImageDisplayCacheNamespace::Widgets;
   if (SETTINGS.bitmapRoundedCorners == 2) {
     options.roundedOutside = BitmapRender::RoundedOutside::SubtlePaperOutside;
   } else if (SETTINGS.bitmapRoundedCorners != 0) {
@@ -223,6 +225,89 @@ CarouselBounds twoBookBounds(const int areaX, const int areaY, const int areaW, 
           smallerSideWidth, smallerSideHeight, gap});
 }
 
+struct LargeCenterCarouselBounds {
+  int centerX, centerY, centerWidth, centerHeight;
+  int leftX, leftY, sideWidth, sideHeight, leftVisibleWidth;
+  int rightX, rightY, rightVisibleX, rightVisibleWidth;
+};
+
+
+
+
+
+LargeCenterCarouselBounds largeCenterBounds(const int areaX, const int areaY, const int areaW, const int areaH,
+                                            const bool fullHeight) {
+  const int verticalPadding = fullHeight ? 2 : 20;
+  const int maxHeight = std::max(40, areaH - verticalPadding * 2);
+
+
+
+  const auto center = carouselCoverSize(std::max(60, areaW * 3 / 5), maxHeight);
+
+
+  const int baseGap = std::max(4, std::min(8, areaW / 80));
+
+
+  const int gap = baseGap * 4;
+
+
+
+  const int sideWidth = std::max(24, (areaW - center.width - baseGap * 2) / 2);
+
+
+  const int sideHeight = std::max(24, center.height * 4 / 5);
+  const int centerX = areaX + (areaW - center.width) / 2;
+  const int centerY = areaY + (areaH - center.height) / 2;
+  const int edgeOffset = gap - baseGap;
+  const int leftX = areaX - edgeOffset;
+  const int rightX = areaX + areaW - sideWidth + edgeOffset;
+  const int bottomY = centerY + center.height;
+  const int sideY = bottomY - sideHeight;
+  const int leftVisibleWidth = std::max(0, std::min(areaX + areaW, leftX + sideWidth) - areaX);
+  const int rightVisibleX = std::max(areaX, rightX);
+  const int rightVisibleWidth = std::max(0, areaX + areaW - rightVisibleX);
+  return {centerX, centerY, center.width, center.height,
+          leftX, sideY, sideWidth, sideHeight, leftVisibleWidth,
+          rightX, sideY, rightVisibleX, rightVisibleWidth};
+}
+
+void renderLargeCenter(GfxRenderer& renderer, const std::vector<RecentBook>& books, const int index,
+                       const LargeCenterCarouselBounds& layout, const bool hideFirst, const bool showProgress,
+                       const HomeTheme::CarouselShadowStyle shadowStyle) {
+  const size_t count = visibleBookCount(books, hideFirst);
+  if (count < 3) return;
+  const size_t current = visibleBookIndex(books, index, hideFirst);
+  const size_t previous = visibleBookIndex(books, index - 1, hideFirst);
+  const size_t next = visibleBookIndex(books, index + 1, hideFirst);
+  const int sideFont = systemFontIdForPointSize(10);
+  const int centerFont = systemFontIdForPointSize(14);
+
+
+
+  renderCover(renderer, books[previous], layout.leftX, layout.leftY, layout.sideWidth, layout.sideHeight, sideFont,
+              1.0f, true, shadowStyle, true);
+  renderCover(renderer, books[next], layout.rightX, layout.rightY, layout.sideWidth, layout.sideHeight, sideFont,
+              0.0f, true, shadowStyle, true);
+  renderCover(renderer, books[current], layout.centerX, layout.centerY, layout.centerWidth, layout.centerHeight,
+              centerFont, 0.5f, true, shadowStyle, true);
+  if (showProgress) {
+    renderProgressTag(renderer, books[current], layout.centerX, layout.centerY, layout.centerWidth,
+                      layout.centerHeight);
+  }
+}
+
+void preloadLargeCenter(GfxRenderer& renderer, const std::vector<RecentBook>& books, const int index,
+                        const LargeCenterCarouselBounds& layout, const bool hideFirst) {
+  const size_t count = visibleBookCount(books, hideFirst);
+  if (count < 3) return;
+  preloadCover(renderer, books[visibleBookIndex(books, index - 1, hideFirst)], layout.leftX, layout.leftY,
+               layout.sideWidth, layout.sideHeight, 1.0f, true);
+  preloadCover(renderer, books[visibleBookIndex(books, index + 1, hideFirst)], layout.rightX, layout.rightY,
+               layout.sideWidth, layout.sideHeight, 0.0f, true);
+  preloadCover(renderer, books[visibleBookIndex(books, index, hideFirst)], layout.centerX, layout.centerY,
+               layout.centerWidth, layout.centerHeight, 0.5f, true);
+}
+
 void preloadFrame(GfxRenderer& renderer, const std::vector<RecentBook>& books, const int current,
                   const CarouselBounds& layout, const bool hideFirst) {
   const size_t count = visibleBookCount(books, hideFirst);
@@ -238,25 +323,33 @@ void preloadFrame(GfxRenderer& renderer, const std::vector<RecentBook>& books, c
                0.5f, true);
 }
 
-}  // namespace
+}
 
 void Carousel::render(const int index, const int x, const int y, const int width, const int height,
                       const bool background, const HomeTheme::CarouselStyle style, const bool showLabel,
                       const HomeTheme::CarouselLabelColor labelColor, const HomeTheme::CarouselShadowStyle shadowStyle,
                       const bool showProgress, const bool hideFirst, const bool fullHeight,
-                      const bool fourBooks, const bool centerLeftNoMenu) const {
+                      const bool fourBooks, const bool centerLeftNoMenu, const bool center50Preview) const {
   renderBackground(x, y, width, height, background);
   const ContentArea content = contentArea(y, height, showLabel);
   if (showLabel) renderLabel(x, y, "Continue Reading", labelColor);
-  if (style == HomeTheme::CarouselStyle::Left) {
-    renderLeft(index, x, content.y, width, content.height, shadowStyle, showProgress, hideFirst, fullHeight,
-               centerLeftNoMenu);
-    return;
-  }
   const auto& books = RECENT_BOOKS.getBooks();
   const size_t count = visibleBookCount(books, hideFirst);
   if (count == 0) {
     renderer_.text.centered(systemFontIdForPointSize(12), content.y + content.height / 2, "No recent");
+    return;
+  }
+
+  if (center50Preview && count >= 3) {
+    renderLargeCenter(renderer_, books, index,
+                      largeCenterBounds(x, content.y, width, content.height, fullHeight), hideFirst, showProgress,
+                      shadowStyle);
+    return;
+  }
+
+  if (style == HomeTheme::CarouselStyle::Left) {
+    renderLeft(index, x, content.y, width, content.height, shadowStyle, showProgress, hideFirst, fullHeight,
+               centerLeftNoMenu);
     return;
   }
 
@@ -362,11 +455,20 @@ void Carousel::renderLeft(const int index, const int x, const int y, const int w
 void Carousel::preload(const int index, const int x, const int y, const int width, const int height,
                        const HomeTheme::CarouselStyle style, const bool showLabel,
                        const HomeTheme::CarouselLabelColor /*labelColor*/, const bool hideFirst,
-                       const bool fullHeight, const bool fourBooks, const bool centerLeftNoMenu) const {
+                       const bool fullHeight, const bool fourBooks, const bool centerLeftNoMenu,
+                       const bool center50Preview) const {
   const auto& books = RECENT_BOOKS.getBooks();
   const size_t count = visibleBookCount(books, hideFirst);
   if (count == 0 || width <= 0 || height <= 0) return;
   const ContentArea content = contentArea(y, height, showLabel);
+
+  if (center50Preview && count >= 3) {
+    const LargeCenterCarouselBounds layout = largeCenterBounds(x, content.y, width, content.height, fullHeight);
+    for (size_t current = 0; current < count; ++current) {
+      preloadLargeCenter(renderer_, books, static_cast<int>(current), layout, hideFirst);
+    }
+    return;
+  }
 
   if (style == HomeTheme::CarouselStyle::Left) {
     const bool even = evenThumbnails();
@@ -431,12 +533,28 @@ void Carousel::preload(const int index, const int x, const int y, const int widt
 void Carousel::preview(const int x, const int y, const int width, const int height, const bool background,
                        const HomeTheme::CarouselStyle style, const bool showLabel,
                        const HomeTheme::CarouselLabelColor labelColor, const HomeTheme::CarouselShadowStyle shadowStyle,
-                       const bool showProgress, const bool fullHeight, const bool fourBooks) const {
+                       const bool showProgress, const bool fullHeight, const bool fourBooks,
+                       const bool center50Preview) const {
   renderBackground(x, y, width, height, background);
   const ContentArea content = contentArea(y, height, showLabel);
   if (showLabel) renderLabel(x, y, "Continue Reading", labelColor);
   if (RECENT_BOOKS.getBooks().empty()) {
     renderer_.text.centered(systemFontIdForPointSize(12), content.y + content.height / 2, "No recent");
+    return;
+  }
+
+  if (center50Preview) {
+    const LargeCenterCarouselBounds layout = largeCenterBounds(x, content.y, width, content.height, fullHeight);
+    const auto renderPreviewCard = [this, shadowStyle](const int cardX, const int cardY, const int cardWidth,
+                                                       const int cardHeight) {
+      renderShadow(renderer_, cardX + 6, cardY + 6, cardWidth, cardHeight, shadowStyle);
+      renderer_.rectangle.fill(cardX, cardY, cardWidth, cardHeight, false);
+      renderer_.rectangle.render(cardX, cardY, cardWidth, cardHeight, true,
+                                 SETTINGS.bitmapRoundedCorners != 0, SETTINGS.bitmapRoundedCorners == 2);
+    };
+    renderPreviewCard(layout.leftX, layout.leftY, layout.sideWidth, layout.sideHeight);
+    renderPreviewCard(layout.rightX, layout.rightY, layout.sideWidth, layout.sideHeight);
+    renderPreviewCard(layout.centerX, layout.centerY, layout.centerWidth, layout.centerHeight);
     return;
   }
   if (style == HomeTheme::CarouselStyle::Left) {
@@ -505,16 +623,33 @@ void Carousel::previewLeft(const int x, const int y, const int width, const int 
 int Carousel::hitTest(const int index, const int count, const int x, const int y, const int areaX, const int areaY,
                       const int areaW, const int areaH, const HomeTheme::CarouselStyle style, const bool showLabel,
                       const HomeTheme::CarouselLabelColor /*labelColor*/, const bool hideFirst,
-                      const bool fullHeight, const bool fourBooks, const bool centerLeftNoMenu) const {
+                      const bool fullHeight, const bool fourBooks, const bool centerLeftNoMenu,
+                      const bool center50Preview) const {
   if (count <= 0 || x < areaX || x >= areaX + areaW || y < areaY || y >= areaY + areaH) return -1;
   const ContentArea content = contentArea(areaY, areaH, showLabel);
+  const auto& books = RECENT_BOOKS.getBooks();
+  const int visibleCount = std::min(count, static_cast<int>(visibleBookCount(books, hideFirst)));
+  if (visibleCount <= 0) return -1;
+
+  if (center50Preview && visibleCount >= 3) {
+    const LargeCenterCarouselBounds layout = largeCenterBounds(areaX, content.y, areaW, content.height, fullHeight);
+    const int current = static_cast<int>(visibleBookIndex(books, index, hideFirst));
+    if (x >= layout.centerX && x < layout.centerX + layout.centerWidth && y >= layout.centerY &&
+        y < layout.centerY + layout.centerHeight)
+      return current;
+    if (x >= layout.leftX && x < layout.leftX + layout.leftVisibleWidth && y >= layout.leftY &&
+        y < layout.leftY + layout.sideHeight)
+      return static_cast<int>(visibleBookIndex(books, index - 1, hideFirst));
+    if (x >= layout.rightVisibleX && x < layout.rightVisibleX + layout.rightVisibleWidth && y >= layout.rightY &&
+        y < layout.rightY + layout.sideHeight)
+      return static_cast<int>(visibleBookIndex(books, index + 1, hideFirst));
+    return -1;
+  }
+
   if (style == HomeTheme::CarouselStyle::Left) {
     return hitTestLeft(index, count, x, y, areaX, content.y, areaW, content.height, hideFirst, fullHeight,
                        centerLeftNoMenu);
   }
-  const auto& books = RECENT_BOOKS.getBooks();
-  const int visibleCount = std::min(count, static_cast<int>(visibleBookCount(books, hideFirst)));
-  if (visibleCount <= 0) return -1;
   if (fourBooks && showLabel && visibleCount >= 4) {
     for (const auto& card : fiveBookCarouselLayout(areaX, content.y, areaW, content.height, fullHeight)) {
       if (card.contains(x, y)) return static_cast<int>(visibleBookIndex(books, index + card.offset, hideFirst));
@@ -555,7 +690,7 @@ int Carousel::hitTest(const int index, const int count, const int x, const int y
       y < layout.sideY + layout.sideHeight) {
     return static_cast<int>(visibleBookIndex(books, index + 1, hideFirst));
   }
-  // Keep unused space inside the carousel widget tappable for the current book.
+
   return static_cast<int>(visibleBookIndex(books, index, hideFirst));
 }
 
@@ -579,6 +714,6 @@ int Carousel::hitTestLeft(const int index, const int count, const int x, const i
     }
     cardX += card.width + kLeftCardGap;
   }
-  // The cards do not always fill the whole 1x2/1x3 carousel slot.
+
   return static_cast<int>(visibleBookIndex(books, current, hideFirst));
 }

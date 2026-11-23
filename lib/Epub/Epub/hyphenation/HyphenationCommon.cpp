@@ -44,13 +44,13 @@ uint32_t toLowerGreekImpl(const uint32_t cp) {
     return cp + 0x20;
   }
   switch (cp) {
-    case 0x0386: return 0x03AC;  // Ά -> ά
-    case 0x0388: return 0x03AD;  // Έ -> έ
-    case 0x0389: return 0x03AE;  // Ή -> ή
-    case 0x038A: return 0x03AF;  // Ί -> ί
-    case 0x038C: return 0x03CC;  // Ό -> ό
-    case 0x038E: return 0x03CD;  // Ύ -> ύ
-    case 0x038F: return 0x03CE;  // Ώ -> ώ
+    case 0x0386: return 0x03AC;
+    case 0x0388: return 0x03AD;
+    case 0x0389: return 0x03AE;
+    case 0x038A: return 0x03AF;
+    case 0x038C: return 0x03CC;
+    case 0x038E: return 0x03CD;
+    case 0x038F: return 0x03CE;
     default: return cp;
   }
 }
@@ -119,8 +119,8 @@ bool isPunctuation(const uint32_t cp) {
     case '/':
     case 0x203A:
     case 0x2026:
-    case 0x037E:  // Greek question mark
-    case 0x0387:  // Greek ano teleia
+    case 0x037E:
+    case 0x0387:
       return true;
     default:
       return false;

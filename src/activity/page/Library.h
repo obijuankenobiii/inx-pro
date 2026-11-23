@@ -42,8 +42,17 @@ class Library final : public UiPage {
   void search() override;
 
  private:
-  enum class Sort { TitleAZ, TitleZA, FolderAZ, FolderZA, AuthorAZ, AuthorZA };
-  enum class View { List, Grid, Thumb, ListThumb };
+  enum class Sort {
+    TitleAZ,
+    TitleZA,
+    FolderAZ,
+    FolderZA,
+    AuthorAZ,
+    AuthorZA,
+    RatingLowHigh,
+    RatingHighLow,
+  };
+  enum class View { List, Grid, Thumb, ListThumb, Thumb3x2 };
   enum class ControlTab { View, Sort, Filter };
   enum class FilterCategory : uint8_t { Categories, Title, Type, Author, Series, Tags, Options };
   enum class StateFilter { None, Favorites, Reading, Finished, Metadata, Plugin };
@@ -98,13 +107,19 @@ class Library final : public UiPage {
   bool filterMetadataIndexAvailable_ = false;
   int filterScrollOffset_ = 0;
   bool sortOpen = false;
+  int sortScrollOffset_ = 0;
   bool filterOpen = false;
   bool controlModalOpen = false;
   ControlTab controlTab = ControlTab::View;
-  // Match Home's widget thumbnail behavior: draw the library shell first,
-  // then allow cover decoding on an idle follow-up render.
+
+
+
   bool listThumbDeferImageDecode_ = false;
   bool listThumbWarmupPending_ = false;
+  bool thumbDeferImageDecode_ = false;
+  bool thumbWarmupPending_ = false;
+  int thumbTimingPassesRemaining_ = 0;
+  unsigned long thumbPrefetchNotBeforeMs_ = 0;
   bool refreshing = false;
   bool loading = false;
   int popupBook = -1;
@@ -139,6 +154,7 @@ class Library final : public UiPage {
   void filterPopup() const;
   void controlModal() const;
   bool controlModalInput();
+  void closeControlModal();
   void viewDropdown() const;
   void handleSortTap(int tapX, int tapY);
   void handleFilterTap(int tapX, int tapY);

@@ -46,10 +46,10 @@ inline void toggle() {
 }
 
 #if FREEINK_DEVICE_MURPHY_M4
-// FrontlightManager converts its public percentage through this curve before
-// writing the 10-bit PWM. Undo that curve at the UI boundary so the drawer
-// position represents actual light output instead of applying a second dimming
-// curve on Murphy.
+
+
+
+
 constexpr float kMurphyFrontlightGamma = 1.6554f;
 #endif
 
@@ -103,7 +103,7 @@ inline float fractionFromPercent(const int percent) {
 #if INX_FRONTLIGHT_MIN_PERCENT > 1
   const float target =
       static_cast<float>(std::max(0, p - kMinLitPercent)) / static_cast<float>(100 - kMinLitPercent);
-  if (target <= 0.0f) return 0.03f;  // dimmest lit setting: just off the "off" end
+  if (target <= 0.0f) return 0.03f;
 #else
   const float target = static_cast<float>(p) / 100.0f;
 #endif

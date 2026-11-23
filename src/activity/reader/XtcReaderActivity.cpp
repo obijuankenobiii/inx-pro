@@ -238,8 +238,7 @@ void XtcReaderActivity::loop() {
     return;
   }
 
-  if (READER_SETTINGS.pageTurnMode == ReaderSetting::PAGE_TURN_TAP && xtc && xtc->hasChapters() &&
-      !xtc->getChapters().empty() && mappedInput.hasTouch() &&
+  if (xtc && xtc->hasChapters() && !xtc->getChapters().empty() && mappedInput.hasTouch() &&
       mappedInput.wasTouchSwipeRightInScreen(renderer, backGestureStartX, backGestureStartY) &&
       backGestureStartX <= XTC_TOC_SWIPE_START_NX) {
       openTableOfContents();
@@ -250,16 +249,13 @@ void XtcReaderActivity::loop() {
   bool tapNextTriggered = false;
   if (mappedInput.hasTouch()) {
     float tapNx = 0.0f, tapNy = 0.0f;
-    if (READER_SETTINGS.pageTurnMode == ReaderSetting::PAGE_TURN_TAP &&
-        mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy)) {
+    if (mappedInput.wasTouchTapInScreen(renderer, tapNx, tapNy)) {
       (tapNx < 0.5f ? tapPrevTriggered : tapNextTriggered) = true;
     }
   }
 
-  const bool swipePrevTriggered = READER_SETTINGS.pageTurnMode == ReaderSetting::PAGE_TURN_SWIPE &&
-                                  mappedInput.hasTouch() && mappedInput.wasTouchSwipeRightForRenderer(renderer);
-  const bool swipeNextTriggered = READER_SETTINGS.pageTurnMode == ReaderSetting::PAGE_TURN_SWIPE &&
-                                  mappedInput.hasTouch() && mappedInput.wasTouchSwipeLeftForRenderer(renderer);
+  const bool swipePrevTriggered = mappedInput.hasTouch() && mappedInput.wasTouchSwipeRightForRenderer(renderer);
+  const bool swipeNextTriggered = mappedInput.hasTouch() && mappedInput.wasTouchSwipeLeftForRenderer(renderer);
 
   const bool usePressForPageTurn = READER_SETTINGS.longPressChapterSkip == SystemSetting::LONG_PRESS_OFF;
   const MappedInputManager::MotionGesture motionGesture = mappedInput.readMotionGesture(
@@ -553,6 +549,11 @@ void XtcReaderActivity::renderScreen() {
   }
 
   if (currentPage >= xtc->getPageCount()) {
+    if (SETTINGS.disableStatistics != 0) {
+      renderer.clearScreen(0xff);
+      renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+      return;
+    }
     const uint32_t pageCount = xtc->getPageCount();
     if (pageCount > 0) {
       bookStats.progressPercent = 100.f;
@@ -859,7 +860,7 @@ void XtcReaderActivity::ensureThumbnailExists() {
 }
 
 void XtcReaderActivity::initStats() {
-  if (!xtc) {
+  if (SETTINGS.disableStatistics != 0 || !xtc) {
     return;
   }
 
@@ -885,10 +886,12 @@ void XtcReaderActivity::initStats() {
   lastSaveTime = millis();
 }
 
-void XtcReaderActivity::startPageTimer() { pageStartTime = millis(); }
+void XtcReaderActivity::startPageTimer() {
+  if (SETTINGS.disableStatistics == 0) pageStartTime = millis();
+}
 
 void XtcReaderActivity::endPageTimer() {
-  if (pageStartTime == 0 || !xtc) {
+  if (SETTINGS.disableStatistics != 0 || pageStartTime == 0 || !xtc) {
     return;
   }
 
@@ -923,7 +926,7 @@ void XtcReaderActivity::endPageTimer() {
 }
 
 void XtcReaderActivity::saveBookStatsToFile() {
-  if (!xtc) {
+  if (SETTINGS.disableStatistics != 0 || !xtc) {
     return;
   }
   bookStats.lastReadTimeMs = millis();

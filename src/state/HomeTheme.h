@@ -13,6 +13,18 @@ enum class Layout : uint8_t {
   HalfTop = 5,
   HalfMiddle = 6,
   HalfBottom = 7,
+  HalfTop50 = 8,
+  HalfMiddle50 = 9,
+  HalfBottom50 = 10,
+  HalfTopMiddle40 = 11,
+  HalfTopBottom40 = 12,
+  HalfMiddleBottom40 = 13,
+  HalfTop50Middle30 = 14,
+  HalfTop50Bottom30 = 15,
+  HalfMiddle50Top30 = 16,
+  HalfMiddle50Bottom30 = 17,
+  HalfBottom50Top30 = 18,
+  HalfBottom50Middle30 = 19,
 };
 
 enum class Widget : uint8_t {
@@ -35,7 +47,24 @@ enum class Widget : uint8_t {
   VerticalBookshelf = 16,
   Statistics = 17,
   Streaks = 18,
+  Image = 19,
 };
+
+enum class ShortcutItem : uint8_t {
+  Bookmarks = 0,
+  Highlights = 1,
+  Favorites = 2,
+  Statistics = 3,
+  Home = 4,
+  Library = 5,
+  Settings = 6,
+  Device = 7,
+  Apps = 8,
+  Search = 9,
+};
+
+constexpr int kShortcutItemCount = 10;
+constexpr int kShortcutSlotCount = 4;
 
 enum class HeatmapView : uint8_t {
   Daily = 0,
@@ -91,6 +120,15 @@ struct Theme {
   uint8_t streakCompact[4];
   HeatmapView heatmapViews[4];
   char libraryFolders[4][3][128];
+  char imagePaths[4][128];
+  uint8_t imageCropToFill[4];
+  uint8_t imagePadding[4];
+  uint8_t imageCropAnchorX[4];
+  uint8_t imageCropAnchorY[4];
+  uint8_t sleepScreenMode;
+  char sleepCustomBmp[64];
+  uint8_t sleepImageQuality;
+  uint8_t shortcutItems[kShortcutSlotCount];
 };
 
 void load();
@@ -103,6 +141,9 @@ int sleepCount();
 const Theme& sleepAt(int index);
 int sleepActiveIndex();
 void activateSleep(int index);
+uint8_t sleepScreenMode(int index);
+void setSleepScreenMode(int index, uint8_t mode);
+void setSleepSettings(int index, uint8_t mode, const char* imagePath, uint8_t imageQuality);
 int activeIndex();
 const Theme& active();
 void activate(int index);
@@ -158,6 +199,9 @@ bool removeSleep(int index);
 bool remove(int index);
 bool rename(int index, const char* name);
 bool renameSleep(int index, const char* name);
+void setImageSettings(int index, bool sleepMode, const char (*paths)[128], const uint8_t* cropToFill,
+                      const uint8_t* padding, const uint8_t* cropAnchorX, const uint8_t* cropAnchorY);
+void setShortcutItems(int index, bool sleepMode, const uint8_t* items);
 
 const char* layoutLabel(Layout layout);
 const char* widgetLabel(Widget widget);

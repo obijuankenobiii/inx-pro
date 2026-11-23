@@ -11,6 +11,7 @@
 #include "EpubAnnotationStorage.h"
 #include "activity/page/components/global/Button.h"
 #include "images/Close.h"
+#include "state/ReaderSetting.h"
 #include "system/FontManager.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
@@ -70,7 +71,7 @@ void EpubAnnotationUi::resetTouchGestureState() {
 }
 
 void EpubAnnotationUi::tryChordEnter(EpubActivity& act) {
-  if (!act.epub || !act.section || mode_) {
+  if (READER_SETTINGS.disableHighlight || !act.epub || !act.section || mode_) {
     return;
   }
   const bool down = act.mappedInput.rawHalIsPressed(HalGPIO::BTN_DOWN);
@@ -147,7 +148,7 @@ void EpubAnnotationUi::normalizeSpans(std::vector<std::pair<size_t, size_t>>& sp
 }
 
 void EpubAnnotationUi::enter(EpubActivity& act) {
-  if (!act.section || !act.epub) {
+  if (READER_SETTINGS.disableHighlight || !act.section || !act.epub) {
     return;
   }
   act.btnBindings_.reset();
@@ -178,6 +179,9 @@ bool EpubAnnotationUi::focusAt(const int x, const int y) {
 }
 
 bool EpubAnnotationUi::startAt(EpubActivity& act, const int x, const int y) {
+  if (READER_SETTINGS.disableHighlight) {
+    return false;
+  }
   enter(act);
   if (!mode_ || !focusAt(x, y)) {
     if (mode_) {
@@ -192,7 +196,7 @@ bool EpubAnnotationUi::startAt(EpubActivity& act, const int x, const int y) {
 }
 
 bool EpubAnnotationUi::handlePreEntryTouchGesture(EpubActivity& act) {
-  if (mode_ || !act.epub || !act.section || !act.mappedInput.hasTouch()) {
+  if (READER_SETTINGS.disableHighlight || mode_ || !act.epub || !act.section || !act.mappedInput.hasTouch()) {
     return false;
   }
 
@@ -203,8 +207,8 @@ bool EpubAnnotationUi::handlePreEntryTouchGesture(EpubActivity& act) {
   if (m.wasTouchPressedInScreen(act.renderer, nx, ny)) {
     const int x = static_cast<int>(nx * act.renderer.getScreenWidth());
     const int y = static_cast<int>(ny * act.renderer.getScreenHeight());
-    // Reuse the same geometry/cache as annotation mode, but do not capture or
-    // enter the overlay until the finger actually moves.
+
+
     prepareWordGeometry(act);
     touchGestureCandidate_ = focusAt(x, y);
     touchGestureStartX_ = x;
@@ -222,8 +226,8 @@ bool EpubAnnotationUi::handlePreEntryTouchGesture(EpubActivity& act) {
   }
 
   if (!m.isTouchPressed()) {
-    // It was a tap, so let the normal reader tap/long-press routing process the
-    // release. A selection gesture only begins after movement crosses slop.
+
+
     resetTouchGestureState();
     return false;
   }
@@ -236,9 +240,9 @@ bool EpubAnnotationUi::handlePreEntryTouchGesture(EpubActivity& act) {
   const int y = static_cast<int>(ny * act.renderer.getScreenHeight());
   const int dx = x - touchGestureStartX_;
   const int dy = y - touchGestureStartY_;
-  // Let quick text swipes remain page-turn gestures. After 300 ms without
-  // movement, enter the normal word-selection UI immediately while the finger
-  // is still down; the handles no longer wait for touch release.
+
+
+
   const unsigned long heldMs = touchGestureStartMs_ == 0 ? 0 : millis() - touchGestureStartMs_;
   if (heldMs < kTouchSelectionHoldMs) {
     return true;
@@ -246,8 +250,8 @@ bool EpubAnnotationUi::handlePreEntryTouchGesture(EpubActivity& act) {
   if (dx * dx + dy * dy < kTouchSelectionStartDistancePx * kTouchSelectionStartDistancePx) {
     if (act.openWordSelection(touchGestureStartX_, touchGestureStartY_)) {
       resetTouchGestureState();
-      // The long-press has already been consumed by word selection. Do not
-      // let the eventual finger-up become a second tap in the selection UI.
+
+
       m.ignoreCurrentTouch();
       return true;
     }
@@ -485,9 +489,9 @@ void EpubAnnotationUi::drawTouchSelectionHandles(EpubActivity& act) {
   const int firstLineBottom = first.screenY + std::max(3, first.screenH);
   const int lastLineTop = last.screenY;
 
-  // Continue the stem through the complete line box, not only through the
-  // gap between the text and the circle. This keeps the cursor aligned with
-  // the same line height used by the selection highlight.
+
+
+
   act.renderer.line.render(startX, startCenterY + kSelectionHandleRadius, startX, firstLineBottom, true);
   act.renderer.circle.render(startX, startCenterY, kSelectionHandleRadius, true);
   act.renderer.circle.render(startX, startCenterY, kSelectionHandleRadius - 2, false);
@@ -637,9 +641,9 @@ void EpubAnnotationUi::handleInput(EpubActivity& act) {
       return;
     }
 
-    // The release ends the drag. Keep the selected range and leave the
-    // existing Save/Add note controls available; do not let the same release
-    // become a page-turn swipe or the annotation close gesture.
+
+
+
     touchDragActive_ = false;
     touchSelectionComplete_ = true;
     act.updateRequired = true;

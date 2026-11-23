@@ -23,12 +23,12 @@ static const uint8_t font_preview_literata_14_regularBitmaps[169] = {
 };
 
 static const EpdGlyph font_preview_literata_14_regularGlyphs[] = {
-    { 16, 20, 19, 1, 20, 40, 0 }, // L
-    { 15, 15, 16, 1, 15, 29, 40 }, // a
-    { 13, 15, 15, 1, 15, 25, 69 }, // e
-    { 8, 22, 10, 1, 22, 22, 94 }, // i
-    { 13, 15, 14, 1, 15, 25, 116 }, // r
-    { 11, 20, 12, 1, 20, 28, 141 }, // t
+    { 16, 20, 19, 1, 20, 40, 0 },
+    { 15, 15, 16, 1, 15, 29, 40 },
+    { 13, 15, 15, 1, 15, 25, 69 },
+    { 8, 22, 10, 1, 22, 22, 94 },
+    { 13, 15, 14, 1, 15, 25, 116 },
+    { 11, 20, 12, 1, 20, 28, 141 },
 };
 
 static const EpdUnicodeInterval font_preview_literata_14_regularIntervals[] = {

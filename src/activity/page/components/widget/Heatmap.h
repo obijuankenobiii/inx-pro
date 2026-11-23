@@ -10,10 +10,12 @@ class Heatmap final {
 
   void render(int x, int y, int width, int height, HomeTheme::HeatmapView view, bool showLabel = true,
               HomeTheme::CarouselLabelColor labelColor = HomeTheme::CarouselLabelColor::Black,
-              bool compact = false) const;
+              bool compact = false, bool moveStatsBarDown = false, bool compact20 = false,
+              bool oneByThreeBottomBar = false, bool sideBySideStats = false) const;
   void preview(int x, int y, int width, int height, HomeTheme::HeatmapView view, bool showLabel = true,
                HomeTheme::CarouselLabelColor labelColor = HomeTheme::CarouselLabelColor::Black,
-               bool compact = false) const;
+               bool compact = false, bool moveStatsBarDown = false, bool compact20 = false,
+               bool oneByThreeBottomBar = false, bool sideBySideStats = false) const;
   /** Returns the RTC date represented by a touched cell, or 0 outside the grid. */
   uint32_t hitTestDateKey(int px, int py, int x, int y, int width, int height, HomeTheme::HeatmapView view,
                           bool showLabel = true, bool compact = false) const;
@@ -21,7 +23,8 @@ class Heatmap final {
 
  private:
   void renderContent(int x, int y, int width, int height, HomeTheme::HeatmapView view, bool sample, bool showLabel,
-                     HomeTheme::CarouselLabelColor labelColor, bool compact) const;
+                     HomeTheme::CarouselLabelColor labelColor, bool compact, bool moveStatsBarDown,
+                     bool compact20, bool oneByThreeBottomBar, bool sideBySideStats) const;
 
   GfxRenderer& renderer_;
   mutable uint64_t renderedKey_ = 0;

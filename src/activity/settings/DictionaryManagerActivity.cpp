@@ -32,7 +32,7 @@ void drawProgressBar(const GfxRenderer& renderer, const int x, const int y, cons
   const int fillWidth = std::max(0, std::min(innerWidth, innerWidth * percent / 100));
   if (fillWidth > 0) renderer.rectangle.fill(x + 1, y + 1, fillWidth, height - 2, true);
 }
-}  // namespace
+}
 
 void DictionaryManagerActivity::displayTaskTrampoline(void* param) {
   static_cast<DictionaryManagerActivity*>(param)->displayTaskLoop();

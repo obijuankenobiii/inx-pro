@@ -19,11 +19,11 @@
 namespace {
 constexpr char MEDIA_TYPE_NCX[] = "application/x-dtbncx+xml";
 constexpr char itemCacheFile[] = "/.items.bin";
-constexpr size_t kMaxDescriptionLength = 1024;
 constexpr size_t kMaxMetadataFields = 128;
 constexpr size_t kMaxMetadataAttributes = 16;
 constexpr size_t kMaxCapturedMetadataBytes = 64 * 1024;
 constexpr size_t kMaxMetadataValueLength = 16 * 1024;
+constexpr size_t kMaxDescriptionLength = kMaxCapturedMetadataBytes;
 constexpr size_t kMaxMetadataTags = 256;
 
 std::string localName(const std::string& name) {
@@ -285,8 +285,8 @@ void XMLCALL ContentOpfParser::startElement(void* userData, const XML_Char* name
       self->coverItemHref = href;
     }
 
-    // EPUB 3 can identify the cover directly on the manifest item instead of
-    // using the legacy <meta name="cover" content="..."> declaration.
+
+
     if (self->coverItemHref.empty() && hasManifestProperty(properties, "cover-image")) {
       self->coverItemHref = href;
     }

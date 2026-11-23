@@ -96,6 +96,14 @@ class EpubActivity final : public ActivityWithSubactivity {
   bool isBookmarking = false;
   std::unique_ptr<Epub> epub;
   std::unique_ptr<Section> section = nullptr;
+  std::unique_ptr<Section> nextChapterPrefetch_ = nullptr;
+  int nextChapterPrefetchSpine_ = -1;
+  unsigned long nextChapterPrefetchRetryAt_ = 0;
+  TaskHandle_t nextChapterPrefetchTask_ = nullptr;
+  SemaphoreHandle_t nextChapterPrefetchMutex_ = nullptr;
+  SemaphoreHandle_t readerLayoutMutex_ = nullptr;
+  volatile bool nextChapterPrefetchStopRequested_ = false;
+  volatile bool nextChapterPrefetchFinished_ = false;
   std::unique_ptr<BookProgress> bookProgress = nullptr;
   std::unique_ptr<StatusBar> statusBar = nullptr;
   int currentSpineIndex = 0;
@@ -111,6 +119,9 @@ class EpubActivity final : public ActivityWithSubactivity {
   int cachedChapterTotalPageCount = 0;
   bool updateRequired = false;
   int loadingProgress = 0;
+  uint32_t pageTurnTraceId_ = 0;
+  uint32_t pageTurnTraceStartedAt_ = 0;
+  bool pageTurnTracePending_ = false;
   unsigned long lastAutoPageTurnTime = 0;
   const std::function<void()> onGoBack;
   const std::function<void()> onGoToHome;
@@ -166,6 +177,11 @@ class EpubActivity final : public ActivityWithSubactivity {
   /** @param clearFramebuffer When false, skips clearScreen before compositing (same-page annotation overlay refresh).
    */
   void renderScreen(bool clearFramebuffer = true);
+  void serviceNextChapterPrefetch();
+  static void nextChapterPrefetchTaskTrampoline(void* param);
+  void nextChapterPrefetchTaskLoop();
+  void stopNextChapterPrefetch();
+  void pauseNextChapterPrefetchForPageTurn();
 
   bool handleTopRightTap();
   bool handleImageTouch();
@@ -264,6 +280,9 @@ class EpubActivity final : public ActivityWithSubactivity {
 
   /** Close drawers (if open), then show a centered popup message. */
   void readerPopup(const char* message, uint32_t autoDismissMs = 0);
+
+  /** Close drawers (if open), then show the reusable three-dot loading popup. */
+  void readerLoadingPopup();
 
   /** After a failed chapter load: popup, revert once to last good chapter, then clear cache and exit if still broken.
    */

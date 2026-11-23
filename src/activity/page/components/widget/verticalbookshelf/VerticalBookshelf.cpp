@@ -48,8 +48,8 @@ Geometry geometry(const int x, const int y, const int width, const int height, c
 }
 
 int topShelfIndex(const int slot, const int count) {
-  // Like the reference image: the newest book is the third vertical object,
-  // facing forward, with the next-nearest books around it.
+
+
   static constexpr int kOrder[kBooksPerShelf] = {1, 2, 0, 3, 4};
   const int index = kOrder[slot];
   return index < count ? index : -1;
@@ -105,9 +105,9 @@ int bottomFrontFacingSlot(const int count) {
   const int visibleBottomBooks = std::max(0, std::min(kBooksPerShelf, count - kBooksPerShelf));
   if (visibleBottomBooks <= 0) return -1;
 
-  // Keep the choice stable while the widget is being repainted so selection
-  // and hit-testing continue to use the same layout, but choose again if the
-  // number of books visible on the bottom shelf changes.
+
+
+
   static int cachedVisibleBottomBooks = -1;
   static int cachedSlot = 0;
   if (cachedVisibleBottomBooks != visibleBottomBooks) {
@@ -207,8 +207,8 @@ void drawLeaningSelection(const GfxRenderer& renderer, const int x, const int y,
 }
 
 int fakePageHeight(const int width, const int height) {
-  // Match the reference proportions: a front cover has a shallow page edge,
-  // while a narrow standing spine has a tall visible page block.
+
+
   if (width * 2 > height) return std::max(8, std::min(32, height / 16));
   return std::max(10, std::min(height / 3, width));
 }
@@ -249,15 +249,15 @@ void drawBookBody(GfxRenderer& renderer, const RecentBook& book, const int x, co
                  const int height) {
   if (width <= 0 || height <= 0) return;
   const bool narrowSpine = width * 2 <= height;
-  // Preview books intentionally have no path. Keep their rendering local to
-  // the preview instead of probing the SD card for a thumbnail that cannot
-  // exist, and make the mock covers visibly distinct on a blank screen.
+
+
+
   if (book.path.empty()) {
     renderer.rectangle.fill(x, y, width, height, static_cast<int>(GfxRenderer::FillTone::Paper));
     renderer.rectangle.render(x, y, width, height, true);
     if (narrowSpine) {
-      // Keep preview spines plain; the shelf structure and book outline
-      // already provide the visual separation between the books.
+
+
     } else {
       renderer.rectangle.fill(x + 3, y + 3, std::max(1, width - 6), std::max(1, height / 3),
                               static_cast<int>(GfxRenderer::FillTone::Gray));
@@ -277,8 +277,8 @@ void drawFakePages(const GfxRenderer& renderer, const int x, const int y, const 
   if (width < 8 || pageHeight < 6) return;
   const int pageX = x;
   const int pageWidth = std::max(4, width);
-  // Front-facing covers show the page edges horizontally. Narrow vertical
-  // spines show the page grooves vertically, as in the supplied reference.
+
+
   if (width * 2 > totalHeight) {
     renderer.rectangle.fill(pageX, y, pageWidth, pageHeight,
                             static_cast<int>(GfxRenderer::FillTone::Paper));
@@ -308,8 +308,8 @@ void drawFakePages(const GfxRenderer& renderer, const int x, const int y, const 
                             pageHeight - topBandHeight, static_cast<int>(GfxRenderer::FillTone::Ink));
     renderer.rectangle.fill(stripeX, y + pageHeight - bottomBandHeight, stripeWidth, bottomBandHeight,
                             static_cast<int>(GfxRenderer::FillTone::Ink));
-    // Small corner blocks give the lower U-shaped join the stepped detail of
-    // a real page edge instead of a perfectly square right angle.
+
+
     const int cornerSize = std::max(2, std::min(3, sideRail));
     const int cornerY = y + pageHeight - bottomBandHeight - cornerSize + 1;
     renderer.rectangle.fill(stripeX, cornerY, cornerSize, cornerSize,
@@ -412,8 +412,8 @@ void renderShelf(GfxRenderer& renderer, const Geometry& g, const RecentBook* boo
   }
   if (visible > 1) rowWidth += kBookGap * (visible - 1);
 
-  // Keep the exact 15 pt gaps and scale the vertical spine widths only if a
-  // packed row would exceed the 20 pt side margins.
+
+
   const int maxRowWidth = std::max(1, g.width - 12);
   if (rowWidth > maxRowWidth && visible > 0) {
     const int gapWidth = kBookGap * (visible - 1);
@@ -521,7 +521,7 @@ void renderShelfSelection(GfxRenderer& renderer, const int x, const int y, const
   }
 }
 
-}  // namespace
+}
 
 void VerticalBookshelf::render(GfxRenderer& renderer, const int x, const int y, const int width, const int height,
                                const int selectedIndex, const bool drawSelection) {
@@ -623,4 +623,4 @@ void VerticalBookshelf::preview(GfxRenderer& renderer, const int x, const int y,
   renderBookshelf(renderer, x, y, width, height, books.data(), kTotalBooks, -1, false, false);
 }
 
-}  // namespace widget::verticalbookshelf
+}

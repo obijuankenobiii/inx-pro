@@ -44,7 +44,7 @@ ButtonBounds usbActionButtonBounds(const GfxRenderer& renderer, const char* labe
   return {renderer.getScreenWidth() - kActionMargin - width,
           renderer.getScreenHeight() - kActionMargin - Button::height, width, Button::height};
 }
-}  // namespace
+}
 
 #if FREEINK_DEVICE_X4PRO
 #include "images/UsbTransferSetup.h"
@@ -103,9 +103,9 @@ void UsbFileTransferActivity::onExit() {
 
 void UsbFileTransferActivity::loop() {
 #if FREEINK_CAP_USB_MSC
-  // Do not tear down the raw SD session while the host still has the drive
-  // mounted. The host must eject it first; the eject/disconnect state below
-  // then exits and performs the USB personality handoff safely.
+
+
+
   const bool hostOwnsStorage = state == State::Connected || state == State::Accessed;
   if (!hostOwnsStorage && SubPage::closeInput(renderer, mappedInput, onBack)) return;
 #else
@@ -310,8 +310,8 @@ void UsbFileTransferActivity::requestDisconnect() {
 
   state = State::Disconnecting;
   render();
-  // Give the user-visible state a moment to reach the panel before releasing
-  // the USB personality and restarting into Serial/JTAG flashing mode.
+
+
   delay(100);
   usb.disconnectHost();
   finishAndGoBack();

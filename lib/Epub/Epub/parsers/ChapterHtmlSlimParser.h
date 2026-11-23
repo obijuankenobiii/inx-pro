@@ -9,6 +9,7 @@
 #include <expat.h>
 
 #include <climits>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -380,6 +381,9 @@ class ChapterHtmlSlimParser {
   static void XMLCALL endElement(void* userData, const XML_Char* name);
 
  public:
+  static void* operator new(std::size_t size) { return epubPsramObjectAllocate(size); }
+  static void operator delete(void* pointer) noexcept { epubPsramObjectFree(pointer); }
+
   std::string internalPath;
 
   /**

@@ -72,8 +72,8 @@ class ReaderPresetStore {
  private:
   ReaderPresetStore() = default;
 
-  std::vector<ReaderPreset> userPresets_;  ///< store index i (>=1) maps to userPresets_[i-1]
-  uint8_t defaultPresetIndex_ = 0;         ///< 0 means new books inherit global Reader settings
+  std::vector<ReaderPreset> userPresets_;
+  uint8_t defaultPresetIndex_ = 0;
   bool loaded_ = false;
 
   static constexpr const char* kDir = "/.system";

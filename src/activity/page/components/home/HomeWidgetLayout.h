@@ -7,13 +7,13 @@
 #include "../widget/Favorites.h"
 #include "../widget/Heatmap.h"
 #include "../widget/Humidity.h"
+#include "../widget/ImageWidget.h"
 #include "../widget/Library.h"
 #include "../widget/Recent.h"
 #include "../widget/RecentGrid.h"
 #include "../widget/Flow.h"
 #include "../widget/verticalbookshelf/VerticalBookshelf.h"
 #include "../widget/Shortcut.h"
-#include "../widget/ShortcutList.h"
 #include "../widget/Temperature.h"
 #include "../widget/TodaysReading.h"
 #include "../widget/WeeklyStatistics.h"
@@ -35,6 +35,7 @@ class HomeWidgetLayout final {
     Statistics,
     Heatmap,
     Library,
+    Image,
     Shortcut
   };
   enum class SwipeTarget { None, Carousel, Favorites, Flow, WidgetPage };
@@ -61,6 +62,10 @@ class HomeWidgetLayout final {
   SwipeTarget horizontalSwipeTarget(const HomeTheme::Theme& theme, int widgetPageIndex, int x, int y) const;
   int oneByOnePageCount(const HomeTheme::Theme& theme) const;
   int recentGridPageCount(const HomeTheme::Theme& theme, int widgetPageIndex, int bookCount) const;
+  void widgetBounds(HomeTheme::Layout layout, int slot, bool sleep, int& x, int& y, int& width, int& height,
+                    const HomeTheme::Theme* theme = nullptr) const;
+  void widgetSize(HomeTheme::Layout layout, int slot, bool sleep, int& width, int& height,
+                  const HomeTheme::Theme* theme = nullptr) const;
 
  private:
   struct Bounds {
@@ -115,9 +120,9 @@ class HomeWidgetLayout final {
   Flow flow_;
   widget::verticalbookshelf::VerticalBookshelf verticalBookshelf_;
   Shortcut shortcut_;
-  ShortcutList shortcutList_;
   Temperature temperature_;
   Humidity humidity_;
+  ImageWidget imageWidget_;
   TodaysReading todaysReading_;
   WeeklyStatistics weeklyStatistics_;
   Streaks streaks_;

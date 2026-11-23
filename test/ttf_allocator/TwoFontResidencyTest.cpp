@@ -128,7 +128,7 @@ int main(int argc, char** argv) {
     ExternalFont anotherSize;
     const std::string ninthPath = std::string(argv[1]) + "?face=8.ttf";
     assert(anotherSize.load(ninthPath.c_str(), false, 21));
-    assert(used - before < 32 * 1024); // Metadata only, no second full file copy.
+    assert(used - before < 32 * 1024);
     renderGlyphs(anotherSize);
   }
   ExternalFont::clearTtfCache();

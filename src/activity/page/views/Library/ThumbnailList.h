@@ -30,8 +30,8 @@ class ThumbnailList final {
   int totalPages() const { return pageCount(); }
 
  private:
-  // Keep the Statistics proportions while allowing five rows on the normal
-  // 800px portrait layout above the bottom navigation menu.
+
+
   static constexpr int normalRowHeight = 130;
   static constexpr int sideMargin = 20;
   static constexpr int thumbnailWidth = 74;
@@ -57,7 +57,7 @@ class ThumbnailList final {
   int itemAt(int x, int y) const;
   static std::string titleFor(const LibraryIndex::Book& book);
   std::string thumbnailPathFor(const LibraryIndex::Book& book) const;
-  void renderThumbnail(const LibraryIndex::Book& book, int x, int y) const;
+  void renderThumbnail(const LibraryIndex::Book& book, int x, int y, bool favorite) const;
 };
 
 }

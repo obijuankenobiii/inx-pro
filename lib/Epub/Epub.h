@@ -61,6 +61,9 @@ class Epub {
   void clearCoverJpegPsram() const;
 
  public:
+  static void* operator new(std::size_t size) { return epubPsramObjectAllocate(size); }
+  static void operator delete(void* pointer) noexcept { epubPsramObjectFree(pointer); }
+
   /**
    * Cooperative stream for one EPUB entry. Keep it alive across reader-loop
    * slices; each pump emits only the requested amount of inflated data and
@@ -111,9 +114,11 @@ class Epub {
 
   std::string getCoverBmpPath(bool cropped = false) const;
   std::string getCoverJpegPath(bool cropped = false) const;
+  std::string getCoverPngPath(bool cropped = false) const;
   std::string getCoverItemHref() const;
   bool extractCoverItemToPath(const std::string& outPath) const;
   bool generateCoverBmp(bool cropped = false) const;
+  bool hasDetailedCoverBmp(bool cropped = false) const;
   std::string getThumbBmpPath() const;
   std::string getThumbJpegPath() const;
   std::string getThumbPngPath() const;

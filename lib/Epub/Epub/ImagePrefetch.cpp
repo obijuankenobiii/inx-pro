@@ -8,6 +8,10 @@ void lockIo() {
   SdIoMutex::lock();
 }
 
+bool tryLockIo() {
+  return SdIoMutex::tryLock();
+}
+
 void unlockIo() {
   SdIoMutex::unlock();
 }

@@ -14,27 +14,33 @@
 #include <string>
 #include <vector>
 
+#include "PsramAllocator.h"
 #include "blocks/TextBlock.h"
 
 class GfxRenderer;
 
 class ParsedText {
-  std::deque<std::string> words;
-  std::deque<EpdFontFamily::Style> wordStyles;
-  std::deque<uint8_t> bionicPrefixBytes;
-  std::deque<uint8_t> wordSmallCaps;
-  std::deque<uint8_t> wordUnderline;
-  std::deque<uint8_t> wordVerticalAlign;
-  std::deque<int16_t> wordXOffset;
+ public:
+  static void* operator new(std::size_t size) { return epubPsramObjectAllocate(size); }
+  static void operator delete(void* pointer) noexcept { epubPsramObjectFree(pointer); }
+
+ private:
+  std::deque<std::string, EpubPsramAllocator<std::string>> words;
+  std::deque<EpdFontFamily::Style, EpubPsramAllocator<EpdFontFamily::Style>> wordStyles;
+  std::deque<uint8_t, EpubPsramAllocator<uint8_t>> bionicPrefixBytes;
+  std::deque<uint8_t, EpubPsramAllocator<uint8_t>> wordSmallCaps;
+  std::deque<uint8_t, EpubPsramAllocator<uint8_t>> wordUnderline;
+  std::deque<uint8_t, EpubPsramAllocator<uint8_t>> wordVerticalAlign;
+  std::deque<int16_t, EpubPsramAllocator<int16_t>> wordXOffset;
   bool hasWordXOffsets_ = false;
   /** True when this token was split only by an inline style boundary and should not get an inter-word gap. */
-  std::deque<uint8_t> wordJoinPrevious;
+  std::deque<uint8_t, EpubPsramAllocator<uint8_t>> wordJoinPrevious;
   bool hasJoinedWords_ = false;
-  std::deque<std::string> wordImagePaths;
-  std::deque<uint16_t> wordImageW;
-  std::deque<uint16_t> wordImageH;
+  std::deque<std::string, EpubPsramAllocator<std::string>> wordImagePaths;
+  std::deque<uint16_t, EpubPsramAllocator<uint16_t>> wordImageW;
+  std::deque<uint16_t, EpubPsramAllocator<uint16_t>> wordImageH;
   bool hasInlineImages_ = false;
-  std::deque<std::string> wordFootnoteTargets;
+  std::deque<std::string, EpubPsramAllocator<std::string>> wordFootnoteTargets;
   bool hasFootnoteLinks_ = false;
   /** Widest natural (pre-alignment) line content width seen during layout; used to size CSS border rules. */
   uint16_t maxLineContentWidth_ = 0;

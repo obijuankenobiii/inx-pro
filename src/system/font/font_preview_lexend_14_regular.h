@@ -23,11 +23,11 @@ static const uint8_t font_preview_lexend_14_regularBitmaps[175] = {
 };
 
 static const EpdGlyph font_preview_lexend_14_regularGlyphs[] = {
-    { 14, 21, 18, 2, 21, 37, 0 }, // L
-    { 16, 23, 18, 1, 22, 46, 37 }, // d
-    { 15, 17, 17, 1, 16, 32, 83 }, // e
-    { 14, 16, 17, 2, 16, 28, 115 }, // n
-    { 16, 16, 16, 0, 16, 32, 143 }, // x
+    { 14, 21, 18, 2, 21, 37, 0 },
+    { 16, 23, 18, 1, 22, 46, 37 },
+    { 15, 17, 17, 1, 16, 32, 83 },
+    { 14, 16, 17, 2, 16, 28, 115 },
+    { 16, 16, 16, 0, 16, 32, 143 },
 };
 
 static const EpdUnicodeInterval font_preview_lexend_14_regularIntervals[] = {

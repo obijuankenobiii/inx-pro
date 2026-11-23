@@ -57,6 +57,9 @@ class ScreenComponents {
 
   static PopupLayout drawPopup(const GfxRenderer& renderer, const char* message);
 
+  /** Draws the chapter-loading popup with three centered progress dots. */
+  static PopupLayout drawLoadingPopup(const GfxRenderer& renderer);
+
   static void fillPopupProgress(const GfxRenderer& renderer, const PopupLayout& layout, int progress);
 
   /** Geometry for {@link LoadingProgress}: label on top, full-width progress bar below. */

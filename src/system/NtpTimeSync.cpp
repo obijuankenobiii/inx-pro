@@ -17,7 +17,7 @@ bool syncSystemClockWithNtp(time_t& utcNow, const uint32_t timeoutMs) {
   const uint32_t start = millis();
   bool completed = false;
   while (true) {
-    // This getter consumes COMPLETED; read it once and retain the result.
+
     if (sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED) {
       completed = true;
       break;

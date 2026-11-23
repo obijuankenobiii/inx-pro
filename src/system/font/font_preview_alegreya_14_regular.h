@@ -26,13 +26,13 @@ static const uint8_t font_preview_alegreya_14_regularBitmaps[215] = {
 };
 
 static const EpdGlyph font_preview_alegreya_14_regularGlyphs[] = {
-    { 19, 21, 17, -1, 20, 50, 0 }, // A
-    { 13, 14, 14, 1, 14, 23, 50 }, // a
-    { 11, 14, 13, 1, 14, 20, 73 }, // e
-    { 14, 22, 15, 1, 15, 39, 93 }, // g
-    { 7, 24, 7, 0, 23, 21, 132 }, // l
-    { 10, 16, 11, 1, 15, 20, 153 }, // r
-    { 15, 22, 13, -1, 15, 42, 173 }, // y
+    { 19, 21, 17, -1, 20, 50, 0 },
+    { 13, 14, 14, 1, 14, 23, 50 },
+    { 11, 14, 13, 1, 14, 20, 73 },
+    { 14, 22, 15, 1, 15, 39, 93 },
+    { 7, 24, 7, 0, 23, 21, 132 },
+    { 10, 16, 11, 1, 15, 20, 153 },
+    { 15, 22, 13, -1, 15, 42, 173 },
 };
 
 static const EpdUnicodeInterval font_preview_alegreya_14_regularIntervals[] = {

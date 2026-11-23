@@ -14,6 +14,8 @@
 
 class GfxRenderer;
 
+enum class ImageDisplayCacheNamespace : uint8_t { Default, Library, Widgets, Book };
+
 struct ImageDisplayCacheOptions {
   bool cropToFill = false;
   ImageRenderMode mode = ImageRenderMode::OneBit;
@@ -22,6 +24,7 @@ struct ImageDisplayCacheOptions {
   uint8_t cropAnchorY = 128;
   BitmapRender::RoundedOutside roundedOutside = BitmapRender::RoundedOutside::None;
   bool quality = false;
+  ImageDisplayCacheNamespace cacheNamespace = ImageDisplayCacheNamespace::Default;
 };
 
 class ImageDisplayCache {
@@ -77,6 +80,10 @@ class ImageDisplayCache {
  private:
   static std::string pathFor(GfxRenderer& renderer, const std::string& sourcePath, int x, int y, int width, int height,
                              const ImageDisplayCacheOptions& options);
+  static std::string legacyPathFor(GfxRenderer& renderer, const std::string& sourcePath, int x, int y, int width,
+                                   int height, const ImageDisplayCacheOptions& options);
   static std::string pathForCombined(GfxRenderer& renderer, const std::string& sourcePath, int x, int y, int width,
                                      int height, const ImageDisplayCacheOptions& options);
+  static std::string legacyPathForCombined(GfxRenderer& renderer, const std::string& sourcePath, int x, int y,
+                                           int width, int height, const ImageDisplayCacheOptions& options);
 };

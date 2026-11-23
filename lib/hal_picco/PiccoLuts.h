@@ -1,6 +1,6 @@
 #pragma once
 
-// Project-owned Picco image waveform. Keep device-specific LUT changes out of the vendored FreeInk SDK.
+
 #include <Arduino.h>
 
 inline const unsigned char picco_se0400_image_lut[535] PROGMEM = {

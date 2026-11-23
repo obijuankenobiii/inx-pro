@@ -33,11 +33,11 @@ class ReaderSetting {
   ReaderSetting(const ReaderSetting&) = delete;
   ReaderSetting& operator=(const ReaderSetting&) = delete;
 
-  uint8_t statusBar = 2;  ///< Text-reader status bar mode (SystemSetting::STATUS_BAR_MODE::FULL)
+  uint8_t statusBar = 2;
 
-  uint8_t statusBarLeft = 6;    ///< Left status bar section (SystemSetting::STATUS_ITEM_BATTERY_ICON_WITH_PERCENT)
-  uint8_t statusBarMiddle = 3;  ///< Middle status bar section (SystemSetting::STATUS_ITEM_CHAPTER_TITLE)
-  uint8_t statusBarRight = 1;   ///< Right status bar section (SystemSetting::STATUS_ITEM_PAGE_NUMBERS)
+  uint8_t statusBarLeft = 6;
+  uint8_t statusBarMiddle = 3;
+  uint8_t statusBarRight = 1;
 
   /** Full-width bar - a second, independent bar stacked below the main status bar, spanning
    *  edge-to-edge (ignoring the left/right screen margin the main bar respects). Unlike the main bar
@@ -47,36 +47,36 @@ class ReaderSetting {
    *  - see StatusBar::kFullBarStyles. Off by default (SystemSetting::STATUS_ITEM_NONE). */
   uint8_t statusBarFullStyle = 0;
 
-  uint8_t extraParagraphSpacing = 1;  ///< Extra paragraph spacing enabled
-  uint8_t textAntiAliasing = 0;       ///< New-install default: text anti-aliasing off
+  uint8_t extraParagraphSpacing = 1;
+  uint8_t textAntiAliasing = 0;
 
   /** Selected /dictionaries/<folder> for EPUB dictionary lookup. Empty = none selected. */
   char dictionaryFolder[64] = "";
 
   /** Power Button (short-press only, no long-press pair). */
-  uint8_t btnPowerShortAction = 6;  ///< BTN_ACTION_PAGE_REFRESH
+  uint8_t btnPowerShortAction = 6;
 
-  uint8_t orientation = 0;  ///< SystemSetting::PORTRAIT
+  uint8_t orientation = 0;
 
   uint8_t fontFamily = SystemSetting::MONTSERRAT;
-  uint8_t fontSize = SystemSetting::SMALL;  ///< Legacy index for built-in/.bin fonts; actual 6-45pt for TTF/OTF
-  uint8_t lineHeight = 100;                 ///< Reader line height, % of natural (10-200)
-  uint8_t textSpace = 100;                  ///< Reader word spacing, % of natural (10-200)
-  uint8_t paragraphAlignment = 4;           ///< SystemSetting::FOLLOW_CSS
+  uint8_t fontSize = SystemSetting::SMALL;
+  uint8_t lineHeight = 100;
+  uint8_t textSpace = 100;
+  uint8_t paragraphAlignment = 4;
   /** When set, EPUB/CSS `text-indent` is applied (reader "Indent"; passed to Section as respectCssParagraphIndent). */
   uint8_t paragraphCssIndentEnabled = 0;
 
-  uint8_t refreshFrequency = SystemSetting::REFRESH_OFF;  ///< New-install default: off
-  uint8_t hyphenationEnabled = 1;    ///< Hyphenation enabled
-  uint8_t bionicReadingEnabled = 0;  ///< Bionic Reading enabled
+  uint8_t refreshFrequency = SystemSetting::REFRESH_OFF;
+  uint8_t hyphenationEnabled = 1;
+  uint8_t bionicReadingEnabled = 0;
   /** Reading-guide overlay style: 0 = off, 1 = Grid (vertical lines at 1/3 and 2/3 of content width, a
    *  speed-reading aid), 2 = Notebook (horizontal ruled lines like notebook paper). */
   uint8_t readingGuideLinesEnabled = 0;
 
-  uint8_t marginTop = 0;     ///< Top screen margin in pixels
-  uint8_t marginLeft = 0;    ///< Left screen margin in pixels
-  uint8_t marginRight = 0;   ///< Right screen margin in pixels
-  uint8_t marginBottom = 0;  ///< Bottom screen margin in pixels
+  uint8_t marginTop = 0;
+  uint8_t marginLeft = 0;
+  uint8_t marginRight = 0;
+  uint8_t marginBottom = 0;
 
   /**
    * @brief Page auto-turn interval in seconds
@@ -86,18 +86,18 @@ class ReaderSetting {
 
   /** Global Reader image quality: 0=Low(1-bit), 1=Medium(fast 2-bit grayscale),
    *  2=High(quality 2-bit grayscale with text preserved). */
-  uint8_t readerImageGrayscale = SystemSetting::READER_IMAGE_LOW;  ///< New-install default: low
+  uint8_t readerImageGrayscale = SystemSetting::READER_IMAGE_LOW;
   /** When set, image-heavy EPUB pages use a gentler (half) refresh before/after transitions. */
   uint8_t readerSmartRefreshOnImages = 0;
 
   /** Long-press on prev/next: 0=off, 1=chapter skip (EPUB), 2=skip 5 pages (EPUB). */
-  uint8_t longPressChapterSkip = 1;  ///< SystemSetting::LONG_PRESS_CHAPTER_SKIP
+  uint8_t longPressChapterSkip = 1;
 
   /** Bitmask of SystemSetting::READER_BUTTON_ACTION values (bit N = 1u << N) included in the
    *  "Quick Actions" popup opened by a button mapped to BTN_ACTION_QUICK_ACTIONS - see
    *  QuickActionsSettingsActivity (the checklist that edits this) and QuickActionsMenuUi (the popup
    *  that reads it). BTN_ACTION_NONE and BTN_ACTION_QUICK_ACTIONS itself are never set/offered. */
-  uint32_t quickActionsMask = 0;  ///< New-install default: all actions off
+  uint32_t quickActionsMask = 0;
 
   /** Daily reading goal in minutes; zero disables the goal. */
   uint8_t dailyReadingGoalMinutes = 5;
@@ -116,8 +116,38 @@ class ReaderSetting {
   /** When set, edge swipes in the reader do not adjust the frontlight. */
   uint8_t disableLightControl = 0;
 
+  /** When set, word-selection and annotation/highlight gestures are unavailable in EPUB reader. */
+  uint8_t disableHighlight = 0;
+
+  /** When set, build the next chapter incrementally in the background while reading. */
+  uint8_t seamlessChapters = 1;
+
   /** Reader double-tap action. BTN_ACTION_NONE disables the gesture. */
   uint8_t doubleTapAction = SystemSetting::BTN_ACTION_NONE;
+
+  /** Action assigned to each reader tap zone, stored as three full-height vertical zones. */
+  static constexpr uint8_t TAP_ZONE_COLUMNS = 3;
+  static constexpr uint8_t TAP_ZONE_ROWS = 1;
+  static constexpr uint8_t TAP_ZONE_COUNT = TAP_ZONE_COLUMNS * TAP_ZONE_ROWS;
+  /** Storage remains 12 entries so settings files written by the previous 3x4 editor stay readable. */
+  static constexpr uint8_t TAP_ZONE_STORAGE_COUNT = 12;
+  uint8_t tapZoneActions[TAP_ZONE_STORAGE_COUNT] = {
+      SystemSetting::BTN_ACTION_PAGE_PREVIOUS, SystemSetting::BTN_ACTION_PAGE_NEXT,
+      SystemSetting::BTN_ACTION_PAGE_NEXT,     SystemSetting::BTN_ACTION_PAGE_PREVIOUS,
+      SystemSetting::BTN_ACTION_PAGE_NEXT,     SystemSetting::BTN_ACTION_PAGE_NEXT,
+      SystemSetting::BTN_ACTION_PAGE_PREVIOUS, SystemSetting::BTN_ACTION_PAGE_NEXT,
+      SystemSetting::BTN_ACTION_PAGE_NEXT,     SystemSetting::BTN_ACTION_PAGE_PREVIOUS,
+      SystemSetting::BTN_ACTION_PAGE_NEXT,     SystemSetting::BTN_ACTION_PAGE_NEXT};
+  uint8_t doubleTapZoneActions[TAP_ZONE_STORAGE_COUNT] = {};
+
+  /** Actions assigned to exactly three full-height reader swipe zones. */
+  static constexpr uint8_t SWIPE_ZONE_COLUMNS = 3;
+  static constexpr uint8_t SWIPE_ZONE_ROWS = 1;
+  static constexpr uint8_t SWIPE_ZONE_COUNT = SWIPE_ZONE_COLUMNS * SWIPE_ZONE_ROWS;
+  uint8_t swipeUpZoneActions[SWIPE_ZONE_COUNT] = {};
+  uint8_t swipeDownZoneActions[SWIPE_ZONE_COUNT] = {};
+  uint8_t swipeLeftZoneActions[SWIPE_ZONE_COUNT] = {};
+  uint8_t swipeRightZoneActions[SWIPE_ZONE_COUNT] = {};
 
   /** Default language package for books. Empty means follow the system UI language. */
   char defaultLanguageCode[33] = "";

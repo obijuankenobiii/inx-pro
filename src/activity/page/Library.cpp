@@ -5,9 +5,11 @@
 #include <BitmapRender.h>
 #include <GfxRenderer.h>
 #include <SDCardManager.h>
+#include <Epub/BookMetadataCache.h>
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdlib>
 #include <functional>
 #include <map>
@@ -39,6 +41,8 @@
 #include "state/RecentBooks.h"
 #include "state/Session.h"
 #include "state/SystemSetting.h"
+#include "views/Library/Thumb3x2Layout.h"
+#include "views/Library/ThumbLayout.h"
 #include "util/MetadataIndex.h"
 #include "system/Fonts.h"
 #include "system/MappedInputManager.h"
@@ -48,6 +52,8 @@
 #include "util/SdIoMutex.h"
 
 extern void onGoToLibrary(const std::string& path);
+extern void openBookDetails(const std::string& bookPath, const std::string& cachePath,
+                            const std::string& libraryPath);
 
 namespace {
 std::map<std::string, int> gThumbPage;
@@ -59,6 +65,7 @@ constexpr int kCaretSourceWidth = 32;
 constexpr int kCaretSourceHeight = 30;
 constexpr int kCaretIconSize = 30;
 constexpr int kControlListItemHeight = UiLayout::LIST_ITEM_HEIGHT + 10;
+constexpr int kSortVisibleRows = 6;
 
 struct FilterDrawerLayout {
   int x;
@@ -97,7 +104,7 @@ ControlModalLayout controlModalLayout(const GfxRenderer& renderer) {
   const int x = horizontalScreenMargin;
   const int width = std::max(1, screenWidth - horizontalScreenMargin * 2);
   constexpr int tabPaddingHeight = 20 + 20;
-  constexpr int sortRowCount = 6;
+  constexpr int sortRowCount = kSortVisibleRows;
   const int tabHeight = tabPaddingHeight + renderer.text.getLineHeight(systemFontId());
   const int contentHeight = tabHeight + sortRowCount * kControlListItemHeight;
   const int y = std::max(navigation::Menu::height + 10, screenHeight - bottomMargin - contentHeight);
@@ -233,9 +240,9 @@ std::string formatSeriesPosition(std::string value) {
   return value;
 }
 
-// Compare labels the way readers expect: "Volume 2" comes before
-// "Volume 10".  Numeric runs are compared by value while the surrounding
-// text remains case-insensitive.
+
+
+
 int naturalCompare(const std::string& left, const std::string& right) {
   size_t leftPos = 0;
   size_t rightPos = 0;
@@ -267,7 +274,7 @@ int naturalCompare(const std::string& left, const std::string& right) {
                                                 right, rightSignificant, rightDigits);
       if (digitsComparison != 0) return digitsComparison < 0 ? -1 : 1;
 
-      // Equal numeric values: prefer the spelling with fewer leading zeroes.
+
       const size_t leftRunLength = leftPos - leftRunStart;
       const size_t rightRunLength = rightPos - rightRunStart;
       if (leftRunLength != rightRunLength) return leftRunLength < rightRunLength ? -1 : 1;
@@ -310,6 +317,13 @@ bool matchesTypeFilter(const std::string& path, const std::string& category) {
   if (category == "txt") return endsWith(value, ".txt") || endsWith(value, ".md");
   if (category == "xtc") return endsWith(value, ".xtc") || endsWith(value, ".xtch");
   return true;
+}
+
+float ratingValue(const std::string& value) {
+  char* end = nullptr;
+  const float rating = std::strtof(value.c_str(), &end);
+  if (end == value.c_str() || !std::isfinite(rating) || rating < 0.0f) return -1.0f;
+  return rating;
 }
 
 std::string dataPath(const std::string& bookPath) {
@@ -401,6 +415,9 @@ void Library::onEnter() {
     case SystemSetting::LIBRARY_LIST_THUMBNAIL:
       view = View::ListThumb;
       break;
+    case SystemSetting::LIBRARY_THUMBNAIL_3X2:
+      view = View::Thumb3x2;
+      break;
     default:
       view = View::Grid;
       SETTINGS.libraryMode = SystemSetting::LIBRARY_GRID;
@@ -419,6 +436,8 @@ void Library::onEnter() {
   controlTab = ControlTab::View;
   listThumbDeferImageDecode_ = view == View::ListThumb;
   listThumbWarmupPending_ = false;
+  thumbDeferImageDecode_ = view == View::Thumb || view == View::Thumb3x2;
+  thumbWarmupPending_ = false;
   popupBook = -1;
   folderDeleteConfirm = false;
   sidebarOpen = false;
@@ -428,9 +447,15 @@ void Library::onEnter() {
   metadataIndexAvailable_ = false;
   sidebarScrollOffset_ = 0;
   allBooksMode = false;
-  // Defer the expensive first root load only for thumbnail mode so its shell
-  // can draw immediately. List/grid and folder pages should open synchronously.
-  loading = path == "/" && view == View::Thumb;
+
+
+  thumb.setLayout(view == View::Thumb3x2 ? views::library::thumb3x2Layout()
+                                        : views::library::standardThumbLayout());
+
+
+
+  loading = path == "/" && (view == View::Thumb || view == View::Thumb3x2) &&
+            !LibraryIndex::hasIndex();
   items.clear();
   books.clear();
   resetViews();
@@ -640,8 +665,8 @@ void Library::load() {
                 items.end());
     books.clear();
   } else if (hasMetadataFilter) {
-    // Metadata filters are global library filters, not scoped to the folder
-    // currently open. Their indexes contain book paths from the whole library.
+
+
     if (!LibraryIndex::search("", items, LibraryIndex::all)) return;
     items.erase(std::remove_if(items.begin(), items.end(), [](const LibraryIndex::Book& item) {
                   return item.type != LibraryIndex::Book::Type::BOOK;
@@ -712,6 +737,14 @@ void Library::load() {
     std::vector<LibraryIndex::Book>().swap(books);
   }
 
+  if (sort == Sort::RatingLowHigh || sort == Sort::RatingHighLow) {
+    for (LibraryIndex::Book& item : items) {
+      if (item.type != LibraryIndex::Book::Type::BOOK) continue;
+      BookMetadataCache metadata(dataPath(item.path));
+      if (metadata.load()) item.rating = metadata.coreMetadata.rating;
+    }
+  }
+
   if (stateFilter != StateFilter::Metadata) {
     std::stable_sort(items.begin(), items.end(), [this](const LibraryIndex::Book& left,
                                                          const LibraryIndex::Book& right) {
@@ -747,8 +780,18 @@ void Library::load() {
         return sort == Sort::FolderAZ ? folderComparison < 0 : folderComparison > 0;
       }
     }
+    if (sort == Sort::RatingLowHigh || sort == Sort::RatingHighLow) {
+      const float leftRating = ratingValue(left.rating);
+      const float rightRating = ratingValue(right.rating);
+      if (leftRating != rightRating) {
+        if (leftRating < 0.0f) return false;
+        if (rightRating < 0.0f) return true;
+        return sort == Sort::RatingLowHigh ? leftRating < rightRating : leftRating > rightRating;
+      }
+    }
     const int titleComparison = naturalCompare(leftTitle, rightTitle);
-    if (sort == Sort::TitleZA || sort == Sort::FolderZA || sort == Sort::AuthorZA) {
+    if (sort == Sort::TitleZA || sort == Sort::FolderZA || sort == Sort::AuthorZA ||
+        sort == Sort::RatingHighLow) {
       return titleComparison > 0;
     }
     return titleComparison < 0;
@@ -757,7 +800,13 @@ void Library::load() {
   resetViews();
   thumb.setRoot(path == "/" && !allBooksMode);
   restoreThumbPage();
-  if (view == View::Thumb) thumb.load();
+  if (view == View::Thumb || view == View::Thumb3x2) {
+    const unsigned long startedAt = micros();
+    thumb.load();
+    INX_SERIAL.printf("[%lu] [LIBRARY][THUMB-TIMING] mode=%s phase=load page=%d/%d items=%d elapsed=%luus\n",
+                      millis(), view == View::Thumb3x2 ? "3x2" : "2x2", thumb.currentPage() + 1,
+                      thumb.totalPages(), static_cast<int>(items.size()), micros() - startedAt);
+  }
 }
 
 void Library::open(const int index) {
@@ -791,9 +840,9 @@ void Library::open(const int index) {
 }
 
 void Library::loop() {
-  // Shared navigation must see the edge swipe before library navigation treats
-  // it as a folder/back gesture. This keeps the hidden menu available on the
-  // Library main page and inside library folders.
+
+
+
   if (controlModalOpen) {
     if (controlModalInput()) return;
     renderPage();
@@ -866,10 +915,11 @@ void Library::loop() {
     return;
   }
 
-  // The first thumbnail-list frame intentionally uses placeholders. Let it
-  // reach the panel before decoding covers, just like Home's widget layout.
-  if (listThumbWarmupPending_ && !mappedInput.wasTouchActivity()) {
+
+
+  if ((listThumbWarmupPending_ || thumbWarmupPending_) && !mappedInput.wasTouchActivity()) {
     listThumbWarmupPending_ = false;
+    thumbWarmupPending_ = false;
     updateRequired = true;
     renderPage();
   }
@@ -888,13 +938,25 @@ void Library::loop() {
     case View::Thumb:
       handled = thumb.handleInput();
       break;
+    case View::Thumb3x2:
+      handled = thumb.handleInput();
+      break;
   }
   if (handled) {
     if (view == View::ListThumb) {
-      // A page change should get the same deferred first render as the
-      // initial list. This also keeps a newly loaded page responsive.
+
+
       listThumbDeferImageDecode_ = true;
       listThumbWarmupPending_ = false;
+    }
+    if (view == View::Thumb || view == View::Thumb3x2) {
+
+
+
+      thumbDeferImageDecode_ = true;
+      thumbWarmupPending_ = false;
+      thumbTimingPassesRemaining_ = 2;
+      thumbPrefetchNotBeforeMs_ = millis() + 800;
     }
     updateRequired = true;
     return;
@@ -903,16 +965,24 @@ void Library::loop() {
     renderPage();
     return;
   }
-  if (view == View::Thumb && thumb.loadNext()) {
-    updateRequired = true;
-  } else if (view == View::Thumb) {
-    thumb.prefetchNextPage();
+  if (view == View::Thumb || view == View::Thumb3x2) {
+    const char* mode = view == View::Thumb3x2 ? "3x2" : "2x2";
+    const unsigned long startedAt = micros();
+    if (thumb.loadNext()) {
+      updateRequired = true;
+      INX_SERIAL.printf("[%lu] [LIBRARY][THUMB-TIMING] mode=%s phase=load-next elapsed=%luus\n", millis(), mode,
+                        micros() - startedAt);
+    } else if (static_cast<long>(millis() - thumbPrefetchNotBeforeMs_) >= 0 && thumb.prefetchNextPage()) {
+      INX_SERIAL.printf("[%lu] [LIBRARY][THUMB-TIMING] mode=%s phase=prefetch elapsed=%luus\n", millis(), mode,
+                        micros() - startedAt);
+      thumbPrefetchNotBeforeMs_ = millis() + 100;
+    }
   }
   renderPage();
 }
 
 void Library::content() {
-  if (loading && view == View::Thumb) {
+  if (loading && (view == View::Thumb || view == View::Thumb3x2)) {
     renderer.text.centered(systemFontId(), renderer.getScreenHeight() / 2, "Loading library...");
     return;
   }
@@ -928,6 +998,25 @@ void Library::content() {
     renderer.text.centered(systemFontId(), renderer.getScreenHeight() / 2, message);
     return;
   }
+  const auto renderThumb = [this](const char* mode) {
+    const bool shouldLogTiming = thumbTimingPassesRemaining_ > 0;
+    const bool deferred = thumbDeferImageDecode_;
+    const unsigned long startedAt = shouldLogTiming ? micros() : 0;
+    renderer.setDeferImageDecode(deferred);
+    const bool needsDecode = thumb.render();
+    renderer.setDeferImageDecode(false);
+    if (thumbDeferImageDecode_) {
+      thumbDeferImageDecode_ = false;
+      thumbWarmupPending_ = needsDecode;
+      if (!needsDecode) thumbTimingPassesRemaining_ = 0;
+    }
+    if (shouldLogTiming) {
+      if (thumbTimingPassesRemaining_ > 0) --thumbTimingPassesRemaining_;
+      INX_SERIAL.printf("[%lu] [LIBRARY][THUMB-TIMING] mode=%s phase=render page=%d/%d deferred=%d elapsed=%luus\n",
+                        millis(), mode, thumb.currentPage() + 1, thumb.totalPages(), deferred ? 1 : 0,
+                        micros() - startedAt);
+    }
+  };
   switch (view) {
     case View::List:
       list.render();
@@ -945,7 +1034,10 @@ void Library::content() {
       }
       break;
     case View::Thumb:
-      thumb.render();
+      renderThumb("2x2");
+      break;
+    case View::Thumb3x2:
+      renderThumb("3x2");
       break;
   }
 }
@@ -959,7 +1051,7 @@ std::vector<std::string> Library::groupCovers(const LibraryIndex::Book& group, c
   if (stateFilter == StateFilter::Plugin) {
     const auto booksForGroup = pluginBooksByGroup_.find(group.path);
     if (booksForGroup == pluginBooksByGroup_.end()) return covers;
-    const char* names[] = {"cover.jpg", "thumb.jpg", "cover.bmp", "thumb.png", "thumb.bmp"};
+    const char* names[] = {"cover.jpg", "cover.png", "thumb.jpg", "thumb.png", "thumb.bmp", "cover.bmp"};
     for (const LibraryIndex::Book& book : booksForGroup->second) {
       const std::string directory = dataPath(book.path);
       for (const char* name : names) {
@@ -986,7 +1078,7 @@ std::vector<std::string> Library::groupCovers(const LibraryIndex::Book& group, c
   std::vector<MetadataIndex::Entry> entries;
   if (!MetadataIndex::loadGroup(metadataKind_, groupIndex, entries, 64)) return covers;
 
-  const char* names[] = {"thumb.jpg", "thumb.png", "thumb.bmp"};
+  const char* names[] = {"thumb.jpg", "thumb.png", "thumb.bmp", "cover.jpg", "cover.png", "cover.bmp"};
   for (const MetadataIndex::Entry& entry : entries) {
     const std::string directory = dataPath(entry.path);
     for (const char* name : names) {
@@ -1076,6 +1168,7 @@ void Library::popup() const {
   const std::vector<std::string> actions = folder
                                              ? std::vector<std::string>{"Delete"}
                                              : std::vector<std::string>{
+                                                   "View details",
                                                    isFavorite(book) ? "Remove favorite" : "Mark as favorite",
                                                    "Mark as completed",
                                                    "Delete Book", "Reset"};
@@ -1126,7 +1219,7 @@ bool Library::popupInput() {
   }
 
   const bool folder = book.type == LibraryIndex::Book::Type::FOLDER;
-  const int actionCount = folder ? 1 : 4;
+  const int actionCount = folder ? 1 : 5;
   const PopUpBounds box = PopUp::bounds(renderer, actionCount);
   const int x = static_cast<int>(tapX * renderer.getScreenWidth());
   const int y = static_cast<int>(tapY * renderer.getScreenHeight());
@@ -1147,10 +1240,16 @@ bool Library::popupInput() {
     return true;
   }
   if (action == 0) {
-    markFavorite(book);
+    const std::string libraryPath = path;
+    popupBook = -1;
+    folderDeleteConfirm = false;
+    updateRequired = true;
+    openBookDetails(book.path, dataPath(book.path), libraryPath);
   } else if (action == 1) {
-    markCompleted(book);
+    markFavorite(book);
   } else if (action == 2) {
+    markCompleted(book);
+  } else if (action == 3) {
     erase(book);
   } else {
     reset(book);
@@ -1228,7 +1327,7 @@ void Library::erase(const LibraryIndex::Book& book) {
               books.end());
   resetViews();
   restoreThumbPage();
-  if (view == View::Thumb) thumb.load();
+  if (view == View::Thumb || view == View::Thumb3x2) thumb.load();
   refreshing = true;
   LibraryIndexRefresh::start(renderer, this);
   updateRequired = true;
@@ -1280,7 +1379,7 @@ void Library::eraseFolder(const LibraryIndex::Book& folder) {
   folderDeleteConfirm = false;
   resetViews();
   restoreThumbPage();
-  if (view == View::Thumb) thumb.load();
+  if (view == View::Thumb || view == View::Thumb3x2) thumb.load();
   refreshing = true;
   LibraryIndexRefresh::start(renderer, this);
   updateRequired = true;
@@ -1320,8 +1419,8 @@ void Library::center() const {
   const int containerWidth = std::min(screenWidth - x, bottomBar ? buttonSize * bottomBarButtonCount : buttonSize);
   const int containerHeight = bottomBar ? bottomBarHeight : buttonSize * 2 + buttonGap;
   renderer.rectangle.fill(x, y, containerWidth, containerHeight, false);
-  // Keep the controls connected. In sidebar mode they become a centered
-  // bottom bar; otherwise they remain the right-edge vertical controls.
+
+
   constexpr int rightCornerRestore = 4;
   if (!bottomBar) {
     renderer.rectangle.render(x, y, containerWidth, containerHeight, true, true);
@@ -1331,10 +1430,12 @@ void Library::center() const {
                          x + containerWidth - 1, y + containerHeight - 1, true);
     renderer.line.render(x, y + buttonSize, x + containerWidth, y + buttonSize, true);
   } else {
-    renderer.line.render(x + buttonSize, y, x + buttonSize, y + containerHeight, true);
-    renderer.line.render(x + buttonSize * 2, y, x + buttonSize * 2, y + containerHeight, true);
-    renderer.line.render(x, y + containerHeight - 1, x + containerWidth, y + containerHeight - 1, true);
-    renderer.line.render(0, y, screenWidth, y, true);
+    constexpr LineRender::Style borderStyle = LineRender::Style::Dotted;
+    renderer.line.render(x + buttonSize, y, x + buttonSize, y + containerHeight, true, borderStyle);
+    renderer.line.render(x + buttonSize * 2, y, x + buttonSize * 2, y + containerHeight, true, borderStyle);
+    renderer.line.render(x, y + containerHeight - 1, x + containerWidth, y + containerHeight - 1, true,
+                         borderStyle);
+    renderer.line.render(0, y, screenWidth, y, true, borderStyle);
 
     int currentPage = 0;
     int totalPages = 1;
@@ -1355,9 +1456,13 @@ void Library::center() const {
         currentPage = thumb.currentPage();
         totalPages = thumb.totalPages();
         break;
+      case View::Thumb3x2:
+        currentPage = thumb.currentPage();
+        totalPages = thumb.totalPages();
+        break;
     }
     currentPage = std::max(0, std::min(currentPage, totalPages - 1));
-    const std::string pagination = std::to_string(currentPage + 1) + " / " + std::to_string(totalPages);
+    const std::string pagination = std::to_string(currentPage + 1) + " - " + std::to_string(totalPages);
     const int paginationFont = systemFontId();
     renderer.text.render(paginationFont, 20,
                          y + (containerHeight - renderer.text.getLineHeight(paginationFont)) / 2,
@@ -1571,10 +1676,17 @@ navigation::Menu::Action Library::centerTap(const int tapX, const int tapY) cons
 bool Library::menuAction(const navigation::Menu::Action action) {
   if (action == navigation::Menu::Action::View || action == navigation::Menu::Action::Sort ||
       action == navigation::Menu::Action::Filter) {
+
+
+    storeOverlayFrame();
     controlModalOpen = true;
     controlTab = action == navigation::Menu::Action::View
                      ? ControlTab::View
                      : (action == navigation::Menu::Action::Sort ? ControlTab::Sort : ControlTab::Filter);
+    if (controlTab == ControlTab::Sort) {
+      const int maxScroll = std::max(0, sortCount() - kSortVisibleRows);
+      sortScrollOffset_ = std::min(maxScroll, std::max(0, sortIndex() - kSortVisibleRows + 1));
+    }
     sortOpen = false;
     filterOpen = false;
     if (controlTab == ControlTab::Filter) openFilterCategory(FilterCategory::Categories);
@@ -1582,6 +1694,13 @@ bool Library::menuAction(const navigation::Menu::Action action) {
     return true;
   }
   return false;
+}
+
+void Library::closeControlModal() {
+  if (!controlModalOpen) return;
+  controlModalOpen = false;
+  restoreOverlayFrameOnClose();
+  updateRequired = true;
 }
 
 void Library::menu() {
@@ -1598,7 +1717,10 @@ void Library::controlModal() const {
   const int tabDividerY = modal.tabY + modal.tabHeight;
   renderer.rectangle.fill(modal.x, tabDividerY, modal.width, 1,
                           static_cast<int>(GfxRenderer::FillTone::Gray), false);
-  const uint8_t* sortIcon = sort == Sort::TitleZA || sort == Sort::FolderZA || sort == Sort::AuthorZA ? SortDesc : SortAsc;
+  const uint8_t* sortIcon = sort == Sort::TitleZA || sort == Sort::FolderZA || sort == Sort::AuthorZA ||
+                                     sort == Sort::RatingHighLow
+                                 ? SortDesc
+                                 : SortAsc;
   renderControlTab(renderer, modal, 0, "View", viewIcon(), controlTab == ControlTab::View);
   renderControlTab(renderer, modal, 1, "Sort", sortIcon, controlTab == ControlTab::Sort);
   renderControlTab(renderer, modal, 2, "Filter", Filter, controlTab == ControlTab::Filter);
@@ -1622,7 +1744,7 @@ bool Library::controlModalInput() {
     if (controlTab == ControlTab::Filter && filterCategory_ != FilterCategory::Categories) {
       openFilterCategory(FilterCategory::Categories);
     } else {
-      controlModalOpen = false;
+      closeControlModal();
     }
     updateRequired = true;
     return true;
@@ -1653,10 +1775,20 @@ bool Library::controlModalInput() {
             openFilterCategory(FilterCategory::Categories);
           }
         } else if (swipeDown) {
-          controlModalOpen = false;
+          closeControlModal();
+        }
+      } else if (controlTab == ControlTab::Sort && insideModal) {
+        const int maxScroll = std::max(0, sortCount() - kSortVisibleRows);
+        const int scrollStep = std::max(1, kSortVisibleRows - 1);
+        if (swipeUp) {
+          sortScrollOffset_ = std::min(maxScroll, sortScrollOffset_ + scrollStep);
+        } else if (sortScrollOffset_ > 0) {
+          sortScrollOffset_ = std::max(0, sortScrollOffset_ - scrollStep);
+        } else {
+          closeControlModal();
         }
       } else if (swipeDown) {
-        controlModalOpen = false;
+        closeControlModal();
       }
       updateRequired = true;
       return true;
@@ -1668,13 +1800,16 @@ bool Library::controlModalInput() {
       const int tapX = static_cast<int>(tapNx * renderer.getScreenWidth());
       const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
       if (tapX < modal.x || tapX >= modal.x + modal.width || tapY < modal.y || tapY >= modal.y + modal.height) {
-        controlModalOpen = false;
-        updateRequired = true;
+        closeControlModal();
         return true;
       }
       if (tapY >= modal.tabY && tapY < modal.tabY + modal.tabHeight) {
         const int tab = std::min(2, std::max(0, (tapX - modal.x) * 3 / modal.width));
         controlTab = tab == 0 ? ControlTab::View : (tab == 1 ? ControlTab::Sort : ControlTab::Filter);
+        if (controlTab == ControlTab::Sort) {
+          const int maxScroll = std::max(0, sortCount() - kSortVisibleRows);
+          sortScrollOffset_ = std::min(maxScroll, std::max(0, sortIndex() - kSortVisibleRows + 1));
+        }
         if (controlTab == ControlTab::Filter) openFilterCategory(FilterCategory::Categories);
         updateRequired = true;
         return true;
@@ -1685,7 +1820,7 @@ bool Library::controlModalInput() {
         const int listY = modal.contentY;
         const int listX = modal.x;
         const int listWidth = modal.width;
-        if (tapX >= listX && tapX < listX + listWidth && tapY >= listY && tapY < listY + 4 * rowHeight) {
+        if (tapX >= listX && tapX < listX + listWidth && tapY >= listY && tapY < listY + 5 * rowHeight) {
           applyView((tapY - listY) / rowHeight);
         }
         return true;
@@ -1701,7 +1836,7 @@ bool Library::controlModalInput() {
   return false;
 }
 
-int Library::sortCount() const { return 6; }
+int Library::sortCount() const { return 8; }
 
 int Library::sortIndex() const { return static_cast<int>(sort); }
 
@@ -1712,6 +1847,8 @@ const uint8_t* Library::viewIcon() const {
     case View::Grid:
       return LibraryViewGrid;
     case View::Thumb:
+      return LibraryViewThumb;
+      case View::Thumb3x2:
       return LibraryViewThumb;
     case View::ListThumb:
       return LibraryViewList;
@@ -1734,6 +1871,12 @@ void Library::resetViews() {
     listThumbDeferImageDecode_ = true;
     listThumbWarmupPending_ = false;
   }
+  if (view == View::Thumb || view == View::Thumb3x2) {
+    thumbDeferImageDecode_ = true;
+    thumbWarmupPending_ = false;
+    thumbTimingPassesRemaining_ = 2;
+    thumbPrefetchNotBeforeMs_ = millis() + 500;
+  }
 }
 
 void Library::sortDropdown() const {
@@ -1746,10 +1889,12 @@ void Library::sortDropdown() const {
   const int y = modal.contentY;
   const int width = modal.width;
   constexpr int rowHeight = kControlListItemHeight;
-  const char* names[] = {"Title", "Title", "Folder", "Folder", "Author", "Author"};
-  const char* directions[] = {"A-Z", "Z-A", "A-Z", "Z-A", "A-Z", "Z-A"};
-  for (int index = 0; index < sortCount(); ++index) {
-    const int rowY = y + index * rowHeight;
+  const char* names[] = {"Title", "Title", "Folder", "Folder", "Author", "Author", "Rating", "Rating"};
+  const char* directions[] = {"A-Z", "Z-A", "A-Z", "Z-A", "A-Z", "Z-A", "1-10", "10-1"};
+  for (int row = 0; row < kSortVisibleRows; ++row) {
+    const int index = sortScrollOffset_ + row;
+    if (index >= sortCount()) break;
+    const int rowY = y + row * rowHeight;
     const bool selected = index == sortIndex();
     const int textY = rowY + (rowHeight - renderer.text.getLineHeight(font)) / 2;
     renderer.text.render(font, x + leftPadding, textY, names[index], true, EpdFontFamily::REGULAR);
@@ -1763,7 +1908,7 @@ void Library::sortDropdown() const {
     renderer.circle.render(radioX, radioY, radioRadius, true);
     renderer.circle.render(radioX, radioY, radioRadius - 3, false);
     if (selected) renderer.circle.render(radioX, radioY, radioRadius - 6, true);
-    if (index + 1 < sortCount()) {
+    if (row + 1 < kSortVisibleRows && index + 1 < sortCount()) {
       renderer.line.render(x + 10, rowY + rowHeight, x + width - 10, rowY + rowHeight, true,
                            LineRender::Style::Dotted);
     }
@@ -1776,12 +1921,11 @@ void Library::handleSortTap(const int tapX, const int tapY) {
   const int y = modal.contentY;
   const int width = modal.width;
   constexpr int rowHeight = kControlListItemHeight;
-  if (tapX >= x && tapX < x + width && tapY >= y && tapY < y + sortCount() * rowHeight) {
-    applySort((tapY - y) / rowHeight);
+  if (tapX >= x && tapX < x + width && tapY >= y && tapY < y + kSortVisibleRows * rowHeight) {
+    applySort(sortScrollOffset_ + (tapY - y) / rowHeight);
     return;
   }
-  controlModalOpen = false;
-  updateRequired = true;
+  closeControlModal();
 }
 
 void Library::viewDropdown() const {
@@ -1791,14 +1935,14 @@ void Library::viewDropdown() const {
   const int x = modal.x;
   const int y = modal.contentY;
   const int width = modal.width;
-  const char* labels[] = {"List", "Grid", "Thumbnails", "Thumbnail list"};
-  for (int index = 0; index < 4; ++index) {
+  const char* labels[] = {"List", "Grid", "Thumbnails", "Thumbnail list", "Thumbnails 3x2"};
+  for (int index = 0; index < 5; ++index) {
     const int rowY = y + index * rowHeight;
     const bool selected = static_cast<int>(view) == index;
     const int iconSize = 40;
     const uint8_t* icon = index == 0 ? LibraryViewList
                                      : (index == 1 ? LibraryViewGrid
-                                                   : (index == 2 ? LibraryViewThumb : LibraryViewList));
+                                     : (index == 2 || index == 4 ? LibraryViewThumb : LibraryViewList));
     renderer.bitmap.icon(icon,
                          x + 18, rowY + (rowHeight - iconSize) / 2, iconSize, iconSize);
     const int textY = rowY + (rowHeight - renderer.text.getLineHeight(font)) / 2;
@@ -1808,7 +1952,7 @@ void Library::viewDropdown() const {
     renderer.circle.render(radioX, radioY, 10, true);
     renderer.circle.render(radioX, radioY, 7, false);
     if (selected) renderer.circle.render(radioX, radioY, 4, true);
-    if (index < 3) {
+    if (index < 4) {
       renderer.line.render(x + 12, rowY + rowHeight, x + width - 12, rowY + rowHeight, true,
                            LineRender::Style::Dotted);
     }
@@ -1816,7 +1960,7 @@ void Library::viewDropdown() const {
 }
 
 void Library::applyView(const int index) {
-  if (index < 0 || index >= 4) return;
+  if (index < 0 || index >= 5) return;
   view = static_cast<View>(index);
   switch (view) {
     case View::List:
@@ -1831,8 +1975,14 @@ void Library::applyView(const int index) {
     case View::ListThumb:
       SETTINGS.libraryMode = SystemSetting::LIBRARY_LIST_THUMBNAIL;
       break;
+    case View::Thumb3x2:
+      SETTINGS.libraryMode = SystemSetting::LIBRARY_THUMBNAIL_3X2;
+      break;
   }
+  thumb.setLayout(view == View::Thumb3x2 ? views::library::thumb3x2Layout()
+                                        : views::library::standardThumbLayout());
   SETTINGS.saveToFile();
+  discardOverlayFrame();
   load();
   updateRequired = true;
 }
@@ -1843,6 +1993,7 @@ void Library::applySort(const int index) {
   SETTINGS.librarySortMode = static_cast<uint8_t>(index);
   SETTINGS.saveToFile();
   sortOpen = false;
+  discardOverlayFrame();
   load();
   updateRequired = true;
 }
@@ -1850,6 +2001,7 @@ void Library::applySort(const int index) {
 void Library::applyFilter(const int index) {
   if (index < 0 || index >= 26) return;
   titleFilters_.flip(index);
+  discardOverlayFrame();
   load();
   updateRequired = true;
 }
@@ -1900,6 +2052,7 @@ const char* Library::filterCategoryLabel(const FilterCategory category) {
 void Library::applyTypeFilter(const int index) {
   if (index < 0 || index >= 4) return;
   typeFilters_.flip(index);
+  discardOverlayFrame();
   load();
   updateRequired = true;
 }
@@ -2000,6 +2153,7 @@ void Library::applyMetadataFilter(const int index) {
     }
   }
 
+  discardOverlayFrame();
   load();
   updateRequired = true;
 }
@@ -2011,6 +2165,7 @@ void Library::clearFilters() {
   }
   if (!hasSelection) return;
   resetFilterSelections();
+  discardOverlayFrame();
   load();
   updateRequired = true;
 }
@@ -2135,8 +2290,7 @@ void Library::handleFilterTap(const int tapX, const int tapY) {
   const FilterDrawerLayout drawer = filterDrawerLayout(renderer, rowCount);
 
   if (tapY < drawer.y || tapY >= drawer.y + drawer.height || tapX < drawer.x || tapX >= drawer.x + drawer.width) {
-    controlModalOpen = false;
-    updateRequired = true;
+    closeControlModal();
     return;
   }
 
@@ -2150,8 +2304,7 @@ void Library::handleFilterTap(const int tapX, const int tapY) {
     } else if (tapX >= footer.clear.x && tapX < footer.clear.x + footer.clear.width) {
       clearFilters();
     } else if (tapX >= footer.done.x && tapX < footer.done.x + footer.done.width) {
-      controlModalOpen = false;
-      updateRequired = true;
+      closeControlModal();
     }
     return;
   }
@@ -2171,6 +2324,7 @@ void Library::handleFilterTap(const int tapX, const int tapY) {
     } else if (rowIndex == kFilterCategoryCount) {
       SETTINGS.hideFinishedBooks = SETTINGS.hideFinishedBooks == 0 ? 1 : 0;
       SETTINGS.saveToFile();
+      discardOverlayFrame();
       load();
       updateRequired = true;
     }
@@ -2187,6 +2341,7 @@ void Library::handleFilterTap(const int tapX, const int tapY) {
   } else if (filterCategory_ == FilterCategory::Options && contentIndex == 0) {
     SETTINGS.hideFinishedBooks = SETTINGS.hideFinishedBooks == 0 ? 1 : 0;
     SETTINGS.saveToFile();
+    discardOverlayFrame();
     load();
     updateRequired = true;
   }

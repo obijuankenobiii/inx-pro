@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "blocks/TextBlock.h"
+#include "PsramAllocator.h"
 
 class GfxRenderer;
 class Epub;
@@ -279,7 +280,7 @@ class PageTable final : public PageElement {
  private:
   int16_t tableWidth;
   int16_t tableHeight;
-  int16_t lineHeight;  ///< Effective per-text-line height (font line height * line spacing setting)
+  int16_t lineHeight;
   bool showBorders;
   std::vector<uint16_t> columnWidths;
   std::vector<uint16_t> rowHeights;
@@ -408,7 +409,8 @@ class PageCssBorderBox final : public PageElement {
  */
 class Page {
  public:
-  std::vector<std::unique_ptr<PageElement>> elements;
+  std::vector<std::unique_ptr<PageElement>,
+             EpubPsramAllocator<std::unique_ptr<PageElement>>> elements;
 
   static void* operator new(std::size_t size);
   static void operator delete(void* pointer) noexcept;

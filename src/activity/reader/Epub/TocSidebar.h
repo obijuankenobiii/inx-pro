@@ -33,7 +33,9 @@ class TocSidebar {
   int rowHeight() const;
   int visibleRows() const;
   int maxScroll() const;
-  bool hasChildren(int tocIndex) const;
+  bool hasChildren(int tocIndex);
+  uint8_t levelAt(int tocIndex);
+  void ensureRows(int count);
   void rows();
   void scrollBy(int rows);
   void select(int tocIndex);
@@ -50,6 +52,9 @@ class TocSidebar {
   bool lastDismissalRestored = false;
   int scroll = 0;
   int currentTocIndex = -1;
+  int tocCount = 0;
+  int rowScanIndex = 0;
+  int hiddenLevel = -1;
   std::vector<uint8_t> levels;
   std::vector<uint8_t> collapsed;
   std::vector<int> visibleItems;

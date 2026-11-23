@@ -216,13 +216,13 @@ void HotspotActivity::loop() {
 
     esp_task_wdt_reset();
 
-    // Keep the web service responsive without monopolizing loopTask.  A large
-    // burst here can starve IDLE0 on CPU 0 and trip the task watchdog.
+
+
     constexpr int MAX_ITERATIONS = 8;
     for (int i = 0; i < MAX_ITERATIONS && webServer->isRunning(); i++) {
       webServer->handleClient();
       esp_task_wdt_reset();
-      // Give the idle task a scheduling opportunity after each request.
+
       vTaskDelay(1 / portTICK_PERIOD_MS);
       if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
         if (onGoBack) onGoBack();

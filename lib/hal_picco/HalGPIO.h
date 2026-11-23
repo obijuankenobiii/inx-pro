@@ -21,8 +21,8 @@ class HalGPIO {
 
   void begin();
   void updateDuringDisplay();
-  // FrontlightManager shares the existing Wire bus and changes its timeout.
-  // Restore the touch timeout without deleting the bus or resetting touch.
+
+
   void restoreTouchBusSettings();
   void update();
   void injectOneShotPress(uint8_t buttonIndex);

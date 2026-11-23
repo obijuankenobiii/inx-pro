@@ -6,33 +6,33 @@
 #pragma once
 #include <cstdint>
 
-/// Font data stored PER GLYPH
+
 typedef struct {
-  uint8_t width;        ///< Bitmap dimensions in pixels
-  uint8_t height;       ///< Bitmap dimensions in pixels
-  uint8_t advanceX;     ///< Distance to advance cursor (x axis)
-  int16_t left;         ///< X dist from cursor pos to UL corner
-  int16_t top;          ///< Y dist from cursor pos to UL corner
-  uint16_t dataLength;  ///< Size of the font data.
-  uint32_t dataOffset;  ///< Pointer into EpdFont->bitmap
+  uint8_t width;
+  uint8_t height;
+  uint8_t advanceX;
+  int16_t left;
+  int16_t top;
+  uint16_t dataLength;
+  uint32_t dataOffset;
 } EpdGlyph;
 
-/// Glyph interval structure
+
 typedef struct {
-  uint32_t first;   ///< The first unicode code point of the interval
-  uint32_t last;    ///< The last unicode code point of the interval
-  uint32_t offset;  ///< Index of the first code point into the glyph array
+  uint32_t first;
+  uint32_t last;
+  uint32_t offset;
 } EpdUnicodeInterval;
 
-/// Data stored for FONT AS A WHOLE
+
 typedef struct {
-  const uint8_t* bitmap;                ///< Glyph bitmaps, concatenated
-  uint32_t bitmapSize;                   ///< Size of bitmap in bytes (0 for streamed fonts)
-  const EpdGlyph* glyph;                ///< Glyph array
-  const EpdUnicodeInterval* intervals;  ///< Valid unicode intervals for this font
-  uint32_t intervalCount;               ///< Number of unicode intervals.
-  uint8_t advanceY;                     ///< Newline distance (y axis)
-  int ascender;                         ///< Maximal height of a glyph above the base line
-  int descender;                        ///< Maximal height of a glyph below the base line
+  const uint8_t* bitmap;
+  uint32_t bitmapSize;
+  const EpdGlyph* glyph;
+  const EpdUnicodeInterval* intervals;
+  uint32_t intervalCount;
+  uint8_t advanceY;
+  int ascender;
+  int descender;
   bool is2Bit;
 } EpdFontData;

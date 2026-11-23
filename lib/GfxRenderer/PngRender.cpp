@@ -102,6 +102,7 @@ struct RenderContext {
   int y;
   int width;
   ImageRenderMode mode;
+  bool quality;
   FourToneImageDitherer* twoBitDitherer;
   Atkinson1BitDitherer* oneBitDitherer;
   JpegLevelCapture* capture;
@@ -499,9 +500,9 @@ void drawQuantizedPixel(const RenderContext& ctx, const int x, const int y, cons
   }
 
   const uint8_t level = adjustTwoBitImageLevelForDisplay(FourToneImageDitherer::levelFromValue(q));
-  // Keep PNG's grayscale plane polarity identical to the working JPEG medium
-  // path.  The panel's tone-code order is device-specific; level 1/2 cannot
-  // be hard-coded here because that reverses dark/light gray on some panels.
+
+
+
   const uint8_t grayscaleCode = grayscaleCodeTable()[level & 3u];
   GfxRenderer::RenderMode renderMode = ctx.renderer->getRenderMode();
   if (renderMode == GfxRenderer::BW) {
@@ -540,7 +541,9 @@ bool drawGrayRow(RenderContext& ctx, const uint8_t* grayRow, const uint8_t* alph
       q = 255;
     } else {
       if (ctx.mode == ImageRenderMode::TwoBit) {
-        q = ctx.twoBitDitherer->process(gray, step).value;
+        q = (ctx.quality ? ctx.twoBitDitherer->processQuality(gray, step)
+                         : ctx.twoBitDitherer->process(gray, step))
+                .value;
       } else if (ctx.oneBitDitherer) {
         q = ctx.oneBitDitherer->processPixel(gray, step) ? 255 : 0;
       } else {
@@ -555,9 +558,9 @@ bool drawGrayRow(RenderContext& ctx, const uint8_t* grayRow, const uint8_t* alph
     }
 
     if (!transparent) {
-      // Normal image rendering can leave white pixels untouched because the image
-      // rectangle is cleared first. A transparent overlay is different: an opaque
-      // white pixel must cover the page underneath, while alpha==0 must not touch it.
+
+
+
       const bool opaqueWhite = ctx.preserveTransparency && alphaRow && alphaRow[ox] == 255 && q == 255;
       if (opaqueWhite) {
         ctx.renderer->drawPixel(ctx.x + ox, screenY, false);
@@ -593,9 +596,9 @@ void freePngDecodedBuffer(void* buffer) {
 
 bool decodeInterlacedAndRender(PngContext& ctx, RenderContext& renderCtx, const int outW, const int outH,
                                const int srcX, const int srcY, const int srcW, const int srcH) {
-  // Adam7 delivers seven smaller images, so retain only source rows that the
-  // destination actually samples. This keeps a large source PNG bounded by
-  // the screen height instead of allocating width*height in PSRAM.
+
+
+
   const size_t sourceWidth = ctx.width;
   const size_t sourceHeight = ctx.height;
   int32_t* rowSlots = static_cast<int32_t*>(allocatePngDecodedBuffer(sourceHeight * sizeof(int32_t)));
@@ -778,9 +781,9 @@ bool decodeAndRender(FsFile& pngFile, RenderContext& renderCtx, int outW, int ou
       service.service();
       if (!decodeScanline(ctx)) {
         if (ctx.idatFinished && currentSrcY >= 0) {
-          // Keep the last complete row when a PNG ends with a short IDAT tail.
-          // This preserves the image instead of falling back to the default
-          // sleep screen for a few missing trailing rows.
+
+
+
           truncatedAtEof = true;
           currentSrcY = sy;
           break;
@@ -828,7 +831,7 @@ bool decodeAndRender(FsFile& pngFile, RenderContext& renderCtx, int outW, int ou
 
 bool PngRender::render(FsFile& pngFile, int x, int y, int targetWidth, int targetHeight, bool cropToFill,
                        const ImageRenderMode mode, const float cropAnchorX, JpegLevelCapture* capture,
-                       const bool preserveTransparency, const float cropAnchorY) const {
+                       const bool preserveTransparency, const float cropAnchorY, const bool quality) const {
   if (!pngFile || targetWidth <= 0 || targetHeight <= 0) return false;
 
   int sourceW = 0;
@@ -902,6 +905,7 @@ bool PngRender::render(FsFile& pngFile, int x, int y, int targetWidth, int targe
                        .y = drawY,
                        .width = outW,
                        .mode = mode,
+                       .quality = quality,
                        .twoBitDitherer = twoBitDitherer,
                        .oneBitDitherer = oneBitDitherer,
                        .capture = capture,
@@ -915,11 +919,11 @@ bool PngRender::render(FsFile& pngFile, int x, int y, int targetWidth, int targe
 
 bool PngRender::fromPath(const std::string& path, int x, int y, int targetWidth, int targetHeight, bool cropToFill,
                          const ImageRenderMode mode, const float cropAnchorX, JpegLevelCapture* capture,
-                         const bool preserveTransparency, const float cropAnchorY) const {
+                         const bool preserveTransparency, const float cropAnchorY, const bool quality) const {
   FsFile file;
   if (!SdMan.openFileForRead("PNG", path, file)) return false;
   const bool ok = render(file, x, y, targetWidth, targetHeight, cropToFill, mode, cropAnchorX, capture,
-                         preserveTransparency, cropAnchorY);
+                         preserveTransparency, cropAnchorY, quality);
   file.close();
   return ok;
 }

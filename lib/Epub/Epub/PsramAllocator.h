@@ -32,7 +32,15 @@ class EpubPsramAllocator {
     throw std::bad_alloc();
   }
 
-  void deallocate(T* memory, std::size_t) noexcept { std::free(memory); }
+  void deallocate(T* memory, std::size_t) noexcept {
+#if defined(ARDUINO_ARCH_ESP32)
+
+
+    heap_caps_free(memory);
+#else
+    std::free(memory);
+#endif
+  }
 
   template <typename U>
   bool operator==(const EpubPsramAllocator<U>&) const noexcept {
@@ -46,3 +54,19 @@ class EpubPsramAllocator {
 };
 
 using EpubPsramString = std::basic_string<char, std::char_traits<char>, EpubPsramAllocator<char>>;
+
+/** Allocates long-lived EPUB parser objects outside the ESP32 internal heap. */
+inline void* epubPsramObjectAllocate(const std::size_t bytes) {
+#if defined(ARDUINO_ARCH_ESP32)
+  if (void* memory = heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)) return memory;
+#endif
+  return ::operator new(bytes);
+}
+
+inline void epubPsramObjectFree(void* memory) noexcept {
+#if defined(ARDUINO_ARCH_ESP32)
+  heap_caps_free(memory);
+#else
+  ::operator delete(memory);
+#endif
+}

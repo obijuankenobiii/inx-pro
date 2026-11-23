@@ -25,11 +25,11 @@ class Pdf;
  */
 class ReaderActivity final : public ActivityWithSubactivity {
  private:
-  std::string initialBookPath;                             ///< Path to the book file to open
-  std::string currentBookPath;                             ///< Path of currently loaded book for navigation
-  int initialSpineIndex = -1;                              ///< Optional EPUB spine index to open
-  int initialPageNumber = -1;                              ///< Optional EPUB page number to open
-  const std::function<void(const std::string&)> onGoBack;  ///< Callback to return to previous activity
+  std::string initialBookPath;
+  std::string currentBookPath;
+  int initialSpineIndex = -1;
+  int initialPageNumber = -1;
+  const std::function<void(const std::string&)> onGoBack;
 
   /**
    * @brief Loads an EPUB file from the given path

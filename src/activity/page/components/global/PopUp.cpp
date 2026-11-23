@@ -12,12 +12,13 @@ namespace {
 
 void drawLightGraySelection(const GfxRenderer& renderer, const int x, const int y, const int width,
                             const int height) {
-  // A 2x2 dither produces a much lighter gray than FillTone::Gray while
-  // remaining stable on the 1-bit display.
+
+
+  constexpr int kDitherSpacing = 3;
   const bool inkPixel = !(renderer.isDarkMode() && !renderer.isImageRendering());
   for (int row = y; row < y + height; ++row) {
     for (int column = x; column < x + width; ++column) {
-      if ((column & 1) == 0 && (row & 1) == 0) {
+      if ((column - x) % kDitherSpacing == 0 && (row - y) % kDitherSpacing == 0) {
         renderer.drawPixel(column, row, inkPixel);
       }
     }

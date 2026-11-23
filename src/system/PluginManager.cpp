@@ -66,9 +66,9 @@ struct LoadedPlugin {
 
 std::vector<LoadedPlugin> gLoadedPlugins;
 
-// Lua tables, VM stacks, strings, and compiled chunks are ordinary byte
-// buffers and do not need internal RAM. Keep the Lua heap in PSRAM so loading
-// a plugin does not take tens of kilobytes from the reader's working heap.
+
+
+
 void* luaPsramAllocator(void*, void* pointer, const size_t oldSize, const size_t newSize) {
   if (newSize == 0) {
     if (pointer) heap_caps_free(pointer);
@@ -365,8 +365,8 @@ void registerLuaApi(lua_State* state, const std::string& id) {
   lua_pushlstring(state, id.c_str(), id.size());
   lua_setfield(state, LUA_REGISTRYINDEX, kPluginIdRegistryKey);
 
-  lua_newtable(state);  // inx
-  lua_newtable(state);  // inx.storage
+  lua_newtable(state);
+  lua_newtable(state);
   lua_pushcfunction(state, luaStorageAppendJson);
   lua_setfield(state, -2, "append_json");
   lua_pushcfunction(state, luaStorageAppendText);
@@ -584,7 +584,7 @@ bool installArchiveLocked(const std::string& archivePath, const std::string& id,
   zip.close();
   return true;
 }
-}  // namespace
+}
 
 bool PluginManager::fetchAvailable(std::vector<Package>& packages, std::string& error) {
   packages.clear();
@@ -720,7 +720,7 @@ bool pushJsonValue(lua_State* state, JsonVariantConst value, const int depth) {
   return false;
 }
 
-}  // namespace
+}
 
 bool PluginManager::invokeStringJson(const char* id, const char* function, const std::string& jsonArguments,
                                      std::string& result, std::string& error) {

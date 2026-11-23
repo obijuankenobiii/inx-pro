@@ -11,6 +11,7 @@
 #include <Serialization.h>
 
 #include <algorithm>
+#include <cstring>
 #include <exception>
 #include <new>
 
@@ -25,16 +26,60 @@
 #include "parsers/ChapterHtmlSlimParser.h"
 
 namespace {
-// Heading font IDs are stored per h1-h6 semantic size for outline fonts, and heading/drop-cap layout changed.
-// Image bounds now match the aspect-fitted raster dimensions, which also changes cached page layout.
-// The generic shrink-to-fit box geometry changed; cached pages must be rebuilt.
+
+
+
 constexpr uint8_t SECTION_FILE_VERSION = 106;
-// Bionic-reader normalization also changes cached word offsets; this version
-// invalidates caches produced before either geometry or text-layout change.
+
+
 constexpr uint32_t HEADER_SIZE = sizeof(uint8_t) + sizeof(int) + sizeof(float) + sizeof(float) + sizeof(bool) +
                                  sizeof(uint8_t) + sizeof(uint16_t) + sizeof(uint16_t) + sizeof(bool) + sizeof(bool) +
                                  sizeof(bool) + sizeof(uint32_t) + sizeof(uint16_t) + sizeof(uint32_t);
 constexpr uint16_t MAX_CACHED_PAGE_OFFSETS = 2048;
+
+class ProgressiveParseSink final : public Print {
+ public:
+  explicit ProgressiveParseSink(ChapterHtmlSlimParser& parser) : parser_(parser) {}
+
+  size_t write(const uint8_t* data, const size_t size) override {
+    if (!data || size == 0 || !parser_.feedParse(data, size)) {
+      ok_ = false;
+      return 0;
+    }
+    bytes_ += size;
+    return size;
+  }
+
+  size_t write(const uint8_t value) override { return write(&value, 1); }
+  bool ok() const { return ok_; }
+  size_t bytes() const { return bytes_; }
+
+ private:
+  ChapterHtmlSlimParser& parser_;
+  bool ok_ = true;
+  size_t bytes_ = 0;
+};
+
+class ProgressiveXmlSink final : public Print {
+ public:
+  ProgressiveXmlSink(std::vector<uint8_t, EpubPsramAllocator<uint8_t>>& buffer, const size_t expected)
+      : buffer_(buffer), expected_(expected) {}
+
+  size_t write(const uint8_t* data, const size_t size) override {
+    if (!data || size == 0 || size > expected_ - written_) return 0;
+    std::memcpy(buffer_.data() + written_, data, size);
+    written_ += size;
+    return size;
+  }
+
+  size_t write(const uint8_t value) override { return write(&value, 1); }
+  size_t written() const { return written_; }
+
+ private:
+  std::vector<uint8_t, EpubPsramAllocator<uint8_t>>& buffer_;
+  size_t expected_ = 0;
+  size_t written_ = 0;
+};
 }
 
 Section::Section(const std::shared_ptr<Epub>& epubIn, const int spineIndexIn, GfxRenderer& rendererIn)
@@ -50,9 +95,22 @@ Section::Section(const std::string& cachePath, const int spineIndexIn, GfxRender
       filePath(cachePath + "/sections/" + std::to_string(spineIndexIn) + ".bin") {}
 
 Section::~Section() {
+  if (progressiveParser_) progressiveParser_->cancelParse();
+  progressiveParser_.reset();
+  progressiveXml_.reset();
+  progressiveSourcePath_.clear();
+  progressiveXmlOffset_ = 0;
+  const bool removeIncompleteProgressive = progressiveActive_;
+  const std::string incompleteProgressivePath = progressiveFilePath_;
+  progressiveActive_ = false;
+  progressiveFilePath_.clear();
   clearPageCache();
+  EpubImagePrefetch::IoLock ioLock;
   if (file) {
     file.close();
+  }
+  if (removeIncompleteProgressive && !incompleteProgressivePath.empty()) {
+    SdMan.remove(incompleteProgressivePath.c_str());
   }
 }
 
@@ -74,8 +132,13 @@ void Section::clearPageCache() {
  */
 uint32_t Section::onPageComplete(std::unique_ptr<Page> page, const std::function<void(Page&, uint16_t)>& pageBuiltFn) {
   EpubImagePrefetch::IoLock ioLock;
+  if (!page) {
+    progressiveWriteFailed_ = progressiveActive_;
+    return 0;
+  }
   if (!file) {
     INX_SERIAL.printf("[%lu] [SCT] File not open for writing page %d\n", millis(), pageCount);
+    progressiveWriteFailed_ = progressiveActive_;
     return 0;
   }
   const uint32_t position = file.position();
@@ -84,7 +147,11 @@ uint32_t Section::onPageComplete(std::unique_ptr<Page> page, const std::function
   }
   if (!page->serialize(file)) {
     INX_SERIAL.printf("[%lu] [SCT] Failed to serialize page %d\n", millis(), pageCount);
+    progressiveWriteFailed_ = progressiveActive_;
     return 0;
+  }
+  if (progressiveActive_) {
+    progressivePageOffsets_.push_back(position);
   }
   pageCount++;
   return position;
@@ -142,6 +209,18 @@ bool Section::loadSectionFile(const int fontId, const float lineCompression, con
                               const uint16_t viewportWidth, const uint16_t viewportHeight,
                               const bool hyphenationEnabled, const bool respectCssParagraphIndent,
                               const bool bionicReadingEnabled) {
+  EpubImagePrefetch::IoLock ioLock;
+  const std::string backupPath = filePath + ".bak";
+
+
+
+
+  if (!SdMan.exists(filePath.c_str()) && SdMan.exists(backupPath.c_str())) {
+    if (!SdMan.rename(backupPath.c_str(), filePath.c_str())) {
+      INX_SERIAL.printf("[%lu] [SCT] failed to recover section cache: %s\n", millis(), backupPath.c_str());
+    }
+  }
+
   if (file) {
     file.close();
   }
@@ -211,7 +290,10 @@ bool Section::loadSectionFile(const int fontId, const float lineCompression, con
   pageCount = storedPageCount;
   lutOffset = storedLutOffset;
 
-  if (pageCount == 0 || lutOffset == 0) {
+  const uint64_t lutEnd = static_cast<uint64_t>(lutOffset) +
+                          static_cast<uint64_t>(pageCount) * sizeof(uint32_t);
+  if (pageCount == 0 || pageCount > MAX_CACHED_PAGE_OFFSETS || lutOffset < HEADER_SIZE ||
+      lutEnd > file.size()) {
     INX_SERIAL.printf("[%lu] [SCT] loadSectionFile: invalid empty section cache spine=%d pages=%u lut=%lu file=%s\n",
                   millis(), spineIndex, static_cast<unsigned>(pageCount), static_cast<unsigned long>(lutOffset),
                   filePath.c_str());
@@ -220,22 +302,36 @@ bool Section::loadSectionFile(const int fontId, const float lineCompression, con
     return false;
   }
 
-  if (pageCount > 0 && pageCount <= MAX_CACHED_PAGE_OFFSETS && lutOffset > 0) {
-    try {
-      pageOffsets.resize(pageCount);
-      file.seek(lutOffset);
-      for (uint16_t i = 0; i < pageCount; ++i) {
-        serialization::readPod(file, pageOffsets[i]);
+  try {
+    pageOffsets.resize(pageCount);
+    file.seek(lutOffset);
+    for (uint16_t i = 0; i < pageCount; ++i) {
+      serialization::readPod(file, pageOffsets[i]);
+      if (pageOffsets[i] < HEADER_SIZE || pageOffsets[i] >= lutOffset) {
+        pageOffsets.clear();
+        break;
       }
-    } catch (...) {
-      pageOffsets.clear();
     }
+  } catch (...) {
+    pageOffsets.clear();
   }
+  if (pageOffsets.size() != pageCount) {
+    INX_SERIAL.printf("[%lu] [SCT] loadSectionFile: invalid page LUT spine=%d file=%s\n", millis(), spineIndex,
+                      filePath.c_str());
+    file.close();
+    clearCache();
+    return false;
+  }
+
+
+
+  if (SdMan.exists(backupPath.c_str())) SdMan.remove(backupPath.c_str());
 
   return true;
 }
 
 bool Section::loadSectionFileForPreview(int* outFontId) {
+  EpubImagePrefetch::IoLock ioLock;
   if (file) {
     file.close();
   }
@@ -291,6 +387,7 @@ bool Section::loadSectionFileForPreview(int* outFontId) {
 
 std::unique_ptr<Page> Section::loadCachedPage(const std::string& cachePath, const int spineIndex,
                                               const int pageNumber) {
+  EpubImagePrefetch::IoLock ioLock;
   if (spineIndex < 0 || pageNumber < 0) {
     return nullptr;
   }
@@ -483,6 +580,210 @@ bool Section::createSectionFile(const int fontId, const int headerFontId, const 
   return true;
 }
 
+bool Section::beginProgressiveSectionFile(const int fontId, const int headerFontId, const int maxFontId,
+                                           const float lineCompression, const float wordSpacing,
+                                           const bool extraParagraphSpacing, const uint8_t paragraphAlignment,
+                                           const uint16_t viewportWidth, const uint16_t viewportHeight,
+                                           const bool hyphenationEnabled, const bool respectCssParagraphIndent,
+                                           const bool bionicReadingEnabled, const bool skipImages) {
+  if (!epub || progressiveActive_) return false;
+
+  const std::string localPath = epub->getSpineItem(spineIndex).href;
+  if (localPath.empty()) return false;
+
+  EpubImagePrefetch::IoLock ioLock;
+  if (file) file.close();
+  SdMan.mkdir((epub->getCachePath() + "/sections").c_str());
+  progressiveFilePath_ = filePath + ".part";
+  if (SdMan.exists(progressiveFilePath_.c_str()) && !SdMan.remove(progressiveFilePath_.c_str())) {
+    INX_SERIAL.printf("[%lu] [SCT] Failed to remove stale progressive file: %s\n", millis(),
+                      progressiveFilePath_.c_str());
+    progressiveFilePath_.clear();
+    return false;
+  }
+  if (!SdMan.openFileForWrite("SCT", progressiveFilePath_, file)) {
+    progressiveFilePath_.clear();
+    return false;
+  }
+
+  clearPageCache();
+  pageOffsets.clear();
+  progressivePageOffsets_.clear();
+  pageCount = 0;
+  progressiveBytesRead_ = 0;
+  progressiveWriteFailed_ = false;
+  writeSectionFileHeader(fontId, lineCompression, wordSpacing, extraParagraphSpacing, paragraphAlignment, viewportWidth,
+                         viewportHeight, hyphenationEnabled, respectCssParagraphIndent, bionicReadingEnabled);
+
+  std::string contentBasePath;
+  const size_t lastSlash = localPath.find_last_of('/');
+  if (lastSlash != std::string::npos) contentBasePath = localPath.substr(0, lastSlash);
+
+  progressiveParser_ = std::unique_ptr<ChapterHtmlSlimParser>(new ChapterHtmlSlimParser(
+      localPath, *epub, epub->getCachePath(), contentBasePath, renderer, fontId, headerFontId, maxFontId,
+      lineCompression, wordSpacing, extraParagraphSpacing, paragraphAlignment, viewportWidth, viewportHeight,
+      hyphenationEnabled, respectCssParagraphIndent, bionicReadingEnabled,
+      [this](std::unique_ptr<Page> page) { onPageComplete(std::move(page), nullptr); }, false,
+      ImageRenderMode::OneBit, false, 0, nullptr));
+  progressiveParser_->internalPath = localPath;
+  Hyphenator::setPreferredLanguage(epub->getLanguage());
+  if (!progressiveParser_->beginParse(skipImages)) {
+    progressiveParser_.reset();
+    file.close();
+    SdMan.remove(progressiveFilePath_.c_str());
+    progressiveFilePath_.clear();
+    return false;
+  }
+
+
+
+
+  progressiveSourcePath_ = localPath;
+  progressiveXml_.reset();
+  progressiveXmlOffset_ = 0;
+  progressiveActive_ = true;
+  return true;
+}
+
+bool Section::pumpProgressive(const uint32_t budgetMs) {
+  if (!progressiveActive_ || !progressiveParser_ || progressiveSourcePath_.empty()) return false;
+
+
+  constexpr size_t kChunkBytes = 4 * 1024;
+
+  const std::string backupPath = filePath + ".bak";
+  const auto fail = [this, &backupPath]() {
+    if (progressiveParser_) progressiveParser_->cancelParse();
+    progressiveParser_.reset();
+    progressiveXml_.reset();
+    progressiveSourcePath_.clear();
+    progressiveXmlOffset_ = 0;
+    progressiveActive_ = false;
+    EpubImagePrefetch::IoLock ioLock;
+    if (file) file.close();
+    if (!progressiveFilePath_.empty()) SdMan.remove(progressiveFilePath_.c_str());
+
+
+
+    if (!SdMan.exists(filePath.c_str()) && SdMan.exists(backupPath.c_str())) {
+      SdMan.rename(backupPath.c_str(), filePath.c_str());
+    }
+    progressiveFilePath_.clear();
+    progressivePageOffsets_.clear();
+    pageCount = 0;
+    lutOffset = 0;
+    return false;
+  };
+
+
+
+
+  if (budgetMs == 0) return pageCount > 0;
+
+  if (!progressiveXml_) {
+    size_t expectedBytes = 0;
+    if (!epub->getItemSize(progressiveSourcePath_, &expectedBytes) || expectedBytes == 0) {
+      INX_SERIAL.printf("[%lu] [SCT] next chapter XML size lookup failed spine=%d\n", millis(), spineIndex);
+      return fail();
+    }
+
+    auto xml = std::unique_ptr<ProgressiveXmlBuffer>(new (std::nothrow) ProgressiveXmlBuffer());
+    if (!xml) return fail();
+    try {
+      xml->resize(expectedBytes);
+    } catch (const std::bad_alloc&) {
+      INX_SERIAL.printf("[%lu] [SCT] next chapter XML PSRAM allocation failed spine=%d bytes=%lu\n", millis(),
+                        spineIndex, static_cast<unsigned long>(expectedBytes));
+      return fail();
+    }
+
+    ProgressiveXmlSink sink(*xml, expectedBytes);
+    const bool readOk = epub->readItemContentsToStream(progressiveSourcePath_, sink, 16 * 1024, expectedBytes);
+    if (!readOk || sink.written() != expectedBytes) {
+      INX_SERIAL.printf("[%lu] [SCT] next chapter XML short read spine=%d bytes=%lu expected=%lu\n", millis(),
+                        spineIndex, static_cast<unsigned long>(sink.written()),
+                        static_cast<unsigned long>(expectedBytes));
+      return fail();
+    }
+    progressiveXml_ = std::move(xml);
+
+
+    return pageCount > 0;
+  }
+
+  const size_t remaining = progressiveXml_->size() - progressiveXmlOffset_;
+  const size_t chunk = std::min(kChunkBytes, remaining);
+  if (chunk > 0 && !progressiveParser_->feedParse(progressiveXml_->data() + progressiveXmlOffset_, chunk)) {
+    INX_SERIAL.printf("[%lu] [SCT] next chapter prefetch parser failed spine=%d pages=%u\n", millis(), spineIndex,
+                      static_cast<unsigned>(pageCount));
+    return fail();
+  }
+  progressiveXmlOffset_ += chunk;
+  progressiveBytesRead_ += chunk;
+  if (progressiveXmlOffset_ < progressiveXml_->size()) return pageCount > 0;
+  if (!progressiveParser_->finishParse() || pageCount == 0) return fail();
+
+  EpubImagePrefetch::IoLock ioLock;
+  lutOffset = file.position();
+  for (const uint32_t position : progressivePageOffsets_) serialization::writePod(file, position);
+  file.sync();
+  file.close();
+
+
+
+
+
+
+  FsFile finalized = SdMan.open(progressiveFilePath_.c_str(), O_RDWR);
+  const bool headerPatched = finalized && finalized.seek(HEADER_SIZE - sizeof(uint32_t) - sizeof(pageCount)) &&
+                             finalized.write(reinterpret_cast<const uint8_t*>(&pageCount), sizeof(pageCount)) ==
+                                 sizeof(pageCount) &&
+                             finalized.write(reinterpret_cast<const uint8_t*>(&lutOffset), sizeof(lutOffset)) ==
+                                 sizeof(lutOffset);
+  if (!headerPatched) {
+    INX_SERIAL.printf("[%lu] [SCT] next chapter prefetch header finalize failed spine=%d pages=%u\n", millis(),
+                      spineIndex, static_cast<unsigned>(pageCount));
+    if (finalized) finalized.close();
+    return fail();
+  }
+  finalized.sync();
+  finalized.close();
+
+
+
+
+
+  if (SdMan.exists(backupPath.c_str()) && !SdMan.remove(backupPath.c_str())) {
+    INX_SERIAL.printf("[%lu] [SCT] next chapter prefetch stale backup cleanup failed spine=%d\n", millis(), spineIndex);
+    return fail();
+  }
+  const bool hadOld = SdMan.exists(filePath.c_str());
+  if (hadOld && !SdMan.rename(filePath.c_str(), backupPath.c_str())) {
+    INX_SERIAL.printf("[%lu] [SCT] next chapter prefetch backup rename failed spine=%d\n", millis(), spineIndex);
+    return fail();
+  }
+  if (!SdMan.rename(progressiveFilePath_.c_str(), filePath.c_str())) {
+    INX_SERIAL.printf("[%lu] [SCT] next chapter prefetch publish failed spine=%d pages=%u\n", millis(), spineIndex,
+                      static_cast<unsigned>(pageCount));
+    return fail();
+  }
+  if (hadOld && SdMan.exists(backupPath.c_str()) && !SdMan.remove(backupPath.c_str())) {
+
+
+    INX_SERIAL.printf("[%lu] [SCT] next chapter prefetch backup cleanup deferred spine=%d\n", millis(), spineIndex);
+  }
+
+
+
+  progressiveParser_.reset();
+  progressiveXml_.reset();
+  progressiveSourcePath_.clear();
+  progressiveXmlOffset_ = 0;
+  progressiveFilePath_.clear();
+  progressiveActive_ = false;
+  return true;
+}
+
 /**
  * Loads a specific page from the section file.
  * Uses the look-up table to locate and deserialize the requested page.
@@ -490,6 +791,11 @@ bool Section::createSectionFile(const int fontId, const int headerFontId, const 
  * @return Section-owned page, or nullptr on failure
  */
 Page* Section::loadPage(const int pageIndex) {
+
+
+
+  EpubImagePrefetch::IoLock ioLock;
+
   if (pageIndex < 0 || pageIndex >= pageCount) {
     return nullptr;
   }
@@ -557,6 +863,7 @@ bool Section::preloadPage(const int pageIndex) { return loadPage(pageIndex) != n
  * @return true if file was successfully removed or didn't exist, false on error
  */
 bool Section::clearCache() const {
+  EpubImagePrefetch::IoLock ioLock;
   if (SdMan.exists(filePath.c_str())) {
     return SdMan.remove(filePath.c_str());
   }

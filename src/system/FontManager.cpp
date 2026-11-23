@@ -134,8 +134,8 @@ void FontManager::initialize(GfxRenderer& renderer) {
   g_loadedFontCount = 0;
   g_scannedForFonts = false;
 
-  // This firmware targets PSRAM hardware. Keep the reader's common font sizes
-  // alive instead of rebuilding them whenever a heading or CSS size is used.
+
+
   g_maxLoadedFonts = std::max(g_maxLoadedFonts, kPsramResidentFontLimit);
 
   static EpdFont montserrat8RegularFont(&montserrat_8_regular);
@@ -310,9 +310,9 @@ bool FontManager::scanSDFonts(const char* sdPath, bool forceRescan) {
     const int* sizes = &parsedSize;
     size_t sizeCount = 1;
     if (isOutlineFontFile(filename)) {
-      // An outline font can be rasterized at any point size. The filename's
-      // numeric suffix is only a legacy hint, not a restriction on the
-      // sizes that the reader can expose.
+
+
+
       static int outlineSizes[OUTLINE_FONT_MAX_POINT_SIZE - OUTLINE_FONT_MIN_POINT_SIZE + 1];
       static bool initialized = false;
       if (!initialized) {
@@ -373,9 +373,9 @@ bool FontManager::scanSDFonts(const char* sdPath, bool forceRescan) {
     familyDir.close();
   }
 
-  // Language packages keep their fonts below /fonts/lang/<code>/ so they do
-  // not appear as selectable reader families. Scan that one extra level and
-  // retain the language marker for glyph fallback below.
+
+
+
   const std::string languageRootPath = std::string(sdPath) + "/lang";
   auto languageRoot = SdMan.open(languageRootPath.c_str());
   if (languageRoot && languageRoot.isDirectory()) {
@@ -455,6 +455,7 @@ void FontManager::cleanupFontData(SDFontEntry* entry) {
   entry->fontFamily = nullptr;
   entry->isLoaded = false;
   entry->stylesAttempted = 0;
+  entry->readerGlyphsPrewarmed = false;
 }
 
 /**
@@ -549,8 +550,8 @@ bool FontManager::loadFontFromSD(int fontId, GfxRenderer& renderer, const bool e
   entry->regularFont = new EpdFont(regularStream->getData());
   g_fontStorage.push_back(std::unique_ptr<EpdFont>(entry->regularFont));
 
-  // Reserve tiny stable style handles, not font files or glyph caches. A
-  // system TTF and a reader TTF must not eagerly retain eight full faces.
+
+
   entry->boldFont = new EpdFont(nullptr);
   entry->italicFont = new EpdFont(nullptr);
   entry->boldItalic = new EpdFont(nullptr);
@@ -596,9 +597,9 @@ void FontManager::loadFontStyle(void* context, const EpdFontFamily::Style style)
 
 bool FontManager::ensureReaderLayoutFonts(int bodyFontId, GfxRenderer& renderer) {
   const int headerFontId = getNextFont(bodyFontId);
-  // Drop caps select their proportional size when the parser encounters one.
-  // Do not preload the family's largest size here; for outline fonts that is
-  // commonly the generated 45pt variant and wastes PSRAM on ordinary chapters.
+
+
+
   int requiredIds[2] = {bodyFontId, headerFontId};
   int requiredCount = 0;
 
@@ -627,7 +628,7 @@ bool FontManager::ensureReaderLayoutFonts(int bodyFontId, GfxRenderer& renderer)
   for (int i = 0; i < requiredCount; ++i) {
     const int fontId = requiredIds[i];
     if (fontId >= SD_FONT_START_ID) {
-      const bool cacheGlyphBitmaps = fontId == bodyFontId;
+      const bool cacheGlyphBitmaps = true;
       if (!loadFontFromSD(fontId, renderer, cacheGlyphBitmaps)) {
         return false;
       }
@@ -635,7 +636,38 @@ bool FontManager::ensureReaderLayoutFonts(int bodyFontId, GfxRenderer& renderer)
       return false;
     }
   }
+  prewarmReaderGlyphs(bodyFontId, renderer);
   return true;
+}
+
+void FontManager::prewarmReaderGlyphs(const int bodyFontId, GfxRenderer& renderer) {
+  static constexpr char kReaderGlyphSample[] =
+      " AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz"
+      "0123456789.,;:!?()[]{}<>+-=*/_'\"%&@#$\\";
+  const int ids[] = {bodyFontId, getNextFont(bodyFontId)};
+  for (const int fontId : ids) {
+    if (fontId < SD_FONT_START_ID) continue;
+    SDFontEntry* entry = nullptr;
+    for (auto& candidate : g_sdFonts) {
+      if (candidate.id == fontId) {
+        entry = &candidate;
+        break;
+      }
+    }
+    if (!entry || !entry->isLoaded || entry->readerGlyphsPrewarmed) continue;
+    const unsigned long start = millis();
+    size_t warmed = 0;
+    const EpdFontFamily::Style styles[] = {EpdFontFamily::REGULAR, EpdFontFamily::BOLD};
+    for (const EpdFontFamily::Style style : styles) {
+      const EpdFontData* data = entry->fontFamily ? entry->fontFamily->getData(style) : nullptr;
+      ExternalFont* stream = data ? renderer.findStreamingFont(data) : nullptr;
+      if (stream) warmed += stream->prewarmAsciiGlyphs(kReaderGlyphSample);
+    }
+    if (warmed == 0) continue;
+    entry->readerGlyphsPrewarmed = true;
+    INX_SERIAL.printf("[FontManager] Prewarmed reader glyphs id=%d count=%u elapsed=%lu ms\n", fontId,
+                      static_cast<unsigned>(warmed), millis() - start);
+  }
 }
 
 /**
@@ -664,9 +696,9 @@ bool FontManager::ensureSystemFontReady(int fontId) {
   if (g_renderer == nullptr) {
     return false;
   }
-  // systemFontIdForPointSize() is used throughout layout and drawing code.
-  // Avoid rescanning the SD-font table on every text measurement once the
-  // selected family is already registered with the renderer.
+
+
+
   if (g_renderer->findFontFamily(fontId) != nullptr) {
     updateFontLRU(fontId);
     return true;

@@ -13,19 +13,25 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "activity/ActivityWithSubactivity.h"
 
 /**
- * Lists sleep images under /sleep/ (BMP/JPG/JPEG/PNG + optional SD-root sleep.bmp/jpg/jpeg/png) so the user can
- * pin one image or leave selection random for each sleep.
+ * Lists image files from /sleep or /widgets so the user can select an image for sleep or a home widget.
  */
 class SleepImagePickerActivity final : public ActivityWithSubactivity {
  public:
+  using SelectionCallback = std::function<void(const std::string&)>;
+
   explicit SleepImagePickerActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
-                                    const std::function<void()>& onBack)
-      : ActivityWithSubactivity("SleepImagePicker", renderer, mappedInput), onBack(onBack) {}
+                                    const std::function<void()>& onBack, SelectionCallback onSelected = {},
+                                    std::string initialPath = {}, std::string title = "Choose an image",
+                                    bool allowRandom = true)
+      : ActivityWithSubactivity("SleepImagePicker", renderer, mappedInput), onBack(onBack),
+        onSelected(std::move(onSelected)), initialPath(std::move(initialPath)), title(std::move(title)),
+        allowRandom(allowRandom) {}
 
   void onEnter() override;
   void onExit() override;
@@ -45,6 +51,10 @@ class SleepImagePickerActivity final : public ActivityWithSubactivity {
   std::vector<Row> rows;
   int selectedIndex = 0;
   bool randomEnabled = false;
+  SelectionCallback onSelected;
+  std::string initialPath;
+  std::string title;
+  bool allowRandom = true;
   int renderedPageStart = -1;
   uint8_t* gridBuffer = nullptr;
   bool gridBufferStored = false;

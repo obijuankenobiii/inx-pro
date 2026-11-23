@@ -34,6 +34,12 @@ std::string buildUrl(const std::string& serverUrl, const std::string& path) {
   if (path.empty()) {
     return urlWithProtocol;
   }
+
+
+
+  if (path.find("://") != std::string::npos) {
+    return path;
+  }
   if (path[0] == '/') {
     return extractHost(urlWithProtocol) + path;
   }

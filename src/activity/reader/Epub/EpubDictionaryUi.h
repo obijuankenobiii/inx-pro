@@ -30,6 +30,14 @@ class EpubDictionaryUi {
   void drawUiOverlay(EpubActivity& act);
 
  private:
+  struct DefinitionWordHit {
+    std::string word;
+    int x = 0;
+    int y = 0;
+    int width = 0;
+    int height = 0;
+  };
+
   void drawFocusHighlight(EpubActivity& act);
   void drawDefinitionPanel(EpubActivity& act);
   void drawDictionaryPicker(EpubActivity& act);
@@ -37,7 +45,8 @@ class EpubDictionaryUi {
   bool handleDictionaryPickerInput(EpubActivity& act);
   bool previousDefinitionPage();
   bool nextDefinitionPage();
-  void performLookup(EpubActivity& act);
+  void performLookup(EpubActivity& act, const std::string& requestedWord = {});
+  int definitionWordAt(int x, int y) const;
   void ensureDictionaryOpen();
   void saveCurrentWord(EpubActivity& act);
   /** Actually releases currentDefinition_/definitionBlocks_/definitionLines_'s heap capacity (not
@@ -61,6 +70,8 @@ class EpubDictionaryUi {
   std::string currentDefinition_;
   std::vector<DefinitionBlock> definitionBlocks_;
   std::vector<DefinitionStyledLine> definitionLines_;
+  std::vector<DefinitionWordHit> definitionWordHits_;
+  int selectedDefinitionWord_ = -1;
   size_t definitionScrollLine_ = 0;
   size_t definitionMaxScrollLine_ = 0;
   size_t definitionNextLine_ = 0;
@@ -85,6 +96,10 @@ class EpubDictionaryUi {
   int saveY_ = -1;
   int saveW_ = 0;
   int saveH_ = 0;
+  int definitionLookupX_ = -1;
+  int definitionLookupY_ = -1;
+  int definitionLookupW_ = 0;
+  int definitionLookupH_ = 0;
 
   unsigned long chordStartMs_ = 0;
   bool chordConsumed_ = false;

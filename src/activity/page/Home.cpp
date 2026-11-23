@@ -28,8 +28,11 @@
 extern void openReaderFromCallback(const std::string& path, std::function<void()> returnToCaller);
 extern void onGoToHome();
 extern void onGoToLibrary(const std::string& path);
+extern void onGoToSettings();
+extern void onGoToFileTransfer();
+extern void onGoToApps();
 extern void openHomeSubPage(HomeSubPage::Section section);
-extern void openHomeDescription(const std::string& bookPath, const std::string& cachePath);
+extern void openHomeBookDetails(const std::string& bookPath, const std::string& cachePath);
 extern void onGoToStatistics();
 extern void onGoToHeatmapReport(HomeTheme::HeatmapView view);
 
@@ -68,7 +71,7 @@ bool removeTree(const std::string& path, int& removed) {
   return SdMan.removeDir(path.c_str());
 }
 
-}  // namespace
+}
 
 Home::Home(GfxRenderer& renderer, MappedInputManager& mappedInput)
     : UiPage("Home", renderer, mappedInput), widgetLayout(renderer) {}
@@ -118,9 +121,9 @@ void Home::loop() {
     return;
   }
 
-  // The first Home frame intentionally uses thumbnail placeholders. Warm all
-  // image caches only after that frame has been displayed and the device is
-  // idle, so entering Home never waits on SD decoding.
+
+
+
   if (thumbnailWarmupPending_ && !mappedInput.wasTouchActivity()) {
     thumbnailWarmupPending_ = false;
     updateRequired = true;
@@ -128,9 +131,9 @@ void Home::loop() {
   }
 
   if (widgetLayout.needsRefresh(HomeTheme::active())) updateRequired = true;
-  // Let the first Home frame reach the panel before doing carousel I/O and
-  // thumbnail decoding. The preload is still done on the next idle loop, so
-  // it remains warm for a swipe without extending the visible screen render.
+
+
+
   const bool renderedThisLoop = updateRequired;
   if (handleSwipe()) return;
   if (handleTap()) return;
@@ -196,9 +199,9 @@ bool Home::handleSwipe() {
       renderPage();
       return true;
     }
-    // A completed swipe owns this input cycle even when the current layout has
-    // no page to move to. Do not let the same release fall through to a book
-    // tap hit-test.
+
+
+
     return true;
   }
   float swipeNx = 0.0f;
@@ -244,9 +247,9 @@ bool Home::handleSwipe() {
     }
     return true;
   }
-  // Keep all classified horizontal swipes out of handleTap(). This matters on
-  // touch controllers that expose tap and swipe state on the same release
-  // edge, and on edge swipes that start outside a widget's hit area.
+
+
+
   return true;
 }
 
@@ -320,8 +323,8 @@ bool Home::handleTap() {
       updateRequired = true;
       return true;
     }
-    // Statistics is opened through the long-press popup only. A regular tap
-    // on the widget should not navigate away from the home page.
+
+
     return true;
   }
   if (favoriteHit.type == HomeWidgetLayout::HitType::Favorites) {
@@ -425,26 +428,36 @@ bool Home::handleTap() {
 }
 
 bool Home::handleShortcut(const int item) {
-  if (SETTINGS.disableStatistics != 0 && item == 3) {
-    // Removing Statistics shifts Dictionary from row 4 to row 3.
-    openHomeSubPage(HomeSubPage::Section::Dictionary);
-    return true;
-  }
-  switch (item) {
-    case 0:
+  switch (static_cast<HomeTheme::ShortcutItem>(item)) {
+    case HomeTheme::ShortcutItem::Bookmarks:
       openHomeSubPage(HomeSubPage::Section::Bookmarks);
       return true;
-    case 1:
+    case HomeTheme::ShortcutItem::Highlights:
       openHomeSubPage(HomeSubPage::Section::Highlights);
       return true;
-    case 2:
+    case HomeTheme::ShortcutItem::Favorites:
       openHomeSubPage(HomeSubPage::Section::Favorites);
       return true;
-    case 3:
+    case HomeTheme::ShortcutItem::Statistics:
       onGoToStatistics();
       return true;
-    case 4:
-      openHomeSubPage(HomeSubPage::Section::Dictionary);
+    case HomeTheme::ShortcutItem::Home:
+      onGoToHome();
+      return true;
+    case HomeTheme::ShortcutItem::Library:
+      onGoToLibrary("/");
+      return true;
+    case HomeTheme::ShortcutItem::Settings:
+      onGoToSettings();
+      return true;
+    case HomeTheme::ShortcutItem::Device:
+      onGoToFileTransfer();
+      return true;
+    case HomeTheme::ShortcutItem::Apps:
+      onGoToApps();
+      return true;
+    case HomeTheme::ShortcutItem::Search:
+      search();
       return true;
     default:
       return false;
@@ -458,7 +471,7 @@ void Home::popup() const {
   } else if (favoritePopupOpen) {
     items = {"Remove favorite"};
   } else {
-    items = {"View description", "Mark as completed", "Remove Recent", "Delete cache"};
+    items = {"View details", "Mark as completed", "Remove Recent", "Delete cache"};
   }
   const PopUpBounds box = PopUp::bounds(renderer, static_cast<int>(items.size()));
   PopUp::background(renderer, box);
@@ -529,7 +542,7 @@ bool Home::popupInput() {
       const std::string bookCachePath = cachePath(book);
       popupBook = -1;
       updateRequired = true;
-      openHomeDescription(bookPath, bookCachePath);
+      openHomeBookDetails(bookPath, bookCachePath);
     }
   } else if (item == 1) {
     markCompleted();

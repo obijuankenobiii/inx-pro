@@ -12,4 +12,4 @@ void initialize(GfxRenderer& renderer);
 /** Return the preview face ID for a FontPackageManager install-family name. */
 int fontIdForFamily(const std::string& family);
 
-}  // namespace FontPreviews
+}

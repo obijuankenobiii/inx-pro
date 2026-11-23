@@ -14,13 +14,18 @@
 #include <string>
 #include <vector>
 
+#include "../PsramAllocator.h"
+
 class CssParser {
  public:
+  template <typename T>
+  using PsramVector = std::vector<T, EpubPsramAllocator<T>>;
+
   struct CssProperty {
     uint8_t id = 0;
     std::string value;
   };
-  using CssProperties = std::vector<CssProperty>;
+  using CssProperties = PsramVector<CssProperty>;
 
   struct UsageFilter {
     std::vector<std::string> tags;
@@ -43,6 +48,17 @@ class CssParser {
 
   CssParser();
   ~CssParser();
+
+  static void* operator new(std::size_t size) { return epubPsramObjectAllocate(size); }
+  static void* operator new(std::size_t size, const std::nothrow_t&) noexcept {
+    try {
+      return epubPsramObjectAllocate(size);
+    } catch (...) {
+      return nullptr;
+    }
+  }
+  static void operator delete(void* pointer) noexcept { epubPsramObjectFree(pointer); }
+  static void operator delete(void* pointer, const std::nothrow_t&) noexcept { epubPsramObjectFree(pointer); }
 
   void parse(const std::string& cssContent, const std::string& sourcePath = "", uint32_t minFreeHeapBytes = 0,
              const UsageFilter* usageFilter = nullptr);
@@ -193,10 +209,10 @@ class CssParser {
   size_t getRuleCount() const { return rules.size(); }
 
  private:
-  std::vector<CssRule> rules;
+  PsramVector<CssRule> rules;
   CssProperties properties_;
   /** Interned CSS file paths; CssRule::sourcePathIndex points here (used to resolve background-image URLs). */
-  std::vector<std::string> sourcePaths_;
+  PsramVector<std::string> sourcePaths_;
   uint16_t internSourcePath(const std::string& path);
   std::string bodyTextAlignRaw;
 
@@ -213,32 +229,43 @@ class CssParser {
   mutable std::string mcTag_;
   mutable std::string mcClass_;
   mutable std::string mcId_;
-  mutable std::vector<MatchedRule> mcMatched_;
+  mutable PsramVector<MatchedRule> mcMatched_;
   mutable bool mcValid_ = false;
 
   /** Cache all winning declarations while the current element's matched rules are active. */
   struct WinningRuleCacheTable {
+    static void* operator new[](std::size_t size) { return epubPsramObjectAllocate(size); }
+    static void* operator new[](std::size_t size, const std::nothrow_t&) noexcept {
+      try {
+        return epubPsramObjectAllocate(size);
+      } catch (...) {
+        return nullptr;
+      }
+    }
+    static void operator delete[](void* pointer) noexcept { epubPsramObjectFree(pointer); }
+    static void operator delete[](void* pointer, const std::nothrow_t&) noexcept { epubPsramObjectFree(pointer); }
+
     std::array<const CssRule*, 256> winners{};
     std::array<int8_t, 256> priorities{};
     std::array<bool, 256> present{};
     bool valid = false;
   };
-  // Keep the large per-element tables off ChapterHtmlSlimParser's task stack.
+
   mutable std::unique_ptr<WinningRuleCacheTable[]> winningRuleCache_;
   struct SelectorIndexEntry {
     std::string key;
-    std::vector<uint16_t> rules;
+    PsramVector<uint16_t> rules;
   };
-  mutable std::vector<SelectorIndexEntry> tagRuleIndex_;
-  mutable std::vector<SelectorIndexEntry> classRuleIndex_;
-  mutable std::vector<SelectorIndexEntry> idRuleIndex_;
-  mutable std::vector<uint16_t> fallbackRuleIndexes_;
+  mutable PsramVector<SelectorIndexEntry> tagRuleIndex_;
+  mutable PsramVector<SelectorIndexEntry> classRuleIndex_;
+  mutable PsramVector<SelectorIndexEntry> idRuleIndex_;
+  mutable PsramVector<uint16_t> fallbackRuleIndexes_;
   mutable bool selectorIndexValid_ = false;
   void rebuildSelectorIndex() const;
   void collectCandidateRuleIndexes(const std::string& elementTagLower,
                                    const std::vector<std::string>& classTokensLower,
                                    const std::string& idLower, std::vector<uint16_t>& out) const;
-  const std::vector<MatchedRule>& matchedRulesFor(const std::string& elementTagLower, const std::string& className,
+  const PsramVector<MatchedRule>& matchedRulesFor(const std::string& elementTagLower, const std::string& className,
                                                   const std::string& id) const;
 
   const CssRule* winningRuleForProperty(const std::string& propName, const std::string& className,

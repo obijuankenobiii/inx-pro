@@ -166,10 +166,10 @@ HalGPIO::TouchSwipe MappedInputManager::swipeForRenderer(const GfxRenderer& rend
   const auto raw = gpio.touchSwipe();
   auto mapped = inx::touch::forOrientation(renderer.getOrientation(), raw);
 #if FREEINK_DEVICE_PICCO
-  // TMA525C reports its direction in the panel-native frame.  That frame is
-  // rotated relative to the UI, and the enum alone loses the actual gesture
-  // geometry at the bottom edge. Transform both endpoints into screen space
-  // and classify the gesture there.
+
+
+
+
   float startX = 0.0f;
   float startY = 0.0f;
   float endX = 0.0f;
@@ -368,6 +368,12 @@ bool MappedInputManager::consumeHeaderBackTap(const GfxRenderer& renderer) const
 void MappedInputManager::injectButtonEdge(const Button button) const {
   injectedPressedButton_ = static_cast<int8_t>(button);
   injectedReleasedButton_ = static_cast<int8_t>(button);
+}
+
+bool MappedInputManager::consumeInjectedPressed(const Button button) const {
+  if (injectedPressedButton_ != static_cast<int8_t>(button)) return false;
+  injectedPressedButton_ = -1;
+  return true;
 }
 
 MappedInputManager::MotionGesture MappedInputManager::readMotionGesture(const uint8_t orientation, const uint8_t mode,

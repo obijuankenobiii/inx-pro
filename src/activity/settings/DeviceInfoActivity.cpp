@@ -13,6 +13,7 @@
 #include <WiFi.h>
 #include <BoardConfig.h>
 
+#include <algorithm>
 #include <cstdio>
 
 #include "activity/page/SubPage.h"
@@ -20,6 +21,13 @@
 #include "system/MappedInputManager.h"
 
 namespace {
+
+constexpr int kRowHeight = 100;
+constexpr int kSideMargin = 20;
+constexpr int kSubtitleGap = 5;
+constexpr int kBottomMargin = 20;
+
+int listTop() { return FREEINK_DEVICE_X4PRO ? 80 : 70; }
 
 std::string formatBytes(const size_t bytes) {
   char buffer[24];
@@ -92,8 +100,8 @@ void DeviceInfoActivity::buildRows() {
   rows.push_back({"FREE HEAP", formatBytes(ESP.getFreeHeap())});
   rows.push_back({"ESP-IDF", esp_get_idf_version()});
 
-  // WiFi.macAddress() reads the STA netif, which only exists while Wi-Fi is running, so it is
-  // all zeros here. The base MAC in eFuse is always readable.
+
+
   uint8_t mac[6] = {};
   char macLine[18] = "Unavailable";
   if (esp_read_mac(mac, ESP_MAC_WIFI_STA) == ESP_OK) {
@@ -105,11 +113,30 @@ void DeviceInfoActivity::buildRows() {
 
 void DeviceInfoActivity::onEnter() {
   buildRows();
+  scrollOffset = 0;
   updateRequired = true;
 }
 
 void DeviceInfoActivity::loop() {
   if (SubPage::closeInput(renderer, mappedInput, onClose)) return;
+  const int visibleRows = std::max(1, (renderer.getScreenHeight() - listTop() - kBottomMargin) / kRowHeight);
+  const int maxScroll = std::max(0, static_cast<int>(rows.size()) - visibleRows);
+  if (mappedInput.hasTouch()) {
+    if (mappedInput.wasTouchSwipeUpForRenderer(renderer)) {
+      scrollOffset = std::min(maxScroll, scrollOffset + 1);
+      updateRequired = true;
+    } else if (mappedInput.wasTouchSwipeDownForRenderer(renderer)) {
+      scrollOffset = std::max(0, scrollOffset - 1);
+      updateRequired = true;
+    }
+  }
+  if (mappedInput.wasPressed(MappedInputManager::Button::Up)) {
+    scrollOffset = std::max(0, scrollOffset - 1);
+    updateRequired = true;
+  } else if (mappedInput.wasPressed(MappedInputManager::Button::Down)) {
+    scrollOffset = std::min(maxScroll, scrollOffset + 1);
+    updateRequired = true;
+  }
   if (updateRequired) {
     updateRequired = false;
     render();
@@ -118,25 +145,34 @@ void DeviceInfoActivity::loop() {
 
 void DeviceInfoActivity::render() {
   renderer.clearScreen();
-  const int startY = SubPage::header(renderer, "Device Information") + 20;
+  SubPage::header(renderer, "Device Information");
   const int screenWidth = renderer.getScreenWidth();
-  const int rowHeight = rows.size() > 8
-                            ? std::max(60, (renderer.getScreenHeight() - startY - 10) / static_cast<int>(rows.size()))
-                            : 80;
+  const int startY = listTop();
+  const int visibleRows = std::max(1, (renderer.getScreenHeight() - startY - kBottomMargin) / kRowHeight);
 
   const int labelFont = systemFontIdForPointSize(8);
   const int valueFont = systemFontId();
+  const int labelHeight = renderer.text.getLineHeight(labelFont);
+  const int valueHeight = renderer.text.getLineHeight(valueFont);
+  const int contentHeight = labelHeight + kSubtitleGap + valueHeight;
 
-  for (size_t i = 0; i < rows.size(); ++i) {
-    const int itemY = startY + static_cast<int>(i) * rowHeight;
-    const int labelY = itemY + 7;
-    const int valueY = itemY + 30;
-    const int valueMaxW = screenWidth - 40;
-    const std::string clippedValue = renderer.text.truncate(valueFont, rows[i].value.c_str(), valueMaxW);
+  for (int visible = 0; visible < visibleRows; ++visible) {
+    const size_t index = static_cast<size_t>(scrollOffset + visible);
+    if (index >= rows.size()) break;
+    const int itemY = startY + visible * kRowHeight;
+    const int labelY = itemY + (kRowHeight - contentHeight) / 2;
+    const int valueY = labelY + labelHeight + kSubtitleGap;
+    const int valueMaxW = screenWidth - 2 * kSideMargin;
+    const std::string clippedValue = renderer.text.truncate(valueFont, rows[index].value.c_str(), valueMaxW);
 
-    renderer.text.render(labelFont, 20, labelY, rows[i].label.c_str(), true, EpdFontFamily::BOLD);
-    renderer.text.render(valueFont, 20, valueY, clippedValue.c_str(), true, EpdFontFamily::REGULAR);
+    renderer.text.render(labelFont, kSideMargin, labelY, rows[index].label.c_str(), true, EpdFontFamily::BOLD);
+    renderer.text.render(valueFont, kSideMargin, valueY, clippedValue.c_str(), true, EpdFontFamily::REGULAR);
+    if (visible + 1 < visibleRows && index + 1 < rows.size()) {
+      renderer.line.render(kSideMargin, itemY + kRowHeight - 1, screenWidth - kSideMargin,
+                           itemY + kRowHeight - 1, true, LineRender::Style::Dotted);
+    }
   }
 
+  mappedInput.mapLabels("\xC2\xAB Back", "", "Up", "Down");
   renderer.displayBuffer();
 }

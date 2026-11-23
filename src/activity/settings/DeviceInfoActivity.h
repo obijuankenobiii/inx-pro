@@ -35,6 +35,7 @@ class DeviceInfoActivity final : public Activity {
   const std::function<void()> onClose;
   std::vector<InfoRow> rows;
   bool updateRequired = false;
+  int scrollOffset = 0;
 
   void buildRows();
   void render();

@@ -29,8 +29,8 @@ struct FallbackKey {
   const char* key;
 };
 
-// This catalog lets existing renderer call sites become language-aware without
-// making book titles, authors, or other arbitrary text eligible for translation.
+
+
 constexpr FallbackKey kFallbackKeys[] = {
     {"Home", "nav.home"},
     {"Library", "nav.library"},
@@ -189,14 +189,14 @@ constexpr FallbackKey kFallbackKeys[] = {
     {"Username", "koreader.username"},
     {"Password", "koreader.password"},
     {"Sync Server URL", "koreader.server_url"},
-    {"Document Matching", "koreader.document_matching"},
+    {"Matching", "koreader.document_matching"},
     {"Sign Up", "koreader.sign_up"},
     {"Authenticate", "koreader.authenticate"},
     {"Not Set", "koreader.not_set"},
     {"Set", "koreader.set"},
     {"Filename", "koreader.filename"},
     {"Binary", "koreader.binary"},
-    {"Set credentials first", "koreader.credentials_required"},
+    {"No credentials", "koreader.credentials_required"},
     {"KOReader Username", "koreader.username_prompt"},
     {"KOReader Password", "koreader.password_prompt"},
     {"KOReader Sign Up", "koreader.sign_up_title"},
@@ -333,7 +333,6 @@ constexpr FallbackKey kFallbackKeys[] = {
     {"Face", "settings.clock_face"},
     {"Format", "settings.clock_format"},
     {"Cover Mode", "settings.cover_mode"},
-    {"Cover Filter", "settings.cover_filter"},
     {"Sleep Image Quality", "settings.sleep_image_quality"},
     {"Thumbnail corners", "settings.thumbnail_corners"},
     {"Flick page turn", "settings.flick_page_turn"},
@@ -425,8 +424,6 @@ constexpr FallbackKey kFallbackKeys[] = {
     {"Gestures", "settings.gestures"},
     {"Set up quick actions menu", "settings.quick_actions_setup"},
     {"Disable light control", "settings.disable_light_control"},
-    {"Page turn", "settings.page_turn"},
-    {"Double tap", "settings.double_tap"},
     {"Swipe", "value.swipe"},
     {"Tap", "value.tap"},
     {"Table of Content", "reader_action.table_of_content"},
@@ -495,8 +492,8 @@ constexpr FallbackKey kFallbackKeys[] = {
     {"Annotate", "reader_action.annotate"},
     {"Dictionary", "reader_action.dictionary"},
     {"Page Refresh", "reader_action.page_refresh"},
-    {"Chapter Skip Next", "reader_action.chapter_skip_next"},
-    {"Chapter Skip Previous", "reader_action.chapter_skip_previous"},
+    {"Previous Chapter", "reader_action.chapter_skip_next"},
+    {"Next Chapter", "reader_action.chapter_skip_previous"},
     {"Bookmark", "reader_action.bookmark"},
     {"Table of Contents", "reader_action.table_of_contents"},
     {"Change Orientation", "reader_action.change_orientation"},
@@ -706,7 +703,7 @@ bool loadActive(const std::string& code) {
   return true;
 }
 
-}  // namespace
+}
 
 void LanguageManager::initialize() {
   if (initialized && activeCode == SETTINGS.languageCode) return;
@@ -715,7 +712,7 @@ void LanguageManager::initialize() {
     return;
   }
   if (!loadActive(SETTINGS.languageCode)) {
-    // A removed or malformed package must never make the system UI unusable.
+
     SETTINGS.languageCode[0] = '\0';
     loadActive("");
   }
@@ -803,7 +800,7 @@ const char* LanguageManager::translateText(const char* englishText) {
   initialize();
   if (activeCode.empty()) return englishText;
 
-  // Also accept a key directly for future call sites that use semantic keys.
+
   if (const char* translated = findTranslation(englishText)) return translated;
   if (const char* key = findFallbackKey(englishText)) {
     if (const char* translated = findTranslation(key)) return translated;
