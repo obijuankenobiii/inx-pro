@@ -157,7 +157,7 @@ Grid::Grid(GfxRenderer& renderer, MappedInputManager& mappedInput,
 
 void Grid::reset() { page = 0; }
 
-int Grid::top() const { return navigation::Menu::height; }
+int Grid::top() const { return navigation::Menu::height - 10; }
 
 int Grid::visibleHeight() const {
   const int bottomInset = SETTINGS.hiddenMenu != 0 ? UiLayout::LIBRARY_BOTTOM_BAR_HEIGHT : navigation::Menu::bottomInset();

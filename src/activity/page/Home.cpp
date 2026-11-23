@@ -32,7 +32,7 @@ extern void onGoToSettings();
 extern void onGoToFileTransfer();
 extern void onGoToApps();
 extern void openHomeSubPage(HomeSubPage::Section section);
-extern void openHomeDescription(const std::string& bookPath, const std::string& cachePath);
+extern void openHomeBookDetails(const std::string& bookPath, const std::string& cachePath);
 extern void onGoToStatistics();
 extern void onGoToHeatmapReport(HomeTheme::HeatmapView view);
 
@@ -471,7 +471,7 @@ void Home::popup() const {
   } else if (favoritePopupOpen) {
     items = {"Remove favorite"};
   } else {
-    items = {"View description", "Mark as completed", "Remove Recent", "Delete cache"};
+    items = {"View details", "Mark as completed", "Remove Recent", "Delete cache"};
   }
   const PopUpBounds box = PopUp::bounds(renderer, static_cast<int>(items.size()));
   PopUp::background(renderer, box);
@@ -542,7 +542,7 @@ bool Home::popupInput() {
       const std::string bookCachePath = cachePath(book);
       popupBook = -1;
       updateRequired = true;
-      openHomeDescription(bookPath, bookCachePath);
+      openHomeBookDetails(bookPath, bookCachePath);
     }
   } else if (item == 1) {
     markCompleted();

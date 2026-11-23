@@ -42,7 +42,16 @@ class Library final : public UiPage {
   void search() override;
 
  private:
-  enum class Sort { TitleAZ, TitleZA, FolderAZ, FolderZA, AuthorAZ, AuthorZA };
+  enum class Sort {
+    TitleAZ,
+    TitleZA,
+    FolderAZ,
+    FolderZA,
+    AuthorAZ,
+    AuthorZA,
+    RatingLowHigh,
+    RatingHighLow,
+  };
   enum class View { List, Grid, Thumb, ListThumb, Thumb3x2 };
   enum class ControlTab { View, Sort, Filter };
   enum class FilterCategory : uint8_t { Categories, Title, Type, Author, Series, Tags, Options };
@@ -98,6 +107,7 @@ class Library final : public UiPage {
   bool filterMetadataIndexAvailable_ = false;
   int filterScrollOffset_ = 0;
   bool sortOpen = false;
+  int sortScrollOffset_ = 0;
   bool filterOpen = false;
   bool controlModalOpen = false;
   ControlTab controlTab = ControlTab::View;

@@ -416,7 +416,7 @@ class SystemSetting {
   uint8_t refreshOnLoadStatistics = 0;
   uint8_t libraryMode = LIBRARY_GRID;
   uint8_t libraryViewMode = LIBRARY_VIEW_FOLDERS;
-  /** Library sort mode persisted when leaving Library (0=Title A–Z … 5=Read Z–A). */
+  /** Library sort mode persisted when leaving Library (0=Title A–Z … 7=Rating 10–1). */
   uint8_t librarySortMode = 0;
   /** Hide finished books from the normal folder and All Books library views. */
   uint8_t hideFinishedBooks = 0;

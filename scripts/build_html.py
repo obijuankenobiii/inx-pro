@@ -133,7 +133,7 @@ for root, _, files in os.walk(SRC_DIR):
                     'lineHeight:["Tight (80%)","Normal (100%)","Wide (120%)","Wider (140%)","Loose (160%)"],textSpace:["Tight (80%)","Normal (100%)","Wide (120%)"]')
                 html_content = html_content.replace(
                     'libraryMode:["List","Grid","Thumbnail"]',
-                    'libraryMode:["List","Grid","Thumbnail"],librarySortMode:["Title A-Z","Title Z-A","Folder A-Z","Folder Z-A","Author A-Z","Author Z-A"]')
+                    'libraryMode:["List","Grid","Thumbnail"],librarySortMode:["Title A-Z","Title Z-A","Folder A-Z","Folder Z-A","Author A-Z","Author Z-A","Rating 1-10","Rating 10-1"]')
                 html_content = html_content.replace(
                     'optionValues={recentLibraryMode:[2,4,6],statusBarFullStyle:[0,7,8,9]}',
                     'optionValues={recentLibraryMode:[2,4,6],lineHeight:[80,100,120,140,160],textSpace:[80,100,120],statusBarFullStyle:[0,7,8,9]}')

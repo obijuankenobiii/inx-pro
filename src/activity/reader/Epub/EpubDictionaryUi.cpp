@@ -28,6 +28,7 @@
 namespace {
 
 constexpr unsigned long kChordHoldMs = 600;
+constexpr unsigned long kDefinitionWordSelectionHoldMs = 300;
 constexpr int kHighlightLatticeStepPx = 2;
 
 constexpr int kDefinitionPanelMargin = 16;
@@ -273,6 +274,8 @@ void EpubDictionaryUi::releaseDefinitionMemory() {
   std::string().swap(currentDefinition_);
   std::vector<DefinitionBlock>().swap(definitionBlocks_);
   std::vector<DefinitionStyledLine>().swap(definitionLines_);
+  std::vector<DefinitionWordHit>().swap(definitionWordHits_);
+  selectedDefinitionWord_ = -1;
   definitionScrollLine_ = 0;
   definitionMaxScrollLine_ = 0;
   definitionNextLine_ = 0;
@@ -290,6 +293,10 @@ void EpubDictionaryUi::releaseDefinitionMemory() {
   saveY_ = -1;
   saveW_ = 0;
   saveH_ = 0;
+  definitionLookupX_ = -1;
+  definitionLookupY_ = -1;
+  definitionLookupW_ = 0;
+  definitionLookupH_ = 0;
 }
 
 void EpubDictionaryUi::ensureDictionaryOpen() {
@@ -306,15 +313,21 @@ void EpubDictionaryUi::ensureDictionaryOpen() {
   INX_SERIAL.printf("[%lu] [DICT] ensureDictionaryOpen: open('%s') -> %d\n", millis(), folder.c_str(), opened ? 1 : 0);
 }
 
-void EpubDictionaryUi::performLookup(EpubActivity& act) {
-  const auto& words = wordLookup_.words();
-  if (words.empty() || wordLookup_.focus() >= words.size()) {
-    return;
+void EpubDictionaryUi::performLookup(EpubActivity& act, const std::string& requestedWord) {
+  if (requestedWord.empty()) {
+    const auto& words = wordLookup_.words();
+    if (words.empty() || wordLookup_.focus() >= words.size()) {
+      return;
+    }
+    lookedUpWord_ = lookupWordAt(words, wordLookup_.focus());
+  } else {
+    lookedUpWord_ = StarDictLookup::cleanQueryWord(requestedWord);
   }
-  lookedUpWord_ = lookupWordAt(words, wordLookup_.focus());
   currentDefinition_.clear();
   definitionScrollLine_ = 0;
   definitionPageHistory_.clear();
+  definitionWordHits_.clear();
+  selectedDefinitionWord_ = -1;
   wordAlreadySaved_ = !lookedUpWord_.empty() && SAVED_WORDS.contains(lookedUpWord_);
 
   bool truncated = false;
@@ -355,21 +368,35 @@ void EpubDictionaryUi::performLookup(EpubActivity& act) {
                 static_cast<unsigned>(definitionBlocks_.size()));
   const int textWidth =
       (act.renderer.getScreenWidth() - kDefinitionPanelMargin * 2) - kDefinitionPanelPad * 2;
-  definitionLines_ = layoutDefinitionBlocks(act.renderer, definitionBlocks_, textWidth);
+  definitionLines_ = layoutDefinitionBlocks(act.renderer, definitionBlocks_, textWidth,
+                                              systemFontIdForPointSize(13));
   INX_SERIAL.printf("[%lu] [DICT] performLookup: laid out lines=%u\n", millis(),
                 static_cast<unsigned>(definitionLines_.size()));
   showingDefinition_ = true;
   act.updateRequired = true;
 }
 
-/** Saves lookedUpWord_ and the definition currently shown in the panel to the global saved-words
- *  list. The operation is idempotent so both the visible button and hardware Confirm are safe to
- *  repeat. */
-void EpubDictionaryUi::saveCurrentWord(EpubActivity& act) {
-  if (lookedUpWord_.empty() || wordAlreadySaved_) {
-    return;
+int EpubDictionaryUi::definitionWordAt(const int x, const int y) const {
+  constexpr int hitPadding = 8;
+  for (size_t i = 0; i < definitionWordHits_.size(); ++i) {
+    const DefinitionWordHit& hit = definitionWordHits_[i];
+    if (x >= hit.x - hitPadding && x < hit.x + hit.width + hitPadding && y >= hit.y - hitPadding &&
+        y < hit.y + hit.height + hitPadding) {
+      return static_cast<int>(i);
+    }
   }
-  if (SAVED_WORDS.add(lookedUpWord_, currentDefinition_)) {
+  return -1;
+}
+
+/** Toggles the current dictionary word in the saved-words list. */
+void EpubDictionaryUi::saveCurrentWord(EpubActivity& act) {
+  if (lookedUpWord_.empty()) return;
+  if (wordAlreadySaved_) {
+    if (SAVED_WORDS.remove(lookedUpWord_)) {
+      wordAlreadySaved_ = false;
+      act.updateRequired = true;
+    }
+  } else if (SAVED_WORDS.add(lookedUpWord_, currentDefinition_)) {
     wordAlreadySaved_ = true;
     act.updateRequired = true;
   }
@@ -402,16 +429,34 @@ void EpubDictionaryUi::handleInput(EpubActivity& act) {
       const int x = static_cast<int>(tapNx * act.renderer.getScreenWidth());
       const int y = static_cast<int>(tapNy * act.renderer.getScreenHeight());
       if (showingDefinition_) {
+        if (m.lastTouchHeldMs() >= kDefinitionWordSelectionHoldMs) {
+          const int word = definitionWordAt(x, y);
+          if (word >= 0) {
+            selectedDefinitionWord_ = word;
+            act.updateRequired = true;
+            return;
+          }
+        }
         if (!definitionPageHistory_.empty() && x >= previousX_ && x < previousX_ + previousW_ && y >= previousY_ &&
             y < previousY_ + previousH_) {
           if (previousDefinitionPage()) {
+            selectedDefinitionWord_ = -1;
             act.updateRequired = true;
           }
           return;
         }
         if (x >= nextX_ && x < nextX_ + nextW_ && y >= nextY_ && y < nextY_ + nextH_) {
           if (nextDefinitionPage()) {
+            selectedDefinitionWord_ = -1;
             act.updateRequired = true;
+          }
+          return;
+        }
+        if (x >= definitionLookupX_ && x < definitionLookupX_ + definitionLookupW_ && y >= definitionLookupY_ &&
+            y < definitionLookupY_ + definitionLookupH_) {
+          if (selectedDefinitionWord_ >= 0 &&
+              selectedDefinitionWord_ < static_cast<int>(definitionWordHits_.size())) {
+            performLookup(act, definitionWordHits_[static_cast<size_t>(selectedDefinitionWord_)].word);
           }
           return;
         }
@@ -506,9 +551,11 @@ void EpubDictionaryUi::handleInput(EpubActivity& act) {
     constexpr size_t kScrollLinesPerPress = 3;
     if (m.wasPressed(MappedInputManager::Button::Up)) {
       definitionScrollLine_ = (definitionScrollLine_ > kScrollLinesPerPress) ? definitionScrollLine_ - kScrollLinesPerPress : 0;
+      selectedDefinitionWord_ = -1;
       act.updateRequired = true;
     } else if (m.wasPressed(MappedInputManager::Button::Down)) {
       definitionScrollLine_ += kScrollLinesPerPress;
+      selectedDefinitionWord_ = -1;
       act.updateRequired = true;
     }
     return;
@@ -583,8 +630,9 @@ void EpubDictionaryUi::drawDefinitionPanel(EpubActivity& act) {
   constexpr int kTitleGapPx = 8;
   constexpr int kButtonGapPx = 12;
   const int buttonFont = systemFontId();
-  const char* saveLabel = wordAlreadySaved_ ? "Saved" : "Save";
+  const char* saveLabel = wordAlreadySaved_ ? "Unsave" : "Save";
   const int saveW = Button::width(act.renderer, saveLabel, buttonFont);
+  const int lookupW = Button::width(act.renderer, "Look up", buttonFont);
   const int buttonH = Button::height;
   const int neededPanelH = pad * 2 + headerH + kTitleGapPx * 2 + contentH + kButtonGapPx + buttonH;
   const int defaultPanelH = panelBottom - defaultPanelTop;
@@ -649,6 +697,10 @@ void EpubDictionaryUi::drawDefinitionPanel(EpubActivity& act) {
   previousY_ = -1;
   previousW_ = 0;
   previousH_ = 0;
+  definitionLookupX_ = -1;
+  definitionLookupY_ = -1;
+  definitionLookupW_ = 0;
+  definitionLookupH_ = 0;
 
   if (maxScrollLine > 0) {
     previousW_ = buttonH;
@@ -662,6 +714,20 @@ void EpubDictionaryUi::drawDefinitionPanel(EpubActivity& act) {
     nextX_ = panelX + panelW - pad - nextW_;
     nextY_ = saveY_;
     saveX_ = nextX_ - kButtonGapPx - saveW_;
+  }
+
+  if (selectedDefinitionWord_ >= static_cast<int>(definitionWordHits_.size())) {
+    selectedDefinitionWord_ = -1;
+  }
+  if (selectedDefinitionWord_ >= 0) {
+    definitionLookupW_ = lookupW;
+    definitionLookupH_ = buttonH;
+    definitionLookupX_ = panelX + panelW - pad - definitionLookupW_;
+    definitionLookupY_ = saveY_;
+    saveX_ = definitionLookupX_ - kButtonGapPx - saveW_;
+    if (maxScrollLine > 0) {
+      nextX_ = saveX_ - kButtonGapPx - nextW_;
+    }
   }
 
   definitionScrollable_ = maxScrollLine > 0;
@@ -679,7 +745,38 @@ void EpubDictionaryUi::drawDefinitionPanel(EpubActivity& act) {
   }
   definitionNextLine_ = nextLine;
 
+  definitionWordHits_.clear();
+  int wordY = y;
+  for (size_t lineIndex = definitionScrollLine_; lineIndex < nextLine; ++lineIndex) {
+    const DefinitionStyledLine& line = styledLines[lineIndex];
+    const int lineH = act.renderer.text.getLineHeight(line.fontId);
+    const int gap = lineIndex == definitionScrollLine_ ? 0 : line.extraGapBeforePx;
+    wordY += gap;
+    int wordX = panelX + pad + line.indentPx;
+    const int spaceW = act.renderer.text.getSpaceWidth(line.fontId);
+    for (size_t atomIndex = 0; atomIndex < line.atoms.size(); ++atomIndex) {
+      const DefinitionTextAtom& atom = line.atoms[atomIndex];
+      if (atom.spaceBefore && atomIndex > 0) wordX += spaceW;
+      const int wordW = act.renderer.text.getWidth(line.fontId, atom.text.c_str(), atom.style);
+      const std::string word = StarDictLookup::cleanQueryWord(atom.text);
+      if (!word.empty() && wordW > 0) {
+        definitionWordHits_.push_back({word, wordX, wordY, wordW, lineH});
+      }
+      wordX += wordW;
+    }
+    wordY += lineH;
+  }
   renderStyledLines(act.renderer, styledLines, panelX + pad, y, contentBottom, definitionScrollLine_);
+  if (selectedDefinitionWord_ >= 0 && selectedDefinitionWord_ < static_cast<int>(definitionWordHits_.size())) {
+    const DefinitionWordHit& selected = definitionWordHits_[static_cast<size_t>(selectedDefinitionWord_)];
+    act.renderer.ui.fillSparseInkLatticeInRect(selected.x, selected.y, std::max(1, selected.width),
+                                                std::max(3, selected.height), kHighlightLatticeStepPx);
+  }
+  if (selectedDefinitionWord_ >= 0) {
+    Button::render(act.renderer,
+                   {definitionLookupX_, definitionLookupY_, definitionLookupW_, definitionLookupH_}, "Look up",
+                   true, buttonFont);
+  }
   if (!definitionPageHistory_.empty()) {
     Button::render(act.renderer, {previousX_, previousY_, previousW_, previousH_}, "", false, buttonFont);
     constexpr int caretSize = 40;
@@ -736,7 +833,7 @@ void EpubDictionaryUi::drawUiOverlay(EpubActivity& act) {
   }
   act.renderer.setOrientation(GfxRenderer::Portrait);
   const char* back = showingDefinition_ ? "Close" : "Exit";
-  const char* mid = showingDefinition_ ? (wordAlreadySaved_ ? "Saved" : "Save") : "Look up";
+  const char* mid = showingDefinition_ ? (wordAlreadySaved_ ? "Unsave" : "Save") : "Look up";
   const auto labels = act.mappedInput.mapLabels(back, mid, "Prev", "Next");
   const bool showUpDown = !showingDefinition_ || definitionScrollable_;
   act.renderer.setOrientation(o);

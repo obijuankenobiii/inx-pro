@@ -21,6 +21,8 @@ class LibraryIndex {
     std::string title;
     std::string folder;
     std::string author;
+    /** Cached metadata rating used by the library's optional rating sort. */
+    std::string rating;
     /** Optional transient UI badge supplied by a plugin-backed library view. */
     std::string badge;
     /** Cached reading progress attached when the index is hydrated for a UI. */

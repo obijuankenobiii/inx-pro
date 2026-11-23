@@ -73,7 +73,8 @@ std::vector<DefinitionBlock> parseHtmlToBlocks(const std::string& html);
 /** Flattens parsed HTML blocks into wrapped, styled lines with per-block font/indent/bullet, each
  *  narrowed to maxWidth (minus that block's indent) at its own font. */
 std::vector<DefinitionStyledLine> layoutDefinitionBlocks(const GfxRenderer& renderer,
-                                                         const std::vector<DefinitionBlock>& blocks, int maxWidth);
+                                                         const std::vector<DefinitionBlock>& blocks, int maxWidth,
+                                                         int paragraphFontId = -1);
 
 /** Draws pre-wrapped/styled lines top-down starting at (x, startY), beginning from lines[startIndex]
  *  (for scrollable panels like EpubDictionaryUi's) and stopping once a line would cross bottomLimit. */

@@ -5,9 +5,11 @@
 #include <BitmapRender.h>
 #include <GfxRenderer.h>
 #include <SDCardManager.h>
+#include <Epub/BookMetadataCache.h>
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdlib>
 #include <functional>
 #include <map>
@@ -50,6 +52,8 @@
 #include "util/SdIoMutex.h"
 
 extern void onGoToLibrary(const std::string& path);
+extern void openBookDetails(const std::string& bookPath, const std::string& cachePath,
+                            const std::string& libraryPath);
 
 namespace {
 std::map<std::string, int> gThumbPage;
@@ -61,6 +65,7 @@ constexpr int kCaretSourceWidth = 32;
 constexpr int kCaretSourceHeight = 30;
 constexpr int kCaretIconSize = 30;
 constexpr int kControlListItemHeight = UiLayout::LIST_ITEM_HEIGHT + 10;
+constexpr int kSortVisibleRows = 6;
 
 struct FilterDrawerLayout {
   int x;
@@ -99,7 +104,7 @@ ControlModalLayout controlModalLayout(const GfxRenderer& renderer) {
   const int x = horizontalScreenMargin;
   const int width = std::max(1, screenWidth - horizontalScreenMargin * 2);
   constexpr int tabPaddingHeight = 20 + 20;
-  constexpr int sortRowCount = 6;
+  constexpr int sortRowCount = kSortVisibleRows;
   const int tabHeight = tabPaddingHeight + renderer.text.getLineHeight(systemFontId());
   const int contentHeight = tabHeight + sortRowCount * kControlListItemHeight;
   const int y = std::max(navigation::Menu::height + 10, screenHeight - bottomMargin - contentHeight);
@@ -312,6 +317,13 @@ bool matchesTypeFilter(const std::string& path, const std::string& category) {
   if (category == "txt") return endsWith(value, ".txt") || endsWith(value, ".md");
   if (category == "xtc") return endsWith(value, ".xtc") || endsWith(value, ".xtch");
   return true;
+}
+
+float ratingValue(const std::string& value) {
+  char* end = nullptr;
+  const float rating = std::strtof(value.c_str(), &end);
+  if (end == value.c_str() || !std::isfinite(rating) || rating < 0.0f) return -1.0f;
+  return rating;
 }
 
 std::string dataPath(const std::string& bookPath) {
@@ -725,6 +737,14 @@ void Library::load() {
     std::vector<LibraryIndex::Book>().swap(books);
   }
 
+  if (sort == Sort::RatingLowHigh || sort == Sort::RatingHighLow) {
+    for (LibraryIndex::Book& item : items) {
+      if (item.type != LibraryIndex::Book::Type::BOOK) continue;
+      BookMetadataCache metadata(dataPath(item.path));
+      if (metadata.load()) item.rating = metadata.coreMetadata.rating;
+    }
+  }
+
   if (stateFilter != StateFilter::Metadata) {
     std::stable_sort(items.begin(), items.end(), [this](const LibraryIndex::Book& left,
                                                          const LibraryIndex::Book& right) {
@@ -760,8 +780,18 @@ void Library::load() {
         return sort == Sort::FolderAZ ? folderComparison < 0 : folderComparison > 0;
       }
     }
+    if (sort == Sort::RatingLowHigh || sort == Sort::RatingHighLow) {
+      const float leftRating = ratingValue(left.rating);
+      const float rightRating = ratingValue(right.rating);
+      if (leftRating != rightRating) {
+        if (leftRating < 0.0f) return false;
+        if (rightRating < 0.0f) return true;
+        return sort == Sort::RatingLowHigh ? leftRating < rightRating : leftRating > rightRating;
+      }
+    }
     const int titleComparison = naturalCompare(leftTitle, rightTitle);
-    if (sort == Sort::TitleZA || sort == Sort::FolderZA || sort == Sort::AuthorZA) {
+    if (sort == Sort::TitleZA || sort == Sort::FolderZA || sort == Sort::AuthorZA ||
+        sort == Sort::RatingHighLow) {
       return titleComparison > 0;
     }
     return titleComparison < 0;
@@ -1138,6 +1168,7 @@ void Library::popup() const {
   const std::vector<std::string> actions = folder
                                              ? std::vector<std::string>{"Delete"}
                                              : std::vector<std::string>{
+                                                   "View details",
                                                    isFavorite(book) ? "Remove favorite" : "Mark as favorite",
                                                    "Mark as completed",
                                                    "Delete Book", "Reset"};
@@ -1188,7 +1219,7 @@ bool Library::popupInput() {
   }
 
   const bool folder = book.type == LibraryIndex::Book::Type::FOLDER;
-  const int actionCount = folder ? 1 : 4;
+  const int actionCount = folder ? 1 : 5;
   const PopUpBounds box = PopUp::bounds(renderer, actionCount);
   const int x = static_cast<int>(tapX * renderer.getScreenWidth());
   const int y = static_cast<int>(tapY * renderer.getScreenHeight());
@@ -1209,10 +1240,16 @@ bool Library::popupInput() {
     return true;
   }
   if (action == 0) {
-    markFavorite(book);
+    const std::string libraryPath = path;
+    popupBook = -1;
+    folderDeleteConfirm = false;
+    updateRequired = true;
+    openBookDetails(book.path, dataPath(book.path), libraryPath);
   } else if (action == 1) {
-    markCompleted(book);
+    markFavorite(book);
   } else if (action == 2) {
+    markCompleted(book);
+  } else if (action == 3) {
     erase(book);
   } else {
     reset(book);
@@ -1646,6 +1683,10 @@ bool Library::menuAction(const navigation::Menu::Action action) {
     controlTab = action == navigation::Menu::Action::View
                      ? ControlTab::View
                      : (action == navigation::Menu::Action::Sort ? ControlTab::Sort : ControlTab::Filter);
+    if (controlTab == ControlTab::Sort) {
+      const int maxScroll = std::max(0, sortCount() - kSortVisibleRows);
+      sortScrollOffset_ = std::min(maxScroll, std::max(0, sortIndex() - kSortVisibleRows + 1));
+    }
     sortOpen = false;
     filterOpen = false;
     if (controlTab == ControlTab::Filter) openFilterCategory(FilterCategory::Categories);
@@ -1676,7 +1717,10 @@ void Library::controlModal() const {
   const int tabDividerY = modal.tabY + modal.tabHeight;
   renderer.rectangle.fill(modal.x, tabDividerY, modal.width, 1,
                           static_cast<int>(GfxRenderer::FillTone::Gray), false);
-  const uint8_t* sortIcon = sort == Sort::TitleZA || sort == Sort::FolderZA || sort == Sort::AuthorZA ? SortDesc : SortAsc;
+  const uint8_t* sortIcon = sort == Sort::TitleZA || sort == Sort::FolderZA || sort == Sort::AuthorZA ||
+                                     sort == Sort::RatingHighLow
+                                 ? SortDesc
+                                 : SortAsc;
   renderControlTab(renderer, modal, 0, "View", viewIcon(), controlTab == ControlTab::View);
   renderControlTab(renderer, modal, 1, "Sort", sortIcon, controlTab == ControlTab::Sort);
   renderControlTab(renderer, modal, 2, "Filter", Filter, controlTab == ControlTab::Filter);
@@ -1733,6 +1777,16 @@ bool Library::controlModalInput() {
         } else if (swipeDown) {
           closeControlModal();
         }
+      } else if (controlTab == ControlTab::Sort && insideModal) {
+        const int maxScroll = std::max(0, sortCount() - kSortVisibleRows);
+        const int scrollStep = std::max(1, kSortVisibleRows - 1);
+        if (swipeUp) {
+          sortScrollOffset_ = std::min(maxScroll, sortScrollOffset_ + scrollStep);
+        } else if (sortScrollOffset_ > 0) {
+          sortScrollOffset_ = std::max(0, sortScrollOffset_ - scrollStep);
+        } else {
+          closeControlModal();
+        }
       } else if (swipeDown) {
         closeControlModal();
       }
@@ -1752,6 +1806,10 @@ bool Library::controlModalInput() {
       if (tapY >= modal.tabY && tapY < modal.tabY + modal.tabHeight) {
         const int tab = std::min(2, std::max(0, (tapX - modal.x) * 3 / modal.width));
         controlTab = tab == 0 ? ControlTab::View : (tab == 1 ? ControlTab::Sort : ControlTab::Filter);
+        if (controlTab == ControlTab::Sort) {
+          const int maxScroll = std::max(0, sortCount() - kSortVisibleRows);
+          sortScrollOffset_ = std::min(maxScroll, std::max(0, sortIndex() - kSortVisibleRows + 1));
+        }
         if (controlTab == ControlTab::Filter) openFilterCategory(FilterCategory::Categories);
         updateRequired = true;
         return true;
@@ -1778,7 +1836,7 @@ bool Library::controlModalInput() {
   return false;
 }
 
-int Library::sortCount() const { return 6; }
+int Library::sortCount() const { return 8; }
 
 int Library::sortIndex() const { return static_cast<int>(sort); }
 
@@ -1831,10 +1889,12 @@ void Library::sortDropdown() const {
   const int y = modal.contentY;
   const int width = modal.width;
   constexpr int rowHeight = kControlListItemHeight;
-  const char* names[] = {"Title", "Title", "Folder", "Folder", "Author", "Author"};
-  const char* directions[] = {"A-Z", "Z-A", "A-Z", "Z-A", "A-Z", "Z-A"};
-  for (int index = 0; index < sortCount(); ++index) {
-    const int rowY = y + index * rowHeight;
+  const char* names[] = {"Title", "Title", "Folder", "Folder", "Author", "Author", "Rating", "Rating"};
+  const char* directions[] = {"A-Z", "Z-A", "A-Z", "Z-A", "A-Z", "Z-A", "1-10", "10-1"};
+  for (int row = 0; row < kSortVisibleRows; ++row) {
+    const int index = sortScrollOffset_ + row;
+    if (index >= sortCount()) break;
+    const int rowY = y + row * rowHeight;
     const bool selected = index == sortIndex();
     const int textY = rowY + (rowHeight - renderer.text.getLineHeight(font)) / 2;
     renderer.text.render(font, x + leftPadding, textY, names[index], true, EpdFontFamily::REGULAR);
@@ -1848,7 +1908,7 @@ void Library::sortDropdown() const {
     renderer.circle.render(radioX, radioY, radioRadius, true);
     renderer.circle.render(radioX, radioY, radioRadius - 3, false);
     if (selected) renderer.circle.render(radioX, radioY, radioRadius - 6, true);
-    if (index + 1 < sortCount()) {
+    if (row + 1 < kSortVisibleRows && index + 1 < sortCount()) {
       renderer.line.render(x + 10, rowY + rowHeight, x + width - 10, rowY + rowHeight, true,
                            LineRender::Style::Dotted);
     }
@@ -1861,8 +1921,8 @@ void Library::handleSortTap(const int tapX, const int tapY) {
   const int y = modal.contentY;
   const int width = modal.width;
   constexpr int rowHeight = kControlListItemHeight;
-  if (tapX >= x && tapX < x + width && tapY >= y && tapY < y + sortCount() * rowHeight) {
-    applySort((tapY - y) / rowHeight);
+  if (tapX >= x && tapX < x + width && tapY >= y && tapY < y + kSortVisibleRows * rowHeight) {
+    applySort(sortScrollOffset_ + (tapY - y) / rowHeight);
     return;
   }
   closeControlModal();

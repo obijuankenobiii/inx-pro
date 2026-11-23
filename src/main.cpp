@@ -29,6 +29,7 @@
 #include "activity/network/HotspotActivity.h"
 #include "activity/network/LocalNetworkActivity.h"
 #include "activity/page/Library.h"
+#include "activity/page/BookDetailsActivity.h"
 #include "activity/page/Home.h"
 #include "activity/page/HomeSubPage.h"
 #include "activity/page/Search.h"
@@ -104,6 +105,8 @@ void onSelectBook(const std::string& path);
 void onGoToStatistics();
 void onGoToHeatmapReport(HomeTheme::HeatmapView view);
 void openHomeSubPage(HomeSubPage::Section section);
+void openBookDetails(const std::string& bookPath, const std::string& cachePath,
+                     const std::string& libraryPath);
 void openDictionaryLookupKeyboard();
 void openDictionaryLookup(const std::string& word);
 void onGoToFileTransfer();
@@ -425,9 +428,14 @@ void openHomeSubPage(const HomeSubPage::Section section) {
   switchTo<HomeSubPage>(render, input, section, [] { onGoToHome(); });
 }
 
-void openHomeDescription(const std::string& bookPath, const std::string& cachePath) {
-  switchTo<HomeSubPage>(render, input, HomeSubPage::Section::Description, [] { onGoToHome(); }, "", bookPath,
-                        cachePath);
+void openHomeBookDetails(const std::string& bookPath, const std::string& cachePath) {
+  switchTo<BookDetailsActivity>(render, input, bookPath, cachePath, [] { onGoToHome(); });
+}
+
+void openBookDetails(const std::string& bookPath, const std::string& cachePath,
+                     const std::string& libraryPath) {
+  switchTo<BookDetailsActivity>(render, input, bookPath, cachePath,
+                                [libraryPath] { onGoToLibrary(libraryPath); });
 }
 
 void openDictionaryLookup(const std::string& word) {
