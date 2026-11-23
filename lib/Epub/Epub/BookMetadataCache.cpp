@@ -19,6 +19,7 @@
 namespace {
 constexpr uint8_t BOOK_CACHE_VERSION = 10;
 constexpr char bookBinFile[] = "/book.bin";
+constexpr char tmpBookBinFile[] = "/book.bin.tmp";
 constexpr char tmpSpineBinFile[] = "/spine.bin.tmp";
 constexpr char tmpTocBinFile[] = "/toc.bin.tmp";
 constexpr char tmpCssBinFile[] = "/css.bin.tmp";
@@ -202,18 +203,23 @@ bool BookMetadataCache::endWrite() {
 }
 
 bool BookMetadataCache::buildBookBin(const std::string& epubPath, const BookMetadata& metadata) {
-  if (!SdMan.openFileForWrite("BMC", cachePath + bookBinFile, bookFile)) {
+  const std::string bookPath = cachePath + bookBinFile;
+  const std::string tempBookPath = cachePath + tmpBookBinFile;
+  SdMan.remove(tempBookPath.c_str());
+  if (!SdMan.openFileForWrite("BMC", tempBookPath, bookFile)) {
     return false;
   }
 
   if (!SdMan.openFileForRead("BMC", cachePath + tmpSpineBinFile, spineFile)) {
     bookFile.close();
+    SdMan.remove(tempBookPath.c_str());
     return false;
   }
 
   if (!SdMan.openFileForRead("BMC", cachePath + tmpTocBinFile, tocFile)) {
     bookFile.close();
     spineFile.close();
+    SdMan.remove(tempBookPath.c_str());
     return false;
   }
 
@@ -329,6 +335,7 @@ bool BookMetadataCache::buildBookBin(const std::string& epubPath, const BookMeta
     spineFile.close();
     tocFile.close();
     if (hasCss) cssFile.close();
+    SdMan.remove(tempBookPath.c_str());
     return false;
   }
 
@@ -399,6 +406,13 @@ bool BookMetadataCache::buildBookBin(const std::string& epubPath, const BookMeta
   spineFile.close();
   tocFile.close();
 
+  if (SdMan.exists(bookPath.c_str())) SdMan.remove(bookPath.c_str());
+  if (!SdMan.rename(tempBookPath.c_str(), bookPath.c_str())) {
+    SdMan.remove(tempBookPath.c_str());
+    INX_SERIAL.printf("[%lu] [BMC] Failed to commit book.bin cache: %s\n", millis(), bookPath.c_str());
+    return false;
+  }
+
   INX_SERIAL.printf("[%lu] [BMC] Successfully built book.bin\n", millis());
   return true;
 }
@@ -412,6 +426,9 @@ bool BookMetadataCache::cleanupTmpFiles() const {
   }
   if (SdMan.exists((cachePath + tmpCssBinFile).c_str())) {
     SdMan.remove((cachePath + tmpCssBinFile).c_str());
+  }
+  if (SdMan.exists((cachePath + tmpBookBinFile).c_str())) {
+    SdMan.remove((cachePath + tmpBookBinFile).c_str());
   }
   return true;
 }

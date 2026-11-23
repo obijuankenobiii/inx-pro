@@ -46,6 +46,7 @@ struct Generator {
   }
 
   bool precacheExisting(const std::string& jpg, const std::string& png, const std::string& bmp) {
+    SdIoMutex::Lock ioLock;
     if (!lockRenderer(pdMS_TO_TICKS(500))) return false;
     bool ready = false;
     if (SdMan.exists(jpg.c_str())) {
@@ -96,6 +97,7 @@ struct Generator {
     }
 
     if (StringUtils::checkFileExtension(path, ".xtc")) {
+      SdIoMutex::Lock ioLock;
       Xtc xtc(path, "/.metadata/xtc");
       const std::string bmp = xtc.getThumbBmpPath();
       if (SdMan.exists(bmp.c_str())) {
@@ -126,6 +128,7 @@ struct Generator {
     }
 
     if (StringUtils::checkFileExtension(path, ".pdf")) {
+      SdIoMutex::Lock ioLock;
       Pdf pdf(path, "/.metadata/pdf");
       const std::string bmp = pdf.getThumbBmpPath();
       if (SdMan.exists(bmp.c_str())) {
@@ -207,7 +210,6 @@ struct Generator {
 bool ThumbnailGeneration::generate(GfxRenderer& renderer, SemaphoreHandle_t rendererMutex, Result& result,
                                    const std::function<void(int, const char*)>& progress,
                                    const std::function<bool()>& shouldCancel) {
-  SdIoMutex::Lock ioLock;
   result = {};
   Generator generator{renderer, rendererMutex, result, progress, shouldCancel};
   return generator.scan("/");
@@ -216,7 +218,6 @@ bool ThumbnailGeneration::generate(GfxRenderer& renderer, SemaphoreHandle_t rend
 bool ThumbnailGeneration::generateOne(GfxRenderer& renderer, SemaphoreHandle_t rendererMutex, Result& result,
                                       const char* path, const std::function<bool()>& shouldCancel) {
   if (!path || path[0] == '\0' || (shouldCancel && shouldCancel())) return false;
-  SdIoMutex::Lock ioLock;
   const std::function<void(int, const char*)> noProgress;
   Generator generator{renderer, rendererMutex, result, noProgress, shouldCancel};
   return generator.process(path);

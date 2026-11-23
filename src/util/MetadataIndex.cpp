@@ -691,7 +691,14 @@ bool generateSelected(const MetadataIndex::Options& options,
         }
         return true;
       },
-      onBook, static_cast<bool>(onBook),
+      [&onBook](const char* path) {
+        if (!onBook) return true;
+        SdIoMutex::unlock();
+        const bool result = onBook(path);
+        SdIoMutex::lock();
+        return result;
+      },
+      static_cast<bool>(onBook),
       [&progress](const int current, const int total, const char* path) {
         if (progress) progress(current, total, "Failed", path);
       });
