@@ -31,9 +31,15 @@ class ImageDisplayCache {
  public:
   static bool renderIfAvailable(GfxRenderer& renderer, const std::string& sourcePath, int x, int y, int width,
                                 int height, const ImageDisplayCacheOptions& options);
+  static bool renderNamedIfAvailable(GfxRenderer& renderer, const std::string& cachePath, int x, int y, int width,
+                                     int height);
   /** Load a durable display cache entry into the PSRAM front cache without drawing it. */
   static bool preloadIfAvailable(GfxRenderer& renderer, const std::string& sourcePath, int x, int y, int width,
                                  int height, const ImageDisplayCacheOptions& options);
+  static bool renderResizedFromCache(GfxRenderer& renderer, const std::string& sourcePath,
+                                     const std::string& targetPath, int x, int y, int width, int height,
+                                     const ImageDisplayCacheOptions& sourceOptions,
+                                     const ImageDisplayCacheOptions& targetOptions, bool persistTargetCache = true);
   static bool displayTwoBitIfAvailable(GfxRenderer& renderer, const std::string& sourcePath, int x, int y, int width,
                                        int height, const ImageDisplayCacheOptions& options, bool quality = false,
                                        bool fastQuality = false);
@@ -65,6 +71,7 @@ class ImageDisplayCache {
 
   static bool store(GfxRenderer& renderer, const std::string& sourcePath, int x, int y, int width, int height,
                     const ImageDisplayCacheOptions& options);
+  static bool storeNamed(GfxRenderer& renderer, const std::string& cachePath, int x, int y, int width, int height);
   static bool storeAsync(GfxRenderer& renderer, const std::string& sourcePath, int x, int y, int width, int height,
                          const ImageDisplayCacheOptions& options);
   /** Invalidates in-memory metadata and pending writes after the durable cache is cleared. */

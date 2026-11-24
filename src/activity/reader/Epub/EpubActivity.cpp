@@ -12,6 +12,7 @@
 #include <Epub/ImagePrefetch.h>
 #include <GfxRenderer.h>
 #include <HalDisplay.h>
+#include <ImageDisplayCache.h>
 #include <ImageRender.h>
 #include <SDCardManager.h>
 #include <esp_heap_caps.h>
@@ -740,6 +741,42 @@ bool EpubActivity::displayCoverOrTitle() {
   const std::string coverJpegPath = epub->getCoverJpegPath(false);
   const std::string coverPngPath = epub->getCoverPngPath(false);
   std::string coverPath = epub->getCoverBmpPath(false);
+  const int pageWidth = renderer.getScreenWidth();
+  const int pageHeight = renderer.getScreenHeight();
+  const std::string coverCachePath = epub->getCachePath() + "/cover.idrc";
+  const auto finishSlowCover = [&](const int coverX, const int coverY, const int coverWidth, const int coverHeight) {
+    INX_SERIAL.printf("[%lu] [OPEN-COVER] ratio-cache path=%s rect=%d,%d %dx%d cache=%s\n", millis(),
+                      coverCachePath.c_str(),
+                      coverX, coverY, coverWidth, coverHeight, coverCachePath.c_str());
+    renderer.displayBuffer();
+  };
+  const auto renderSlowCover = [&](const std::string& path) {
+    if (!SdMan.exists(path.c_str())) return false;
+    int sourceWidth = 0;
+    int sourceHeight = 0;
+    const bool haveDimensions = ImageRender::getDimensions(path, &sourceWidth, &sourceHeight) && sourceWidth > 0 &&
+                                sourceHeight > 0;
+    const float scale = haveDimensions
+                            ? std::min(static_cast<float>(pageWidth) / static_cast<float>(sourceWidth),
+                                       static_cast<float>(pageHeight) / static_cast<float>(sourceHeight))
+                            : 1.0f;
+    const int coverWidth = haveDimensions ? std::max(1, static_cast<int>(std::lround(sourceWidth * scale))) : pageWidth;
+    const int coverHeight = haveDimensions ? std::max(1, static_cast<int>(std::lround(sourceHeight * scale))) : pageHeight;
+    const int coverX = (pageWidth - coverWidth) / 2;
+    const int coverY = (pageHeight - coverHeight) / 2;
+    renderer.clearScreen();
+    if (ImageDisplayCache::renderNamedIfAvailable(renderer, coverCachePath, coverX, coverY, coverWidth, coverHeight)) {
+      finishSlowCover(coverX, coverY, coverWidth, coverHeight);
+      return true;
+    }
+    ImageRender::Options options;
+    options.cropToFill = false;
+    options.useDisplayCache = false;
+    if (!ImageRender::create(renderer, path).render(coverX, coverY, coverWidth, coverHeight, options)) return false;
+    ImageDisplayCache::storeNamed(renderer, coverCachePath, coverX, coverY, coverWidth, coverHeight);
+    finishSlowCover(coverX, coverY, coverWidth, coverHeight);
+    return true;
+  };
   const bool sourceIsPng = StringUtils::checkFileExtension(epub->getCoverItemHref(), ".png");
   const bool staleBitmapCover = SdMan.exists(coverPath.c_str()) && !epub->hasDetailedCoverBmp(false);
   if ((sourceIsPng && !SdMan.exists(coverPngPath.c_str())) ||
@@ -754,61 +791,21 @@ bool EpubActivity::displayCoverOrTitle() {
   }
 
   if (!sourceIsPng && SdMan.exists(coverJpegPath.c_str())) {
-    const int pageWidth = renderer.getScreenWidth();
-    const int pageHeight = renderer.getScreenHeight();
-    renderer.clearScreen();
-    ImageRender::Options options;
-    options.cropToFill = true;
-    options.asyncDisplayCache = true;
-    options.cacheNamespace = ImageDisplayCacheNamespace::Book;
-    if (ImageRender::create(renderer, coverJpegPath).render(0, 0, pageWidth, pageHeight, options)) {
-      renderer.displayBuffer();
-      return true;
-    }
+    if (renderSlowCover(coverJpegPath)) return true;
   }
 
   if (SdMan.exists(coverPngPath.c_str())) {
-    const int pageWidth = renderer.getScreenWidth();
-    const int pageHeight = renderer.getScreenHeight();
-    renderer.clearScreen();
-    ImageRender::Options options;
-    options.cropToFill = true;
-    options.asyncDisplayCache = true;
-    options.cacheNamespace = ImageDisplayCacheNamespace::Book;
-    if (ImageRender::create(renderer, coverPngPath).render(0, 0, pageWidth, pageHeight, options)) {
-      renderer.displayBuffer();
-      return true;
-    }
+    if (renderSlowCover(coverPngPath)) return true;
   }
 
 
 
   if (SdMan.exists(coverJpegPath.c_str())) {
-    const int pageWidth = renderer.getScreenWidth();
-    const int pageHeight = renderer.getScreenHeight();
-    renderer.clearScreen();
-    ImageRender::Options options;
-    options.cropToFill = true;
-    options.asyncDisplayCache = true;
-    options.cacheNamespace = ImageDisplayCacheNamespace::Book;
-    if (ImageRender::create(renderer, coverJpegPath).render(0, 0, pageWidth, pageHeight, options)) {
-      renderer.displayBuffer();
-      return true;
-    }
+    if (renderSlowCover(coverJpegPath)) return true;
   }
 
   if (SdMan.exists(coverPath.c_str())) {
-    const int pageWidth = renderer.getScreenWidth();
-    const int pageHeight = renderer.getScreenHeight();
-    ImageRender::Options options;
-    options.cropToFill = true;
-    options.asyncDisplayCache = true;
-    options.cacheNamespace = ImageDisplayCacheNamespace::Book;
-    renderer.clearScreen();
-    if (ImageRender::create(renderer, coverPath).render(0, 0, pageWidth, pageHeight, options)) {
-      renderer.displayBuffer();
-      return true;
-    }
+    if (renderSlowCover(coverPath)) return true;
   } else {
     displayBookTitle();
   }

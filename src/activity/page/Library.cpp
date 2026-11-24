@@ -962,7 +962,12 @@ void Library::loop() {
     return;
   }
   if (updateRequired) {
-    renderPage();
+    const bool hiddenThumbWarmup = (view == View::Thumb || view == View::Thumb3x2) && thumbDeferImageDecode_;
+    if (hiddenThumbWarmup) {
+      renderPageToBackBuffer();
+    } else {
+      renderPage();
+    }
     return;
   }
   if (view == View::Thumb || view == View::Thumb3x2) {
