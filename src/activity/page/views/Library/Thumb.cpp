@@ -262,7 +262,7 @@ bool cover(GfxRenderer& renderer, const std::string& path, const int x, const in
     sourcePaths.insert(sourcePaths.end(), siblings.begin(), siblings.end());
     for (const std::string& sourcePath : sourcePaths) {
       if (ImageDisplayCache::renderResizedFromCache(renderer, sourcePath, path, x, y, width, height,
-                                                     sourceOptions, targetOptions, true)) {
+                                                     sourceOptions, targetOptions, false)) {
         rendered = true;
         resizedFromCache = true;
         break;

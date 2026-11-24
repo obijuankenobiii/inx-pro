@@ -157,24 +157,17 @@ void renderCover(GfxRenderer& renderer, const RecentBook& book, const int x, con
 
       bool rendered = false;
       bool resizedFromCache = false;
-      const unsigned long cacheStartUs = micros();
       if (ImageDisplayCache::renderResizedFromCache(renderer, candidate, candidate, image.x, image.y, image.width,
                                                      image.height, sourceCacheOptions, targetCacheOptions, false)) {
         rendered = true;
         resizedFromCache = true;
       }
-      const unsigned long cacheElapsedUs = micros() - cacheStartUs;
-      INX_SERIAL.printf("[%lu] [HOME][CAROUSEL-TIMING] cache-resize path=%s elapsed=%luus hit=%d\n", millis(),
-                        candidate.c_str(), cacheElapsedUs, rendered ? 1 : 0);
       if (!rendered) {
         ImageRender::Options fallbackOptions = options;
         fallbackOptions.useDisplayCache = false;
         fallbackOptions.asyncDisplayCache = false;
-        const unsigned long decodeStartUs = micros();
         rendered = ImageRender::create(renderer, candidate).render(image.x, image.y, image.width, image.height,
                                                                     fallbackOptions);
-        INX_SERIAL.printf("[%lu] [HOME][CAROUSEL-TIMING] fallback-decode path=%s elapsed=%luus rendered=%d\n", millis(),
-                          candidate.c_str(), micros() - decodeStartUs, rendered ? 1 : 0);
       }
       INX_SERIAL.printf("[%lu] [HOME][CAROUSEL] path=%s rect=%d,%d %dx%d defer=%d rendered=%d\n", millis(),
                         candidate.c_str(), image.x, image.y, image.width, image.height,
@@ -655,10 +648,6 @@ void Carousel::preview(const int x, const int y, const int width, const int heig
   renderBackground(x, y, width, height, background);
   const ContentArea content = contentArea(y, height, showLabel);
   if (showLabel) renderLabel(x, y, "Continue Reading", labelColor);
-  if (RECENT_BOOKS.getBooks().empty()) {
-    renderer_.text.centered(systemFontIdForPointSize(12), content.y + content.height / 2, "No recent");
-    return;
-  }
 
   if (center50Preview) {
     const LargeCenterCarouselBounds layout = largeCenterBounds(x, content.y, width, content.height, fullHeight);

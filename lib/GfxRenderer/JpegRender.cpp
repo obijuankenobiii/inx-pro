@@ -6,6 +6,7 @@
 #include "JpegRender.h"
 
 #include <SDCardManager.h>
+#include <JPEGDEC.h>
 #include <picojpeg.h>
 #include <toojpeg.h>
 #include <BoardConfig.h>
@@ -670,6 +671,311 @@ int stbiEof(void* user) {
   return !context || context->file.position() >= context->file.size();
 }
 
+bool renderGrayscaleBuffer(uint8_t* decoded, const int sourceWidth, const int sourceHeight, GfxRenderer& renderer,
+                           const int x, const int y, const int targetWidth, const int targetHeight, const bool cropToFill,
+                           const ImageRenderMode mode, const bool quality, JpegLevelCapture* capture,
+                           const float cropAnchorX, const float cropAnchorY, const bool fastQuality) {
+  int outputWidth = sourceWidth;
+  int outputHeight = sourceHeight;
+  int cropX = 0;
+  int cropY = 0;
+  int cropWidth = sourceWidth;
+  int cropHeight = sourceHeight;
+  const float sx = static_cast<float>(targetWidth) / static_cast<float>(sourceWidth);
+  const float sy = static_cast<float>(targetHeight) / static_cast<float>(sourceHeight);
+  if (cropToFill) {
+    const float scale = std::max(sx, sy);
+    cropWidth = std::max(1, static_cast<int>(targetWidth / scale));
+    cropHeight = std::max(1, static_cast<int>(targetHeight / scale));
+    const float anchorX = std::max(0.0f, std::min(1.0f, cropAnchorX));
+    const float anchorY = std::max(0.0f, std::min(1.0f, cropAnchorY));
+    cropX = std::max(0, static_cast<int>((sourceWidth - cropWidth) * anchorX));
+    cropY = std::max(0, static_cast<int>((sourceHeight - cropHeight) * anchorY));
+    outputWidth = targetWidth;
+    outputHeight = targetHeight;
+  } else {
+    const float scale = std::min(sx, sy);
+    outputWidth = std::max(1, static_cast<int>(std::lround(sourceWidth * scale)));
+    outputHeight = std::max(1, static_cast<int>(std::lround(sourceHeight * scale)));
+  }
+
+  ProgressiveRenderOutput output{renderer,
+                                 x + (targetWidth - outputWidth) / 2,
+                                 y + (targetHeight - outputHeight) / 2,
+                                 mode,
+                                 quality,
+                                 fastQuality,
+                                 nullptr,
+                                 nullptr,
+                                 capture,
+                                 nullptr};
+  std::unique_ptr<FourToneImageDitherer> twoBitDitherer;
+  std::unique_ptr<Atkinson1BitDitherer> oneBitDitherer;
+  if (mode == ImageRenderMode::TwoBit) {
+    twoBitDitherer.reset(new (std::nothrow) FourToneImageDitherer(outputWidth));
+    if (!twoBitDitherer || !twoBitDitherer->ok()) return false;
+    output.twoBitDitherer = twoBitDitherer.get();
+  } else {
+    oneBitDitherer.reset(new (std::nothrow) Atkinson1BitDitherer(outputWidth));
+    if (!oneBitDitherer) return false;
+    output.oneBitDitherer = oneBitDitherer.get();
+  }
+  std::unique_ptr<uint8_t[]> packedOneBitRow;
+  if (mode == ImageRenderMode::OneBit) {
+    packedOneBitRow.reset(new (std::nothrow) uint8_t[(static_cast<size_t>(outputWidth) + 7u) / 8u]);
+    if (!packedOneBitRow) return false;
+    output.packedOneBitRow = packedOneBitRow.get();
+  }
+
+  if (capture && mode == ImageRenderMode::TwoBit) {
+    const size_t pixels = static_cast<size_t>(outputWidth) * outputHeight;
+    const size_t needed = (pixels + 3) / 4;
+    if (needed > 0 && needed <= capture->capacity) {
+      capture->width = outputWidth;
+      capture->height = outputHeight;
+      capture->drawOffsetX = output.drawX;
+      capture->drawOffsetY = output.drawY;
+      capture->captured = true;
+      memset(capture->values, 0, needed);
+    } else {
+      output.capture = nullptr;
+    }
+  }
+
+  const bool horizontalUpscale = outputWidth > cropWidth;
+  const bool verticalUpscale = outputHeight > cropHeight;
+  const uint32_t scaleX_fp = static_cast<uint32_t>((static_cast<uint64_t>(cropWidth) << 16) /
+                                                   static_cast<uint32_t>(outputWidth));
+  const uint32_t scaleY_fp = static_cast<uint32_t>((static_cast<uint64_t>(cropHeight) << 16) /
+                                                   static_cast<uint32_t>(outputHeight));
+  std::unique_ptr<uint8_t[]> tempRow(new (std::nothrow) uint8_t[outputWidth]);
+  std::unique_ptr<uint8_t[]> cachedRow0(new (std::nothrow) uint8_t[outputWidth]);
+  std::unique_ptr<uint8_t[]> cachedRow1(new (std::nothrow) uint8_t[outputWidth]);
+  std::unique_ptr<uint8_t[]> outputRow(new (std::nothrow) uint8_t[outputWidth]);
+  std::unique_ptr<uint32_t[]> rowAccum(new (std::nothrow) uint32_t[outputWidth]);
+  if (!tempRow || !cachedRow0 || !cachedRow1 || !outputRow || !rowAccum) return false;
+
+  auto scaleRowX = [&](const uint8_t* sourceRow, uint8_t* row) {
+    for (int outputX = 0; outputX < outputWidth; ++outputX) {
+      if (horizontalUpscale) {
+        const uint32_t sourcePosition = static_cast<uint32_t>(static_cast<uint64_t>(outputX) * scaleX_fp);
+        const int lower = std::min(static_cast<int>(sourcePosition >> 16), cropWidth - 1);
+        const int upper = std::min(lower + 1, cropWidth - 1);
+        const uint32_t fraction = sourcePosition & 0xFFFFu;
+        row[outputX] = static_cast<uint8_t>((sourceRow[lower] * (0x10000u - fraction) +
+                                             sourceRow[upper] * fraction) >> 16);
+      } else {
+        int start = static_cast<int>((static_cast<uint64_t>(outputX) * scaleX_fp) >> 16);
+        int end = static_cast<int>((static_cast<uint64_t>(outputX + 1) * scaleX_fp) >> 16);
+        start = std::max(0, std::min(cropWidth - 1, start));
+        end = std::max(start + 1, std::min(cropWidth, end));
+        uint32_t sum = 0;
+        for (int sourceX = start; sourceX < end; ++sourceX) sum += sourceRow[sourceX];
+        row[outputX] = static_cast<uint8_t>(sum / static_cast<uint32_t>(end - start));
+      }
+    }
+  };
+
+  int cachedIndex0 = -1;
+  int cachedIndex1 = -1;
+  auto horizontallyScaledRow = [&](const int sourceY) -> uint8_t* {
+    if (sourceY == cachedIndex0) return cachedRow0.get();
+    if (sourceY == cachedIndex1) return cachedRow1.get();
+    const uint8_t* sourceRow = decoded + static_cast<size_t>(cropY + sourceY) * sourceWidth + cropX;
+    uint8_t* slot = cachedIndex1 <= cachedIndex0 ? cachedRow1.get() : cachedRow0.get();
+    scaleRowX(sourceRow, slot);
+    if (slot == cachedRow1.get()) cachedIndex1 = sourceY;
+    else cachedIndex0 = sourceY;
+    return slot;
+  };
+
+  bool ok = true;
+  for (int outputY = 0; outputY < outputHeight && ok; ++outputY) {
+    if ((outputY & 15) == 0) {
+      esp_task_wdt_reset();
+      yield();
+    }
+    if (verticalUpscale) {
+      const uint32_t sourcePosition = static_cast<uint32_t>(static_cast<uint64_t>(outputY) * scaleY_fp);
+      const int lower = std::min(static_cast<int>(sourcePosition >> 16), cropHeight - 1);
+      const int upper = std::min(lower + 1, cropHeight - 1);
+      const uint32_t fraction = sourcePosition & 0xFFFFu;
+      const uint8_t* row0 = horizontallyScaledRow(lower);
+      const uint8_t* row1 = horizontallyScaledRow(upper);
+      if (fraction == 0) {
+        memcpy(outputRow.get(), row0, static_cast<size_t>(outputWidth));
+      } else {
+        for (int outputX = 0; outputX < outputWidth; ++outputX) {
+          outputRow[outputX] = static_cast<uint8_t>((row0[outputX] * (0x10000u - fraction) +
+                                                    row1[outputX] * fraction) >> 16);
+        }
+      }
+    } else {
+      int start = static_cast<int>((static_cast<uint64_t>(outputY) * scaleY_fp) >> 16);
+      int end = static_cast<int>((static_cast<uint64_t>(outputY + 1) * scaleY_fp) >> 16);
+      start = std::max(0, std::min(cropHeight - 1, start));
+      end = std::max(start + 1, std::min(cropHeight, end));
+      std::fill(rowAccum.get(), rowAccum.get() + outputWidth, 0u);
+      for (int sourceY = start; sourceY < end; ++sourceY) {
+        const uint8_t* sourceRow = decoded + static_cast<size_t>(cropY + sourceY) * sourceWidth + cropX;
+        scaleRowX(sourceRow, tempRow.get());
+        for (int outputX = 0; outputX < outputWidth; ++outputX) rowAccum[outputX] += tempRow[outputX];
+      }
+      const uint32_t rowCount = static_cast<uint32_t>(end - start);
+      for (int outputX = 0; outputX < outputWidth; ++outputX) {
+        outputRow[outputX] = static_cast<uint8_t>(rowAccum[outputX] / rowCount);
+      }
+    }
+    ok = ProgressiveRenderOutput::emit(&output, static_cast<uint16_t>(outputY), outputRow.get(),
+                                       static_cast<uint16_t>(outputWidth));
+  }
+  return ok;
+}
+
+struct JpegDecRenderContext {
+  uint8_t* pixels = nullptr;
+  int width = 0;
+  int height = 0;
+};
+
+int32_t jpegDecRead(JPEGFILE* jpegFile, uint8_t* buffer, const int32_t length) {
+  if (!jpegFile || !jpegFile->fHandle || !buffer || length <= 0) return 0;
+  auto* file = static_cast<FsFile*>(jpegFile->fHandle);
+  const int32_t bytesRead = static_cast<int32_t>(file->read(buffer, static_cast<size_t>(length)));
+  jpegFile->iPos += bytesRead;
+  return bytesRead;
+}
+
+int32_t jpegDecSeek(JPEGFILE* jpegFile, int32_t position) {
+  if (!jpegFile || !jpegFile->fHandle) return -1;
+  auto* file = static_cast<FsFile*>(jpegFile->fHandle);
+  position = std::max<int32_t>(0, std::min<int32_t>(jpegFile->iSize - 1, position));
+  if (!file->seek(static_cast<uint32_t>(position))) return -1;
+  jpegFile->iPos = position;
+  return position;
+}
+
+int jpegDecDraw(JPEGDRAW* draw) {
+  if (!draw || !draw->pUser || !draw->pPixels) return 0;
+  auto* context = static_cast<JpegDecRenderContext*>(draw->pUser);
+  const int width = std::max(0, std::min(draw->iWidthUsed, context->width - draw->x));
+  const int height = std::max(0, std::min(draw->iHeight, context->height - draw->y));
+  if (!context->pixels || draw->x < 0 || draw->y < 0 || width <= 0 || height <= 0) return 0;
+  const uint8_t* source = reinterpret_cast<const uint8_t*>(draw->pPixels);
+  for (int row = 0; row < height; ++row) {
+    memcpy(context->pixels + static_cast<size_t>(draw->y + row) * context->width + draw->x,
+           source + static_cast<size_t>(row) * draw->iWidth, static_cast<size_t>(width));
+  }
+  return 1;
+}
+
+bool renderWithJpegDec(FsFile& file, GfxRenderer& renderer, const int x, const int y, const int targetWidth,
+                       const int targetHeight, const bool cropToFill, const ImageRenderMode mode, const bool quality,
+                       JpegLevelCapture* capture, const float cropAnchorX, const float cropAnchorY,
+                       const bool fastQuality) {
+  constexpr size_t kMaxJpegDecPixels = 4000000u;
+  constexpr size_t kMaxJpegDecRamSourceBytes = 4000000u;
+  const uint32_t openStart = millis();
+  const size_t fileSize = static_cast<size_t>(file.size());
+  std::unique_ptr<uint8_t, decltype(&heap_caps_free)> compressedSource(
+      fileSize > 0 && fileSize <= kMaxJpegDecRamSourceBytes
+          ? static_cast<uint8_t*>(heap_caps_malloc(fileSize, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT))
+          : nullptr,
+      heap_caps_free);
+  if (compressedSource) {
+    file.seek(0);
+    size_t loaded = 0;
+    while (loaded < fileSize) {
+      const size_t bytesRead = file.read(compressedSource.get() + loaded, fileSize - loaded);
+      if (bytesRead == 0) break;
+      loaded += bytesRead;
+    }
+    if (loaded != fileSize) compressedSource.reset();
+  }
+  file.seek(0);
+  void* decoderStorage = heap_caps_malloc(sizeof(JPEGDEC), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (!decoderStorage) return false;
+  auto* jpeg = new (decoderStorage) JPEGDEC();
+  bool decoderOpened = false;
+  const auto cleanupDecoder = [&] {
+    if (decoderOpened) jpeg->close();
+    jpeg->~JPEGDEC();
+    heap_caps_free(decoderStorage);
+  };
+  const bool opened = compressedSource
+                          ? jpeg->openRAM(compressedSource.get(), static_cast<int>(fileSize), jpegDecDraw) != 0
+                          : jpeg->open(&file, static_cast<int>(fileSize), nullptr, jpegDecRead, jpegDecSeek, jpegDecDraw) != 0;
+  if (!opened) {
+    cleanupDecoder();
+    return false;
+  }
+  decoderOpened = true;
+  const uint32_t openMs = millis() - openStart;
+  const int sourceWidth = jpeg->getWidth();
+  const int sourceHeight = jpeg->getHeight();
+  int decodeScale = 1;
+  int decodeOptions = 0;
+  if (sourceWidth >= targetWidth * 8 && sourceHeight >= targetHeight * 8) {
+    decodeScale = 8;
+    decodeOptions = JPEG_SCALE_EIGHTH;
+  } else if (sourceWidth >= targetWidth * 4 && sourceHeight >= targetHeight * 4) {
+    decodeScale = 4;
+    decodeOptions = JPEG_SCALE_QUARTER;
+  } else if (sourceWidth >= targetWidth * 2 && sourceHeight >= targetHeight * 2) {
+    decodeScale = 2;
+    decodeOptions = JPEG_SCALE_HALF;
+  }
+  const int decodedWidth = sourceWidth > 0 ? (sourceWidth + decodeScale - 1) / decodeScale : 0;
+  const int decodedHeight = sourceHeight > 0 ? (sourceHeight + decodeScale - 1) / decodeScale : 0;
+  const size_t pixelCount = decodedWidth > 0 && decodedHeight > 0
+                                ? static_cast<size_t>(decodedWidth) * static_cast<size_t>(decodedHeight)
+                                : 0;
+  if (sourceWidth <= 0 || sourceHeight <= 0 || pixelCount > kMaxJpegDecPixels) {
+    if (sourceWidth > 0 && sourceHeight > 0 && pixelCount > kMaxJpegDecPixels) {
+      INX_SERIAL.printf("[%lu] [JPEGDEC-SPEED] skipped source=%dx%d pixels=%lu limit=%lu\n", millis(), sourceWidth,
+                        sourceHeight, static_cast<unsigned long>(pixelCount),
+                        static_cast<unsigned long>(kMaxJpegDecPixels));
+    }
+    cleanupDecoder();
+    return false;
+  }
+  auto* pixels = static_cast<uint8_t*>(heap_caps_malloc(pixelCount, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (!pixels) {
+    cleanupDecoder();
+    return false;
+  }
+  JpegDecRenderContext context{pixels, decodedWidth, decodedHeight};
+  jpeg->setPixelType(EIGHT_BIT_GRAYSCALE);
+  jpeg->setUserPointer(&context);
+  const uint32_t decodeStart = millis();
+  const bool decoded = jpeg->decode(0, 0, decodeOptions) != 0;
+  const uint32_t decodeMs = millis() - decodeStart;
+  const int error = jpeg->getLastError();
+  cleanupDecoder();
+  if (!decoded) {
+    INX_SERIAL.printf("[%lu] [JPEGDEC-SPEED] decode-failed open=%lums decode=%lums error=%d source=%dx%d\n",
+                      millis(), static_cast<unsigned long>(openMs), static_cast<unsigned long>(decodeMs), error,
+                      sourceWidth, sourceHeight);
+    heap_caps_free(pixels);
+    return false;
+  }
+  const uint32_t renderStart = millis();
+  const bool rendered = renderGrayscaleBuffer(pixels, decodedWidth, decodedHeight, renderer, x, y, targetWidth,
+                                              targetHeight, cropToFill, mode, quality, capture, cropAnchorX,
+                                              cropAnchorY, fastQuality);
+  const uint32_t renderMs = millis() - renderStart;
+  INX_SERIAL.printf("[%lu] [JPEGDEC-SPEED] source=%s bytes=%lu open=%lums decode=%lums render=%lums total=%lums "
+                    "source=%dx%d decoded=%dx%d output=%dx%d scale=%d mode=%d quality=%d ok=%d\n",
+                    millis(), compressedSource ? "ram" : "file", static_cast<unsigned long>(fileSize),
+                    static_cast<unsigned long>(openMs),
+                    static_cast<unsigned long>(decodeMs), static_cast<unsigned long>(renderMs),
+                    static_cast<unsigned long>(millis() - openStart), sourceWidth, sourceHeight, decodedWidth,
+                    decodedHeight, targetWidth, targetHeight, decodeScale, static_cast<int>(mode), quality ? 1 : 0,
+                    rendered ? 1 : 0);
+  heap_caps_free(pixels);
+  return rendered;
+}
+
 bool renderProgressiveJpegFull(FsFile& file, GfxRenderer& renderer, int x, int y, int targetWidth, int targetHeight,
                                bool cropToFill, ImageRenderMode mode, bool quality, JpegLevelCapture* capture,
                                const float cropAnchorX = 0.5f, const float cropAnchorY = 0.5f,
@@ -1292,6 +1598,11 @@ bool JpegRender::render(FsFile& jpegFile, int x, int y, int targetWidth, int tar
   }
   const bool haveHeaderDimensions = haveHeader && sourceWidth > 0 && sourceHeight > 0;
   const uint32_t tAfterHeaderScan = millis();
+  if (renderWithJpegDec(jpegFile, renderer_, x, y, targetWidth, targetHeight, cropToFill, mode, quality, capture,
+                        cropAnchorX, cropAnchorY, fastQuality)) {
+    return true;
+  }
+  jpegFile.seek(0);
   constexpr size_t kJpegDecodeBufferSize = 16 * 1024;
 
 
@@ -1647,6 +1958,12 @@ bool JpegRender::render(FsFile& jpegFile, int x, int y, int targetWidth, int tar
   delete twoBitDitherer;
   delete oneBitDitherer;
   const uint32_t tEnd = millis();
+  INX_SERIAL.printf(
+      "[%lu] [JPEG-SPEED] decoder=picojpeg decode=%lums render=%lums total=%lums source=%dx%d output=%dx%d "
+      "reduce=%d mode=%d quality=%d ok=%d\n",
+      tEnd, static_cast<unsigned long>(mcuDecodeMs), static_cast<unsigned long>(rowProcessMs),
+      static_cast<unsigned long>(tEnd - tAfterInit), sourceWidth, sourceHeight, outWidth, outHeight,
+      useReducedDecoder ? 1 : 0, static_cast<int>(mode), quality ? 1 : 0, baselineOk ? 1 : 0);
   EPUB_PERF_LOG(
       "[%lu] [IMG-TIMING] JPEG %dx%d->%dx%d mode=%d quality=%d capture=%d: headerScan=%lums init=%lums "
       "mcuDecode=%lums rowProcess=%lums decode+draw=%lums total=%lums\n",

@@ -637,6 +637,48 @@ bool loadSdCacheIntoRam(const std::string& cachePath, const VisibleRect& visible
   return hasRamCache(cachePath);
 }
 
+bool loadNamedCacheIntoRam(const std::string& cachePath, VisibleRect* visible,
+                           const ImageDisplayCacheOptions& options) {
+  if (!visible || !SdMan.exists(cachePath.c_str())) return false;
+
+  FsFile file;
+  if (!SdMan.openFileForRead("IDC", cachePath, file)) return false;
+
+  CacheHeader header;
+  const bool headerOk = file.read(&header, sizeof(header)) == sizeof(header) && header.magic == kMagic &&
+                        header.version == kVersion && header.headerSize == sizeof(CacheHeader) && header.width > 0 &&
+                        header.height > 0 && header.rowBytes == static_cast<uint16_t>((header.width + 7) / 8);
+  const size_t dataBytes = headerOk ? static_cast<size_t>(header.height) * header.rowBytes : 0;
+  const uint64_t expectedFileSize = sizeof(CacheHeader) + static_cast<uint64_t>(dataBytes);
+  if (!headerOk || static_cast<uint64_t>(file.size()) != expectedFileSize) {
+    file.close();
+    return false;
+  }
+
+  std::unique_ptr<uint8_t, decltype(&freeCacheRows)> rows(allocateCacheRows(dataBytes), freeCacheRows);
+  if (!rows) {
+    file.close();
+    return false;
+  }
+  size_t offset = 0;
+  while (offset < dataBytes) {
+    const size_t chunk = std::min(kIoBufferSize, dataBytes - offset);
+    if (file.read(rows.get() + offset, chunk) != chunk) {
+      file.close();
+      return false;
+    }
+    offset += chunk;
+  }
+  file.close();
+  if (packedRowsAllInk(rows.get(), header.width, header.height, header.rowBytes)) return false;
+
+  putRamCache(cachePath, header, rows.get());
+  if (!hasRamCache(cachePath)) return false;
+  *visible = VisibleRect{0, 0, header.width, header.height, 0, 0};
+  (void)options;
+  return true;
+}
+
 bool copyRamCacheRows(const std::string& cachePath, const VisibleRect& visible, uint8_t** outRows) {
   if (!outRows) return false;
   *outRows = nullptr;
@@ -868,10 +910,11 @@ bool ImageDisplayCache::renderResizedFromCache(GfxRenderer& renderer, const std:
       const size_t slash = sourcePath.find_last_of('/');
       if (slash != std::string::npos) {
         const std::string namedPath = sourcePath.substr(0, slash) + "/cover.idrc";
-        if (loadSdCacheIntoRam(namedPath, visible, sourceOptions)) {
+        VisibleRect namedVisible;
+        if (loadNamedCacheIntoRam(namedPath, &namedVisible, sourceOptions)) {
           INX_SERIAL.printf("[%lu] [IDC][COVER] source-hit path=%s rect=%d,%d %dx%d\n", millis(), namedPath.c_str(),
-                            visible.x, visible.y, visible.width, visible.height);
-          sourceVisible = visible;
+                            namedVisible.x, namedVisible.y, namedVisible.width, namedVisible.height);
+          sourceVisible = namedVisible;
           loadedPath = namedPath;
           return true;
         }
