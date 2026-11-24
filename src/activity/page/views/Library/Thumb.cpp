@@ -145,6 +145,12 @@ std::string imagePathForBook(const std::string& bookPath) {
   return {};
 }
 
+bool isGeneratedThumbnailPath(const std::string& path) {
+  const size_t slash = path.find_last_of('/');
+  const std::string name = slash == std::string::npos ? path : path.substr(slash + 1);
+  return name == "thumb.jpg" || name == "thumb.png" || name == "thumb.bmp";
+}
+
 std::unordered_set<std::string>& failedThumbnailPaths() {
   static std::unordered_set<std::string> paths;
   return paths;
@@ -221,6 +227,12 @@ int folderChildCount(const std::string& folder, const std::vector<LibraryIndex::
 bool cover(GfxRenderer& renderer, const std::string& path, const int x, const int y, const int width,
            const int height, const bool rounded, const bool frame = true, const bool cropToFill = false) {
   if (path.empty() || width < 8 || height < 8) return false;
+  const unsigned long renderStartedAt = micros();
+  unsigned long targetCacheUs = 0;
+  unsigned long sourceCacheUs = 0;
+  unsigned long directDecodeUs = 0;
+  unsigned long fallbackDecodeUs = 0;
+  const bool deferredAtStart = renderer.shouldDeferImageDecode();
   renderer.rectangle.fill(x, y, width, height, false, rounded);
   ImageRender::Options options;
   options.cropToFill = cropToFill;
@@ -234,9 +246,19 @@ bool cover(GfxRenderer& renderer, const std::string& path, const int x, const in
   options.roundedOutside = rounded ? BitmapRender::RoundedOutside::PaperOutside
                                    : BitmapRender::RoundedOutside::None;
   const ImageRender image = ImageRender::create(renderer, path);
+  const bool generatedThumbnail = isGeneratedThumbnailPath(path);
+  unsigned long stageStartedAt = micros();
   bool rendered = image.renderDisplayCacheOnly(x, y, width, height, options);
+  targetCacheUs = micros() - stageStartedAt;
   bool resizedFromCache = false;
-  if (!rendered) {
+  if (!rendered && generatedThumbnail && !renderer.shouldDeferImageDecode()) {
+    ImageRender::Options directOptions = options;
+    stageStartedAt = micros();
+    rendered = image.render(x, y, width, height, directOptions);
+    directDecodeUs += micros() - stageStartedAt;
+  }
+  if (!rendered && !generatedThumbnail) {
+    stageStartedAt = micros();
     ImageDisplayCacheOptions sourceOptions;
     sourceOptions.cropToFill = true;
     sourceOptions.cropAnchor = 128;
@@ -268,12 +290,19 @@ bool cover(GfxRenderer& renderer, const std::string& path, const int x, const in
         break;
       }
     }
+    sourceCacheUs = micros() - stageStartedAt;
   }
   if (!rendered) {
     // Preserve the existing decoder as the final fallback when no display
     // cache exists for this image.
+    stageStartedAt = micros();
     rendered = image.render(x, y, width, height, options);
+    fallbackDecodeUs = micros() - stageStartedAt;
   }
+  INX_SERIAL.printf("[%lu] [LIBRARY][THUMB-RENDER] path=%s rect=%d,%d %dx%d target_cache=%luus source_cache=%luus "
+                    "direct_decode=%luus fallback=%luus total=%luus deferred=%d rendered=%d\n",
+                    millis(), path.c_str(), x, y, width, height, targetCacheUs, sourceCacheUs, directDecodeUs,
+                    fallbackDecodeUs, micros() - renderStartedAt, deferredAtStart ? 1 : 0, rendered ? 1 : 0);
   if (!rendered) {
     INX_SERIAL.printf("[%lu] [LIBRARY][THUMB] render failed path=%s rect=%d,%d %dx%d\n", millis(), path.c_str(), x,
                       y, width, height);
@@ -757,6 +786,7 @@ void Thumb::calculate() {
 void Thumb::preloadImageCache(const std::string& path, const int x, const int y, const int width, const int height,
                               const bool cropToFill, const float cropAnchorX) const {
   if (path.empty() || width < 8 || height < 8) return;
+  if (isGeneratedThumbnailPath(path)) return;
   ImageRender::Options options;
   options.cropToFill = cropToFill;
   options.cropAnchorX = cropAnchorX;

@@ -52,6 +52,10 @@ class JpegRender {
 
   static bool writeProgressiveThumbnailJpeg(FsFile& jpegFile, Print& jpegOut, int targetMaxWidth,
                                              int targetMaxHeight, uint8_t quality);
+  static bool writeJpegDecThumbnailJpeg(FsFile& jpegFile, Print& jpegOut, int targetMaxWidth,
+                                        int targetMaxHeight, uint8_t quality);
+  static bool writeJpegDecThumbnailJpeg(const uint8_t* jpegBytes, size_t jpegSize, Print& jpegOut,
+                                        int targetMaxWidth, int targetMaxHeight, uint8_t quality);
 
  private:
   GfxRenderer& renderer_;

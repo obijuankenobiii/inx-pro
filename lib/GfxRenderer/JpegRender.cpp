@@ -1527,9 +1527,14 @@ bool emitProgressiveThumbnailRow(void* context, const uint16_t row, const uint8_
 }
 
 Print* gProgressiveThumbnailOut = nullptr;
+Print* gJpegDecThumbnailOut = nullptr;
 
 void writeProgressiveThumbnailByte(unsigned char byte) {
   if (gProgressiveThumbnailOut) gProgressiveThumbnailOut->write(static_cast<uint8_t>(byte));
+}
+
+void writeJpegDecThumbnailByte(unsigned char byte) {
+  if (gJpegDecThumbnailOut) gJpegDecThumbnailOut->write(static_cast<uint8_t>(byte));
 }
 
 }
@@ -1571,6 +1576,151 @@ bool JpegRender::writeProgressiveThumbnailJpeg(FsFile& jpegFile, Print& jpegOut,
   gProgressiveThumbnailOut = nullptr;
   stbiTransientFree(thumbnail);
   return encoded;
+}
+
+bool JpegRender::writeJpegDecThumbnailJpeg(const uint8_t* jpegBytes, const size_t jpegSize, Print& jpegOut,
+                                           const int targetMaxWidth, const int targetMaxHeight, uint8_t quality) {
+  constexpr size_t kMaxSourceBytes = 4u * 1024u * 1024u;
+  constexpr size_t kMaxDecodedPixels = 4u * 1024u * 1024u;
+  if (!jpegBytes || jpegSize == 0 || jpegSize > kMaxSourceBytes || targetMaxWidth <= 0 || targetMaxHeight <= 0) {
+    return false;
+  }
+
+  const uint32_t start = millis();
+  void* decoderStorage = heap_caps_malloc(sizeof(JPEGDEC), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (!decoderStorage) return false;
+  auto* jpeg = new (decoderStorage) JPEGDEC();
+  bool decoderOpened = false;
+  const auto cleanupDecoder = [&] {
+    if (decoderOpened) jpeg->close();
+    jpeg->~JPEGDEC();
+    heap_caps_free(decoderStorage);
+  };
+
+  if (jpeg->openRAM(const_cast<uint8_t*>(jpegBytes), static_cast<int>(jpegSize), jpegDecDraw) == 0) {
+    cleanupDecoder();
+    return false;
+  }
+  decoderOpened = true;
+  const uint32_t openMs = millis() - start;
+  const int sourceWidth = jpeg->getWidth();
+  const int sourceHeight = jpeg->getHeight();
+  if (sourceWidth <= 0 || sourceHeight <= 0) {
+    cleanupDecoder();
+    return false;
+  }
+
+  const float fitScale = std::min(1.0f, std::min(static_cast<float>(targetMaxWidth) / sourceWidth,
+                                                  static_cast<float>(targetMaxHeight) / sourceHeight));
+  const int outputWidth = std::max(1, static_cast<int>(std::lround(sourceWidth * fitScale)));
+  const int outputHeight = std::max(1, static_cast<int>(std::lround(sourceHeight * fitScale)));
+  int decodeScale = 1;
+  int decodeOptions = 0;
+  if (sourceWidth >= outputWidth * 8 && sourceHeight >= outputHeight * 8) {
+    decodeScale = 8;
+    decodeOptions = JPEG_SCALE_EIGHTH;
+  } else if (sourceWidth >= outputWidth * 4 && sourceHeight >= outputHeight * 4) {
+    decodeScale = 4;
+    decodeOptions = JPEG_SCALE_QUARTER;
+  } else if (sourceWidth >= outputWidth * 2 && sourceHeight >= outputHeight * 2) {
+    decodeScale = 2;
+    decodeOptions = JPEG_SCALE_HALF;
+  }
+  const int decodedWidth = (sourceWidth + decodeScale - 1) / decodeScale;
+  const int decodedHeight = (sourceHeight + decodeScale - 1) / decodeScale;
+  const size_t decodedPixels = static_cast<size_t>(decodedWidth) * static_cast<size_t>(decodedHeight);
+  if (decodedPixels == 0 || decodedPixels > kMaxDecodedPixels) {
+    cleanupDecoder();
+    return false;
+  }
+
+  auto* decoded = static_cast<uint8_t*>(heap_caps_malloc(decodedPixels, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (!decoded) {
+    cleanupDecoder();
+    return false;
+  }
+  JpegDecRenderContext context{decoded, decodedWidth, decodedHeight};
+  jpeg->setPixelType(EIGHT_BIT_GRAYSCALE);
+  jpeg->setUserPointer(&context);
+  const uint32_t decodeStart = millis();
+  const bool decodedOk = jpeg->decode(0, 0, decodeOptions) != 0;
+  const uint32_t decodeMs = millis() - decodeStart;
+  const int error = jpeg->getLastError();
+  cleanupDecoder();
+  if (!decodedOk) {
+    INX_SERIAL.printf("[%lu] [JPEGDEC-THUMB-SPEED] decode-failed decode=%lums error=%d source=%dx%d\n", millis(),
+                      static_cast<unsigned long>(decodeMs), error, sourceWidth, sourceHeight);
+    heap_caps_free(decoded);
+    return false;
+  }
+
+  auto* output = static_cast<uint8_t*>(heap_caps_malloc(static_cast<size_t>(outputWidth) * outputHeight,
+                                                         MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (!output) {
+    heap_caps_free(decoded);
+    return false;
+  }
+  const uint32_t scaleX = (static_cast<uint32_t>(decodedWidth) << 16) / static_cast<uint32_t>(outputWidth);
+  const uint32_t scaleY = (static_cast<uint32_t>(decodedHeight) << 16) / static_cast<uint32_t>(outputHeight);
+  for (int y = 0; y < outputHeight; ++y) {
+    const uint32_t sourceY = static_cast<uint32_t>(y) * scaleY;
+    const int y0 = std::min(decodedHeight - 1, static_cast<int>(sourceY >> 16));
+    const int y1 = std::min(decodedHeight - 1, y0 + 1);
+    const uint32_t fy = sourceY & 0xFFFFu;
+    for (int x = 0; x < outputWidth; ++x) {
+      const uint32_t sourceX = static_cast<uint32_t>(x) * scaleX;
+      const int x0 = std::min(decodedWidth - 1, static_cast<int>(sourceX >> 16));
+      const int x1 = std::min(decodedWidth - 1, x0 + 1);
+      const uint32_t fx = sourceX & 0xFFFFu;
+      const uint8_t p00 = decoded[static_cast<size_t>(y0) * decodedWidth + x0];
+      const uint8_t p01 = decoded[static_cast<size_t>(y0) * decodedWidth + x1];
+      const uint8_t p10 = decoded[static_cast<size_t>(y1) * decodedWidth + x0];
+      const uint8_t p11 = decoded[static_cast<size_t>(y1) * decodedWidth + x1];
+      const uint32_t top = p00 * (0x10000u - fx) + p01 * fx;
+      const uint32_t bottom = p10 * (0x10000u - fx) + p11 * fx;
+      const uint64_t blended = static_cast<uint64_t>(top) * (0x10000u - fy) +
+                                static_cast<uint64_t>(bottom) * fy;
+      output[static_cast<size_t>(y) * outputWidth + x] = static_cast<uint8_t>(blended >> 32);
+    }
+  }
+
+  const uint32_t encodeStart = millis();
+  quality = std::max<uint8_t>(1, std::min<uint8_t>(100, quality));
+  gJpegDecThumbnailOut = &jpegOut;
+  const bool encoded = TooJpeg::writeJpeg(writeJpegDecThumbnailByte, output, static_cast<unsigned short>(outputWidth),
+                                          static_cast<unsigned short>(outputHeight), false, quality, false);
+  gJpegDecThumbnailOut = nullptr;
+  const uint32_t encodeMs = millis() - encodeStart;
+  INX_SERIAL.printf("[%lu] [JPEGDEC-THUMB-SPEED] source=ram bytes=%lu open=%lums decode=%lums encode=%lums total=%lums "
+                    "source=%dx%d decoded=%dx%d output=%dx%d scale=%d ok=%d\n",
+                    millis(), static_cast<unsigned long>(jpegSize), static_cast<unsigned long>(openMs),
+                    static_cast<unsigned long>(decodeMs), static_cast<unsigned long>(encodeMs),
+                    static_cast<unsigned long>(millis() - start), sourceWidth, sourceHeight, decodedWidth,
+                    decodedHeight, outputWidth, outputHeight, decodeScale, encoded ? 1 : 0);
+  heap_caps_free(output);
+  heap_caps_free(decoded);
+  return encoded;
+}
+
+bool JpegRender::writeJpegDecThumbnailJpeg(FsFile& jpegFile, Print& jpegOut, const int targetMaxWidth,
+                                           const int targetMaxHeight, const uint8_t quality) {
+  constexpr size_t kMaxSourceBytes = 4u * 1024u * 1024u;
+  if (!jpegFile || jpegFile.size() == 0 || static_cast<size_t>(jpegFile.size()) > kMaxSourceBytes) return false;
+  const size_t size = static_cast<size_t>(jpegFile.size());
+  auto* bytes = static_cast<uint8_t*>(heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (!bytes) return false;
+  jpegFile.seek(0);
+  size_t loaded = 0;
+  while (loaded < size) {
+    const size_t count = jpegFile.read(bytes + loaded, size - loaded);
+    if (count == 0) break;
+    loaded += count;
+  }
+  const bool ok = loaded == size && writeJpegDecThumbnailJpeg(bytes, size, jpegOut, targetMaxWidth, targetMaxHeight,
+                                                              quality);
+  heap_caps_free(bytes);
+  jpegFile.seek(0);
+  return ok;
 }
 
 bool JpegRender::render(FsFile& jpegFile, int x, int y, int targetWidth, int targetHeight, bool cropToFill,
