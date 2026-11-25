@@ -558,12 +558,15 @@ struct ProgressiveRenderOutput {
   Atkinson1BitDitherer* oneBitDitherer;
   JpegLevelCapture* capture;
   uint8_t* packedOneBitRow;
+  bool yieldDuringEmit = true;
 
   static bool emit(void* context, const uint16_t row, const uint8_t* pixels, const uint16_t width) {
     auto* output = static_cast<ProgressiveRenderOutput*>(context);
-    if ((row & 7u) == 0u) {
+    if (output->yieldDuringEmit && (row & 7u) == 0u) {
       esp_task_wdt_reset();
       yield();
+    } else if ((row & 31u) == 0u) {
+      esp_task_wdt_reset();
     }
     const int screenY = output->drawY + row;
     if (output->mode == ImageRenderMode::OneBit && output->packedOneBitRow) {
@@ -674,7 +677,8 @@ int stbiEof(void* user) {
 bool renderGrayscaleBuffer(uint8_t* decoded, const int sourceWidth, const int sourceHeight, GfxRenderer& renderer,
                            const int x, const int y, const int targetWidth, const int targetHeight, const bool cropToFill,
                            const ImageRenderMode mode, const bool quality, JpegLevelCapture* capture,
-                           const float cropAnchorX, const float cropAnchorY, const bool fastQuality) {
+                           const float cropAnchorX, const float cropAnchorY, const bool fastQuality,
+                           const bool yieldDuringRender = true, const bool yieldDuringEmit = true) {
   int outputWidth = sourceWidth;
   int outputHeight = sourceHeight;
   int cropX = 0;
@@ -709,6 +713,7 @@ bool renderGrayscaleBuffer(uint8_t* decoded, const int sourceWidth, const int so
                                  nullptr,
                                  capture,
                                  nullptr};
+  output.yieldDuringEmit = yieldDuringEmit;
   std::unique_ptr<FourToneImageDitherer> twoBitDitherer;
   std::unique_ptr<Atkinson1BitDitherer> oneBitDitherer;
   if (mode == ImageRenderMode::TwoBit) {
@@ -755,6 +760,39 @@ bool renderGrayscaleBuffer(uint8_t* decoded, const int sourceWidth, const int so
   std::unique_ptr<uint32_t[]> rowAccum(new (std::nothrow) uint32_t[outputWidth]);
   if (!tempRow || !cachedRow0 || !cachedRow1 || !outputRow || !rowAccum) return false;
 
+  std::unique_ptr<uint16_t[]> xStartMap;
+  std::unique_ptr<uint16_t[]> xEndMap;
+  std::unique_ptr<uint16_t[]> yStartMap;
+  std::unique_ptr<uint16_t[]> yEndMap;
+  if (!horizontalUpscale) {
+    xStartMap.reset(new (std::nothrow) uint16_t[outputWidth]);
+    xEndMap.reset(new (std::nothrow) uint16_t[outputWidth]);
+    if (xStartMap && xEndMap) {
+      for (int outputX = 0; outputX < outputWidth; ++outputX) {
+        int start = static_cast<int>((static_cast<uint64_t>(outputX) * scaleX_fp) >> 16);
+        int end = static_cast<int>((static_cast<uint64_t>(outputX + 1) * scaleX_fp) >> 16);
+        start = std::max(0, std::min(cropWidth - 1, start));
+        end = std::max(start + 1, std::min(cropWidth, end));
+        xStartMap[outputX] = static_cast<uint16_t>(start);
+        xEndMap[outputX] = static_cast<uint16_t>(end);
+      }
+    }
+  }
+  if (!verticalUpscale) {
+    yStartMap.reset(new (std::nothrow) uint16_t[outputHeight]);
+    yEndMap.reset(new (std::nothrow) uint16_t[outputHeight]);
+    if (yStartMap && yEndMap) {
+      for (int outputY = 0; outputY < outputHeight; ++outputY) {
+        int start = static_cast<int>((static_cast<uint64_t>(outputY) * scaleY_fp) >> 16);
+        int end = static_cast<int>((static_cast<uint64_t>(outputY + 1) * scaleY_fp) >> 16);
+        start = std::max(0, std::min(cropHeight - 1, start));
+        end = std::max(start + 1, std::min(cropHeight, end));
+        yStartMap[outputY] = static_cast<uint16_t>(start);
+        yEndMap[outputY] = static_cast<uint16_t>(end);
+      }
+    }
+  }
+
   auto scaleRowX = [&](const uint8_t* sourceRow, uint8_t* row) {
     for (int outputX = 0; outputX < outputWidth; ++outputX) {
       if (horizontalUpscale) {
@@ -765,13 +803,19 @@ bool renderGrayscaleBuffer(uint8_t* decoded, const int sourceWidth, const int so
         row[outputX] = static_cast<uint8_t>((sourceRow[lower] * (0x10000u - fraction) +
                                              sourceRow[upper] * fraction) >> 16);
       } else {
-        int start = static_cast<int>((static_cast<uint64_t>(outputX) * scaleX_fp) >> 16);
-        int end = static_cast<int>((static_cast<uint64_t>(outputX + 1) * scaleX_fp) >> 16);
-        start = std::max(0, std::min(cropWidth - 1, start));
-        end = std::max(start + 1, std::min(cropWidth, end));
-        uint32_t sum = 0;
-        for (int sourceX = start; sourceX < end; ++sourceX) sum += sourceRow[sourceX];
-        row[outputX] = static_cast<uint8_t>(sum / static_cast<uint32_t>(end - start));
+        const int start = xStartMap ? xStartMap[outputX]
+                                    : std::max(0, std::min(cropWidth - 1,
+                                                           static_cast<int>((static_cast<uint64_t>(outputX) * scaleX_fp) >> 16)));
+        const int end = xEndMap ? xEndMap[outputX]
+                                : std::max(start + 1, std::min(cropWidth,
+                                                               static_cast<int>((static_cast<uint64_t>(outputX + 1) * scaleX_fp) >> 16)));
+        if (end == start + 1) {
+          row[outputX] = sourceRow[start];
+        } else {
+          uint32_t sum = 0;
+          for (int sourceX = start; sourceX < end; ++sourceX) sum += sourceRow[sourceX];
+          row[outputX] = static_cast<uint8_t>(sum / static_cast<uint32_t>(end - start));
+        }
       }
     }
   };
@@ -791,9 +835,11 @@ bool renderGrayscaleBuffer(uint8_t* decoded, const int sourceWidth, const int so
 
   bool ok = true;
   for (int outputY = 0; outputY < outputHeight && ok; ++outputY) {
-    if ((outputY & 15) == 0) {
+    if (yieldDuringRender && (outputY & 15) == 0) {
       esp_task_wdt_reset();
       yield();
+    } else if ((outputY & 31) == 0) {
+      esp_task_wdt_reset();
     }
     if (verticalUpscale) {
       const uint32_t sourcePosition = static_cast<uint32_t>(static_cast<uint64_t>(outputY) * scaleY_fp);
@@ -811,19 +857,31 @@ bool renderGrayscaleBuffer(uint8_t* decoded, const int sourceWidth, const int so
         }
       }
     } else {
-      int start = static_cast<int>((static_cast<uint64_t>(outputY) * scaleY_fp) >> 16);
-      int end = static_cast<int>((static_cast<uint64_t>(outputY + 1) * scaleY_fp) >> 16);
-      start = std::max(0, std::min(cropHeight - 1, start));
-      end = std::max(start + 1, std::min(cropHeight, end));
-      std::fill(rowAccum.get(), rowAccum.get() + outputWidth, 0u);
-      for (int sourceY = start; sourceY < end; ++sourceY) {
-        const uint8_t* sourceRow = decoded + static_cast<size_t>(cropY + sourceY) * sourceWidth + cropX;
-        scaleRowX(sourceRow, tempRow.get());
-        for (int outputX = 0; outputX < outputWidth; ++outputX) rowAccum[outputX] += tempRow[outputX];
-      }
+      const int start = yStartMap ? yStartMap[outputY]
+                                  : std::max(0, std::min(cropHeight - 1,
+                                                         static_cast<int>((static_cast<uint64_t>(outputY) * scaleY_fp) >> 16)));
+      const int end = yEndMap ? yEndMap[outputY]
+                              : std::max(start + 1, std::min(cropHeight,
+                                                             static_cast<int>((static_cast<uint64_t>(outputY + 1) * scaleY_fp) >> 16)));
       const uint32_t rowCount = static_cast<uint32_t>(end - start);
-      for (int outputX = 0; outputX < outputWidth; ++outputX) {
-        outputRow[outputX] = static_cast<uint8_t>(rowAccum[outputX] / rowCount);
+      const uint8_t* sourceRow = decoded + static_cast<size_t>(cropY + start) * sourceWidth + cropX;
+      scaleRowX(sourceRow, outputRow.get());
+      if (rowCount == 2) {
+        sourceRow = decoded + static_cast<size_t>(cropY + start + 1) * sourceWidth + cropX;
+        scaleRowX(sourceRow, tempRow.get());
+        for (int outputX = 0; outputX < outputWidth; ++outputX) {
+          outputRow[outputX] = static_cast<uint8_t>((outputRow[outputX] + tempRow[outputX]) / 2u);
+        }
+      } else if (rowCount > 2) {
+        std::fill(rowAccum.get(), rowAccum.get() + outputWidth, 0u);
+        for (int sourceY = start; sourceY < end; ++sourceY) {
+          sourceRow = decoded + static_cast<size_t>(cropY + sourceY) * sourceWidth + cropX;
+          scaleRowX(sourceRow, tempRow.get());
+          for (int outputX = 0; outputX < outputWidth; ++outputX) rowAccum[outputX] += tempRow[outputX];
+        }
+        for (int outputX = 0; outputX < outputWidth; ++outputX) {
+          outputRow[outputX] = static_cast<uint8_t>(rowAccum[outputX] / rowCount);
+        }
       }
     }
     ok = ProgressiveRenderOutput::emit(&output, static_cast<uint16_t>(outputY), outputRow.get(),
@@ -962,7 +1020,7 @@ bool renderWithJpegDec(FsFile& file, GfxRenderer& renderer, const int x, const i
   const uint32_t renderStart = millis();
   const bool rendered = renderGrayscaleBuffer(pixels, decodedWidth, decodedHeight, renderer, x, y, targetWidth,
                                               targetHeight, cropToFill, mode, quality, capture, cropAnchorX,
-                                              cropAnchorY, fastQuality);
+                                              cropAnchorY, fastQuality, false, false);
   const uint32_t renderMs = millis() - renderStart;
   INX_SERIAL.printf("[%lu] [JPEGDEC-SPEED] source=%s bytes=%lu open=%lums decode=%lums render=%lums total=%lums "
                     "source=%dx%d decoded=%dx%d output=%dx%d scale=%d mode=%d quality=%d ok=%d\n",

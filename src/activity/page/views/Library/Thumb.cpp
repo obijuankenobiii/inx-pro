@@ -347,7 +347,7 @@ void folderLabelWithCount(GfxRenderer& renderer, const std::string& value, const
   const int font = systemFontId();
   const int lineHeight = renderer.text.getLineHeight(font);
   constexpr int horizontalMargin = 10;
-  constexpr int lineGap = 2;
+  constexpr int lineGap = 0;
   const int textX = labelX + horizontalMargin;
   const int textWidth = std::max(8, labelWidthAvailable - horizontalMargin * 2);
   const std::string title = renderer.text.truncate(font, value.c_str(), textWidth);
@@ -374,7 +374,7 @@ void bookLabelWithProgress(GfxRenderer& renderer, const std::string& value, cons
   const int font = systemFontId();
   const int lineHeight = renderer.text.getLineHeight(font);
   constexpr int horizontalMargin = 10;
-  constexpr int lineGap = 2;
+  constexpr int lineGap = 0;
   const int textX = labelX + horizontalMargin;
   const int textWidth = std::max(8, labelWidthAvailable - horizontalMargin * 2);
   const std::string title = renderer.text.truncate(font, value.c_str(), textWidth);
@@ -488,9 +488,11 @@ Thumb::Thumb(GfxRenderer& renderer, MappedInputManager& mappedInput,
 
 std::string Thumb::thumbnailPathForBook(const std::string& bookPath) {
   const auto cached = thumbnailPathCache_.find(bookPath);
-  if (cached != thumbnailPathCache_.end() && !cached->second.empty() &&
-      SdMan.exists(cached->second.c_str())) {
-    return cached->second;
+  if (cached != thumbnailPathCache_.end()) {
+    if (cached->second.empty() || SdMan.exists(cached->second.c_str())) {
+      return cached->second;
+    }
+    thumbnailPathCache_.erase(cached);
   }
 
 
@@ -583,9 +585,9 @@ void Thumb::load() {
 
       thumbnail.image = thumbnailPathForBook(item.path);
       thumbnail.pathResolved = true;
-      thumbnail.loaded = !thumbnail.image.empty();
       if (layout.titleLines > 1) thumbnail.progressPercent = progressPercentForBook(item.path);
     }
+    thumbnail.loaded = true;
     const auto cached = resolvedCache_.find(item.path);
     const bool cachedImageStillExists =
         cached != resolvedCache_.end() &&
@@ -630,8 +632,6 @@ bool Thumb::loadNext() {
 
   const int limit = itemsPerPage();
   int loaded = 0;
-  std::array<Thumbnail*, maxItemsPerPage> booksToMeasure{};
-  int bookCount = 0;
   std::array<Thumbnail*, maxItemsPerPage> resolvedThisCall{};
   int resolvedCount = 0;
   {
@@ -660,9 +660,6 @@ bool Thumb::loadNext() {
         } else {
           thumbnail.image = thumbnailPathForBook(item->path);
           thumbnail.pathResolved = true;
-          if (!thumbnail.image.empty() && bookCount < static_cast<int>(booksToMeasure.size())) {
-            booksToMeasure[bookCount++] = &thumbnail;
-          }
           if (layout.titleLines > 1) thumbnail.progressPercent = progressPercentForBook(item->path);
         }
       }
@@ -673,72 +670,11 @@ bool Thumb::loadNext() {
       if (++loaded == limit) break;
     }
   }
-  for (int index = 0; index < bookCount; ++index) {
-    Thumbnail* thumbnail = booksToMeasure[static_cast<size_t>(index)];
-    ImageRender::getDimensions(thumbnail->image, &thumbnail->imageWidth, &thumbnail->imageHeight);
-  }
   for (int index = 0; index < resolvedCount; ++index) {
     const Thumbnail* thumbnail = resolvedThisCall[static_cast<size_t>(index)];
     resolvedCache_[thumbnail->item] = *thumbnail;
   }
   return loaded > 0;
-}
-
-bool Thumb::prefetchNextPage() {
-  if (mappedInput.isTouchPressed()) return false;
-  const int perPage = itemsPerPage();
-  const int start = (page + 1) * perPage;
-  if (start >= static_cast<int>(items.size())) return false;
-  const int end = std::min(start + perPage, static_cast<int>(items.size()));
-
-  for (int index = start; index < end; ++index) {
-    const LibraryIndex::Book& item = items[static_cast<size_t>(index)];
-    if (resolvedCache_.find(item.path) != resolvedCache_.end()) continue;
-
-    Thumbnail thumbnail;
-    thumbnail.item = item.path;
-    {
-      SdIoMutex::Lock lock;
-      if (item.type == LibraryIndex::Book::Type::FOLDER) {
-        const std::string folderImage = folderImagePath(item.path);
-        thumbnail.pathResolved = true;
-        if (!folderImage.empty()) {
-          thumbnail.image = folderImage;
-        } else {
-          const std::vector<std::string> covers = coversForFolder(item, 1);
-          if (!covers.empty()) thumbnail.first = covers[0];
-        }
-        thumbnail.bookCount = folderBookCount(item, books);
-        thumbnail.folderCount = item.hasMetadata ? item.folderCount : folderChildCount(item.path, books);
-        if (thumbnail.bookCount == 1) {
-          if (const LibraryIndex::Book* book = singleBookInFolder(item.path, books)) {
-            thumbnail.singleBookTitle = bookTitle(*book);
-          }
-        }
-      } else {
-        thumbnail.image = thumbnailPathForBook(item.path);
-        thumbnail.pathResolved = true;
-        if (layout.titleLines > 1) thumbnail.progressPercent = progressPercentForBook(item.path);
-      }
-    }
-    if (item.type != LibraryIndex::Book::Type::FOLDER && !thumbnail.image.empty()) {
-      ImageRender::getDimensions(thumbnail.image, &thumbnail.imageWidth, &thumbnail.imageHeight);
-    }
-    thumbnail.loaded = true;
-    resolvedCache_[thumbnail.item] = thumbnail;
-    int cellX = 0;
-    int cellY = 0;
-    int cellWidth = 0;
-    int cellHeight = 0;
-    itemBounds(index - start, cellX, cellY, cellWidth, cellHeight);
-    if (item.type == LibraryIndex::Book::Type::FOLDER) {
-      preloadFolderCache(thumbnail, cellX, cellY, cellWidth, cellHeight);
-    } else {
-      preloadBookCache(thumbnail, cellX, cellY, cellWidth, cellHeight);
-    }
-    return true;
-  }
-  return false;
 }
 
 void Thumb::reset() {
@@ -843,11 +779,16 @@ bool Thumb::drawItem(const LibraryIndex::Book& item, const int x, const int y, c
     const int titleHeight = lineHeight * layout.titleLines + kFolderLabelGap;
     const int imageY = y + padding;
     const int imageHeight = std::max(8, height - titleHeight - padding * 2);
-    const std::string liveFolderImage =
-        thumbnail && thumbnail->pathResolved && !thumbnail->image.empty() &&
-                failedThumbnailPaths().find(thumbnail->image) == failedThumbnailPaths().end()
-            ? thumbnail->image
-            : folderImagePath(item.path);
+  std::string liveFolderImage;
+  if (thumbnail && thumbnail->pathResolved) {
+    if (!thumbnail->image.empty() && failedThumbnailPaths().find(thumbnail->image) == failedThumbnailPaths().end()) {
+      liveFolderImage = thumbnail->image;
+    } else if (!thumbnail->image.empty()) {
+      liveFolderImage = folderImagePath(item.path);
+    }
+  } else {
+    liveFolderImage = folderImagePath(item.path);
+  }
     bool needsDecode = false;
     if (thumbnail && thumbnail->loaded && !thumbnail->first.empty()) {
       const int imageWidth = std::max(12, width - padding * 2);
@@ -893,11 +834,16 @@ bool Thumb::drawItem(const LibraryIndex::Book& item, const int x, const int y, c
     return needsDecode;
   }
 
-  const std::string liveBookImage =
-      thumbnail && thumbnail->pathResolved && !thumbnail->image.empty() &&
-              failedThumbnailPaths().find(thumbnail->image) == failedThumbnailPaths().end()
-          ? thumbnail->image
-          : imagePathForBook(item.path);
+  std::string liveBookImage;
+  if (thumbnail && thumbnail->pathResolved) {
+    if (!thumbnail->image.empty() && failedThumbnailPaths().find(thumbnail->image) == failedThumbnailPaths().end()) {
+      liveBookImage = thumbnail->image;
+    } else if (!thumbnail->image.empty()) {
+      liveBookImage = imagePathForBook(item.path);
+    }
+  } else {
+    liveBookImage = imagePathForBook(item.path);
+  }
   if (!liveBookImage.empty()) {
     constexpr int padding = 3;
     const int lineHeight = renderer.text.getLineHeight(systemFontId());

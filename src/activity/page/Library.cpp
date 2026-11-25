@@ -956,7 +956,6 @@ void Library::loop() {
       thumbDeferImageDecode_ = true;
       thumbWarmupPending_ = false;
       thumbTimingPassesRemaining_ = 2;
-      thumbPrefetchNotBeforeMs_ = millis() + 800;
     }
     updateRequired = true;
     return;
@@ -972,10 +971,6 @@ void Library::loop() {
       updateRequired = true;
       INX_SERIAL.printf("[%lu] [LIBRARY][THUMB-TIMING] mode=%s phase=load-next elapsed=%luus\n", millis(), mode,
                         micros() - startedAt);
-    } else if (static_cast<long>(millis() - thumbPrefetchNotBeforeMs_) >= 0 && thumb.prefetchNextPage()) {
-      INX_SERIAL.printf("[%lu] [LIBRARY][THUMB-TIMING] mode=%s phase=prefetch elapsed=%luus\n", millis(), mode,
-                        micros() - startedAt);
-      thumbPrefetchNotBeforeMs_ = millis() + 100;
     }
   }
   renderPage();
@@ -1881,7 +1876,6 @@ void Library::resetViews() {
     thumbDeferImageDecode_ = true;
     thumbWarmupPending_ = false;
     thumbTimingPassesRemaining_ = 2;
-    thumbPrefetchNotBeforeMs_ = millis() + 500;
   }
 }
 

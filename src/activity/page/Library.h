@@ -119,7 +119,6 @@ class Library final : public UiPage {
   bool thumbDeferImageDecode_ = false;
   bool thumbWarmupPending_ = false;
   int thumbTimingPassesRemaining_ = 0;
-  unsigned long thumbPrefetchNotBeforeMs_ = 0;
   bool refreshing = false;
   bool loading = false;
   int popupBook = -1;

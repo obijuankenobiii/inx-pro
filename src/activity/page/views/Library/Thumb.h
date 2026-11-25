@@ -30,8 +30,6 @@ class Thumb final {
   void setRoot(bool value);
   void load();
   bool loadNext();
-  /** Resolves the NEXT page's covers into resolvedCache_ while idle, so turning to it is a cache hit. */
-  bool prefetchNextPage();
   void reset();
   /** Current page index, so the caller can restore it when returning to this folder. */
   int currentPage() const { return page; }

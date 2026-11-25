@@ -39,6 +39,47 @@ constexpr uint8_t kWidgetCacheContentVersion = 3;
 
 constexpr size_t kSourceSizeCacheSlots = 64;
 
+std::string bookMetadataFolder(const std::string& sourcePath) {
+  constexpr const char* kMetadataRoots[] = {"/.metadata/epub/", "/.metadata/xtc/"};
+  for (const char* root : kMetadataRoots) {
+    const size_t rootStart = sourcePath.find(root);
+    if (rootStart == std::string::npos) continue;
+    const size_t bookStart = rootStart + strlen(root);
+    const size_t bookEnd = sourcePath.find('/', bookStart);
+    if (bookEnd == std::string::npos || bookEnd == bookStart) continue;
+    return sourcePath.substr(0, bookEnd);
+  }
+  return "";
+}
+
+std::string fixedBookCachePath(const std::string& sourcePath, const ImageDisplayCacheOptions& options,
+                               const bool combined) {
+  if (options.cacheNamespace != ImageDisplayCacheNamespace::Library &&
+      options.cacheNamespace != ImageDisplayCacheNamespace::Widgets) {
+    return "";
+  }
+
+  const std::string folder = bookMetadataFolder(sourcePath);
+  if (folder.empty()) return "";
+
+  const char* stem = options.cacheNamespace == ImageDisplayCacheNamespace::Library ? "library" : "widgets";
+  char filename[40];
+  if (combined) {
+    snprintf(filename, sizeof(filename), "%s-%s.idrc2", stem, options.quality ? "gray2" : "gray");
+    return folder + "/" + filename;
+  }
+
+  if (options.mode == ImageRenderMode::TwoBit) {
+    const bool msb = options.renderPlane == static_cast<uint8_t>(GfxRenderer::GRAYSCALE_MSB) ||
+                     options.renderPlane == static_cast<uint8_t>(GfxRenderer::GRAY2_MSB);
+    snprintf(filename, sizeof(filename), "%s-%s-%s.idrc", stem, options.quality ? "gray2" : "gray",
+             msb ? "msb" : "lsb");
+  } else {
+    snprintf(filename, sizeof(filename), "%s.idrc", stem);
+  }
+  return folder + "/" + filename;
+}
+
 struct CacheHeader {
   uint32_t magic;
   uint16_t version;
@@ -776,6 +817,10 @@ std::string ImageDisplayCache::pathFor(GfxRenderer& renderer, const std::string&
   if (!visibleBounds(renderer, x, y, width, height, visible)) {
     return "";
   }
+  const std::string fixedPath = fixedBookCachePath(sourcePath, options, false);
+  if (!fixedPath.empty()) {
+    return fixedPath;
+  }
   const uint32_t hash = cacheHash(sourcePath, width, height, visible, options);
   char name[48];
   const char* group = options.cacheNamespace == ImageDisplayCacheNamespace::Library
@@ -794,6 +839,9 @@ std::string ImageDisplayCache::pathFor(GfxRenderer& renderer, const std::string&
 std::string ImageDisplayCache::legacyPathFor(GfxRenderer& renderer, const std::string& sourcePath, const int x,
                                              const int y, const int width, const int height,
                                              const ImageDisplayCacheOptions& options) {
+  if (!fixedBookCachePath(sourcePath, options, false).empty()) {
+    return "";
+  }
   VisibleRect visible;
   if (!visibleBounds(renderer, x, y, width, height, visible)) {
     return "";
@@ -811,6 +859,10 @@ std::string ImageDisplayCache::pathForCombined(GfxRenderer& renderer, const std:
   VisibleRect visible;
   if (!visibleBounds(renderer, x, y, width, height, visible)) {
     return "";
+  }
+  const std::string fixedPath = fixedBookCachePath(sourcePath, options, true);
+  if (!fixedPath.empty()) {
+    return fixedPath;
   }
   const uint32_t hash = cacheHashCombined(sourcePath, width, height, visible, options);
   char name[48];
@@ -830,6 +882,9 @@ std::string ImageDisplayCache::pathForCombined(GfxRenderer& renderer, const std:
 std::string ImageDisplayCache::legacyPathForCombined(GfxRenderer& renderer, const std::string& sourcePath, const int x,
                                                      const int y, const int width, const int height,
                                                      const ImageDisplayCacheOptions& options) {
+  if (!fixedBookCachePath(sourcePath, options, true).empty()) {
+    return "";
+  }
   VisibleRect visible;
   if (!visibleBounds(renderer, x, y, width, height, visible)) {
     return "";
@@ -861,7 +916,7 @@ bool ImageDisplayCache::renderIfAvailable(GfxRenderer& renderer, const std::stri
   if (renderSdCacheDirect(renderer, requestedPath, visible)) return true;
 
   const std::string legacyPath = legacyPathFor(renderer, sourcePath, x, y, width, height, options);
-  if (legacyPath != requestedPath) {
+  if (!legacyPath.empty() && legacyPath != requestedPath) {
     if (drawRamCache(renderer, legacyPath, visible)) {
       return true;
     }
@@ -895,6 +950,9 @@ bool ImageDisplayCache::preloadIfAvailable(GfxRenderer& renderer, const std::str
     return true;
   }
   const std::string legacyPath = legacyPathFor(renderer, sourcePath, x, y, width, height, options);
+  if (legacyPath.empty()) {
+    return false;
+  }
   if (legacyPath == cachePath || hasRamCache(legacyPath)) {
     return legacyPath != cachePath;
   }
@@ -932,6 +990,9 @@ bool ImageDisplayCache::renderResizedFromCache(GfxRenderer& renderer, const std:
           return true;
         }
       }
+      if (!bookMetadataFolder(sourcePath).empty()) {
+        return false;
+      }
     }
 
     const std::string requestedPath =
@@ -946,7 +1007,7 @@ bool ImageDisplayCache::renderResizedFromCache(GfxRenderer& renderer, const std:
 
     const std::string legacyPath =
         legacyPathFor(renderer, sourcePath, sourceX, sourceY, sourceWidth, sourceHeight, sourceOptions);
-    if (legacyPath == requestedPath ||
+    if (legacyPath.empty() || legacyPath == requestedPath ||
         (!hasRamCache(legacyPath) && !loadSdCacheIntoRam(legacyPath, visible, sourceOptions)))
       return false;
     sourceVisible = visible;
