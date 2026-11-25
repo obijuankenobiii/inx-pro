@@ -2,6 +2,7 @@
 
 #include <BitmapRender.h>
 #include <GfxRenderer.h>
+#include <ImageDisplayCache.h>
 #include <ImageRender.h>
 #include <SDCardManager.h>
 
@@ -70,6 +71,19 @@ std::string folderImagePath(const std::string& folder) {
   return {};
 }
 
+std::vector<std::string> siblingImagePaths(const std::string& path) {
+  const size_t slash = path.find_last_of('/');
+  if (slash == std::string::npos) return {};
+  const std::string directory = path.substr(0, slash);
+  const char* names[] = {"thumb.jpg", "thumb.png", "thumb.bmp", "cover.jpg", "cover.png", "cover.bmp"};
+  std::vector<std::string> paths;
+  for (const char* name : names) {
+    const std::string candidate = directory + "/" + name;
+    if (candidate != path && SdMan.exists(candidate.c_str())) paths.push_back(candidate);
+  }
+  return paths;
+}
+
 void drawFavoriteBadge(const GfxRenderer& renderer, const int x, const int y, const int width, const int height,
                        const bool favorite) {
   if (!favorite) return;
@@ -131,11 +145,13 @@ int ThumbnailList::itemAt(const int x, const int y) const {
 }
 
 bool ThumbnailList::handleInput() {
-  if (mappedInput.wasTouchSwipeUp()) {
+  if (mappedInput.wasTouchSwipeUp() || mappedInput.wasPressed(MappedInputManager::Button::Down) ||
+      mappedInput.wasPressed(MappedInputManager::Button::PageForward)) {
     page = page + 1 < pageCount() ? page + 1 : 0;
     return true;
   }
-  if (mappedInput.wasTouchSwipeDown()) {
+  if (mappedInput.wasTouchSwipeDown() || mappedInput.wasPressed(MappedInputManager::Button::Up) ||
+      mappedInput.wasPressed(MappedInputManager::Button::PageBack)) {
     if (page > 0) --page;
     return true;
   }
@@ -210,7 +226,39 @@ void ThumbnailList::renderThumbnail(const LibraryIndex::Book& book, const int x,
   options.cacheNamespace = ImageDisplayCacheNamespace::Library;
   options.roundedOutside = SETTINGS.bitmapRoundedCorners != 0 ? BitmapRender::RoundedOutside::PaperOutside
                                                                : BitmapRender::RoundedOutside::None;
-  if (!path.empty() && ImageRender::create(renderer, path).render(imageX, imageY, imageWidth, imageHeight, options)) {
+  ImageDisplayCacheOptions sourceOptions;
+  sourceOptions.cropToFill = true;
+  sourceOptions.mode = options.mode;
+  sourceOptions.renderPlane = static_cast<uint8_t>(renderer.getRenderMode());
+  sourceOptions.cacheNamespace = ImageDisplayCacheNamespace::Book;
+  ImageDisplayCacheOptions targetOptions;
+  targetOptions.cropToFill = true;
+  targetOptions.cropAnchor = 128;
+  targetOptions.cropAnchorY = 128;
+  targetOptions.mode = options.mode;
+  targetOptions.renderPlane = static_cast<uint8_t>(renderer.getRenderMode());
+  targetOptions.roundedOutside = options.roundedOutside;
+  targetOptions.cacheNamespace = ImageDisplayCacheNamespace::Library;
+
+  std::vector<std::string> candidates;
+  if (!path.empty()) {
+    candidates.push_back(path);
+    const std::vector<std::string> siblings = siblingImagePaths(path);
+    candidates.insert(candidates.end(), siblings.begin(), siblings.end());
+  }
+  bool rendered = false;
+  for (const std::string& candidate : candidates) {
+    if (ImageDisplayCache::renderResizedFromCache(renderer, candidate, candidate, imageX, imageY, imageWidth,
+                                                   imageHeight, sourceOptions, targetOptions, false)) {
+      rendered = true;
+      break;
+    }
+    if (ImageRender::create(renderer, candidate).render(imageX, imageY, imageWidth, imageHeight, options)) {
+      rendered = true;
+      break;
+    }
+  }
+  if (rendered) {
     if (SETTINGS.bitmapRoundedCorners == 0) {
       renderer.rectangle.render(x, y, thumbnailWidth, thumbnailHeight, true);
     } else {

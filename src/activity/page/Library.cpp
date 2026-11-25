@@ -1536,6 +1536,12 @@ bool Library::handleSidebarInput() {
   const int tapX = static_cast<int>(tapNx * renderer.getScreenWidth());
   const int tapY = static_cast<int>(tapNy * renderer.getScreenHeight());
   const int drawerWidth = Sidebar::width(renderer);
+  if (Sidebar::closeHitTest(renderer, tapX, tapY)) {
+    restoreOverlayFrameOnClose();
+    sidebarOpen = false;
+    updateRequired = true;
+    return true;
+  }
   if (tapX >= drawerWidth) {
     restoreOverlayFrameOnClose();
     sidebarOpen = false;

@@ -1100,20 +1100,30 @@ bool Epub::load(const bool buildIfMissing) {
     return false;
   }
 
+  // A failed cache load means book.bin is not trustworthy. Remove only that
+  // derived file before rebuilding; the original EPUB remains untouched.
+  SdMan.remove((cachePath + kBookMetadataCacheFile).c_str());
+  bookMetadataCache->cleanupTmpFiles();
+  const auto abortBuild = [this]() {
+    bookMetadataCache->abortWrite();
+    INX_SERIAL.printf("[%lu] [THUMB-DEBUG] EPUB metadata cache build aborted: %s\n", millis(), filepath.c_str());
+    return false;
+  };
+
   if (!bookMetadataCache->beginWrite()) {
     INX_SERIAL.printf("[%lu] [THUMB-DEBUG] EPUB metadata cache beginWrite failed cache=%s book=%s\n", millis(),
                   cachePath.c_str(), filepath.c_str());
-    return false;
+    return abortBuild();
   }
 
   BookMetadataCache::BookMetadata meta;
-  bookMetadataCache->beginContentOpfPass();
+  if (!bookMetadataCache->beginContentOpfPass()) return abortBuild();
 
   std::string opfPath;
   if (!findContentOpfFile(&opfPath)) {
     INX_SERIAL.printf("[%lu] [THUMB-DEBUG] EPUB load failed: META-INF/container.xml or OPF not found book=%s\n", millis(),
                   filepath.c_str());
-    return false;
+    return abortBuild();
   }
   contentBasePath = opfPath.substr(0, opfPath.find_last_of('/') + 1);
 
@@ -1121,27 +1131,27 @@ bool Epub::load(const bool buildIfMissing) {
   if (!getItemSize(opfPath, &opfSize)) {
     INX_SERIAL.printf("[%lu] [THUMB-DEBUG] EPUB load failed: OPF entry size unavailable opf=%s book=%s\n", millis(),
                   opfPath.c_str(), filepath.c_str());
-    return false;
+    return abortBuild();
   }
 
   ContentOpfParser opfParser(cachePath, getBasePath(), opfSize, bookMetadataCache.get());
   if (!opfParser.setup()) {
     INX_SERIAL.printf("[%lu] [THUMB-DEBUG] EPUB load failed: OPF parser setup failed opf=%s\n", millis(), opfPath.c_str());
-    return false;
+    return abortBuild();
   }
   if (!readItemContentsToStream(opfPath, opfParser, 1024)) {
     INX_SERIAL.printf("[%lu] [THUMB-DEBUG] EPUB load failed: OPF read failed opf=%s book=%s\n", millis(), opfPath.c_str(),
                   filepath.c_str());
-    return false;
+    return abortBuild();
   }
 
   if (!opfParser.tocNcxPath.empty()) tocNcxItem = opfParser.tocNcxPath;
   if (!opfParser.tocNavPath.empty()) tocNavItem = opfParser.tocNavPath;
   meta = opfParser.takeMetadata();
 
-  bookMetadataCache->endContentOpfPass();
+  if (!bookMetadataCache->endContentOpfPass()) return abortBuild();
 
-  bookMetadataCache->beginCssPass();
+  if (!bookMetadataCache->beginCssPass()) return abortBuild();
   bool cssExtracted = false;
   try {
     cssExtracted = bookMetadataCache->extractAndCacheCssFiles(filepath);
@@ -1153,16 +1163,16 @@ bool Epub::load(const bool buildIfMissing) {
   if (!cssExtracted) {
     INX_SERIAL.printf("[EBP] Warning: Failed to extract CSS files\n");
   }
-  bookMetadataCache->endCssPass();
+  if (!bookMetadataCache->endCssPass()) return abortBuild();
 
-  bookMetadataCache->beginTocPass();
+  if (!bookMetadataCache->beginTocPass()) return abortBuild();
   bool tocParsed = (!tocNavItem.empty()) ? parseTocNavFile() : false;
   if (!tocParsed && !tocNcxItem.empty()) tocParsed = parseTocNcxFile();
   bookMetadataCache->appendSyntheticTocFromSpineIfEmpty();
-  bookMetadataCache->endTocPass();
+  if (!bookMetadataCache->endTocPass()) return abortBuild();
 
-  bookMetadataCache->endWrite();
-  bookMetadataCache->buildBookBin(filepath, meta);
+  if (!bookMetadataCache->endWrite()) return abortBuild();
+  if (!bookMetadataCache->buildBookBin(filepath, meta)) return abortBuild();
   bookMetadataCache->cleanupTmpFiles();
   bookMetadataCache.reset(new BookMetadataCache(cachePath));
   const bool loaded = bookMetadataCache->load();

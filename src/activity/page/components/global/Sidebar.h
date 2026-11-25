@@ -16,5 +16,6 @@ class Sidebar final {
   static void renderFrame(const GfxRenderer& renderer, const char* title);
   static void renderTextList(const GfxRenderer& renderer, const char* const* labels, size_t count,
                              int scrollOffset = 0);
+  static bool closeHitTest(const GfxRenderer& renderer, int tapX, int tapY);
   static int hitTest(const GfxRenderer& renderer, int tapX, int tapY, size_t count, int scrollOffset = 0);
 };

@@ -124,6 +124,7 @@ class BookMetadataCache {
   uint16_t cssCount;
   bool loaded;
   bool buildMode;
+  mutable bool writeFailed;
 
   FsFile bookFile;
 
@@ -162,7 +163,8 @@ class BookMetadataCache {
         tocCount(0),
         cssCount(0),
         loaded(false),
-        buildMode(false) {}
+        buildMode(false),
+        writeFailed(false) {}
   ~BookMetadataCache() = default;
 
   bool beginWrite();
@@ -182,6 +184,7 @@ class BookMetadataCache {
   bool extractAndCacheCssFiles(const std::string& epubPath);
 
   bool endWrite();
+  void abortWrite();
   bool cleanupTmpFiles() const;
 
   /** Session-discovered image dimensions live beside book.bin so reopening a

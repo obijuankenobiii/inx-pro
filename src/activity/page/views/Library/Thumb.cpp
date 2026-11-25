@@ -124,6 +124,8 @@ std::string parent(const std::string& path) {
   return path.substr(0, slash);
 }
 
+std::unordered_set<std::string>& failedThumbnailPaths();
+
 std::string imagePathForBook(const std::string& bookPath) {
   std::string extension = bookPath;
   std::transform(extension.begin(), extension.end(), extension.begin(), [](const unsigned char c) {
@@ -137,10 +139,37 @@ std::string imagePathForBook(const std::string& bookPath) {
     const std::string directory = std::string(root) + "/" + std::to_string(std::hash<std::string>{}(bookPath));
     for (const char* name : names) {
       const std::string path = directory + "/" + name;
-      if (SdMan.exists(path.c_str())) return path;
+      if (SdMan.exists(path.c_str()) && failedThumbnailPaths().find(path) == failedThumbnailPaths().end()) return path;
     }
   }
   return {};
+}
+
+bool isGeneratedThumbnailPath(const std::string& path) {
+  const size_t slash = path.find_last_of('/');
+  const std::string name = slash == std::string::npos ? path : path.substr(slash + 1);
+  return name == "thumb.jpg" || name == "thumb.png" || name == "thumb.bmp";
+}
+
+std::unordered_set<std::string>& failedThumbnailPaths() {
+  static std::unordered_set<std::string> paths;
+  return paths;
+}
+
+std::vector<std::string> siblingImagePaths(const std::string& path) {
+  const size_t slash = path.find_last_of('/');
+  if (slash == std::string::npos) return {};
+  const std::string directory = path.substr(0, slash);
+  const char* names[] = {"thumb.jpg", "thumb.png", "thumb.bmp", "cover.jpg", "cover.png", "cover.bmp"};
+  std::vector<std::string> paths;
+  for (const char* name : names) {
+    const std::string candidate = directory + "/" + name;
+    if (candidate != path && SdMan.exists(candidate.c_str()) &&
+        failedThumbnailPaths().find(candidate) == failedThumbnailPaths().end()) {
+      paths.push_back(candidate);
+    }
+  }
+  return paths;
 }
 
 std::string folderImagePath(const std::string& folder) {
@@ -148,7 +177,7 @@ std::string folderImagePath(const std::string& folder) {
   const std::string base = folder == "/" ? std::string() : folder;
   for (const char* name : names) {
     const std::string path = base + "/" + name;
-    if (SdMan.exists(path.c_str())) return path;
+    if (SdMan.exists(path.c_str()) && failedThumbnailPaths().find(path) == failedThumbnailPaths().end()) return path;
   }
   return imagePathForBook(folder);
 }
@@ -198,6 +227,12 @@ int folderChildCount(const std::string& folder, const std::vector<LibraryIndex::
 bool cover(GfxRenderer& renderer, const std::string& path, const int x, const int y, const int width,
            const int height, const bool rounded, const bool frame = true, const bool cropToFill = false) {
   if (path.empty() || width < 8 || height < 8) return false;
+  const unsigned long renderStartedAt = micros();
+  unsigned long targetCacheUs = 0;
+  unsigned long sourceCacheUs = 0;
+  unsigned long directDecodeUs = 0;
+  unsigned long fallbackDecodeUs = 0;
+  const bool deferredAtStart = renderer.shouldDeferImageDecode();
   renderer.rectangle.fill(x, y, width, height, false, rounded);
   ImageRender::Options options;
   options.cropToFill = cropToFill;
@@ -210,11 +245,87 @@ bool cover(GfxRenderer& renderer, const std::string& path, const int x, const in
   options.cacheNamespace = ImageDisplayCacheNamespace::Library;
   options.roundedOutside = rounded ? BitmapRender::RoundedOutside::PaperOutside
                                    : BitmapRender::RoundedOutside::None;
-  if (!ImageRender::create(renderer, path).render(x, y, width, height, options)) {
+  const ImageRender image = ImageRender::create(renderer, path);
+  const bool generatedThumbnail = isGeneratedThumbnailPath(path);
+  unsigned long stageStartedAt = micros();
+  bool rendered = image.renderDisplayCacheOnly(x, y, width, height, options);
+  targetCacheUs = micros() - stageStartedAt;
+  bool resizedFromCache = false;
+  if (!rendered && generatedThumbnail && !renderer.shouldDeferImageDecode()) {
+    ImageRender::Options directOptions = options;
+    stageStartedAt = micros();
+    rendered = image.render(x, y, width, height, directOptions);
+    directDecodeUs += micros() - stageStartedAt;
+  }
+  if (!rendered && !generatedThumbnail) {
+    stageStartedAt = micros();
+    ImageDisplayCacheOptions sourceOptions;
+    sourceOptions.cropToFill = true;
+    sourceOptions.cropAnchor = 128;
+    sourceOptions.cropAnchorY = 128;
+    sourceOptions.mode = options.mode;
+    sourceOptions.renderPlane = static_cast<uint8_t>(renderer.getRenderMode());
+    sourceOptions.roundedOutside = BitmapRender::RoundedOutside::None;
+    sourceOptions.quality = options.quality;
+    sourceOptions.cacheNamespace = ImageDisplayCacheNamespace::Book;
+
+    ImageDisplayCacheOptions targetOptions;
+    targetOptions.cropToFill = options.cropToFill;
+    targetOptions.cropAnchor = static_cast<uint8_t>(std::lround(options.cropAnchorX * 255.0f));
+    targetOptions.cropAnchorY = static_cast<uint8_t>(std::lround(options.cropAnchorY * 255.0f));
+    targetOptions.mode = options.mode;
+    targetOptions.renderPlane = static_cast<uint8_t>(renderer.getRenderMode());
+    targetOptions.roundedOutside = options.roundedOutside;
+    targetOptions.quality = options.quality;
+    targetOptions.cacheNamespace = ImageDisplayCacheNamespace::Library;
+
+    std::vector<std::string> sourcePaths{path};
+    const std::vector<std::string> siblings = siblingImagePaths(path);
+    sourcePaths.insert(sourcePaths.end(), siblings.begin(), siblings.end());
+    for (const std::string& sourcePath : sourcePaths) {
+      if (ImageDisplayCache::renderResizedFromCache(renderer, sourcePath, path, x, y, width, height,
+                                                     sourceOptions, targetOptions, false)) {
+        rendered = true;
+        resizedFromCache = true;
+        break;
+      }
+    }
+    sourceCacheUs = micros() - stageStartedAt;
+  }
+  if (!rendered) {
+    // Preserve the existing decoder as the final fallback when no display
+    // cache exists for this image.
+    stageStartedAt = micros();
+    rendered = image.render(x, y, width, height, options);
+    fallbackDecodeUs = micros() - stageStartedAt;
+  }
+  INX_SERIAL.printf("[%lu] [LIBRARY][THUMB-RENDER] path=%s rect=%d,%d %dx%d target_cache=%luus source_cache=%luus "
+                    "direct_decode=%luus fallback=%luus total=%luus deferred=%d rendered=%d\n",
+                    millis(), path.c_str(), x, y, width, height, targetCacheUs, sourceCacheUs, directDecodeUs,
+                    fallbackDecodeUs, micros() - renderStartedAt, deferredAtStart ? 1 : 0, rendered ? 1 : 0);
+  if (!rendered) {
+    INX_SERIAL.printf("[%lu] [LIBRARY][THUMB] render failed path=%s rect=%d,%d %dx%d\n", millis(), path.c_str(), x,
+                      y, width, height);
+    if (!renderer.shouldDeferImageDecode()) failedThumbnailPaths().insert(path);
     return false;
+  }
+  if (resizedFromCache) {
+    INX_SERIAL.printf("[%lu] [LIBRARY][THUMB] resized-cache placeholder path=%s rect=%d,%d %dx%d\n", millis(),
+                      path.c_str(), x, y, width, height);
   }
   if (frame) drawContrastFrame(renderer, x, y, width, height, rounded);
   return true;
+}
+
+bool coverWithFallback(GfxRenderer& renderer, const std::string& path, const int x, const int y, const int width,
+                       const int height, const bool rounded, const bool frame = true,
+                       const bool cropToFill = false) {
+  if (cover(renderer, path, x, y, width, height, rounded, frame, cropToFill)) return true;
+  if (renderer.shouldDeferImageDecode()) return false;
+  for (const std::string& candidate : siblingImagePaths(path)) {
+    if (cover(renderer, candidate, x, y, width, height, rounded, frame, cropToFill)) return true;
+  }
+  return false;
 }
 
 
@@ -675,6 +786,7 @@ void Thumb::calculate() {
 void Thumb::preloadImageCache(const std::string& path, const int x, const int y, const int width, const int height,
                               const bool cropToFill, const float cropAnchorX) const {
   if (path.empty() || width < 8 || height < 8) return;
+  if (isGeneratedThumbnailPath(path)) return;
   ImageRender::Options options;
   options.cropToFill = cropToFill;
   options.cropAnchorX = cropAnchorX;
@@ -732,11 +844,15 @@ bool Thumb::drawItem(const LibraryIndex::Book& item, const int x, const int y, c
     const int imageY = y + padding;
     const int imageHeight = std::max(8, height - titleHeight - padding * 2);
     const std::string liveFolderImage =
-        thumbnail && thumbnail->pathResolved ? thumbnail->image : folderImagePath(item.path);
+        thumbnail && thumbnail->pathResolved && !thumbnail->image.empty() &&
+                failedThumbnailPaths().find(thumbnail->image) == failedThumbnailPaths().end()
+            ? thumbnail->image
+            : folderImagePath(item.path);
     bool needsDecode = false;
     if (thumbnail && thumbnail->loaded && !thumbnail->first.empty()) {
       const int imageWidth = std::max(12, width - padding * 2);
-      if (cover(renderer, thumbnail->first, x + padding, imageY, imageWidth, imageHeight, rounded, true, true)) {
+      if (coverWithFallback(renderer, thumbnail->first, x + padding, imageY, imageWidth, imageHeight, rounded, true,
+                            true)) {
         if (inlineCount) {
           folderLabelWithCount(renderer, folderTitle(item), x + padding, imageWidth, y, height,
                                thumbnail->bookCount + thumbnail->folderCount);
@@ -753,7 +869,8 @@ bool Thumb::drawItem(const LibraryIndex::Book& item, const int x, const int y, c
     const bool singleBook = thumbnail && thumbnail->bookCount == 1;
     if (!liveFolderImage.empty()) {
       const int imageWidth = std::max(12, width - padding * 2);
-      if (cover(renderer, liveFolderImage, x + padding, imageY, imageWidth, imageHeight, rounded, true, true)) {
+      if (coverWithFallback(renderer, liveFolderImage, x + padding, imageY, imageWidth, imageHeight, rounded, true,
+                            true)) {
         const std::string title = folderTitle(item);
         if (inlineCount) {
           folderLabelWithCount(renderer, title, x + padding, imageWidth, y, height,
@@ -777,7 +894,10 @@ bool Thumb::drawItem(const LibraryIndex::Book& item, const int x, const int y, c
   }
 
   const std::string liveBookImage =
-      thumbnail && thumbnail->pathResolved ? thumbnail->image : imagePathForBook(item.path);
+      thumbnail && thumbnail->pathResolved && !thumbnail->image.empty() &&
+              failedThumbnailPaths().find(thumbnail->image) == failedThumbnailPaths().end()
+          ? thumbnail->image
+          : imagePathForBook(item.path);
   if (!liveBookImage.empty()) {
     constexpr int padding = 3;
     const int lineHeight = renderer.text.getLineHeight(systemFontId());
@@ -790,7 +910,7 @@ bool Thumb::drawItem(const LibraryIndex::Book& item, const int x, const int y, c
     const int imageWidth = imageAreaWidth;
     const int imageHeight = imageAreaHeight;
     renderer.rectangle.fill(x + padding, imageAreaY, imageAreaWidth, imageAreaHeight, false, rounded);
-    if (cover(renderer, liveBookImage, imageX, imageY, imageWidth, imageHeight, rounded, true, true)) {
+    if (coverWithFallback(renderer, liveBookImage, imageX, imageY, imageWidth, imageHeight, rounded, true, true)) {
       if (layout.titleLines > 1) {
         bookLabelWithProgress(renderer, bookTitle(item), x + padding, imageAreaWidth, imageAreaY, imageAreaHeight,
                               thumbnail ? thumbnail->progressPercent : 0);
@@ -846,12 +966,14 @@ int Thumb::itemAt(const int x, const int y) const {
 }
 
 bool Thumb::handleInput() {
-  if (mappedInput.wasTouchSwipeUp()) {
+  if (mappedInput.wasTouchSwipeUp() || mappedInput.wasPressed(MappedInputManager::Button::Down) ||
+      mappedInput.wasPressed(MappedInputManager::Button::PageForward)) {
     page = page + 1 < pageCount() ? page + 1 : 0;
     load();
     return true;
   }
-  if (mappedInput.wasTouchSwipeDown()) {
+  if (mappedInput.wasTouchSwipeDown() || mappedInput.wasPressed(MappedInputManager::Button::Up) ||
+      mappedInput.wasPressed(MappedInputManager::Button::PageBack)) {
     if (page > 0) {
       --page;
       load();

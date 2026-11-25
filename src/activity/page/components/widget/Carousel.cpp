@@ -4,11 +4,15 @@
 #include <BitmapRender.h>
 #include <GfxRenderer.h>
 #include <ImageRender.h>
+#include <SDCardManager.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <string>
+#include <unordered_set>
+#include <vector>
 
 #include "state/RecentBooks.h"
 #include "state/SystemSetting.h"
@@ -21,7 +25,63 @@ constexpr int kLeftCardGap = 20;
 bool evenThumbnails() { return SETTINGS.thumbnailSize == SystemSetting::THUMBNAIL_EVEN; }
 
 std::string thumbnailPath(const RecentBook& book) {
-  return book.thumbnailPath;
+  if (!book.thumbnailPath.empty() && SdMan.exists(book.thumbnailPath.c_str())) return book.thumbnailPath;
+
+  std::vector<std::string> directories;
+  if (!book.cachePath.empty()) directories.push_back(book.cachePath);
+  if (!book.path.empty()) {
+    std::string lowerPath = book.path;
+    std::transform(lowerPath.begin(), lowerPath.end(), lowerPath.begin(), [](const unsigned char value) {
+      return static_cast<char>(std::tolower(value));
+    });
+    const char* root = lowerPath.size() >= 4 && lowerPath.compare(lowerPath.size() - 4, 4, ".xtc") == 0
+                           ? "/.metadata/xtc"
+                           : "/.metadata/epub";
+    const std::string hashedDirectory = std::string(root) + "/" + std::to_string(std::hash<std::string>{}(book.path));
+    if (std::find(directories.begin(), directories.end(), hashedDirectory) == directories.end()) {
+      directories.push_back(hashedDirectory);
+    }
+    const size_t slash = book.path.find_last_of('/');
+    const std::string folder = slash == std::string::npos ? "/" : book.path.substr(0, slash);
+    if (std::find(directories.begin(), directories.end(), folder) == directories.end()) directories.push_back(folder);
+  }
+  for (const std::string& directory : directories) {
+    for (const char* name : {"thumb.jpg", "thumb.png", "thumb.bmp", "cover.jpg", "cover.png", "cover.bmp"}) {
+      const std::string candidate = directory == "/" ? "/" + std::string(name) : directory + "/" + name;
+      if (SdMan.exists(candidate.c_str())) return candidate;
+    }
+  }
+  INX_SERIAL.printf("[%lu] [HOME][CAROUSEL] thumbnail missing book=%s cache=%s stored=%s\n", millis(), book.path.c_str(),
+                    book.cachePath.c_str(), book.thumbnailPath.c_str());
+  return {};
+}
+
+std::unordered_set<std::string>& failedThumbnailPaths() {
+  static std::unordered_set<std::string> paths;
+  return paths;
+}
+
+std::vector<std::string> siblingImagePaths(const std::string& path) {
+  const size_t slash = path.find_last_of('/');
+  if (slash == std::string::npos) return {};
+  const std::string directory = path.substr(0, slash);
+  const char* names[] = {"thumb.jpg", "thumb.png", "thumb.bmp", "cover.jpg", "cover.png", "cover.bmp"};
+  std::vector<std::string> paths;
+  for (const char* name : names) {
+    const std::string candidate = directory + "/" + name;
+    if (candidate != path && SdMan.exists(candidate.c_str()) &&
+        failedThumbnailPaths().find(candidate) == failedThumbnailPaths().end()) {
+      paths.push_back(candidate);
+    }
+  }
+  return paths;
+}
+
+std::string usableThumbnailPath(const RecentBook& book) {
+  const std::string path = thumbnailPath(book);
+  if (failedThumbnailPaths().find(path) == failedThumbnailPaths().end()) return path;
+  const std::vector<std::string> siblings = siblingImagePaths(path);
+  return siblings.empty() ? std::string() : siblings.front();
 }
 
 std::string bookTitle(const RecentBook& book) {
@@ -50,7 +110,7 @@ void renderCover(GfxRenderer& renderer, const RecentBook& book, const int x, con
                  const int height, const int font, const float cropAnchorX = 0.5f, const bool cropToFill = true,
                  const HomeTheme::CarouselShadowStyle shadowStyle = HomeTheme::CarouselShadowStyle::None,
                  const bool uniformFrame = false) {
-  const std::string path = thumbnailPath(book);
+  const std::string path = usableThumbnailPath(book);
   CoverBounds background{x, y, width, height};
   if (!path.empty() && !cropToFill && !uniformFrame) {
     background = fittedCoverBounds(book, x, y, width, height);
@@ -78,7 +138,57 @@ void renderCover(GfxRenderer& renderer, const RecentBook& book, const int x, con
     }
     const CoverBounds image = cropToFill ? CoverBounds{x, y, width, height}
                                          : fittedCoverBounds(book, x, y, width, height);
-    if (ImageRender::create(renderer, path).render(image.x, image.y, image.width, image.height, options)) {
+    auto renderImage = [&](const std::string& candidate) {
+      ImageDisplayCacheOptions targetCacheOptions;
+      targetCacheOptions.cropToFill = options.cropToFill;
+      targetCacheOptions.cropAnchor = static_cast<uint8_t>(std::lround(options.cropAnchorX * 255.0f));
+      targetCacheOptions.cropAnchorY = static_cast<uint8_t>(std::lround(options.cropAnchorY * 255.0f));
+      targetCacheOptions.mode = options.mode;
+      targetCacheOptions.renderPlane = static_cast<uint8_t>(renderer.getRenderMode());
+      targetCacheOptions.roundedOutside = options.roundedOutside;
+      targetCacheOptions.quality = options.quality;
+
+      ImageDisplayCacheOptions sourceCacheOptions = targetCacheOptions;
+      sourceCacheOptions.cropToFill = true;
+      sourceCacheOptions.cropAnchor = 128;
+      sourceCacheOptions.cropAnchorY = 128;
+      sourceCacheOptions.roundedOutside = BitmapRender::RoundedOutside::None;
+      sourceCacheOptions.cacheNamespace = ImageDisplayCacheNamespace::Book;
+
+      bool rendered = false;
+      bool resizedFromCache = false;
+      if (ImageDisplayCache::renderResizedFromCache(renderer, candidate, candidate, image.x, image.y, image.width,
+                                                     image.height, sourceCacheOptions, targetCacheOptions, false)) {
+        rendered = true;
+        resizedFromCache = true;
+      }
+      if (!rendered) {
+        ImageRender::Options fallbackOptions = options;
+        fallbackOptions.useDisplayCache = false;
+        fallbackOptions.asyncDisplayCache = false;
+        rendered = ImageRender::create(renderer, candidate).render(image.x, image.y, image.width, image.height,
+                                                                    fallbackOptions);
+      }
+      INX_SERIAL.printf("[%lu] [HOME][CAROUSEL] path=%s rect=%d,%d %dx%d defer=%d rendered=%d\n", millis(),
+                        candidate.c_str(), image.x, image.y, image.width, image.height,
+                        renderer.shouldDeferImageDecode() ? 1 : 0, rendered ? 1 : 0);
+      if (resizedFromCache) {
+        INX_SERIAL.printf("[%lu] [HOME][CAROUSEL] resized-cache target=%s\n", millis(), candidate.c_str());
+      }
+      if (!rendered && !renderer.shouldDeferImageDecode()) failedThumbnailPaths().insert(candidate);
+      return rendered;
+    };
+    const bool rendered = renderImage(path);
+    bool renderedWithFallback = rendered;
+    if (!rendered && !renderer.shouldDeferImageDecode()) {
+      for (const std::string& candidate : siblingImagePaths(path)) {
+        if (renderImage(candidate)) {
+          renderedWithFallback = true;
+          break;
+        }
+      }
+    }
+    if (renderedWithFallback) {
       renderer.rectangle.render(backgroundX, backgroundY, backgroundWidth, backgroundHeight, true,
                                 SETTINGS.bitmapRoundedCorners != 0, SETTINGS.bitmapRoundedCorners == 2);
       return;
@@ -120,7 +230,7 @@ void renderProgressTag(GfxRenderer& renderer, const RecentBook& book, const int 
 
 void preloadCover(GfxRenderer& renderer, const RecentBook& book, const int x, const int y, const int width,
                   const int height, const float cropAnchorX, const bool cropToFill = true) {
-  const std::string path = thumbnailPath(book);
+  const std::string path = usableThumbnailPath(book);
   if (path.empty()) return;
 
   ImageRender::Options options;
@@ -538,10 +648,6 @@ void Carousel::preview(const int x, const int y, const int width, const int heig
   renderBackground(x, y, width, height, background);
   const ContentArea content = contentArea(y, height, showLabel);
   if (showLabel) renderLabel(x, y, "Continue Reading", labelColor);
-  if (RECENT_BOOKS.getBooks().empty()) {
-    renderer_.text.centered(systemFontIdForPointSize(12), content.y + content.height / 2, "No recent");
-    return;
-  }
 
   if (center50Preview) {
     const LargeCenterCarouselBounds layout = largeCenterBounds(x, content.y, width, content.height, fullHeight);

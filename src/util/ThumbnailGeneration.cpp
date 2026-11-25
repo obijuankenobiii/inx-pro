@@ -10,11 +10,20 @@
 #include <cstring>
 #include <string>
 
-#include "activity/page/views/Library/Thumb.h"
 #include "util/SdIoMutex.h"
 #include "util/StringUtils.h"
 
 namespace {
+constexpr int kThumbnailMaxWidth = 360;
+constexpr int kThumbnailMaxHeight = 540;
+
+bool thumbnailExceedsTarget(const std::string& path) {
+  int width = 0;
+  int height = 0;
+  if (!ImageRender::getDimensions(path, &width, &height)) return false;
+  return width > kThumbnailMaxWidth || height > kThumbnailMaxHeight;
+}
+
 struct Generator {
   GfxRenderer& renderer;
   SemaphoreHandle_t rendererMutex;
@@ -29,40 +38,6 @@ struct Generator {
     if (progress) progress(result.processed, currentPath);
   }
 
-  bool lockRenderer(const TickType_t timeout) const {
-    return rendererMutex && xSemaphoreTake(rendererMutex, timeout) == pdTRUE;
-  }
-
-  void precache(const std::string& path) {
-    int width = 0;
-    int height = 0;
-    views::library::Thumb::getThumbnailSize(renderer, width, height);
-    if (width <= 2 || height <= 2) return;
-    ImageRender::Options options;
-    options.cropToFill = true;
-    options.useDisplayCache = true;
-    renderer.rectangle.fill(0, 0, width - 2, height - 2, false);
-    ImageRender::create(renderer, path).render(0, 0, width - 2, height - 2, options);
-  }
-
-  bool precacheExisting(const std::string& jpg, const std::string& png, const std::string& bmp) {
-    SdIoMutex::Lock ioLock;
-    if (!lockRenderer(pdMS_TO_TICKS(500))) return false;
-    bool ready = false;
-    if (SdMan.exists(jpg.c_str())) {
-      precache(jpg);
-      ready = true;
-    } else if (SdMan.exists(png.c_str())) {
-      precache(png);
-      ready = true;
-    } else if (SdMan.exists(bmp.c_str())) {
-      precache(bmp);
-      ready = true;
-    }
-    xSemaphoreGive(rendererMutex);
-    return ready;
-  }
-
   bool process(const std::string& path) {
     strlcpy(currentPath, path.c_str(), sizeof(currentPath));
     report();
@@ -72,11 +47,23 @@ struct Generator {
       const std::string jpg = epub.getThumbJpegPath();
       const std::string png = epub.getThumbPngPath();
       const std::string bmp = epub.getThumbBmpPath();
-      if (SdMan.exists(jpg.c_str()) || SdMan.exists(png.c_str()) || SdMan.exists(bmp.c_str())) {
+      const bool hasJpg = SdMan.exists(jpg.c_str());
+      const bool hasPng = SdMan.exists(png.c_str());
+      const bool hasBmp = SdMan.exists(bmp.c_str());
+      const bool hasThumbnail = hasJpg || hasPng || hasBmp;
+      const bool oversizedJpg = hasJpg && thumbnailExceedsTarget(jpg);
+      if (hasThumbnail && !oversizedJpg) {
         ++result.skipped;
         ++result.processed;
         report();
         return true;
+      }
+      if (oversizedJpg) {
+        INX_SERIAL.printf("[%lu] [THUMB-GEN] replacing oversized thumbnail path=%s target=%dx%d\n", millis(),
+                          jpg.c_str(), kThumbnailMaxWidth, kThumbnailMaxHeight);
+        SdMan.remove(jpg.c_str());
+        SdMan.remove(png.c_str());
+        SdMan.remove(bmp.c_str());
       }
       if (!epub.load()) {
         ++result.failed;
@@ -87,7 +74,6 @@ struct Generator {
       const bool ok = epub.generateThumbBmp();
       if (ok) {
         ++result.generated;
-        precacheExisting(jpg, png, bmp);
       } else {
         ++result.failed;
       }
@@ -115,10 +101,6 @@ struct Generator {
       const bool ok = xtc.generateThumbBmp();
       if (ok) {
         ++result.generated;
-        if (lockRenderer(pdMS_TO_TICKS(500))) {
-          precache(bmp);
-          xSemaphoreGive(rendererMutex);
-        }
       } else {
         ++result.failed;
       }
@@ -144,9 +126,8 @@ struct Generator {
         return true;
       }
       bool ok = false;
-      if (lockRenderer(pdMS_TO_TICKS(2000))) {
+      if (rendererMutex && xSemaphoreTake(rendererMutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
         ok = pdf.generateThumbBmp(renderer);
-        if (ok) precache(bmp);
         xSemaphoreGive(rendererMutex);
       }
       if (ok) {

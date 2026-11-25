@@ -23,6 +23,9 @@ constexpr char tmpBookBinFile[] = "/book.bin.tmp";
 constexpr char tmpSpineBinFile[] = "/spine.bin.tmp";
 constexpr char tmpTocBinFile[] = "/toc.bin.tmp";
 constexpr char tmpCssBinFile[] = "/css.bin.tmp";
+constexpr char tmpContainerFile[] = "/.container.tmp";
+constexpr char tmpOpfFile[] = "/.opf.tmp";
+constexpr char tmpCssExtractFile[] = "/.css.tmp";
 constexpr char imageMetadataFile[] = "/image_dimensions.bin";
 constexpr char imageMetadataTempFile[] = "/image_dimensions.bin.tmp";
 constexpr uint32_t kImageMetadataMagic = 0x444D4949;
@@ -115,6 +118,7 @@ std::string normaliseTocTitle(const std::string& title) {
 
 bool BookMetadataCache::beginWrite() {
   buildMode = true;
+  writeFailed = false;
   spineCount = 0;
   tocCount = 0;
   cssCount = 0;
@@ -202,7 +206,20 @@ bool BookMetadataCache::endWrite() {
   return true;
 }
 
+void BookMetadataCache::abortWrite() {
+  bookFile.close();
+  spineFile.close();
+  tocFile.close();
+  cssFile.close();
+  buildMode = false;
+  cleanupTmpFiles();
+}
+
 bool BookMetadataCache::buildBookBin(const std::string& epubPath, const BookMetadata& metadata) {
+  if (writeFailed) {
+    INX_SERIAL.printf("[%lu] [BMC] Refusing to commit cache after a failed temporary write\n", millis());
+    return false;
+  }
   const std::string bookPath = cachePath + bookBinFile;
   const std::string tempBookPath = cachePath + tmpBookBinFile;
   SdMan.remove(tempBookPath.c_str());
@@ -247,45 +264,53 @@ bool BookMetadataCache::buildBookBin(const std::string& epubPath, const BookMeta
   const uint32_t lutSize = sizeof(uint32_t) * spineCount + sizeof(uint32_t) * tocCount + sizeof(uint32_t) * cssCount;
   const uint32_t lutOffset = headerASize + metadataSize;
 
-  serialization::writePod(bookFile, BOOK_CACHE_VERSION);
-  serialization::writePod(bookFile, lutOffset);
-  serialization::writePod(bookFile, spineCount);
-  serialization::writePod(bookFile, tocCount);
-  serialization::writePod(bookFile, cssCount);
+  bool writeOk = true;
+  const auto writeBookPod = [&writeOk, this](const auto& value) {
+    if (!serialization::writePod(bookFile, value)) writeOk = false;
+  };
+  const auto writeBookString = [&writeOk, this](const std::string& value) {
+    if (!serialization::writeString(bookFile, value)) writeOk = false;
+  };
 
-  serialization::writeString(bookFile, metadata.title);
-  serialization::writeString(bookFile, metadata.author);
-  serialization::writeString(bookFile, metadata.description);
-  serialization::writeString(bookFile, metadata.language);
-  serialization::writeString(bookFile, metadata.coverItemHref);
-  serialization::writeString(bookFile, metadata.textReferenceHref);
-  serialization::writeString(bookFile, metadata.titleSort);
-  serialization::writeString(bookFile, metadata.authorSort);
-  serialization::writeString(bookFile, metadata.series);
-  serialization::writeString(bookFile, metadata.seriesIndex);
-  serialization::writeString(bookFile, metadata.rating);
-  serialization::writeString(bookFile, metadata.publisher);
-  serialization::writeString(bookFile, metadata.publicationDate);
-  serialization::writeString(bookFile, metadata.calibreTimestamp);
-  serialization::writeString(bookFile, metadata.calibreUuid);
+  writeBookPod(BOOK_CACHE_VERSION);
+  writeBookPod(lutOffset);
+  writeBookPod(spineCount);
+  writeBookPod(tocCount);
+  writeBookPod(cssCount);
+
+  writeBookString(metadata.title);
+  writeBookString(metadata.author);
+  writeBookString(metadata.description);
+  writeBookString(metadata.language);
+  writeBookString(metadata.coverItemHref);
+  writeBookString(metadata.textReferenceHref);
+  writeBookString(metadata.titleSort);
+  writeBookString(metadata.authorSort);
+  writeBookString(metadata.series);
+  writeBookString(metadata.seriesIndex);
+  writeBookString(metadata.rating);
+  writeBookString(metadata.publisher);
+  writeBookString(metadata.publicationDate);
+  writeBookString(metadata.calibreTimestamp);
+  writeBookString(metadata.calibreUuid);
 
   const uint16_t tagCount = static_cast<uint16_t>(std::min(metadata.tags.size(), static_cast<size_t>(kMaxMetadataTags)));
-  serialization::writePod(bookFile, tagCount);
-  for (uint16_t i = 0; i < tagCount; ++i) serialization::writeString(bookFile, metadata.tags[i]);
+  writeBookPod(tagCount);
+  for (uint16_t i = 0; i < tagCount; ++i) writeBookString(metadata.tags[i]);
 
   const uint16_t fieldCount =
       static_cast<uint16_t>(std::min(metadata.fields.size(), static_cast<size_t>(kMaxMetadataFields)));
-  serialization::writePod(bookFile, fieldCount);
+  writeBookPod(fieldCount);
   for (uint16_t i = 0; i < fieldCount; ++i) {
     const auto& field = metadata.fields[i];
-    serialization::writeString(bookFile, field.name);
-    serialization::writeString(bookFile, field.value);
+    writeBookString(field.name);
+    writeBookString(field.value);
     const uint8_t attributeCount =
         static_cast<uint8_t>(std::min(field.attributes.size(), static_cast<size_t>(kMaxMetadataAttributes)));
-    serialization::writePod(bookFile, attributeCount);
+    writeBookPod(attributeCount);
     for (uint8_t j = 0; j < attributeCount; ++j) {
-      serialization::writeString(bookFile, field.attributes[j].name);
-      serialization::writeString(bookFile, field.attributes[j].value);
+      writeBookString(field.attributes[j].name);
+      writeBookString(field.attributes[j].value);
     }
   }
 
@@ -293,7 +318,7 @@ bool BookMetadataCache::buildBookBin(const std::string& epubPath, const BookMeta
   for (int i = 0; i < spineCount; i++) {
     uint32_t pos = spineFile.position();
     auto spineEntry = readSpineEntry(spineFile);
-    serialization::writePod(bookFile, pos + lutOffset + lutSize);
+    writeBookPod(pos + lutOffset + lutSize);
     if ((i & 31) == 31) delay(1);
   }
 
@@ -302,7 +327,7 @@ bool BookMetadataCache::buildBookBin(const std::string& epubPath, const BookMeta
   for (int i = 0; i < tocCount; i++) {
     uint32_t pos = tocFile.position();
     auto tocEntry = readTocEntry(tocFile);
-    serialization::writePod(bookFile, pos + lutOffset + lutSize + static_cast<uint32_t>(spineFile.position()));
+    writeBookPod(pos + lutOffset + lutSize + static_cast<uint32_t>(spineFile.position()));
     if (tocEntry.spineIndex >= 0 && tocEntry.spineIndex < static_cast<int16_t>(spineCount) &&
         firstTocIndexForSpine[tocEntry.spineIndex] == -1) {
       firstTocIndexForSpine[tocEntry.spineIndex] = static_cast<int16_t>(i);
@@ -317,12 +342,12 @@ bool BookMetadataCache::buildBookBin(const std::string& epubPath, const BookMeta
     for (int i = 0; i < cssCount; i++) {
       uint32_t pos = cssFile.position();
       auto cssEntry = readCssEntry(cssFile);
-      serialization::writePod(bookFile, pos + cssOffset);
+      writeBookPod(pos + cssOffset);
       if ((i & 31) == 31) delay(1);
     }
   } else {
     for (int i = 0; i < cssCount; i++) {
-      serialization::writePod(bookFile, static_cast<uint32_t>(0));
+      writeBookPod(static_cast<uint32_t>(0));
       if ((i & 31) == 31) delay(1);
     }
   }
@@ -373,6 +398,7 @@ bool BookMetadataCache::buildBookBin(const std::string& epubPath, const BookMeta
     spineEntry.cumulativeSize = cumSize;
 
     writeSpineEntry(bookFile, spineEntry);
+    if (writeFailed) writeOk = false;
     if ((i & 31) == 31) delay(1);
   }
 
@@ -387,6 +413,7 @@ bool BookMetadataCache::buildBookBin(const std::string& epubPath, const BookMeta
   for (int i = 0; i < tocCount; i++) {
     auto tocEntry = readTocEntry(tocFile);
     writeTocEntry(bookFile, tocEntry);
+    if (writeFailed) writeOk = false;
     if ((i & 31) == 31) delay(1);
   }
 
@@ -395,6 +422,7 @@ bool BookMetadataCache::buildBookBin(const std::string& epubPath, const BookMeta
     for (int i = 0; i < cssCount; i++) {
       auto cssEntry = readCssEntry(cssFile);
       writeCssEntry(bookFile, cssEntry);
+      if (writeFailed) writeOk = false;
       if ((i & 31) == 31) delay(1);
     }
     cssFile.close();
@@ -402,16 +430,43 @@ bool BookMetadataCache::buildBookBin(const std::string& epubPath, const BookMeta
 
   zip.close();
 
+  bookFile.sync();
+  if (!writeOk) {
+    bookFile.close();
+    spineFile.close();
+    tocFile.close();
+    SdMan.remove(tempBookPath.c_str());
+    INX_SERIAL.printf("[%lu] [BMC] Cache write failed; temporary book.bin discarded\n", millis());
+    return false;
+  }
   bookFile.close();
   spineFile.close();
   tocFile.close();
 
-  if (SdMan.exists(bookPath.c_str())) SdMan.remove(bookPath.c_str());
+  const std::string backupPath = bookPath + ".bak";
+  SdMan.remove(backupPath.c_str());
+  const bool hadBook = SdMan.exists(bookPath.c_str());
+  if (hadBook && !SdMan.rename(bookPath.c_str(), backupPath.c_str())) {
+    SdMan.remove(tempBookPath.c_str());
+    INX_SERIAL.printf("[%lu] [BMC] Failed to stage existing book.bin cache: %s\n", millis(), bookPath.c_str());
+    return false;
+  }
   if (!SdMan.rename(tempBookPath.c_str(), bookPath.c_str())) {
+    if (hadBook) SdMan.rename(backupPath.c_str(), bookPath.c_str());
     SdMan.remove(tempBookPath.c_str());
     INX_SERIAL.printf("[%lu] [BMC] Failed to commit book.bin cache: %s\n", millis(), bookPath.c_str());
     return false;
   }
+
+  BookMetadataCache validator(cachePath);
+  if (!validator.load()) {
+    SdMan.remove(bookPath.c_str());
+    if (hadBook) SdMan.rename(backupPath.c_str(), bookPath.c_str());
+    INX_SERIAL.printf("[%lu] [BMC] Validation failed; restored previous book.bin cache: %s\n", millis(),
+                  bookPath.c_str());
+    return false;
+  }
+  SdMan.remove(backupPath.c_str());
 
   INX_SERIAL.printf("[%lu] [BMC] Successfully built book.bin\n", millis());
   return true;
@@ -430,6 +485,9 @@ bool BookMetadataCache::cleanupTmpFiles() const {
   if (SdMan.exists((cachePath + tmpBookBinFile).c_str())) {
     SdMan.remove((cachePath + tmpBookBinFile).c_str());
   }
+  SdMan.remove((cachePath + tmpContainerFile).c_str());
+  SdMan.remove((cachePath + tmpOpfFile).c_str());
+  SdMan.remove((cachePath + tmpCssExtractFile).c_str());
   return true;
 }
 
@@ -536,27 +594,29 @@ bool BookMetadataCache::saveImageMetadata(const std::vector<ImageMetadataEntry>&
 
 uint32_t BookMetadataCache::writeSpineEntry(FsFile& file, const SpineEntry& entry) const {
   const uint32_t pos = file.position();
-  serialization::writeString(file, entry.href);
-  serialization::writePod(file, entry.cumulativeSize);
-  serialization::writePod(file, entry.tocIndex);
+  if (!serialization::writeString(file, entry.href) || !serialization::writePod(file, entry.cumulativeSize) ||
+      !serialization::writePod(file, entry.tocIndex)) {
+    writeFailed = true;
+  }
   return pos;
 }
 
 uint32_t BookMetadataCache::writeTocEntry(FsFile& file, const TocEntry& entry) const {
   const uint32_t pos = file.position();
-  serialization::writeString(file, entry.title);
-  serialization::writeString(file, entry.href);
-  serialization::writeString(file, entry.anchor);
-  serialization::writePod(file, entry.level);
-  serialization::writePod(file, entry.spineIndex);
+  if (!serialization::writeString(file, entry.title) || !serialization::writeString(file, entry.href) ||
+      !serialization::writeString(file, entry.anchor) || !serialization::writePod(file, entry.level) ||
+      !serialization::writePod(file, entry.spineIndex)) {
+    writeFailed = true;
+  }
   return pos;
 }
 
 uint32_t BookMetadataCache::writeCssEntry(FsFile& file, const CssEntry& entry) const {
   const uint32_t pos = file.position();
-  serialization::writeString(file, entry.path);
-  serialization::writeString(file, entry.content);
-  serialization::writePod(file, entry.size);
+  if (!serialization::writeString(file, entry.path) || !serialization::writeString(file, entry.content) ||
+      !serialization::writePod(file, entry.size)) {
+    writeFailed = true;
+  }
   return pos;
 }
 
@@ -908,9 +968,22 @@ bool BookMetadataCache::load() {
     }
     coreMetadata.fields.push_back(std::move(field));
   }
-  if (bookFile.position() != lutOffset) {
+  const uint64_t lutEnd = static_cast<uint64_t>(lutOffset) +
+                          static_cast<uint64_t>(spineCount + tocCount + cssCount) * sizeof(uint32_t);
+  if (bookFile.position() != lutOffset || lutOffset < bookFile.position() || lutEnd > bookFile.size()) {
     bookFile.close();
     return false;
+  }
+
+  const uint32_t lutEntries = static_cast<uint32_t>(spineCount) + static_cast<uint32_t>(tocCount) + cssCount;
+  for (uint32_t i = 0; i < lutEntries; ++i) {
+    uint32_t entryOffset = 0;
+    if (!bookFile.seek(lutOffset + i * sizeof(uint32_t)) ||
+        bookFile.read(reinterpret_cast<uint8_t*>(&entryOffset), sizeof(entryOffset)) != sizeof(entryOffset) ||
+        entryOffset < lutEnd || entryOffset >= bookFile.size()) {
+      bookFile.close();
+      return false;
+    }
   }
 
   loaded = true;

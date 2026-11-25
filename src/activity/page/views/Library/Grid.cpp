@@ -203,11 +203,13 @@ int Grid::itemAt(const int x, const int y) const {
 }
 
 bool Grid::handleInput() {
-  if (mappedInput.wasTouchSwipeUp()) {
+  if (mappedInput.wasTouchSwipeUp() || mappedInput.wasPressed(MappedInputManager::Button::Down) ||
+      mappedInput.wasPressed(MappedInputManager::Button::PageForward)) {
     page = page + 1 < pageCount() ? page + 1 : 0;
     return true;
   }
-  if (mappedInput.wasTouchSwipeDown()) {
+  if (mappedInput.wasTouchSwipeDown() || mappedInput.wasPressed(MappedInputManager::Button::Up) ||
+      mappedInput.wasPressed(MappedInputManager::Button::PageBack)) {
     if (page > 0) --page;
     return true;
   }

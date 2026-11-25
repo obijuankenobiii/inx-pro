@@ -968,6 +968,11 @@ bool JpegToBmpConverter::jpegFileToThumbnailJpeg(FsFile& jpegFile, Print& jpegOu
     return progressiveJpegToThumbnailJpeg(jpegFile, jpegOut, targetMaxWidth, targetMaxHeight, quality);
   }
 
+  jpegFile.seek(0);
+  if (JpegRender::writeJpegDecThumbnailJpeg(jpegFile, jpegOut, targetMaxWidth, targetMaxHeight, quality)) {
+    return true;
+  }
+
   static const size_t kColorBudgets[] = {0u /* default, best quality */, 65536u /* mild fragmentation */,
                                          49152u /* heavy fragmentation fallback */};
   for (size_t i = 0; i < sizeof(kColorBudgets) / sizeof(kColorBudgets[0]); ++i) {
@@ -1159,6 +1164,9 @@ bool JpegToBmpConverter::jpegBytesToThumbnailJpeg(const uint8_t* jpegBytes, cons
                                                    const int targetMaxWidth, const int targetMaxHeight,
                                                    const uint8_t quality) {
   if (isProgressiveJpegBytes(jpegBytes, jpegSize)) return false;
+  if (JpegRender::writeJpegDecThumbnailJpeg(jpegBytes, jpegSize, jpegOut, targetMaxWidth, targetMaxHeight, quality)) {
+    return true;
+  }
   static const size_t kColorBudgets[] = {0u /* default, best quality */, 65536u /* mild fragmentation */,
                                          49152u /* heavy fragmentation fallback */};
   for (const size_t budget : kColorBudgets) {

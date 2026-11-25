@@ -30,9 +30,10 @@ constexpr uint16_t kVersion = 1;
 constexpr uint32_t kCombinedMagic = 0x32435249;
 constexpr const char* kCacheDir = "/.system/cache";
 constexpr size_t kIoBufferSize = 16384;
-constexpr size_t kAsyncCacheQueueLength = 6;
+constexpr size_t kAsyncCacheQueueLength = 24;
 constexpr size_t kRamCacheSlots = 64;
 constexpr size_t kRamCacheByteBudget = 512 * 1024;
+constexpr uint8_t kWidgetCacheContentVersion = 3;
 
 
 
@@ -342,13 +343,16 @@ bool cachePathAvailable(const std::string& path) {
   return hasRamCache(path) || SdMan.exists(path.c_str());
 }
 
-uint32_t cacheHash(const std::string& sourcePath, const int width, const int height, const VisibleRect& visible,
-                   const ImageDisplayCacheOptions& options) {
+uint32_t cacheHashFor(const std::string& sourcePath, const int width, const int height, const VisibleRect& visible,
+                      const ImageDisplayCacheOptions& options, const bool includeSourceSize,
+                      const bool includeWidgetVersion) {
   uint32_t hash = 2166136261u;
   for (const char c : sourcePath) {
     hash = fnv1aAdd(hash, static_cast<uint8_t>(c));
   }
-  hash = fnv1aAddUint32(hash, sourceSize(sourcePath));
+  if (includeSourceSize) {
+    hash = fnv1aAddUint32(hash, sourceSize(sourcePath));
+  }
   hash = fnv1aAddUint32(hash, static_cast<uint32_t>(width));
   hash = fnv1aAddUint32(hash, static_cast<uint32_t>(height));
   hash = fnv1aAddUint32(hash, static_cast<uint32_t>(visible.sourceOffsetX));
@@ -366,7 +370,20 @@ uint32_t cacheHash(const std::string& sourcePath, const int width, const int hei
   hash = fnv1aAdd(hash, options.renderPlane);
   hash = fnv1aAdd(hash, static_cast<uint8_t>(options.roundedOutside));
   hash = fnv1aAdd(hash, options.quality ? 1 : 0);
+  if (includeWidgetVersion && options.cacheNamespace == ImageDisplayCacheNamespace::Widgets) {
+    hash = fnv1aAdd(hash, kWidgetCacheContentVersion);
+  }
   return hash;
+}
+
+uint32_t cacheHash(const std::string& sourcePath, const int width, const int height, const VisibleRect& visible,
+                   const ImageDisplayCacheOptions& options) {
+  return cacheHashFor(sourcePath, width, height, visible, options, false, false);
+}
+
+uint32_t legacyCacheHash(const std::string& sourcePath, const int width, const int height,
+                         const VisibleRect& visible, const ImageDisplayCacheOptions& options) {
+  return cacheHashFor(sourcePath, width, height, visible, options, true, true);
 }
 
 uint32_t cacheHashCombined(const std::string& sourcePath, const int width, const int height,
@@ -633,6 +650,78 @@ bool loadSdCacheIntoRam(const std::string& cachePath, const VisibleRect& visible
   return hasRamCache(cachePath);
 }
 
+bool loadNamedCacheIntoRam(const std::string& cachePath, VisibleRect* visible,
+                           const ImageDisplayCacheOptions& options) {
+  if (!visible || !SdMan.exists(cachePath.c_str())) return false;
+
+  FsFile file;
+  if (!SdMan.openFileForRead("IDC", cachePath, file)) return false;
+
+  CacheHeader header;
+  const bool headerOk = file.read(&header, sizeof(header)) == sizeof(header) && header.magic == kMagic &&
+                        header.version == kVersion && header.headerSize == sizeof(CacheHeader) && header.width > 0 &&
+                        header.height > 0 && header.rowBytes == static_cast<uint16_t>((header.width + 7) / 8);
+  const size_t dataBytes = headerOk ? static_cast<size_t>(header.height) * header.rowBytes : 0;
+  const uint64_t expectedFileSize = sizeof(CacheHeader) + static_cast<uint64_t>(dataBytes);
+  if (!headerOk || static_cast<uint64_t>(file.size()) != expectedFileSize) {
+    file.close();
+    return false;
+  }
+
+  std::unique_ptr<uint8_t, decltype(&freeCacheRows)> rows(allocateCacheRows(dataBytes), freeCacheRows);
+  if (!rows) {
+    file.close();
+    return false;
+  }
+  size_t offset = 0;
+  while (offset < dataBytes) {
+    const size_t chunk = std::min(kIoBufferSize, dataBytes - offset);
+    if (file.read(rows.get() + offset, chunk) != chunk) {
+      file.close();
+      return false;
+    }
+    offset += chunk;
+  }
+  file.close();
+  if (packedRowsAllInk(rows.get(), header.width, header.height, header.rowBytes)) return false;
+
+  putRamCache(cachePath, header, rows.get());
+  if (!hasRamCache(cachePath)) return false;
+  *visible = VisibleRect{0, 0, header.width, header.height, 0, 0};
+  (void)options;
+  return true;
+}
+
+bool copyRamCacheRows(const std::string& cachePath, const VisibleRect& visible, uint8_t** outRows) {
+  if (!outRows) return false;
+  *outRows = nullptr;
+  CacheState* state = cacheState();
+  if (!state || !lockRamCache()) return false;
+
+  RamCacheEntry* hit = nullptr;
+  for (RamCacheEntry& entry : state->ramCache) {
+    if (entry.rows && entry.path == cachePath && entry.width == visible.width && entry.height == visible.height &&
+        entry.rowBytes == static_cast<uint16_t>((visible.width + 7) / 8)) {
+      hit = &entry;
+      break;
+    }
+  }
+  if (!hit || packedRowsAllInk(hit->rows, visible.width, visible.height, hit->rowBytes)) {
+    unlockRamCache();
+    return false;
+  }
+
+  const size_t bytes = static_cast<size_t>(visible.height) * hit->rowBytes;
+  uint8_t* rows = allocateCacheRows(bytes);
+  if (rows) {
+    memcpy(rows, hit->rows, bytes);
+    hit->usedAt = ++state->ramCacheClock;
+    *outRows = rows;
+  }
+  unlockRamCache();
+  return rows != nullptr;
+}
+
 bool renderSdCacheDirect(GfxRenderer& renderer, const std::string& cachePath, const VisibleRect& visible) {
   if (!SdMan.exists(cachePath.c_str())) {
     return false;
@@ -709,7 +798,7 @@ std::string ImageDisplayCache::legacyPathFor(GfxRenderer& renderer, const std::s
   if (!visibleBounds(renderer, x, y, width, height, visible)) {
     return "";
   }
-  const uint32_t hash = cacheHash(sourcePath, width, height, visible, options);
+  const uint32_t hash = legacyCacheHash(sourcePath, width, height, visible, options);
   char name[48];
   snprintf(name, sizeof(name), "/%02lx/%08lx.irdc", static_cast<unsigned long>((hash >> 24) & 0xFF),
            static_cast<unsigned long>(hash));
@@ -781,6 +870,15 @@ bool ImageDisplayCache::renderIfAvailable(GfxRenderer& renderer, const std::stri
   return false;
 }
 
+bool ImageDisplayCache::renderNamedIfAvailable(GfxRenderer& renderer, const std::string& cachePath, const int x,
+                                               const int y, const int width, const int height) {
+  SdIoMutex::Lock ioLock;
+  VisibleRect visible;
+  if (cachePath.empty() || !visibleBounds(renderer, x, y, width, height, visible)) return false;
+  if (drawRamCache(renderer, cachePath, visible)) return true;
+  return renderSdCacheDirect(renderer, cachePath, visible);
+}
+
 bool ImageDisplayCache::preloadIfAvailable(GfxRenderer& renderer, const std::string& sourcePath, const int x,
                                            const int y, const int width, const int height,
                                            const ImageDisplayCacheOptions& options) {
@@ -801,6 +899,181 @@ bool ImageDisplayCache::preloadIfAvailable(GfxRenderer& renderer, const std::str
     return legacyPath != cachePath;
   }
   return loadSdCacheIntoRam(legacyPath, visible, options);
+}
+
+bool ImageDisplayCache::renderResizedFromCache(GfxRenderer& renderer, const std::string& sourcePath,
+                                               const std::string& targetPath, const int x, const int y,
+                                               const int width, const int height,
+                                               const ImageDisplayCacheOptions& sourceOptions,
+                                               const ImageDisplayCacheOptions& targetOptions,
+                                               const bool persistTargetCache) {
+  if (sourcePath.empty() || targetPath.empty() || width <= 0 || height <= 0) return false;
+
+  VisibleRect resizedSourceVisible;
+  const bool rendered = [&]() {
+    SdIoMutex::Lock ioLock;
+  VisibleRect& sourceVisible = resizedSourceVisible;
+  std::string loadedPath;
+  const auto loadSourceCache = [&](const int sourceX, const int sourceY, const int sourceWidth,
+                                   const int sourceHeight) {
+    VisibleRect visible;
+    if (!visibleBounds(renderer, sourceX, sourceY, sourceWidth, sourceHeight, visible)) return false;
+
+    if (sourceOptions.cacheNamespace == ImageDisplayCacheNamespace::Book) {
+      const size_t slash = sourcePath.find_last_of('/');
+      if (slash != std::string::npos) {
+        const std::string namedPath = sourcePath.substr(0, slash) + "/cover.idrc";
+        VisibleRect namedVisible;
+        if (loadNamedCacheIntoRam(namedPath, &namedVisible, sourceOptions)) {
+          INX_SERIAL.printf("[%lu] [IDC][COVER] source-hit path=%s rect=%d,%d %dx%d\n", millis(), namedPath.c_str(),
+                            namedVisible.x, namedVisible.y, namedVisible.width, namedVisible.height);
+          sourceVisible = namedVisible;
+          loadedPath = namedPath;
+          return true;
+        }
+      }
+    }
+
+    const std::string requestedPath =
+        pathFor(renderer, sourcePath, sourceX, sourceY, sourceWidth, sourceHeight, sourceOptions);
+    if (requestedPath.empty()) return false;
+
+    if (hasRamCache(requestedPath) || loadSdCacheIntoRam(requestedPath, visible, sourceOptions)) {
+      sourceVisible = visible;
+      loadedPath = requestedPath;
+      return true;
+    }
+
+    const std::string legacyPath =
+        legacyPathFor(renderer, sourcePath, sourceX, sourceY, sourceWidth, sourceHeight, sourceOptions);
+    if (legacyPath == requestedPath ||
+        (!hasRamCache(legacyPath) && !loadSdCacheIntoRam(legacyPath, visible, sourceOptions)))
+      return false;
+    sourceVisible = visible;
+    loadedPath = legacyPath;
+    return true;
+  };
+
+  const int screenWidth = renderer.getScreenWidth();
+  const int screenHeight = renderer.getScreenHeight();
+  constexpr int kBookCoverCachePadding = 20;
+  const bool loadedInsetBookCache =
+      sourceOptions.cacheNamespace == ImageDisplayCacheNamespace::Book && screenWidth > kBookCoverCachePadding * 2 &&
+      screenHeight > kBookCoverCachePadding * 2 &&
+      loadSourceCache(kBookCoverCachePadding, kBookCoverCachePadding, screenWidth - kBookCoverCachePadding * 2,
+                      screenHeight - kBookCoverCachePadding * 2);
+  if (!loadedInsetBookCache && !loadSourceCache(0, 0, screenWidth, screenHeight)) return false;
+
+  uint8_t* sourceRows = nullptr;
+  if (!copyRamCacheRows(loadedPath, sourceVisible, &sourceRows)) return false;
+
+  VisibleRect targetVisible;
+  if (!visibleBounds(renderer, x, y, width, height, targetVisible)) {
+    freeCacheRows(sourceRows);
+    return false;
+  }
+
+  const int sourceWidth = sourceVisible.width;
+  const int sourceHeight = sourceVisible.height;
+  int cropWidth = sourceWidth;
+  int cropHeight = sourceHeight;
+  int cropX = 0;
+  int cropY = 0;
+  if (targetOptions.cropToFill && sourceWidth > 0 && sourceHeight > 0) {
+    const float sourceRatio = static_cast<float>(sourceWidth) / static_cast<float>(sourceHeight);
+    const float targetRatio = static_cast<float>(width) / static_cast<float>(height);
+    if (sourceRatio > targetRatio) {
+      cropWidth = std::max(1, static_cast<int>(std::lround(sourceHeight * targetRatio)));
+      cropX = std::max(0, static_cast<int>((sourceWidth - cropWidth) *
+                                           std::clamp(static_cast<float>(targetOptions.cropAnchor) / 255.0f, 0.0f,
+                                                      1.0f)));
+    } else if (sourceRatio < targetRatio) {
+      cropHeight = std::max(1, static_cast<int>(std::lround(sourceWidth / targetRatio)));
+      cropY = std::max(0, static_cast<int>((sourceHeight - cropHeight) *
+                                           std::clamp(static_cast<float>(targetOptions.cropAnchorY) / 255.0f, 0.0f,
+                                                      1.0f)));
+    }
+  }
+
+  const int sourceRowBytes = (sourceWidth + 7) / 8;
+  const int targetRowBytes = (targetVisible.width + 7) / 8;
+  std::unique_ptr<uint8_t[]> targetRow(new (std::nothrow) uint8_t[targetRowBytes]);
+  if (!targetRow) {
+    freeCacheRows(sourceRows);
+    return false;
+  }
+
+  std::unique_ptr<int[]> errorRow(new (std::nothrow) int[static_cast<size_t>(width) + 2]());
+  std::unique_ptr<int[]> nextErrorRow(new (std::nothrow) int[static_cast<size_t>(width) + 2]());
+  if (!errorRow || !nextErrorRow) {
+    freeCacheRows(sourceRows);
+    return false;
+  }
+
+  // The source cache is already dithered. Area-sample the entire source and
+  // diffuse resize error into neighboring output pixels instead of using a
+  // fixed Bayer grid, which would make the original dither pattern visible.
+  for (int outputY = 0; outputY < height; ++outputY) {
+    memset(targetRow.get(), 0, static_cast<size_t>(targetRowBytes));
+    std::fill(nextErrorRow.get(), nextErrorRow.get() + width + 2, 0);
+    for (int outputX = 0; outputX < width; ++outputX) {
+      const int sourceX0 = cropX + (outputX * cropWidth) / width;
+      const int sourceX1 = cropX + ((outputX + 1) * cropWidth + width - 1) / width;
+      const int sourceY0 = cropY + (outputY * cropHeight) / height;
+      const int sourceY1 = cropY + ((outputY + 1) * cropHeight + height - 1) / height;
+      const int sampleX0 = std::clamp(sourceX0, cropX, cropX + cropWidth - 1);
+      const int sampleX1 = std::clamp(std::max(sourceX1, sourceX0 + 1), sampleX0 + 1, cropX + cropWidth);
+      const int sampleY0 = std::clamp(sourceY0, cropY, cropY + cropHeight - 1);
+      const int sampleY1 = std::clamp(std::max(sourceY1, sourceY0 + 1), sampleY0 + 1, cropY + cropHeight);
+
+      uint32_t ink = 0;
+      uint32_t samples = 0;
+      for (int sourceY = sampleY0; sourceY < sampleY1; ++sourceY) {
+        for (int sourceX = sampleX0; sourceX < sampleX1; ++sourceX) {
+          const uint8_t sourceByte = sourceRows[static_cast<size_t>(sourceY) * sourceRowBytes + sourceX / 8];
+          ink += (sourceByte & (0x80 >> (sourceX % 8))) != 0 ? 1u : 0u;
+          ++samples;
+        }
+      }
+      const int coverage = samples == 0 ? 255 : static_cast<int>((ink * 255u) / samples);
+      const int adjusted = std::clamp(coverage + errorRow[outputX + 1], 0, 255);
+      const bool inkPixel = adjusted >= 128;
+      const int quantized = inkPixel ? 255 : 0;
+      const int error = adjusted - quantized;
+      errorRow[outputX + 2] += (error * 7) / 16;
+      nextErrorRow[outputX] += (error * 3) / 16;
+      nextErrorRow[outputX + 1] += (error * 5) / 16;
+      nextErrorRow[outputX + 2] += error / 16;
+
+      if (outputX >= targetVisible.sourceOffsetX &&
+          outputX < targetVisible.sourceOffsetX + targetVisible.width && inkPixel) {
+        const int targetX = outputX - targetVisible.sourceOffsetX;
+        targetRow[targetX / 8] |= static_cast<uint8_t>(0x80 >> (targetX % 8));
+      }
+    }
+    if (outputY >= targetVisible.sourceOffsetY &&
+        outputY < targetVisible.sourceOffsetY + targetVisible.height) {
+      renderer.drawPackedRow1bpp(targetVisible.x, targetVisible.y + outputY - targetVisible.sourceOffsetY,
+                                 targetVisible.width, targetRow.get());
+    }
+    std::swap(errorRow, nextErrorRow);
+  }
+  freeCacheRows(sourceRows);
+
+  if (targetOptions.roundedOutside != BitmapRender::RoundedOutside::None) {
+    renderer.bitmap.maskRoundedOutside(x, y, width, height, targetOptions.roundedOutside);
+  }
+    return true;
+  }();
+  if (!rendered) return false;
+  if (persistTargetCache) {
+    storeAsync(renderer, targetPath, x, y, width, height, targetOptions);
+  }
+  INX_SERIAL.printf("[%lu] [IDC][RESIZE] source=%s sourceRect=%d,%d %dx%d target=%s rect=%d,%d %dx%d\n", millis(),
+                    sourcePath.c_str(), resizedSourceVisible.x, resizedSourceVisible.y, resizedSourceVisible.width,
+                    resizedSourceVisible.height,
+                    targetPath.c_str(), x, y, width, height);
+  return true;
 }
 
 bool ImageDisplayCache::displayTwoBitIfAvailable(GfxRenderer& renderer, const std::string& sourcePath, const int x,
@@ -1268,6 +1541,60 @@ bool ImageDisplayCache::store(GfxRenderer& renderer, const std::string& sourcePa
   return true;
 }
 
+bool ImageDisplayCache::storeNamed(GfxRenderer& renderer, const std::string& cachePath, const int x, const int y,
+                                   const int width, const int height) {
+  SdIoMutex::Lock ioLock;
+  VisibleRect visible;
+  if (cachePath.empty() || !visibleBounds(renderer, x, y, width, height, visible)) return false;
+  if (!ensureCacheDir(cachePath)) return false;
+
+  const int rowBytes = (visible.width + 7) / 8;
+  const size_t dataBytes = static_cast<size_t>(rowBytes) * static_cast<size_t>(visible.height);
+  std::unique_ptr<uint8_t, decltype(&freeCacheRows)> rows(allocateCacheRows(dataBytes), freeCacheRows);
+  if (!rows) return false;
+  for (int row = 0; row < visible.height; ++row) {
+    renderer.readPackedRow1bpp(visible.x, visible.y + row, visible.width,
+                               rows.get() + static_cast<size_t>(row) * rowBytes);
+  }
+  if (packedRowsAllInk(rows.get(), visible.width, visible.height, rowBytes)) return false;
+
+  const CacheHeader header = {.magic = kMagic,
+                              .version = kVersion,
+                              .headerSize = sizeof(CacheHeader),
+                              .width = static_cast<uint16_t>(visible.width),
+                              .height = static_cast<uint16_t>(visible.height),
+                              .rowBytes = static_cast<uint16_t>(rowBytes),
+                              .reserved = 0};
+  const std::string tempPath = cachePath + ".tmp";
+  FsFile file;
+  if (!SdMan.openFileForWrite("IDC", tempPath, file)) return false;
+  if (file.write(&header, sizeof(header)) != sizeof(header)) {
+    file.close();
+    SdMan.remove(tempPath.c_str());
+    return false;
+  }
+  const size_t rowsPerWrite = std::max<size_t>(1, kIoBufferSize / static_cast<size_t>(rowBytes));
+  for (size_t rowBase = 0; rowBase < static_cast<size_t>(visible.height); rowBase += rowsPerWrite) {
+    const size_t rowsThisWrite = std::min(rowsPerWrite, static_cast<size_t>(visible.height) - rowBase);
+    const size_t bytesThisWrite = rowsThisWrite * static_cast<size_t>(rowBytes);
+    if (file.write(rows.get() + rowBase * static_cast<size_t>(rowBytes), bytesThisWrite) != bytesThisWrite) {
+      file.close();
+      SdMan.remove(tempPath.c_str());
+      return false;
+    }
+  }
+  file.close();
+  SdMan.remove(cachePath.c_str());
+  if (!SdMan.rename(tempPath.c_str(), cachePath.c_str())) {
+    SdMan.remove(tempPath.c_str());
+    return false;
+  }
+  putRamCache(cachePath, header, rows.get());
+  INX_SERIAL.printf("[%lu] [IDC][COVER] stored path=%s rect=%d,%d %dx%d\n", millis(), cachePath.c_str(), x, y, width,
+                    height);
+  return true;
+}
+
 bool ImageDisplayCache::storeAsync(GfxRenderer& renderer, const std::string& sourcePath, const int x, const int y,
                                    const int width, const int height, const ImageDisplayCacheOptions& options) {
   SdIoMutex::Lock ioLock;
@@ -1328,9 +1655,15 @@ bool ImageDisplayCache::storeAsync(GfxRenderer& renderer, const std::string& sou
   putRamCache(cachePath, header, packedRows);
 
   if (xQueueSend(gAsyncCacheQueue, &job, 0) != pdTRUE) {
+    if (cachePath.find("/.system/cache/widgets/") != std::string::npos) {
+      INX_SERIAL.printf("[%lu] [IDC][WIDGETS] queue full path=%s\n", millis(), cachePath.c_str());
+    }
     freeCacheRows(packedRows);
     delete job;
     return false;
+  }
+  if (cachePath.find("/.system/cache/widgets/") != std::string::npos) {
+    INX_SERIAL.printf("[%lu] [IDC][WIDGETS] queued path=%s\n", millis(), cachePath.c_str());
   }
   return true;
 }
@@ -1365,7 +1698,11 @@ void ImageDisplayCache::flushDeferredWrites(const uint8_t maximumJobs) {
     if (xQueueReceive(gAsyncCacheQueue, &job, 0) != pdTRUE || !job) {
       return;
     }
-    writePackedCacheFile(*job);
+    const bool written = writePackedCacheFile(*job);
+    if (job->cachePath.find("/.system/cache/widgets/") != std::string::npos) {
+      INX_SERIAL.printf("[%lu] [IDC][WIDGETS] flush path=%s written=%d\n", millis(), job->cachePath.c_str(),
+                        written ? 1 : 0);
+    }
     freeCacheRows(job->rows);
     delete job;
     yield();

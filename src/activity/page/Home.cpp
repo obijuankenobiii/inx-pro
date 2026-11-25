@@ -125,6 +125,8 @@ void Home::loop() {
 
 
   if (thumbnailWarmupPending_ && !mappedInput.wasTouchActivity()) {
+    INX_SERIAL.printf("[%lu] [HOME][THUMB-WARMUP] present pending=1 defer=%d update=%d\n", millis(),
+                      deferThumbnailDecode_ ? 1 : 0, updateRequired ? 1 : 0);
     thumbnailWarmupPending_ = false;
     updateRequired = true;
     renderPage();
@@ -137,17 +139,28 @@ void Home::loop() {
   const bool renderedThisLoop = updateRequired;
   if (handleSwipe()) return;
   if (handleTap()) return;
-  renderPage();
+  if (updateRequired && deferThumbnailDecode_) {
+    INX_SERIAL.printf("[%lu] [HOME][THUMB-WARMUP] present deferred cache-check\n", millis());
+    renderPage();
+  } else {
+    if (updateRequired) {
+      INX_SERIAL.printf("[%lu] [HOME][THUMB-WARMUP] present defer=%d\n", millis(),
+                        deferThumbnailDecode_ ? 1 : 0);
+    }
+    renderPage();
+  }
   if (!renderedThisLoop && !mappedInput.wasTouchActivity()) preloadCarousel();
 }
 
 void Home::content() {
+  INX_SERIAL.printf("[%lu] [HOME][THUMB-WARMUP] content defer=%d\n", millis(), deferThumbnailDecode_ ? 1 : 0);
   renderer.setDeferImageDecode(deferThumbnailDecode_);
   widgetLayout.render(HomeTheme::active(), carouselIndex, favoriteIndex, widgetPageIndex, recentGridPageIndex, flowIndex);
   renderer.setDeferImageDecode(false);
   if (deferThumbnailDecode_) {
     deferThumbnailDecode_ = false;
     thumbnailWarmupPending_ = true;
+    INX_SERIAL.printf("[%lu] [HOME][THUMB-WARMUP] decode pass armed\n", millis());
   }
   if (popupBook >= 0 || favoritePopupOpen || statisticsPopupOpen || heatmapPopupOpen) popup();
 }
