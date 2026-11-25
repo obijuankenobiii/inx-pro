@@ -343,13 +343,16 @@ bool cachePathAvailable(const std::string& path) {
   return hasRamCache(path) || SdMan.exists(path.c_str());
 }
 
-uint32_t cacheHash(const std::string& sourcePath, const int width, const int height, const VisibleRect& visible,
-                   const ImageDisplayCacheOptions& options) {
+uint32_t cacheHashFor(const std::string& sourcePath, const int width, const int height, const VisibleRect& visible,
+                      const ImageDisplayCacheOptions& options, const bool includeSourceSize,
+                      const bool includeWidgetVersion) {
   uint32_t hash = 2166136261u;
   for (const char c : sourcePath) {
     hash = fnv1aAdd(hash, static_cast<uint8_t>(c));
   }
-  hash = fnv1aAddUint32(hash, sourceSize(sourcePath));
+  if (includeSourceSize) {
+    hash = fnv1aAddUint32(hash, sourceSize(sourcePath));
+  }
   hash = fnv1aAddUint32(hash, static_cast<uint32_t>(width));
   hash = fnv1aAddUint32(hash, static_cast<uint32_t>(height));
   hash = fnv1aAddUint32(hash, static_cast<uint32_t>(visible.sourceOffsetX));
@@ -367,10 +370,20 @@ uint32_t cacheHash(const std::string& sourcePath, const int width, const int hei
   hash = fnv1aAdd(hash, options.renderPlane);
   hash = fnv1aAdd(hash, static_cast<uint8_t>(options.roundedOutside));
   hash = fnv1aAdd(hash, options.quality ? 1 : 0);
-  if (options.cacheNamespace == ImageDisplayCacheNamespace::Widgets) {
+  if (includeWidgetVersion && options.cacheNamespace == ImageDisplayCacheNamespace::Widgets) {
     hash = fnv1aAdd(hash, kWidgetCacheContentVersion);
   }
   return hash;
+}
+
+uint32_t cacheHash(const std::string& sourcePath, const int width, const int height, const VisibleRect& visible,
+                   const ImageDisplayCacheOptions& options) {
+  return cacheHashFor(sourcePath, width, height, visible, options, false, false);
+}
+
+uint32_t legacyCacheHash(const std::string& sourcePath, const int width, const int height,
+                         const VisibleRect& visible, const ImageDisplayCacheOptions& options) {
+  return cacheHashFor(sourcePath, width, height, visible, options, true, true);
 }
 
 uint32_t cacheHashCombined(const std::string& sourcePath, const int width, const int height,
@@ -785,7 +798,7 @@ std::string ImageDisplayCache::legacyPathFor(GfxRenderer& renderer, const std::s
   if (!visibleBounds(renderer, x, y, width, height, visible)) {
     return "";
   }
-  const uint32_t hash = cacheHash(sourcePath, width, height, visible, options);
+  const uint32_t hash = legacyCacheHash(sourcePath, width, height, visible, options);
   char name[48];
   snprintf(name, sizeof(name), "/%02lx/%08lx.irdc", static_cast<unsigned long>((hash >> 24) & 0xFF),
            static_cast<unsigned long>(hash));

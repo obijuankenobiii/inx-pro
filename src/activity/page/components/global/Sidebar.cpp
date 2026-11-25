@@ -66,6 +66,14 @@ void Sidebar::renderTextList(const GfxRenderer& renderer, const char* const* lab
   }
 }
 
+bool Sidebar::closeHitTest(const GfxRenderer& renderer, const int tapX, const int tapY) {
+  constexpr int touchPadding = 10;
+  const int closeX = width(renderer) - kHeaderRightPadding - kHeaderIconSize;
+  const int closeY = navigation::Menu::topPadding + (navigation::Menu::iconSize - kHeaderIconSize) / 2;
+  return tapX >= closeX - touchPadding && tapX < closeX + kHeaderIconSize + touchPadding &&
+         tapY >= closeY - touchPadding && tapY < closeY + kHeaderIconSize + touchPadding;
+}
+
 int Sidebar::hitTest(const GfxRenderer& renderer, const int tapX, const int tapY, const size_t count,
                      const int scrollOffset) {
   const int drawerWidth = width(renderer);

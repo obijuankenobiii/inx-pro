@@ -29,6 +29,35 @@ uint8_t cacheCropAnchor(const float value) {
   return static_cast<uint8_t>(std::lround(std::clamp(value, 0.0f, 1.0f) * 255.0f));
 }
 
+bool isBookThumbnailPath(const std::string& path) {
+  if (path.find("/.metadata/epub/") == std::string::npos && path.find("/.metadata/xtc/") == std::string::npos) {
+    return false;
+  }
+  const size_t slash = path.find_last_of('/');
+  if (slash == std::string::npos) return false;
+  const std::string name = path.substr(slash + 1);
+  return name == "thumb.jpg" || name == "thumb.png" || name == "thumb.bmp" || name == "cover.jpg" ||
+         name == "cover.png" || name == "cover.bmp";
+}
+
+bool renderBookThumbnailCache(GfxRenderer& renderer, const std::string& path, const int x, const int y,
+                              const int width, const int height, const ImageDisplayCacheOptions& targetOptions) {
+  if ((targetOptions.cacheNamespace != ImageDisplayCacheNamespace::Library &&
+       targetOptions.cacheNamespace != ImageDisplayCacheNamespace::Widgets) ||
+      !isBookThumbnailPath(path)) {
+    return false;
+  }
+
+  ImageDisplayCacheOptions sourceOptions = targetOptions;
+  sourceOptions.cropToFill = true;
+  sourceOptions.cropAnchor = 128;
+  sourceOptions.cropAnchorY = 128;
+  sourceOptions.roundedOutside = BitmapRender::RoundedOutside::None;
+  sourceOptions.cacheNamespace = ImageDisplayCacheNamespace::Book;
+  return ImageDisplayCache::renderResizedFromCache(renderer, path, path, x, y, width, height, sourceOptions,
+                                                   targetOptions, false);
+}
+
 class ImageRenderScope {
  public:
   explicit ImageRenderScope(GfxRenderer& renderer) : renderer_(renderer), previous_(renderer.isImageRendering()) {
@@ -130,7 +159,8 @@ bool ImageRender::renderDisplayCacheOnly(int x, int y, int width, int height, co
   if (!canUseDisplayCache) {
     return false;
   }
-  return ImageDisplayCache::renderIfAvailable(renderer_, path_, x, y, width, height, cacheOptions);
+  if (ImageDisplayCache::renderIfAvailable(renderer_, path_, x, y, width, height, cacheOptions)) return true;
+  return renderBookThumbnailCache(renderer_, path_, x, y, width, height, cacheOptions);
 }
 
 bool ImageRender::preloadDisplayCache(int x, int y, int width, int height, const Options& options) const {
@@ -196,6 +226,9 @@ bool ImageRender::render(int x, int y, int width, int height, const Options& opt
   if (canUseDisplayCache && !(jpegCapture && jpegCapture->captured)) {
     const bool cacheHit = ImageDisplayCache::renderIfAvailable(renderer_, path_, x, y, width, height, cacheOptions);
     if (cacheHit) {
+      return true;
+    }
+    if (renderBookThumbnailCache(renderer_, path_, x, y, width, height, cacheOptions)) {
       return true;
     }
   }

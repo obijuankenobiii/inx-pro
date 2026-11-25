@@ -1172,6 +1172,10 @@ void ChapterHtmlSlimParser::flushPartWordBuffer() {
                         ? TextBlock::SUPERSCRIPT
                         : TextBlock::SUBSCRIPT;
   }
+  if (currentTextBlock && paragraphAlignment != EPUB_PARAGRAPH_ALIGNMENT_FOLLOW_CSS) {
+    currentTextBlock->setStyle(static_cast<TextBlock::Style>(paragraphAlignment));
+  }
+
   if (currentTextBlock && currentTextBlock->size() >= STREAMING_TEXTBLOCK_WORD_LIMIT) {
     currentTextBlock->layoutAndExtractLines(
         renderer, activeBlockFontId(), static_cast<uint16_t>(std::max(1, currentTextBlockContentWidth)),
