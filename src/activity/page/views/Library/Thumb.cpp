@@ -966,12 +966,14 @@ int Thumb::itemAt(const int x, const int y) const {
 }
 
 bool Thumb::handleInput() {
-  if (mappedInput.wasTouchSwipeUp() || mappedInput.wasPressed(MappedInputManager::Button::Down)) {
+  if (mappedInput.wasTouchSwipeUp() || mappedInput.wasPressed(MappedInputManager::Button::Down) ||
+      mappedInput.wasPressed(MappedInputManager::Button::PageForward)) {
     page = page + 1 < pageCount() ? page + 1 : 0;
     load();
     return true;
   }
-  if (mappedInput.wasTouchSwipeDown() || mappedInput.wasPressed(MappedInputManager::Button::Up)) {
+  if (mappedInput.wasTouchSwipeDown() || mappedInput.wasPressed(MappedInputManager::Button::Up) ||
+      mappedInput.wasPressed(MappedInputManager::Button::PageBack)) {
     if (page > 0) {
       --page;
       load();

@@ -84,11 +84,13 @@ int List::itemAt(const int x, const int y) const {
 }
 
 bool List::handleInput() {
-  if (mappedInput.wasTouchSwipeUp() || mappedInput.wasPressed(MappedInputManager::Button::Down)) {
+  if (mappedInput.wasTouchSwipeUp() || mappedInput.wasPressed(MappedInputManager::Button::Down) ||
+      mappedInput.wasPressed(MappedInputManager::Button::PageForward)) {
     page = page + 1 < pageCount() ? page + 1 : 0;
     return true;
   }
-  if (mappedInput.wasTouchSwipeDown() || mappedInput.wasPressed(MappedInputManager::Button::Up)) {
+  if (mappedInput.wasTouchSwipeDown() || mappedInput.wasPressed(MappedInputManager::Button::Up) ||
+      mappedInput.wasPressed(MappedInputManager::Button::PageBack)) {
     if (page > 0) --page;
     return true;
   }
