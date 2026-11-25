@@ -367,9 +367,58 @@ void ClearCacheActivity::clearCache() {
     removeStatistics(rootPath);
   };
 
+  const auto isDisplayCacheFile = [](const char* name) {
+    if (strcasecmp(name, "cover.idrc") == 0 || strcasecmp(name, "cover.idrc.tmp") == 0) return true;
+    const bool libraryCache = strncasecmp(name, "library", 7) == 0;
+    const bool widgetCache = strncasecmp(name, "widgets", 7) == 0;
+    if (!libraryCache && !widgetCache) return false;
+    return strstr(name, ".idrc") != nullptr;
+  };
+
+  const auto clearBookDisplayCaches = [&](const char* rootPath) {
+    std::function<void(const std::string&)> removeDisplayCaches;
+    removeDisplayCaches = [&](const std::string& path) {
+      FsFile dir = SdMan.open(path.c_str());
+      if (!dir || !dir.isDirectory()) {
+        if (dir) dir.close();
+        return;
+      }
+
+      char name[128];
+      dir.rewindDirectory();
+      while (true) {
+        FsFile entry = dir.openNextFile();
+        if (!entry) break;
+        entry.getName(name, sizeof(name));
+        const std::string entryPath = path + "/" + name;
+        if (entry.isDirectory()) {
+          entry.close();
+          removeDisplayCaches(entryPath);
+          continue;
+        }
+
+        const bool remove = isDisplayCacheFile(name);
+        entry.close();
+        if (!remove) continue;
+        INX_SERIAL.printf("[%lu] [CLEAR_CACHE] Removing display cache %s\n", millis(), entryPath.c_str());
+        if (SdMan.remove(entryPath.c_str())) {
+          clearedCount++;
+        } else {
+          failedCount++;
+          INX_SERIAL.printf("[%lu] [CLEAR_CACHE] Failed to remove display cache %s\n", millis(), entryPath.c_str());
+        }
+        yield();
+      }
+      dir.close();
+    };
+    removeDisplayCaches(rootPath);
+  };
+
   if (selectedGroups[GROUP_DISPLAY]) {
     tryRemoveTree("/.system/cache");
     tryRemoveTree("/.display-cache");
+    clearBookDisplayCaches("/.metadata/epub");
+    clearBookDisplayCaches("/.metadata/xtc");
     ImageDisplayCache::invalidate();
   }
   if (selectedGroups[GROUP_BOOK]) {

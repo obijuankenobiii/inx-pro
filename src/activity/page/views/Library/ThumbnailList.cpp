@@ -115,7 +115,7 @@ ThumbnailList::ThumbnailList(GfxRenderer& renderer, MappedInputManager& mappedIn
 
 void ThumbnailList::reset() { page = 0; }
 
-int ThumbnailList::top() const { return navigation::Menu::height; }
+int ThumbnailList::top() const { return navigation::Menu::height - 10; }
 
 int ThumbnailList::rowHeight() const {
   if (SETTINGS.hiddenMenu == 0) return normalRowHeight;
